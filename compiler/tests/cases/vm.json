@@ -539,5 +539,12 @@
   {"src": "class Foo:\n    pass\nf = Foo()\nprint(type(f))", "output": ["<class 'object'>"]},
   {"src": "def f(**kw):\n    return kw\nprint(f(a=1, b=2))", "output": ["{'a': 1, 'b': 2}"]},
   {"src": "def f(x, **kw):\n    return (x, kw)\nprint(f(1, y=2, z=3))", "output": ["(1, {'y': 2, 'z': 3})"]},
-  {"src": "def make():\n    x = 10\n    f = lambda: x\n    x = 20\n    return f()\nprint(make())", "output": ["20"]}
+  {"src": "def make():\n    x = 10\n    f = lambda: x\n    x = 20\n    return f()\nprint(make())", "output": ["20"]},
+  {"src": "class C:\n    def __init__(self):\n        self.x: int = 5\n        self.items: list[int] = [1, 2, 3]\n    def get(self):\n        return self.x\nc = C()\nprint(c.get())\nprint(c.items[0])", "output": ["5", "1"]},
+  {"src": "class C:\n    def __init__(self):\n        self.items = [10, 20, 30]\n    def bump(self, i):\n        self.items[i] += 5\nc = C()\nc.bump(1)\nprint(c.items[1])", "output": ["25"]},
+  {"src": "class C:\n    def __init__(self):\n        self.data = [0, 0]\n    def run(self):\n        for i in range(len(self.data)):\n            self.data[i] += i + 1\nc = C()\nc.run()\nprint(c.data)", "output": ["[1, 2]"]},
+  {"src": "def f():\n    for e in range(5):\n        if e == 2:\n            return e\n        print(e)\nprint(f())", "output": ["0", "1", "2"]},
+  {"src": "def f(x: list[int], y: int = 10) -> int:\n    return x[0] + y\nprint(f([5]))", "output": ["15"]},
+  {"src": "def f(x: dict[str, int], y: int = 0) -> int:\n    return y\nprint(f({'a': 1}, 42))", "output": ["42"]},
+  {"src": "class C:\n    def __init__(self, s: float = 1.0) -> None:\n        self.seed: float = s\n        self.vals: list[float] = []\n    def add(self, v: float) -> None:\n        self.vals.append(v)\nc = C(2.5)\nc.add(3.0)\nprint(c.seed)\nprint(c.vals[0])", "output": ["2.5", "3.0"]}
 ]

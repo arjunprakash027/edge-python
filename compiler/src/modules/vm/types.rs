@@ -670,7 +670,10 @@ impl HeapPool {
                 }
                 Some(HeapObj::Instance(cls, attrs)) => {
                     if cls.is_heap() { worklist.push(cls.as_heap()); }
-                    for (_, v) in attrs.borrow().iter() { if v.is_heap() { worklist.push(v.as_heap()); } }
+                    for (k, v) in attrs.borrow().iter() {
+                        if k.is_heap() { worklist.push(k.as_heap()); }
+                        if v.is_heap() { worklist.push(v.as_heap()); }
+                    }
                 }
                 Some(HeapObj::Coroutine(_, slots, stack, _, _)) => {
                     for v in slots.iter().flatten() { if v.is_heap() { worklist.push(v.as_heap()); } }

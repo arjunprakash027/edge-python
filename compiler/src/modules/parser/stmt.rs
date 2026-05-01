@@ -206,7 +206,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             }
             Some(TokenType::Return) => {
                 self.advance();
-                if matches!(self.peek(), Some(TokenType::Newline | TokenType::Endmarker)) {
+                if matches!(self.peek(), Some(TokenType::Newline | TokenType::Endmarker | TokenType::Dedent) | None) {
                     self.chunk.emit(OpCode::LoadNone, 0);
                 } else {
                     self.expr();
@@ -361,6 +361,17 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.advance();
                 let t = self.advance();
                 let (attr_start, attr_end) = (t.start, t.end);
+                if self.eat_if(TokenType::Colon) {
+                    while !matches!(
+                        self.peek(),
+                        Some(TokenType::Equal | TokenType::Dedent | TokenType::Endmarker) | None
+                    ) {
+                        self.advance();
+                    }
+                    if !matches!(self.peek(), Some(TokenType::Equal)) {
+                        return false;
+                    }
+                }
                 if matches!(self.peek(), Some(TokenType::Equal)) {
                     self.emit_load_ssa(name);
                     self.advance();
@@ -387,6 +398,26 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                         let (pos, kw) = self.parse_args();
                         let encoded = ((kw & 0xFF) << 8) | (pos & 0xFF);
                         self.chunk.emit(OpCode::Call, encoded);
+                    } else if matches!(self.peek(), Some(TokenType::Lsqb)) {
+                        self.advance();
+                        self.expr();
+                        self.eat(TokenType::Rsqb);
+                        if matches!(self.peek(), Some(TokenType::Equal)) {
+                            self.advance();
+                            self.expr();
+                            self.chunk.emit(OpCode::StoreItem, 0);
+                            return false;
+                        } else if let Some(op) = self.peek().and_then(|t| Self::augmented_op(&t)) {
+                            self.advance();
+                            self.chunk.emit(OpCode::Dup2, 0);
+                            self.chunk.emit(OpCode::GetItem, 0);
+                            self.expr();
+                            self.chunk.emit(op, 0);
+                            self.chunk.emit(OpCode::StoreItem, 0);
+                            return false;
+                        } else {
+                            self.chunk.emit(OpCode::GetItem, 0);
+                        }
                     }
                     self.expr_tails();
                     true

@@ -435,11 +435,22 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
     pub(super) fn drain_annotation(&mut self) {
         if self.eat_if(TokenType::Colon) {
-            while !matches!(
-                self.peek(),
-                Some(TokenType::Equal | TokenType::Comma | TokenType::Rpar) | None
-            ) {
-                self.advance();
+            let mut depth = 0u32;
+            loop {
+                match self.peek() {
+                    None => break,
+                    Some(TokenType::Lsqb | TokenType::Lpar | TokenType::Lbrace) => {
+                        depth += 1;
+                        self.advance();
+                    }
+                    Some(TokenType::Rsqb | TokenType::Rpar | TokenType::Rbrace) => {
+                        if depth == 0 { break; }
+                        depth -= 1;
+                        self.advance();
+                    }
+                    Some(TokenType::Equal | TokenType::Comma) if depth == 0 => break,
+                    _ => { self.advance(); }
+                }
             }
         }
     }
