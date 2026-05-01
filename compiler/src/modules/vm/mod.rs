@@ -190,14 +190,18 @@ impl<'a> VM<'a> {
             HeapObj::Str(s) => {
                 let s = s.clone();
                 let out = self.str_to_char_vals(&s)?;
-                if out.len() != expected {
+                if out.len() > expected {
+                    return Err(cold_value("too many values to unpack"));
+                } else if out.len() < expected {
                     return Err(cold_value("not enough values to unpack"));
                 }
                 out
             },
             _ => return Err(cold_type("cannot unpack non-sequence")),
         };
-        if items.len() != expected {
+        if items.len() > expected {
+            return Err(cold_value("too many values to unpack"));
+        } else if items.len() < expected {
             return Err(cold_value("not enough values to unpack"));
         }
         for item in items.into_iter().rev() { self.push(item); }

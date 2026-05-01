@@ -54,9 +54,9 @@ impl<'a> VM<'a> {
             let af = self.to_f64_coerce(a).map_err(|_| cold_type("% requires numeric operands"))?;
             let bf = self.to_f64_coerce(b).map_err(|_| cold_type("% requires numeric operands"))?;
             if bf == 0.0 { return Err(VmErr::ZeroDiv); }
-            let q = (af / bf) as i64 as f64;
-            let q_floor = q - if af / bf < 0.0 && q != af / bf { 1.0 } else { 0.0 };
-            return Ok(Val::float(af - q_floor * bf));
+            // Use floor division semantics: result has the same sign as the divisor.
+            let r = af - (af / bf).floor() * bf;
+            return Ok(Val::float(r));
         }
         let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b))
             else { return Err(cold_type("% requires numeric operands")); };
@@ -69,10 +69,8 @@ impl<'a> VM<'a> {
             let af = self.to_f64_coerce(a).map_err(|_| cold_type("// requires numeric operands"))?;
             let bf = self.to_f64_coerce(b).map_err(|_| cold_type("// requires numeric operands"))?;
             if bf == 0.0 { return Err(VmErr::ZeroDiv); }
-            let q = af / bf;
-            let t = q as i64 as f64;
-            let floored = t - if q < 0.0 && t != q { 1.0 } else { 0.0 };
-            return Ok(Val::float(floored));
+            // floor() is correct for all magnitudes, including large floats where as-i64 would overflow.
+            return Ok(Val::float((af / bf).floor()));
         }
         let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b))
             else { return Err(cold_type("// requires numeric operands")); };
