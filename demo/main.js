@@ -4,6 +4,7 @@ import { CodeJar } from 'https://esm.sh/codejar@4';
 
 const MAX_LINES = 99;
 const TAB_SIZE = 4;
+const EXAMPLE_FILE = "example.py"
 const DEV = !['demo.edgepython.com'].includes(location.hostname);
 const FETCH_OPTS = DEV ? { cache: 'no-store' } : undefined;
 
@@ -227,11 +228,20 @@ const Editor = (() => {
     jar.onUpdate(syncLines);
     jar.updateCode(DEFAULT_CODE);
 
-    return { getCode: () => jar.toString() };
+    return { getCode: () => jar.toString(), setCode: (code) => jar.updateCode(code) };
 })();
 
 // Init
-
 el.btn.addEventListener('click', () => PythonWorker.run(Editor.getCode()));
 loadIcons();
 PythonWorker.load();
+
+fetch(`./${EXAMPLE_FILE}`, FETCH_OPTS ?? {}).then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.text();
+    }).then(code => {
+        Editor.setCode(code);
+    }).catch(() => {
+        console.warn(`${EXAMPLE_FILE} could not be loaded, using default code.`);
+    }
+);
