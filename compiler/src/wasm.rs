@@ -57,7 +57,7 @@ mod runtime {
                 let inp = unsafe { core::str::from_utf8_unchecked(
                     core::slice::from_raw_parts(core::ptr::addr_of!(INP) as *const u8, inp_len)
                 )};
-                vm.input_buffer = inp.split('\n').map(|s| alloc::string::String::from(s)).collect();
+                vm.input_buffer = inp.split('\n').map(alloc::string::String::from).collect();
                 unsafe { INP_LEN = 0; }
             }
             match vm.run() {
