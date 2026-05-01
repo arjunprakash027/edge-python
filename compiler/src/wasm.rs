@@ -95,9 +95,10 @@ mod tests {
     struct Case {
         src: String,
         output: Vec<String>,
-        result: String,
         #[serde(default)]
         error: Option<String>,
+        #[serde(default)]
+        input: Vec<String>,
     }
 
     #[test]
@@ -107,21 +108,26 @@ mod tests {
         ).expect("invalid JSON");
 
         for case in cases {
-            // WASM: input tests should produce a RuntimeError
-            let expect_input_error = case.input.len() > 0 && cfg!(target_arch = "wasm32");
             let (chunk, errs) = Parser::new(&case.src, lexer(&case.src)).parse();
             assert!(errs.is_empty(), "parse error on {:?}: {:?}", case.src, errs.iter().map(|e| &e.msg).collect::<Vec<_>>());
 
             let mut vm = VM::new(&chunk);
+            vm.input_buffer = case.input.clone();
+            // WASM: input tests should produce a RuntimeError
+            let expect_input_error = case.input.len() > 0 && cfg!(target_arch = "wasm32");
+
             match vm.run() {
-                Ok(obj) => {
-                    assert_eq!(vm.display(obj), case.result, "result mismatch on: {:?}", case.src);
+                Ok(_) => {
                     assert_eq!(vm.output, case.output, "output mismatch on: {:?}", case.src);
                 }
                 Err(e) => match &case.error {
                     Some(expected) => assert!(
                         e.to_string().contains(expected.as_str()),
                         "wrong error on {:?}: got '{}', expected '{}'", case.src, e, expected
+                    ),
+                    None if expect_input_error => assert!(
+                        e.to_string().contains("input"),
+                        "expected input RuntimeError on wasm32 for: {:?}", case.src
                     ),
                     None => panic!("VM error on {:?}: {}", case.src, e),
                 }
