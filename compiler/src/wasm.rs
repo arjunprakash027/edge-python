@@ -1,3 +1,7 @@
+#![cfg_attr(target_arch = "wasm32", no_std)] // Enables no_std only for WASM builds.
+
+extern crate alloc; // Enables heap allocation without the standard library.
+
 #[cfg(target_arch = "wasm32")]
 mod runtime {
     use lol_alloc::LeakingPageAllocator;
@@ -51,6 +55,7 @@ mod runtime {
         } else {
             crate::modules::vm::optimizer::constant_fold(&mut chunk);
             let mut vm = VM::with_limits(&chunk, Limits::sandbox());
+            vm.strict_input = true;
             // Feed input buffer from host
             let inp_len = unsafe { INP_LEN };
             if inp_len > 0 {
@@ -112,12 +117,20 @@ mod tests {
             assert!(errs.is_empty(), "parse error on {:?}: {:?}", case.src, errs.iter().map(|e| &e.msg).collect::<Vec<_>>());
 
             let mut vm = VM::new(&chunk);
+            vm.strict_input = true;
+            // Cases that supply an input buffer feed the VM normally; the
+            // strict_input flag only triggers when the VM tries to read past
+            // the end of the buffer (i.e. the WASM "no host data" path).
             vm.input_buffer = case.input.clone();
-            // WASM: input tests should produce a RuntimeError
-            let expect_input_error = case.input.len() > 0 && cfg!(target_arch = "wasm32");
+            let expects_input_error = case.input.is_empty()
+                && (case.src.contains("input(") || case.src.contains("input ("));
 
             match vm.run() {
                 Ok(_) => {
+                    assert!(
+                        !expects_input_error,
+                        "expected input() to error under WASM strict mode for: {:?}", case.src
+                    );
                     assert_eq!(vm.output, case.output, "output mismatch on: {:?}", case.src);
                 }
                 Err(e) => match &case.error {
@@ -125,9 +138,10 @@ mod tests {
                         e.to_string().contains(expected.as_str()),
                         "wrong error on {:?}: got '{}', expected '{}'", case.src, e, expected
                     ),
-                    None if expect_input_error => assert!(
+                    None if expects_input_error => assert!(
                         e.to_string().contains("input"),
-                        "expected input RuntimeError on wasm32 for: {:?}", case.src
+                        "expected input RuntimeError under WASM strict mode for: {:?}, got: {}",
+                        case.src, e
                     ),
                     None => panic!("VM error on {:?}: {}", case.src, e),
                 }

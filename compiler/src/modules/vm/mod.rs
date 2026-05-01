@@ -61,6 +61,7 @@ pub struct VM<'a> {
     pub output: Vec<String>,
     pub input_buffer: Vec<String>,
     pub event_queue: Vec<Val>,
+    pub strict_input: bool,
 }
 
 impl<'a> VM<'a> {
@@ -227,6 +228,7 @@ impl<'a> VM<'a> {
             pending_kw_delta: 0,
             yielded: false,
             resume_ip: 0,
+            strict_input: false,
             output: Vec::new(),
             input_buffer: Vec::new(),
             event_queue: Vec::new(),
