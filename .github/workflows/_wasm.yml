@@ -1,0 +1,92 @@
+name: _WebAssembly Build
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    name: WebAssembly
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: compiler
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+
+      - name: Install wasm target
+        run: rustup target add wasm32-unknown-unknown
+        working-directory: compiler
+
+      - name: Install wasm-opt
+        run: |
+          curl -sSL https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz \
+            | tar -xz --strip-components=2 -C /usr/local/bin binaryen-version_121/bin/wasm-opt
+          wasm-opt --version
+
+      - name: Build
+        run: |
+          RUSTFLAGS="-Z location-detail=none -Z fmt-debug=none -Z unstable-options -C panic=immediate-abort" \
+          cargo +nightly build \
+            --target wasm32-unknown-unknown \
+            --features wasm \
+            --lib \
+            --release \
+            -Z build-std=std,panic_abort
+        working-directory: compiler
+
+      - name: Size (unoptimized)
+        run: ls -lh target/wasm32-unknown-unknown/release/compiler_lib.wasm
+        working-directory: compiler
+
+      - name: Optimize
+        working-directory: compiler
+        run: |
+          INPUT=target/wasm32-unknown-unknown/release/compiler_lib.wasm
+
+          wasm-opt -Oz --converge \
+            --generate-global-effects \
+            --strip-debug --strip-producers \
+            --enable-bulk-memory-opt \
+            --enable-nontrapping-float-to-int \
+            --enable-sign-ext \
+            -tnh \
+            -o /tmp/wasm_stage1.wasm "$INPUT"
+
+          wasm-opt --flatten --rereloop -Oz -Oz \
+            --enable-bulk-memory-opt \
+            --enable-nontrapping-float-to-int \
+            --enable-sign-ext \
+            -o "$INPUT" /tmp/wasm_stage1.wasm
+
+          rm /tmp/wasm_stage1.wasm
+
+      - name: Size (optimized)
+        run: ls -lh target/wasm32-unknown-unknown/release/compiler_lib.wasm
+        working-directory: compiler
+
+      - name: Test
+        run: cargo test --features wasm-tests
+        working-directory: compiler
+
+      - name: Upload wasm artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: compiler_lib_wasm
+          path: compiler/target/wasm32-unknown-unknown/release/compiler_lib.wasm
+          retention-days: 1
+
+      - name: Upload WASM Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: compiler/target/wasm32-unknown-unknown/release/compiler_lib.wasm
+          fail_on_unmatched_files: true
