@@ -368,11 +368,9 @@ impl<'a> VM<'a> {
         let (arg2, obj) = (self.pop()?, self.pop()?);
         let obj_ty = self.type_name(obj);
 
-        let obj_as_str: Option<String> = if obj.is_heap() {
-            match self.heap.get(obj) {
-                HeapObj::Str(s) => Some(s.clone()),
-                _ => None,
-            }
+        // For exception matching: if obj is a Type, extract its name for comparison.
+        let obj_type_name: Option<String> = if obj.is_heap() {
+            if let HeapObj::Type(n) = self.heap.get(obj) { Some(n.clone()) } else { None }
         } else { None };
 
         let check_one = |t: Val, heap: &HeapPool| -> Result<bool, VmErr> {
@@ -383,7 +381,7 @@ impl<'a> VM<'a> {
                 HeapObj::Type(name) => Ok(
                     name == obj_ty
                     || (obj_ty == "bool" && name == "int")
-                    || obj_as_str.as_deref() == Some(name.as_str())
+                    || obj_type_name.as_deref() == Some(name.as_str())
                 ),
                 HeapObj::NativeFn(id) => {
                     let name = id.name();
@@ -393,8 +391,7 @@ impl<'a> VM<'a> {
                     Ok(
                         name == obj_ty
                         || (obj_ty == "bool" && name == "int")
-                        || obj_as_str.as_deref() == Some(name)
-                    )
+                        )
                 }
                 _ => Err(VmErr::Type("isinstance() arg 2 must be a type or tuple of types")),
             }
@@ -420,7 +417,20 @@ impl<'a> VM<'a> {
     /* Returns empty string in sandbox; no stdin access in WASM. */
 
     pub fn call_input(&mut self) -> Result<(), VmErr> {
-        let val = self.heap.alloc(HeapObj::Str(String::new()))?;
+        let s = if !self.input_buffer.is_empty() {
+            self.input_buffer.remove(0)
+        } else {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let mut line = String::new();
+                let _ = std::io::stdin().read_line(&mut line);
+                while line.ends_with('\n') || line.ends_with('\r') { line.pop(); }
+                line
+            }
+            #[cfg(target_arch = "wasm32")]
+            { return Err(VmErr::Runtime("input() requires host data in WASM (use set_input)")); }
+        };
+        let val = self.heap.alloc(HeapObj::Str(s))?;
         self.push(val); Ok(())
     }
 
@@ -944,6 +954,163 @@ impl<'a> VM<'a> {
         let ty = self.type_name(obj);
         let exists = super::handlers::methods::lookup_method(ty, &name).is_some();
         self.push(Val::bool(exists));
+        Ok(())
+    }
+
+    pub fn call_next(&mut self) -> Result<(), VmErr> {
+        let o = self.pop()?;
+        if o.is_heap() {
+            if let HeapObj::Coroutine(..) = self.heap.get(o) {
+                self.push(o);
+                // Call the coroutine with 0 args via the resume path
+                // We need chunk/slots but next() is called from dispatch_native
+                // which doesn't have them. Use exec_call workaround:
+                // Push callee, then manually invoke the Coroutine resume.
+                let callee = o;
+                if let HeapObj::Coroutine(ip, saved_slots, saved_stack, fi, saved_iters) = self.heap.get(callee) {
+                    let (ip, fi) = (*ip, *fi);
+                    let mut fn_slots = saved_slots.clone();
+                    let saved_stack_len = self.stack.len();
+                    let saved_iter_len = self.iter_stack.len();
+                    self.stack.extend_from_slice(&saved_stack.clone());
+                    self.iter_stack.extend(saved_iters.clone());
+                    let saved_yielded = self.yielded;
+                    self.yielded = false;
+                    self.depth += 1;
+                    let (_, body, _, _) = self.functions[fi];
+                    let result = self.exec_from(body, &mut fn_slots, ip);
+                    self.depth -= 1;
+                    let result = result?;
+                    if self.yielded {
+                        self.yielded = false;
+                        let resume_ip = self.resume_ip;
+                        let remaining = self.stack.split_off(saved_stack_len);
+                        let coro_iters: Vec<super::types::IterFrame> = self.iter_stack.drain(saved_iter_len..).collect();
+                        if let HeapObj::Coroutine(sip, ss, sst, _, si) = self.heap.get_mut(callee) {
+                            *sip = resume_ip;
+                            *ss = fn_slots;
+                            *sst = remaining;
+                            *si = coro_iters;
+                        }
+                        self.push(result);
+                    } else {
+                        self.stack.truncate(saved_stack_len);
+                        self.iter_stack.truncate(saved_iter_len);
+                        self.yielded = saved_yielded;
+                        return Err(VmErr::Runtime("StopIteration"));
+                    }
+                    return Ok(());
+                }
+            }
+        }
+        Err(cold_type("next() requires an iterator"))
+    }
+
+    /// Resume a coroutine, returning the yielded/returned value.
+    pub fn resume_coroutine(&mut self, callee: Val) -> Result<Val, VmErr> {
+        if let HeapObj::Coroutine(ip, saved_slots, saved_stack, fi, saved_iters) = self.heap.get(callee) {
+            let (ip, fi) = (*ip, *fi);
+            let mut fn_slots = saved_slots.clone();
+            let saved_stack_len = self.stack.len();
+            let saved_iter_len = self.iter_stack.len();
+            self.stack.extend_from_slice(&saved_stack.clone());
+            self.iter_stack.extend(saved_iters.clone());
+            let saved_yielded = self.yielded;
+            self.yielded = false;
+            self.depth += 1;
+            let (_, body, _, _) = self.functions[fi];
+            let result = self.exec_from(body, &mut fn_slots, ip);
+            self.depth -= 1;
+            let result = result?;
+            if self.yielded {
+                let resume_ip = self.resume_ip;
+                let remaining = self.stack.split_off(saved_stack_len);
+                let coro_iters: Vec<super::types::IterFrame> = self.iter_stack.drain(saved_iter_len..).collect();
+                if let HeapObj::Coroutine(sip, ss, sst, _, si) = self.heap.get_mut(callee) {
+                    *sip = resume_ip;
+                    *ss = fn_slots;
+                    *sst = remaining;
+                    *si = coro_iters;
+                }
+                Ok(result)
+            } else {
+                self.stack.truncate(saved_stack_len);
+                self.iter_stack.truncate(saved_iter_len);
+                self.yielded = saved_yielded;
+                Ok(result)
+            }
+        } else {
+            Err(cold_type("not a coroutine"))
+        }
+    }
+
+    /// Event loop: round-robin scheduler for coroutines.
+    pub fn call_run(&mut self, argc: u16) -> Result<(), VmErr> {
+        let tasks = self.pop_n(argc as usize)?;
+
+        // Each task: (coroutine_val, sleep_counter)
+        let mut queue: Vec<(Val, i64)> = tasks.into_iter()
+            .filter(|v| v.is_heap() && matches!(self.heap.get(*v), HeapObj::Coroutine(..)))
+            .map(|v| (v, 0))
+            .collect();
+
+        let mut max_cycles = 10_000_000u64;
+        while !queue.is_empty() && max_cycles > 0 {
+            max_cycles -= 1;
+            let mut next_queue: Vec<(Val, i64)> = Vec::new();
+
+            for (coro, sleep) in queue {
+                if sleep > 0 {
+                    next_queue.push((coro, sleep - 1));
+                    continue;
+                }
+
+                // Resume the coroutine directly
+                let result = self.resume_coroutine(coro)?;
+                let was_yielded = self.yielded;
+                self.yielded = false; // don't leak to outer exec
+
+                if was_yielded {
+                    // Check if it yielded a sleep request (negative int = sleep cycles)
+                    let new_sleep = if result.is_int() && result.as_int() < 0 {
+                        (-result.as_int()) as i64
+                    } else { 0 };
+                    next_queue.push((coro, new_sleep));
+                } else if result.is_none() {
+                    // Coroutine finished
+                } else {
+                    // Coroutine returned a value (finished)
+                }
+            }
+
+            // Check for receive waiters: if a task yielded a special marker
+            queue = next_queue;
+        }
+
+        self.push(Val::none());
+        Ok(())
+    }
+
+    /// Yield control for N scheduler cycles.
+    pub fn call_sleep(&mut self) -> Result<(), VmErr> {
+        let n = self.pop()?;
+        let cycles = if n.is_int() { n.as_int().max(0) } else { 0 };
+        // Yield a negative int as signal to the scheduler
+        self.push(Val::int(-cycles));
+        self.yielded = true;
+        Ok(())
+    }
+
+    /// Wait for a message from event_queue.
+    pub fn call_receive(&mut self) -> Result<(), VmErr> {
+        if !self.event_queue.is_empty() {
+            let val = self.event_queue.remove(0);
+            self.push(val);
+        } else {
+            // Yield None to signal "waiting for message"
+            self.push(Val::none());
+            self.yielded = true;
+        }
         Ok(())
     }
 }

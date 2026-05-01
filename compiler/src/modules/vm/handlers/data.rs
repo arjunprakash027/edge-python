@@ -6,9 +6,9 @@ impl<'a> VM<'a> {
 
     /* StoreName con back-propagación SSA a versiones previas. */
     
-    pub(crate) fn handle_store(&mut self, operand: u16, slots: &mut [Option<Val>], prev_slots: &[Option<u16>]) -> Result<(), VmErr> {
+    pub(crate) fn handle_store(&mut self, operand: u16, slots: &mut [Option<Val>]) -> Result<(), VmErr> {
         let v = self.pop()?;
-        super::super::types::p_store_ssa(slots, prev_slots, operand, v);
+        slots[operand as usize] = Some(v);
         Ok(())
     }
 
@@ -112,8 +112,8 @@ impl<'a> VM<'a> {
 
     pub(crate) fn handle_yield(&mut self) -> Result<(), VmErr> {
         let v = self.pop()?;
-        self.yields.push(v);
-        self.push(Val::none());
+        self.push(v);
+        self.yielded = true;
         Ok(())
     }
 
@@ -140,7 +140,60 @@ impl<'a> VM<'a> {
                 let msg = self.display(exc);
                 return Err(VmErr::Raised(msg));
             }
-            OpCode::Await | OpCode::YieldFrom => {}
+            OpCode::Await => {
+                // If awaiting a coroutine, run it to completion or yield
+                let val = self.pop()?;
+                if val.is_heap() && matches!(self.heap.get(val), HeapObj::Coroutine(..)) {
+                    // Resume the inner coroutine
+                    self.push(val);
+                    // Use Call dispatch with 0 args - callee is on stack
+                    let callee = val;
+                    if let HeapObj::Coroutine(ip, saved_slots, saved_stack, fi, saved_iters) = self.heap.get(callee) {
+                        let (ip, fi) = (*ip, *fi);
+                        let mut fn_slots = saved_slots.clone();
+                        let saved_stack_len = self.stack.len();
+                        let saved_iter_len = self.iter_stack.len();
+                        self.stack.extend_from_slice(&saved_stack.clone());
+                        self.iter_stack.extend(saved_iters.clone());
+                        let saved_yielded = self.yielded;
+                        self.yielded = false;
+                        self.depth += 1;
+                        let (_, body, _, _) = self.functions[fi];
+                        let result = self.exec_from(body, &mut fn_slots, ip);
+                        self.depth -= 1;
+                        let result = result?;
+                        if self.yielded {
+                            // Inner coroutine yielded - propagate yield upward
+                            self.yielded = false;
+                            let resume_ip = self.resume_ip;
+                            let remaining = self.stack.split_off(saved_stack_len);
+                            let coro_iters: Vec<super::super::types::IterFrame> = self.iter_stack.drain(saved_iter_len..).collect();
+                            if let HeapObj::Coroutine(sip, ss, sst, _, si) = self.heap.get_mut(callee) {
+                                *sip = resume_ip;
+                                *ss = fn_slots;
+                                *sst = remaining;
+                                *si = coro_iters;
+                            }
+                            // Propagate: yield the value from this coroutine too
+                            self.push(result);
+                            self.yielded = true;
+                        } else {
+                            // Inner coroutine finished - push its return value
+                            self.stack.truncate(saved_stack_len);
+                            self.iter_stack.truncate(saved_iter_len);
+                            self.yielded = saved_yielded;
+                            self.push(result);
+                        }
+                    } else {
+                        // Not a coroutine anymore (shouldn't happen)
+                        self.push(val);
+                    }
+                } else {
+                    // Not a coroutine - just push the value (sync call already resolved)
+                    self.push(val);
+                }
+            }
+            OpCode::YieldFrom => {}
             _ => unreachable!("non-side opcode in handle_side"),
         }
         Ok(())

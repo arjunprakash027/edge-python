@@ -14,6 +14,8 @@ mod runtime {
     const SZ: usize = 1 << 20;
     static mut SRC: [u8; SZ] = [0; SZ];
     static mut OUT: [u8; SZ] = [0; SZ];
+    static mut INP: [u8; SZ] = [0; SZ];
+    static mut INP_LEN: usize = 0;
 
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn src_ptr() -> *mut u8 {
@@ -49,6 +51,15 @@ mod runtime {
         } else {
             crate::modules::vm::optimizer::constant_fold(&mut chunk);
             let mut vm = VM::with_limits(&chunk, Limits::sandbox());
+            // Feed input buffer from host
+            let inp_len = unsafe { INP_LEN };
+            if inp_len > 0 {
+                let inp = unsafe { core::str::from_utf8_unchecked(
+                    core::slice::from_raw_parts(core::ptr::addr_of!(INP) as *const u8, inp_len)
+                )};
+                vm.input_buffer = inp.split('\n').map(|s| alloc::string::String::from(s)).collect();
+                unsafe { INP_LEN = 0; }
+            }
             match vm.run() {
                 Ok(_) => vm.output.join("\n"),
                 Err(e) => match &e {
@@ -96,6 +107,8 @@ mod tests {
         ).expect("invalid JSON");
 
         for case in cases {
+            // WASM: input tests should produce a RuntimeError
+            let expect_input_error = case.input.len() > 0 && cfg!(target_arch = "wasm32");
             let (chunk, errs) = Parser::new(&case.src, lexer(&case.src)).parse();
             assert!(errs.is_empty(), "parse error on {:?}: {:?}", case.src, errs.iter().map(|e| &e.msg).collect::<Vec<_>>());
 

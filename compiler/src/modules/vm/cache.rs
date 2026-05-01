@@ -16,7 +16,8 @@ pub enum FastOp {
     LtInt, LtFloat,
     GtInt, LtEqInt, GtEqInt,
     EqInt, EqStr,
-    NotEqInt
+    NotEqInt,
+    ModInt, FloorDivInt
 }
 
 /* Per-instruction IC slot. */
@@ -87,7 +88,10 @@ impl OpcodeCache {
             (OpCode::Lt, 2, 2) => Some(FastOp::LtFloat),    (OpCode::Eq, 1, 1) => Some(FastOp::EqInt),
             (OpCode::Eq, 5, 5) => Some(FastOp::EqStr),      (OpCode::Gt, 1, 1) => Some(FastOp::GtInt),
             (OpCode::LtEq, 1, 1) => Some(FastOp::LtEqInt),  (OpCode::GtEq, 1, 1) => Some(FastOp::GtEqInt),
-            (OpCode::NotEq, 1, 1) => Some(FastOp::NotEqInt), _ => None,
+            (OpCode::NotEq, 1, 1) => Some(FastOp::NotEqInt),
+            (OpCode::Mod, 1, 1) => Some(FastOp::ModInt),
+            (OpCode::FloorDiv, 1, 1) => Some(FastOp::FloorDivInt),
+            _ => None,
         }
     }
 }

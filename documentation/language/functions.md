@@ -307,7 +307,7 @@ write naive recursion; the runtime handles caching for you.
 
 ## Generators
 
-Functions with `yield` produce a sequence lazily.
+Functions with `yield` produce a sequence lazily. Use `next()` to pull values one at a time, or iterate with `for`.
 
 ```python
 def squares(n):

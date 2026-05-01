@@ -163,7 +163,7 @@ for         -> for_stmt_inner   (sync iter, optional else)
 while       -> while_stmt       (with break/continue patches)
 match       -> match_stmt
 def         -> func_def_inner
-class       -> class_def        (parses; runtime raises)
+class       -> class_def        (__init__, attributes, methods)
 with        -> with_stmt_inner  (multi-target, async variant)
 try         -> try_stmt         (except, else, finally, raise)
 import      -> import_stmt      (parses; runtime raises)

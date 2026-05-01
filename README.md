@@ -39,7 +39,7 @@ Pre-built binaries for Linux, macOS, and Windows are available on the [releases 
 
 ## What it is
 
-Edge Python targets functional edge computing: first-class functions, lambdas, closures, generators, comprehensions, and pure-function memoization. Classes and imports parse for compatibility but raise at runtime. There is no object model and no module system.
+Edge Python targets functional edge computing: first-class functions, lambdas, closures, generators, comprehensions, and pure-function memoization. Classes are supported with `__init__`, attributes, and methods. Imports parse for compatibility but raise at runtime; there is no module system.
 
 For architecture details, see [`compiler/README.md`](compiler/README.md). For language reference and implementation notes, see the [docs](https://edgepython.com/).
 

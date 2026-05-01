@@ -9,7 +9,7 @@ A compact, single-pass SSA-style bytecode compiler and stack VM for a functional
 
 ## 1. Paradigm
 
-Edge Python targets functional edge computing. The language treats functions as first-class values: lambdas, higher-order functions, currying, closures, comprehensions, and pure-function memoization are all central. Classes and method bindings parse for syntactic compatibility with CPython but raise at runtime — there is no inheritance, no instance state, no method resolution order. Imports parse for compatibility but raise at runtime; the VM has no module system.
+Edge Python targets functional edge computing. The language treats functions as first-class values: lambdas, higher-order functions, currying, closures, comprehensions, and pure-function memoization are all central. Classes are supported with `__init__`, instance attributes, and methods. There is no inheritance and no method resolution order. Imports parse for compatibility but raise at runtime; the VM has no module system.
 
 What this leaves is a small, fast, deterministic core: arithmetic with arbitrary-precision integers, sequences (lists, tuples, dicts, sets, strings, ranges), control flow, lambdas with closures, generators, exceptions, and a curated set of built-in functions exposed as first-class values.
 
@@ -40,7 +40,6 @@ What the compiler intentionally does *not* do:
 * No dead-store elimination beyond what falls out of constant folding.
 * No IR — bytecode is the only representation.
 * No module system: `import` and `from ... import` parse but raise at runtime.
-* No object model: `class` parses but `MakeClass` and `StoreAttr` raise at runtime.
 
 ---
 

@@ -61,7 +61,6 @@ The heap is an arena of `Option<HeapObj>` slots with a free list. Strings of 64 
 - No dead-store elimination beyond what falls out of constant folding.
 - No IR — there is exactly one representation between source and dispatch.
 - No JIT. Edge Python stays single-tier and pure Rust. Method JITs need per-architecture stencils; trace JITs duplicate the execution model and complicate the GC contract.
-- No object model. `class` parses but `MakeClass` raises at runtime — the language is functional.
 - No module system. `import` and `from ... import` parse but raise at runtime.
 
 ## Architecture
@@ -115,7 +114,7 @@ src/
 | None   | async / await¹   | -                 | -               |
 | BigInt | yield / yield from | -                | -               |
 
-¹ async syntax parses and emits `MakeCoroutine` for compatibility, but there is no event loop — coroutines run synchronously.
+`async def` creates real coroutines. `run()` provides a cooperative event loop with `sleep()` and `receive()`.
 
 ## References
 

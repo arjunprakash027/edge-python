@@ -117,15 +117,6 @@ type
 These parse but raise `RuntimeError` when executed.
 
 ```python
-# Classes
-try:
-    class Foo:
-        pass
-except RuntimeError as e:
-    print("class:", e)
-```
-
-```python
 # Imports
 try:
     import os
@@ -133,7 +124,7 @@ except RuntimeError as e:
     print("import:", e)
 ```
 
-These exist for syntactic compatibility — your code can be lifted from CPython without parsing failing — but the VM rejects them when reached. If you need a value-oriented record, use a dict or a tuple. If you need code reuse, use higher-order functions.
+These exist for syntactic compatibility — your code can be lifted from CPython without parsing failing — but the VM rejects them when reached. If you need code reuse, use higher-order functions.
 
 ## Determinism
 

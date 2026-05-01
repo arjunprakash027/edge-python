@@ -3,7 +3,7 @@ title: "Methods"
 description: "Built-in methods on strings, lists, and dicts."
 ---
 
-Edge Python has no user-defined classes, but strings, lists, and dicts come with a curated set of built-in methods. They behave like CPython equivalents.
+Edge Python supports user-defined classes with methods. Strings, lists, and dicts come with a curated set of built-in methods. They behave like CPython equivalents.
 
 ```python
 # Methods are accessed with dot notation

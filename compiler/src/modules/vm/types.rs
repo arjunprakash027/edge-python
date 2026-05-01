@@ -39,9 +39,11 @@ impl core::hash::Hash for Val {
 }
 
 impl Val {
+    /// Canonical NaN stored outside the QNAN tag space so `is_float()` stays true.
+    const CANON_NAN: u64 = 0x7FF8_0000_0000_0000;
     #[inline(always)] pub fn float(f: f64) -> Self {
         let bits = f.to_bits();
-        if (bits & QNAN) == QNAN { Self(QNAN) } else { Self(bits) }
+        if (bits & QNAN) == QNAN { Self(Self::CANON_NAN) } else { Self(bits) }
     }
     #[inline(always)]
     pub fn is_numeric(&self) -> bool {
@@ -456,6 +458,10 @@ pub enum HeapObj {
     BigInt(BigInt),
     BoundMethod(Val, BuiltinMethodId),
     NativeFn(NativeFnId),
+    Class(String, Vec<(String, Val)>), // (name, methods as (name, Func val) pairs)
+    Instance(Val, Rc<RefCell<DictMap>>),
+    BoundUserMethod(Val, Val), // (self_instance, func_val) // (class_val, attributes)
+    Coroutine(usize, Vec<Option<Val>>, Vec<Val>, usize, Vec<IterFrame>), // (ip, slots, stack, func_idx, iter_frames)
 }
 
 pub use crate::modules::vm::handlers::methods::BuiltinMethodId;
@@ -470,7 +476,7 @@ pub enum NativeFnId {
     All, Any, Bin, Oct, Hex, Divmod, Pow, Repr, Reversed,
     Callable, Id, Hash,
     // Nuevos
-    Format, Ascii, GetAttr, HasAttr,
+    Format, Ascii, GetAttr, HasAttr, Next, Run, Sleep, Receive,
 }
 
 impl NativeFnId {
@@ -496,6 +502,8 @@ impl NativeFnId {
             Self::Id => "id",              Self::Hash => "hash",
             Self::Format => "format",      Self::Ascii => "ascii",
             Self::GetAttr => "getattr",    Self::HasAttr => "hasattr",
+            Self::Next => "next",
+            Self::Run => "run", Self::Sleep => "sleep", Self::Receive => "receive",
         }
     }
 }
@@ -653,6 +661,21 @@ impl HeapPool {
                 }
                 Some(HeapObj::BoundMethod(recv, _))
                     if recv.is_heap() => { worklist.push(recv.as_heap()); }
+                Some(HeapObj::Class(_, methods)) => {
+                    for (_, v) in methods { if v.is_heap() { worklist.push(v.as_heap()); } }
+                }
+                Some(HeapObj::BoundUserMethod(recv, func)) => {
+                    if recv.is_heap() { worklist.push(recv.as_heap()); }
+                    if func.is_heap() { worklist.push(func.as_heap()); }
+                }
+                Some(HeapObj::Instance(cls, attrs)) => {
+                    if cls.is_heap() { worklist.push(cls.as_heap()); }
+                    for (_, v) in attrs.borrow().iter() { if v.is_heap() { worklist.push(v.as_heap()); } }
+                }
+                Some(HeapObj::Coroutine(_, slots, stack, _, _)) => {
+                    for v in slots.iter().flatten() { if v.is_heap() { worklist.push(v.as_heap()); } }
+                    for v in stack { if v.is_heap() { worklist.push(v.as_heap()); } }
+                }
                 _ => {}
             }
         }
@@ -724,6 +747,10 @@ impl HeapPool {
                     Some(HeapObj::BigInt(_)) => 14,
                     Some(HeapObj::BoundMethod(_, _)) => 15,
                     Some(HeapObj::NativeFn(_)) => 16,
+                    Some(HeapObj::BoundUserMethod(..)) => 17,
+                    Some(HeapObj::Class(..)) => 18,
+                    Some(HeapObj::Instance(..)) => 18,
+                    Some(HeapObj::Coroutine(..)) => 19,
                     None => 0,
                 }
             } else { 0 }
@@ -817,14 +844,17 @@ impl core::fmt::Display for VmErr {
 
 /* Seq or Range state consumed one item at a time by ForIter dispatch. */
 
+#[derive(Clone, Debug)]
 pub enum IterFrame {
     Seq { items: Vec<Val>, idx: usize },
-    Range { cur: i64, end: i64, step: i64 }
+    Range { cur: i64, end: i64, step: i64 },
+    Coroutine(Val),
 }
 
 impl IterFrame {
     pub fn next_item(&mut self) -> Option<Val> {
         match self {
+            Self::Coroutine(_) => None, // handled in ForIter dispatch
             Self::Seq { items, idx } => {
                 if *idx < items.len() { let v = items[*idx]; *idx += 1; Some(v) } else { None }
             }
@@ -896,20 +926,8 @@ pub fn fpowf(base: f64, exp: f64) -> f64 {
 #[cold] #[inline(never)] pub fn cold_type(m: &'static str) -> VmErr { VmErr::Type(m) }
 #[cold] #[inline(never)] pub fn cold_value(m: &'static str) -> VmErr { VmErr::Value(m) }
 #[cold] #[inline(never)] pub fn cold_runtime(m: &'static str) -> VmErr { VmErr::Runtime(m) }
-/// SSA store with back-propagation through prev_slots chain.
+/// SSA store — single write after register coalescing.
 #[inline(always)]
-pub fn p_store_ssa(slots: &mut [Option<Val>], prev: &[Option<u16>], s: u16, v: Val) {
-    let mut cur = s as usize;
-    if cur < slots.len() { slots[cur] = Some(v); }
-    let mut guard = prev.len();
-    while guard > 0 {
-        guard -= 1;
-        match prev.get(cur).and_then(|p| *p) {
-            Some(p) if (p as usize) != cur => {
-                cur = p as usize;
-                if cur < slots.len() { slots[cur] = Some(v); }
-            }
-            _ => break,
-        }
-    }
+pub fn p_store_ssa(slots: &mut [Option<Val>], slot: usize, v: Val) {
+    slots[slot] = Some(v);
 }

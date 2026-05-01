@@ -26,17 +26,17 @@ The language reads like Python because it parses Python's syntax. It runs differ
 
 These parse for syntactic compatibility but raise at runtime, or simply don't exist:
 
-- **Classes and objects**: `class` parses, `MakeClass` raises. No inheritance, no instance state, no method resolution. Edge Python is functional — model your domain with closures, dicts, and tuples.
+- **Classes**: supported with `__init__`, attributes, and methods. No inheritance or MRO.
 - **Modules**: `import` and `from ... import` parse but raise. There is no module system, no standard library beyond the built-ins documented here, no third-party packages.
-- **I/O**: `input()` returns an empty string in sandbox mode. There is no file system, no network, no `os`, no `sys`.
-- **Threading and async beyond surface syntax**: `async def`, `await`, `async for`, `async with` parse and emit `MakeCoroutine`, but there is no event loop. They run as if synchronous.
+- **I/O**: `input()` reads from a host-provided buffer (native: stdin, WASM: FFI). There is no file system, no network, no `os`, no `sys`.
+- **Async**: `async def` creates real coroutines. `run()` provides cooperative scheduling with `sleep()` and `receive()`.
 - **Metaclasses, descriptors, decorators-on-classes, properties**: not modeled.
 - **Dynamic code**: no `exec`, no `eval`, no `compile`, no `__import__`.
 - **Reflection beyond `type`, `id`, `hash`, `repr`, `callable`, `getattr`, `hasattr`**.
 
-## Why functional, not OO
+## Design philosophy
 
-Object-oriented features add a lot of surface and a lot of binary. Method resolution, inheritance chains, descriptor protocols, instance dictionaries, `__init__` / `__new__`, super, slots, and dunder dispatch all require runtime machinery that grows the VM and slows dispatch.
+Edge Python supports classes with `__init__`, attributes, and methods, but the core paradigm remains functional. Full OO features like inheritance, descriptor protocols, super, slots, and dunder dispatch are omitted to keep the VM small and fast.
 
 A functional core gives Edge Python:
 

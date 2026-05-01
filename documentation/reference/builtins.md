@@ -3,7 +3,7 @@ title: "Built-in functions"
 description: "Every built-in function in Edge Python with examples and outputs."
 ---
 
-Edge Python ships with 41 built-in functions. They're first-class values: pass them around, store them in containers, alias them.
+Edge Python ships with 45 built-in functions. They're first-class values: pass them around, store them in containers, alias them.
 
 ```python
 # All built-ins are real values
@@ -39,7 +39,7 @@ hello world
 
 ### input
 
-`input()` — read a line from stdin. **Always returns an empty string in sandbox mode**; there's no host stdin in WebAssembly.
+`input()` — Reads from host-provided input buffer. Native: reads stdin. WASM: requires `set_input` FFI. Returns empty string if no data.
 
 ## Numeric
 
@@ -338,6 +338,25 @@ print(list(zip([1, 2], [3, 4], [5, 6])))
 [(1, 3, 5), (2, 4, 6)]
 ```
 
+### next
+
+`next(iterator)` or `next(iterator, default)` — retrieve the next item from an iterator. Raises `StopIteration` if exhausted and no default is given.
+
+```python
+it = iter([10, 20, 30])
+print(next(it))
+print(next(it))
+print(next(it, "done"))
+print(next(it, "done"))
+```
+
+```text Output
+10
+20
+30
+done
+```
+
 ## Logical reductions
 
 ### all, any
@@ -486,7 +505,7 @@ print(ascii("hello"))
 
 ## Attribute access
 
-`getattr` and `hasattr` work against the built-in method tables on strings, lists, and dicts. Edge Python has no class system, so user-defined attributes don't apply.
+`getattr` and `hasattr` work against the built-in method tables on strings, lists, and dicts. User-defined class attributes are also supported.
 
 ### getattr
 
@@ -515,12 +534,26 @@ True
 False
 ```
 
+## Async
+
+### run
+
+`run(coroutine)` — run a coroutine to completion using the cooperative event loop.
+
+### sleep
+
+`sleep(seconds)` — suspend the current coroutine for the given duration. Only valid inside `async def`.
+
+### receive
+
+`receive()` — suspend the current coroutine until a message is available from the host. Only valid inside `async def`.
+
 ## Built-in summary
 
 | Function     | Arity      | Notes                                      |
 |--------------|------------|--------------------------------------------|
 | `print`      | variadic   | space-separated, newline                   |
-| `input`      | 0          | empty string in sandbox                    |
+| `input`      | 0          | reads from host-provided buffer            |
 | `abs`        | 1          | int / float / BigInt                       |
 | `round`      | 1 or 2     | banker's rounding                          |
 | `min`        | variadic   | or single iterable                         |
@@ -559,3 +592,7 @@ False
 | `ascii`      | 1          | repr with non-ASCII escapes                |
 | `getattr`    | 2 or 3     | bound method or default                    |
 | `hasattr`    | 2          | True if method exists                      |
+| `next`       | 1 or 2     | next item from iterator                    |
+| `run`        | 1          | run coroutine to completion                |
+| `sleep`      | 1          | suspend coroutine for duration             |
+| `receive`    | 0          | suspend coroutine until message available  |

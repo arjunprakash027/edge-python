@@ -102,6 +102,7 @@ pub struct SSAChunk {
     pub is_pure: bool,
     pub overflow: bool,
     pub prev_slots: Vec<Option<u16>>,
+    pub alias_groups: Vec<Vec<u16>>,
     pub phi_map: Vec<usize>,
     pub nonlocals: Vec<String>,
     pub(super) name_index: HashMap<String, u16>,
@@ -137,7 +138,10 @@ impl SSAChunk {
     }
 
     pub fn finalize_prev_slots(&mut self) {
-        let mut ps: Vec<Option<u16>> = vec![None; self.names.len()];
+        let n = self.names.len();
+
+        // Build prev_slots chain (SSA version N -> version N-1)
+        let mut ps: Vec<Option<u16>> = vec![None; n];
         for (i, name) in self.names.iter().enumerate() {
             if let Some(pos) = name.rfind('_')
                 && let Ok(ver) = name[pos+1..].parse::<u32>()
@@ -148,7 +152,37 @@ impl SSAChunk {
                     }
             }
         }
+
+        // Register coalescing: follow each chain to its root.
+        let mut canonical: Vec<u16> = (0..n as u16).collect();
+        for i in 0..n {
+            let mut root = i;
+            while let Some(Some(p)) = ps.get(root) {
+                let p = *p as usize;
+                if p == root { break; }
+                root = p;
+            }
+            canonical[i] = root as u16;
+        }
+
+        // Rewrite LoadName/StoreName/Phi/Del operands to canonical slots.
+        for ins in &mut self.instructions {
+            match ins.opcode {
+                OpCode::LoadName | OpCode::StoreName | OpCode::Del | OpCode::Phi => {
+                    ins.operand = canonical[ins.operand as usize];
+                }
+                _ => {}
+            }
+        }
+
+        // Rewrite PHI sources to canonical slots.
+        for (a, b) in &mut self.phi_sources {
+            *a = canonical[*a as usize];
+            *b = canonical[*b as usize];
+        }
+
         self.prev_slots = ps;
+        self.alias_groups = (0..n).map(|i| vec![canonical[i]]).collect();
 
         for (_, body, _, _) in &mut self.functions {
             body.finalize_prev_slots();

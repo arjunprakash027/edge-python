@@ -60,6 +60,10 @@ impl<'a> VM<'a> {
             HeapObj::Slice(..) => true,
             HeapObj::BoundMethod(..) => true,
             HeapObj::NativeFn(_) => true,
+            HeapObj::Class(..) => true,
+            HeapObj::BoundUserMethod(..) => true,
+            HeapObj::Instance(..) => true,
+            HeapObj::Coroutine(..) => true,
         }
     }
 
@@ -94,6 +98,11 @@ impl<'a> VM<'a> {
             HeapObj::Slice(..) => "slice",
             HeapObj::BoundMethod(..) => "builtin_function_or_method",
             HeapObj::NativeFn(_) => "builtin_function_or_method",
+            HeapObj::Class(_name, _) => "type",
+
+            HeapObj::BoundUserMethod(_, _) => "<bound method>".into(),
+            HeapObj::Instance(..) => "object",
+            HeapObj::Coroutine(..) => "coroutine",
         }}
     }
 
@@ -135,6 +144,13 @@ impl<'a> VM<'a> {
             HeapObj::Dict(d) => { let mut o = s!(cap: 32; "{"); for (i,(k,v)) in d.borrow().iter().enumerate() { if i>0 { o.push_str(", "); } o.push_str(&self.repr(k)); o.push_str(": "); o.push_str(&self.repr(v)); } o.push('}'); o },
             HeapObj::BoundMethod(_, id) => s!("<built-in method ", str id.name(), ">"),
             HeapObj::NativeFn(id) => s!("<built-in function ", str id.name(), ">"),
+            HeapObj::Class(name, _) => crate::s!("<class '", str name, "'>"  ),
+            HeapObj::Instance(cls, _) => {
+                if cls.is_heap() { if let HeapObj::Class(name, _) = self.heap.get(*cls) { return crate::s!("<", str name, " instance>"); } }
+                "<instance>".into()
+            }
+            HeapObj::BoundUserMethod(_, _) => "<bound method>".into(),
+            HeapObj::Coroutine(..) => "<coroutine>".into(),
             HeapObj::Set(s) => {
                 let mut items: Vec<Val> = s.borrow().iter().cloned().collect();
                 if items.is_empty() { return "set()".into(); }
@@ -209,20 +225,10 @@ impl<'a> VM<'a> {
         if a.is_heap() && b.is_heap() {
             match (self.heap.get(a), self.heap.get(b)) {
                 (HeapObj::Str(sa), HeapObj::Str(sb)) => {
-                    let sa_len = sa.len();
-                    let sb_clone = sb.clone();
-                    let sa_clone = sa.clone();
-                    let _ = (sa, sb);
-                    // In-place append when `a` is not interned (len > 128).
-                    // Avoids allocating a new string + copying the old one.
-                    if sa_len > 128
-                        && let HeapObj::Str(s) = self.heap.get_mut(a) {
-                            s.push_str(&sb_clone);
-                            return Ok(a);
-                        }
-                    let mut r = String::with_capacity(sa_clone.len() + sb_clone.len());
-                    r.push_str(&sa_clone);
-                    r.push_str(&sb_clone);
+                    let sa = sa.clone();
+                    let sb = sb.clone();
+                    let mut r = String::with_capacity(sa.len() + sb.len());
+                    r.push_str(&sa); r.push_str(&sb);
                     return self.heap.alloc(HeapObj::Str(r));
                 }
                 (HeapObj::List(va), HeapObj::List(vb)) => {
@@ -312,7 +318,7 @@ impl<'a> VM<'a> {
         self.heap.alloc(HeapObj::BigInt(b))
     }
 
-    fn to_f64_coerce(&self, v: Val) -> Result<f64, VmErr> {
+    pub(crate) fn to_f64_coerce(&self, v: Val) -> Result<f64, VmErr> {
         if v.is_int() { return Ok(v.as_int() as f64); }
         if v.is_float() { return Ok(v.as_float()); }
         if v.is_heap()

@@ -61,8 +61,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.advance();
         self.expr();
 
-        let ver = self.increment_version("__match__");
-        let subj = self.chunk.push_name(&s!("__match__", int ver));
+        let ver = self.increment_version("#match");
+        let subj = self.chunk.push_name(&s!("#match", int ver));
         self.chunk.emit(OpCode::StoreName, subj);
 
         self.eat(TokenType::Colon);

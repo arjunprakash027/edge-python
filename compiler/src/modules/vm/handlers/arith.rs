@@ -15,7 +15,7 @@ impl<'a> VM<'a> {
         }
 
         let (a, b) = self.pop2()?;
-        if matches!(op, OpCode::Add | OpCode::Sub | OpCode::Mul) { cached_binop!(self.heap, rip, &op, a, b, cache); } // Register-based FastOps (add/sub/mul) are cached; the rest not.
+        if matches!(op, OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Mod | OpCode::FloorDiv) { cached_binop!(self.heap, rip, &op, a, b, cache); } // Register-based FastOps (add/sub/mul) are cached; the rest not.
 
         let result = match op {
             OpCode::Add => self.add_vals(a, b)?,
@@ -50,15 +50,32 @@ impl<'a> VM<'a> {
     }
 
     fn exec_mod(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
+        if a.is_float() || b.is_float() {
+            let af = self.to_f64_coerce(a).map_err(|_| cold_type("% requires numeric operands"))?;
+            let bf = self.to_f64_coerce(b).map_err(|_| cold_type("% requires numeric operands"))?;
+            if bf == 0.0 { return Err(VmErr::ZeroDiv); }
+            let q = (af / bf) as i64 as f64;
+            let q_floor = q - if af / bf < 0.0 && q != af / bf { 1.0 } else { 0.0 };
+            return Ok(Val::float(af - q_floor * bf));
+        }
         let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b))
-            else { return Err(cold_type("% requires integer operands")); };
+            else { return Err(cold_type("% requires numeric operands")); };
         let (_, r) = ba.divmod(&bb).ok_or(VmErr::ZeroDiv)?;
         self.bigint_to_val(r)
     }
 
     fn exec_floordiv(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
+        if a.is_float() || b.is_float() {
+            let af = self.to_f64_coerce(a).map_err(|_| cold_type("// requires numeric operands"))?;
+            let bf = self.to_f64_coerce(b).map_err(|_| cold_type("// requires numeric operands"))?;
+            if bf == 0.0 { return Err(VmErr::ZeroDiv); }
+            let q = af / bf;
+            let t = q as i64 as f64;
+            let floored = t - if q < 0.0 && t != q { 1.0 } else { 0.0 };
+            return Ok(Val::float(floored));
+        }
         let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b))
-            else { return Err(cold_type("// requires integer operands")); };
+            else { return Err(cold_type("// requires numeric operands")); };
         let (q, _) = ba.divmod(&bb).ok_or(VmErr::ZeroDiv)?;
         self.bigint_to_val(q)
     }

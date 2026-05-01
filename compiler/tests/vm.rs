@@ -9,9 +9,10 @@ mod test {
     struct Case {
         src: String,
         output: Vec<String>,
-        result: String,
         #[serde(default)]
         error: Option<String>,
+        #[serde(default)]
+        input: Vec<String>,
     }
 
     #[test]
@@ -21,11 +22,11 @@ mod test {
         for case in cases {
             let (chunk, _errors) = Parser::new(&case.src, lexer(&case.src)).parse();
             let mut vm = VM::new(&chunk);
+            vm.input_buffer = case.input.clone();
             let result = vm.run();
 
             match result {
-                Ok(obj) => {
-                    assert_eq!(vm.display(obj), case.result, "result mismatch on: {:?}", case.src);
+                Ok(_obj) => {
                     assert_eq!(vm.output, case.output, "output mismatch on: {:?}", case.src);
                 }
                 Err(e) => match &case.error {

@@ -2,6 +2,7 @@
 
 use crate::s;
 use super::*;
+use super::super::types::IterFrame;
 
 impl<'a> VM<'a> {
     pub(crate) fn handle_function(
@@ -10,7 +11,7 @@ impl<'a> VM<'a> {
     ) -> Result<(), VmErr> {
         match op {
             OpCode::Call => self.exec_call(operand, chunk, slots),
-            OpCode::MakeFunction | OpCode::MakeCoroutine => self.exec_make_function(operand, chunk, slots),
+            OpCode::MakeFunction | OpCode::MakeCoroutine => self.exec_make_function(op, operand, chunk, slots),
             OpCode::CallLen => self.call_len(),
             OpCode::CallAbs => self.call_abs(),
             OpCode::CallStr => self.call_str(),
@@ -59,12 +60,16 @@ impl<'a> VM<'a> {
         super::methods::dispatch_method(self, id, recv, pos, kw)
     }
 
-    fn exec_make_function(&mut self, operand: u16, chunk: &SSAChunk, slots: &[Option<Val>]) -> Result<(), VmErr> {
+    fn exec_make_function(&mut self, opcode: OpCode, operand: u16, chunk: &SSAChunk, slots: &[Option<Val>]) -> Result<(), VmErr> {
         let global = self.fn_index
             .get(&(chunk as *const _))
             .and_then(|v| v.get(operand as usize).copied())
             .ok_or(cold_runtime("MakeFunction: unknown function index"))? as usize;
 
+        if opcode == OpCode::MakeCoroutine {
+            if self.is_async.len() <= global { self.is_async.resize(global + 1, false); }
+            self.is_async[global] = true;
+        }
         let n_defaults = self.functions[global].2 as usize;
         let defaults = if n_defaults > 0 { self.pop_n(n_defaults)? } else { vec![] };
 
@@ -74,11 +79,17 @@ impl<'a> VM<'a> {
         let (params, body, _, _) = self.functions[global];
         let param_names: alloc::collections::BTreeSet<String> = params.iter().map(|p| s!(str p.trim_start_matches('*'), "_0")).collect();
         let mut captures: Vec<(usize, Val)> = Vec::new();
+        let mut seen_canonical = alloc::collections::BTreeSet::new();
         for (bi, bname) in body.names.iter().enumerate() {
             if param_names.contains(bname.as_str()) { continue; }
+            // Use canonical slot from alias_groups (coalesced target).
+            let canon = body.alias_groups.get(bi)
+                .and_then(|g| g.first().copied())
+                .unwrap_or(bi as u16) as usize;
+            if !seen_canonical.insert(canon) { continue; }
             if let Some(&si) = chunk_map.get(bname.as_str())
                 && let Some(Some(v)) = slots.get(si) {
-                    captures.push((bi, *v));
+                    captures.push((canon, *v));
                 }
         }
 
@@ -87,7 +98,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    fn exec_call(&mut self, operand: u16, chunk: &SSAChunk, slots: &mut [Option<Val>]) -> Result<(), VmErr> {
+    pub(crate) fn exec_call(&mut self, operand: u16, chunk: &SSAChunk, slots: &mut [Option<Val>]) -> Result<(), VmErr> {
         let raw = operand as usize;
 
         let base_pos = (raw & 0xFF)        as i32;
@@ -123,8 +134,76 @@ impl<'a> VM<'a> {
             return self.dispatch_native(id, positional, kw_flat);
         }
 
-        let (fi, captured_defaults, captured_env) = match self.heap.get(callee) {
-            HeapObj::Func(i, d, c) => (*i, d.clone(), c.clone()),
+        // Call a class: create instance and run __init__
+        if let HeapObj::Class(_, methods) = self.heap.get(callee) {
+            let methods = methods.clone();
+            let instance = self.heap.alloc(HeapObj::Instance(callee, Rc::new(RefCell::new(DictMap::new()))))?;
+            // Find and call __init__ if it exists
+            if let Some((_, init_fn)) = methods.iter().find(|(n, _)| n == "__init__") {
+                let init_fn = *init_fn;
+                self.push(init_fn);
+                // Push self + positional args
+                let mut args = vec![instance];
+                args.extend_from_slice(&positional);
+                for a in &args { self.push(*a); }
+                let argc = args.len() as u16;
+                let encoded = ((0u16) << 8) | argc;
+                self.exec_call(encoded, chunk, slots)?;
+                self.pop()?; // discard __init__ return
+            }
+            self.push(instance);
+            return Ok(());
+        }
+
+        // Call a bound user method: prepend self to args
+        if let HeapObj::BoundUserMethod(recv, func) = self.heap.get(callee) {
+            let (recv, func) = (*recv, *func);
+            self.push(func);
+            self.push(recv);
+            for a in &positional { self.push(*a); }
+            let argc = (positional.len() + 1) as u16;
+            let encoded = ((num_kw as u16) << 8) | argc;
+            return self.exec_call(encoded, chunk, slots);
+        }
+
+        // Resume suspended coroutine
+        if let HeapObj::Coroutine(ip, saved_slots, saved_stack, fi, saved_iters) = self.heap.get(callee) {
+            let (ip, fi) = (*ip, *fi);
+            let mut fn_slots = saved_slots.clone();
+            let saved_stack_len = self.stack.len();
+            self.stack.extend_from_slice(&saved_stack.clone());
+            let saved_iter_len = self.iter_stack.len();
+            self.iter_stack.extend(saved_iters.clone());
+            let saved_yielded = self.yielded;
+            self.yielded = false;
+            self.depth += 1;
+            let (_, body, _, _) = self.functions[fi];
+            let result = self.exec_from(body, &mut fn_slots, ip);
+            self.depth -= 1;
+            let result = result?;
+            if self.yielded {
+                self.yielded = false;
+                let resume_ip = self.resume_ip;
+                let remaining = self.stack.split_off(saved_stack_len);
+                let coro_iters: Vec<IterFrame> = self.iter_stack.drain(saved_iter_len..).collect();
+                if let HeapObj::Coroutine(sip, ss, sst, _, si) = self.heap.get_mut(callee) {
+                    *sip = resume_ip;
+                    *ss = fn_slots;
+                    *sst = remaining;
+                    *si = coro_iters;
+                }
+                self.push(result);
+            } else {
+                self.stack.truncate(saved_stack_len);
+                self.iter_stack.truncate(saved_iter_len);
+                self.yielded = saved_yielded;
+                self.push(result);
+            }
+            return Ok(());
+        }
+
+        let fi = match self.heap.get(callee) {
+            HeapObj::Func(i, _, _) => *i,
             _ => return Err(cold_type("object is not callable")),
         };
 
@@ -138,94 +217,91 @@ impl<'a> VM<'a> {
         self.depth += 1;
         let (params, body, _defaults, name_idx) = self.functions[fi];
         let name_idx = *name_idx;
-        let mut fn_slots = self.fill_builtins(&body.names);
-        
-        let mut body_map: HashMap<&str, usize> =
-            HashMap::with_capacity_and_hasher(body.names.len(), Default::default());
-        for (i, n) in body.names.iter().enumerate() { body_map.insert(n.as_str(), i); }
 
+        // Opt 1: Clone pre-computed template instead of fill_builtins
+        let mut fn_slots = self.slot_templates[fi].clone();
+
+        // Opt 3 (param binding): use pre-computed param_slots
+        let pslots = &self.param_slots[fi];
         let mut pos_idx = 0usize;
-        for param in params.iter() {
-            if let Some(star_name) = param.strip_prefix("**") {
-                let _ = star_name;
-            } else if let Some(var_name) = param.strip_prefix('*') {
-                let rest: Vec<Val> = positional[pos_idx..].to_vec();
-                pos_idx = positional.len();
-                let list_val = self.heap.alloc(
-                    HeapObj::List(Rc::new(RefCell::new(rest)))
-                )?;
-                let pname = s!(str var_name, "_0");
-                if let Some(&s) = body_map.get(pname.as_str()) {
-                    fn_slots[s] = Some(list_val);
+        for &(kind, slot) in pslots {
+            match kind {
+                super::super::ParamKind::DoubleStar => {
+                    // Collect remaining kwargs into a dict
+                    let dm = DictMap::from_pairs(kw_flat.chunks_exact(2).map(|p| (p[0], p[1])).collect());
+                    let dict_val = self.heap.alloc(HeapObj::Dict(Rc::new(RefCell::new(dm))))?;
+                    if slot < fn_slots.len() { fn_slots[slot] = Some(dict_val); }
                 }
-            } else {
-                if pos_idx >= positional.len() { continue; }
-                let pname = s!(str param, "_0");
-                if let Some(&s) = body_map.get(pname.as_str()) {
-                    fn_slots[s] = Some(positional[pos_idx]);
+                super::super::ParamKind::Star => {
+                    let rest: Vec<Val> = positional[pos_idx..].to_vec();
+                    pos_idx = positional.len();
+                    let list_val = self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(rest))))?;
+                    if slot < fn_slots.len() { fn_slots[slot] = Some(list_val); }
                 }
-                pos_idx += 1;
-            }
-        }
-
-        for pair in kw_flat.chunks_exact(2) {
-            let name_val = pair[0];
-            let value = pair[1];
-            let key = match self.heap.get(name_val) {
-                HeapObj::Str(s) => s.clone(),
-                _ => return Err(cold_runtime("malformed kwarg on stack")),
-            };
-            if params.iter().any(|p| p.trim_start_matches('*') == key.as_str()) {
-                let pname = s!(str &key, "_0");
-                if let Some(&s) = body_map.get(pname.as_str()) {
-                    fn_slots[s] = Some(value);
+                super::super::ParamKind::Normal => {
+                    if pos_idx >= positional.len() { continue; }
+                    if slot < fn_slots.len() { fn_slots[slot] = Some(positional[pos_idx]); }
+                    pos_idx += 1;
                 }
             }
         }
 
-        if !captured_defaults.is_empty() {
-            let n_params = params.len();
-            let n_defaults = captured_defaults.len();
-            let offset = n_params.saturating_sub(n_defaults);
-            for (di, &dv) in captured_defaults.iter().enumerate() {
-                if let Some(param) = params.get(offset + di) {
-                    let pname = s!(str param.trim_start_matches('*'), "_0");
-                    if let Some(&s) = body_map.get(pname.as_str())
-                        && fn_slots[s].is_none()
-                    {
-                        fn_slots[s] = Some(dv);
+        // Kwargs (rare path, not optimized)
+        if !kw_flat.is_empty() {
+            let body_map = &self.body_maps[fi];
+            for pair in kw_flat.chunks_exact(2) {
+                let key = match self.heap.get(pair[0]) {
+                    HeapObj::Str(s) => s.clone(),
+                    _ => return Err(cold_runtime("malformed kwarg on stack")),
+                };
+                if params.iter().any(|p| p.trim_start_matches('*') == key.as_str()) {
+                    let pname = s!(str &key, "_0");
+                    if let Some(&s) = body_map.get(pname.as_str()) {
+                        fn_slots[s] = Some(pair[1]);
                     }
                 }
             }
         }
 
-        let nonlocal_body_slots: alloc::collections::BTreeSet<usize> = body.nonlocals.iter()
-            .flat_map(|base| {
-                body.names.iter().enumerate().filter_map(|(i, n)| {
-                    n.rfind('_').filter(|&p| n[p+1..].parse::<u32>().is_ok())
-                        .filter(|&p| &n[..p] == base.as_str())
-                        .map(|_| i)
-                })
-            })
-            .collect();
-
-        for (bi, val) in &captured_env {
-            if nonlocal_body_slots.contains(bi) { continue; }
-            if *bi < fn_slots.len() && fn_slots[*bi].is_none() {
-                fn_slots[*bi] = Some(*val);
+        // Opt 2: Borrow defaults from heap instead of cloning
+        if let HeapObj::Func(_, defaults, _) = self.heap.get(callee) {
+            if !defaults.is_empty() {
+                let ds = &self.default_slots[fi];
+                for (di, &dv) in defaults.iter().enumerate() {
+                    if let Some(&(slot, _)) = ds.get(di) {
+                        if slot < fn_slots.len() && fn_slots[slot].is_none() {
+                            fn_slots[slot] = Some(dv);
+                        }
+                    }
+                }
             }
         }
 
-        for (si, sv) in slots.iter().enumerate() {
-            if let Some(v) = sv
-                && let Some(name) = chunk.names.get(si)
-                && let Some(&bs) = body_map.get(name.as_str())
-                && fn_slots[bs].is_none()
-            {
-                fn_slots[bs] = Some(*v);
+        // Opt 2: Borrow captures from heap instead of cloning
+        if let HeapObj::Func(_, _, captures) = self.heap.get(callee) {
+            for &(bi, val) in captures {
+                if bi < fn_slots.len() && fn_slots[bi].is_none() {
+                    fn_slots[bi] = Some(val);
+                }
             }
         }
 
+        // Propagate caller slots: override captured values with current values
+        if self.needs_caller_slots[fi] {
+            let body_map = &self.body_maps[fi];
+            let pslot_set: alloc::collections::BTreeSet<usize> = self.param_slots[fi].iter().map(|&(_, s)| s).collect();
+            for (si, sv) in slots.iter().enumerate() {
+                if let Some(v) = sv
+                    && let Some(name) = chunk.names.get(si)
+                    && let Some(&bs) = body_map.get(name.as_str())
+                    && !pslot_set.contains(&bs)
+                {
+                    fn_slots[bs] = Some(*v);
+                }
+            }
+        }
+
+        // Self-reference for recursion
         if name_idx != u16::MAX
             && let Some(raw_name) = chunk.names.get(name_idx as usize)
         {
@@ -234,6 +310,7 @@ impl<'a> VM<'a> {
                 .map(|p| &raw_name[..p])
                 .unwrap_or(raw_name.as_str());
             let versioned = s!(str base, "_0");
+            let body_map = &self.body_maps[fi];
             if let Some(&slot) = body_map.get(versioned.as_str())
                 && fn_slots[slot].is_none()
             {
@@ -241,34 +318,51 @@ impl<'a> VM<'a> {
             }
         }
 
+        // If this function contains yield, create a suspended coroutine
+        let (_, body_check, _, _) = self.functions[fi];
+        let is_async_fn = self.is_async.get(fi).copied().unwrap_or(false);
+        if is_async_fn || body_check.instructions.iter().any(|i| i.opcode == OpCode::Yield) {
+            let coro = self.heap.alloc(HeapObj::Coroutine(0, fn_slots, Vec::new(), fi, Vec::new()))?;
+            self.push(coro);
+            self.depth -= 1;
+            return Ok(());
+        }
+
         let yields_before = self.yields.len();
+
+        // Opt 3: Store range instead of copying all slot values for GC
         let snap = self.live_slots.len();
-        self.live_slots.extend(slots.iter().flatten().copied());
+        for &v in slots.iter().flatten() { self.live_slots.push(v); }
+
         self.observed_impure.push(false);
-
         let exec_result = self.exec(body, &mut fn_slots);
-
         let callee_impure = self.observed_impure.pop().unwrap_or(true);
         self.live_slots.truncate(snap);
         self.depth -= 1;
 
-        for base in &body.nonlocals {
-            let best = body.names.iter().enumerate()
-                .filter_map(|(i, n)| {
-                    let p = n.rfind('_')?;
-                    (n[..p] == **base).then_some(())?;
-                    let ver: u32 = n[p+1..].parse().ok()?;
-                    Some((ver, fn_slots[i]?))
-                })
-                .max_by_key(|(ver, _)| *ver)
-                .map(|(_, val)| val);
-
-            if let Some(val) = best {
-                for (si, sname) in chunk.names.iter().enumerate() {
-                    if let Some(p) = sname.rfind('_')
-                        && &sname[..p] == base.as_str() && si < slots.len() {
-                            slots[si] = Some(val);
+        // Opt 4: Use pre-computed nonlocal table
+        let nl_table = &self.nonlocal_tables[fi];
+        if !nl_table.is_empty() {
+            for &(canon_body, _) in nl_table {
+                if let Some(Some(val)) = fn_slots.get(canon_body) {
+                    let val = *val;
+                    // Back-propagate to caller
+                    for base in &body.nonlocals {
+                        for (si, sname) in chunk.names.iter().enumerate() {
+                            if let Some(p) = sname.rfind('_')
+                                && &sname[..p] == base.as_str() && si < slots.len() {
+                                    slots[si] = Some(val);
+                            }
                         }
+                        // Update closure captures
+                        if let HeapObj::Func(_, _, caps) = self.heap.get_mut(callee) {
+                            if let Some(cap) = caps.iter_mut().find(|(ci, _)| *ci == canon_body) {
+                                cap.1 = val;
+                            } else {
+                                caps.push((canon_body, val));
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -289,6 +383,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
+
     pub(crate) fn dispatch_native(
         &mut self, id: super::super::types::NativeFnId,
         positional: Vec<Val>, kw: Vec<Val>,
@@ -302,10 +397,10 @@ impl<'a> VM<'a> {
 
         // Pre-validate fixed arity to keep the stack clean on error.
         let expected: Option<u16> = match id {
-            Input => Some(0),
+            Input | Receive => Some(0),
             Len | Abs | Str | Int | Float | Bool | Type | Chr | Ord
             | Sorted | Enumerate | List | Tuple | Bin | Oct | Hex
-            | Repr | Reversed | Callable | Id | Hash | Ascii => Some(1),
+            | Repr | Reversed | Callable | Id | Hash | Ascii | Next | Sleep => Some(1),
             Divmod | IsInstance | HasAttr => Some(2),
             _ => None,
         };
@@ -369,6 +464,10 @@ impl<'a> VM<'a> {
             Divmod => self.call_divmod(),
             IsInstance => self.call_isinstance(),
             HasAttr => self.call_hasattr(),
+            Next => self.call_next(),
+            Run => self.call_run(argc),
+            Sleep => self.call_sleep(),
+            Receive => self.call_receive(),
         }
     }
 }

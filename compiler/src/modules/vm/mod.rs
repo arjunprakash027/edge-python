@@ -26,6 +26,9 @@ pub(crate) struct ExceptionFrame {
     pub with_depth: usize,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum ParamKind { Normal, Star, DoubleStar }
+
 pub struct VM<'a> {
     pub(crate) stack: Vec<Val>,
     pub(crate) heap: HeapPool,
@@ -42,11 +45,22 @@ pub struct VM<'a> {
     pub(crate) exception_stack: Vec<ExceptionFrame>,
     pub(crate) functions: Vec<&'a (Vec<String>, SSAChunk, u16, u16)>,
     pub(crate) fn_index: HashMap<*const SSAChunk, Vec<u32>>,
+    pub(crate) body_maps: Vec<HashMap<alloc::string::String, usize>>,
+    pub(crate) param_slots: Vec<Vec<(ParamKind, usize)>>,
+    pub(crate) slot_templates: Vec<Vec<Option<Val>>>,
+    pub(crate) nonlocal_tables: Vec<Vec<(usize, usize)>>,
+    pub(crate) needs_caller_slots: Vec<bool>,
+    pub(crate) is_async: Vec<bool>,
+    pub(crate) default_slots: Vec<Vec<(usize, Val)>>,
     pub(crate) opcode_caches: HashMap<*const SSAChunk, OpcodeCache>,
     pub(crate) with_stack: Vec<Val>,
     pub(crate) pending_pos_delta: i32,
     pub(crate) pending_kw_delta: i32,
+    pub(crate) yielded: bool,
+    pub(crate) resume_ip: usize,
     pub output: Vec<String>,
+    pub input_buffer: Vec<String>,
+    pub event_queue: Vec<Val>,
 }
 
 impl<'a> VM<'a> {
@@ -64,6 +78,10 @@ impl<'a> VM<'a> {
             self.build_function_table(&desc.1);
         }
         self.fn_index.insert(chunk as *const _, indices);
+        // Also register functions inside class bodies
+        for class_body in chunk.classes.iter() {
+            self.build_function_table(class_body);
+        }
     }
 
     /// Materializa un iterable en `Vec<Val>` para spread posicional.
@@ -157,6 +175,7 @@ impl<'a> VM<'a> {
                 let items = self.str_to_char_vals(&s)?;
                 IterFrame::Seq { items, idx: 0 }
             },
+            HeapObj::Coroutine(..) => return Ok(IterFrame::Coroutine(obj)),
             _ => return Err(cold_type("object is not iterable")),
         })
     }
@@ -184,24 +203,10 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    fn exec_phi(op: u16, rip: usize, phi_map: &[usize], slots: &mut [Option<Val>], prev_slots: &[Option<u16>], phi_sources: &[(u16, u16)]) {
-        let target = op as usize;
+    fn exec_phi(op: u16, rip: usize, phi_map: &[usize], slots: &mut [Option<Val>], phi_sources: &[(u16, u16)]) {
         let (ia, ib) = phi_sources[phi_map[rip]];
         let val = slots[ia as usize].or(slots[ib as usize]).unwrap_or(Val::none());
-        slots[target] = Some(val);
-
-        let mut cur = target;
-        let mut guard = prev_slots.len();
-        while guard > 0 {
-            guard -= 1;
-            match prev_slots.get(cur).and_then(|p| *p) {
-                Some(prev) if (prev as usize) != cur => {
-                    slots[prev as usize] = Some(val);
-                    cur = prev as usize;
-                }
-                _ => break,
-            }
-        }
+        slots[op as usize] = Some(val);
     }
 
     pub fn with_limits(chunk: &'a SSAChunk, limits: Limits) -> Self {
@@ -220,14 +225,77 @@ impl<'a> VM<'a> {
             with_stack: Vec::new(),
             pending_pos_delta: 0,
             pending_kw_delta: 0,
+            yielded: false,
+            resume_ip: 0,
             output: Vec::new(),
+            input_buffer: Vec::new(),
+            event_queue: Vec::new(),
             observed_impure: Vec::new(),
             exception_stack: Vec::new(),
             functions: Vec::new(),
             fn_index: HashMap::default(),
+            body_maps: Vec::new(),
+            param_slots: Vec::new(),
+            slot_templates: Vec::new(),
+            nonlocal_tables: Vec::new(),
+            needs_caller_slots: Vec::new(),
+            is_async: Vec::new(),
+            default_slots: Vec::new(),
             opcode_caches: HashMap::default(),
         };
         vm.build_function_table(chunk);
+        vm.body_maps = vm.functions.iter().map(|(_, body, _, _)| {
+            body.names.iter().enumerate().map(|(i, n)| (n.clone(), i)).collect()
+        }).collect();
+        vm.param_slots = (0..vm.functions.len()).map(|fi| {
+            let (params, _, _, _) = vm.functions[fi];
+            let bm = &vm.body_maps[fi];
+            params.iter().map(|p| {
+                if p.starts_with("**") {
+                    let slot = bm.get(&alloc::format!("{}_0", &p[2..])).copied().unwrap_or(usize::MAX);
+                    (ParamKind::DoubleStar, slot)
+                } else if p.starts_with('*') {
+                    let slot = bm.get(&alloc::format!("{}_0", &p[1..])).copied().unwrap_or(usize::MAX);
+                    (ParamKind::Star, slot)
+                } else {
+                    let slot = bm.get(&alloc::format!("{}_0", p)).copied().unwrap_or(usize::MAX);
+                    (ParamKind::Normal, slot)
+                }
+            }).collect()
+        }).collect();
+
+        // Opt 4: Pre-compute nonlocal resolution: (canonical_body_slot, canonical_body_slot) pairs
+        vm.nonlocal_tables = vm.functions.iter().map(|(_, body, _, _)| {
+            body.nonlocals.iter().filter_map(|base| {
+                let canon = body.names.iter().enumerate()
+                    .find(|(_, n)| n.rfind('_').map(|p| &n[..p]) == Some(base.as_str()))
+                    .map(|(i, _)| body.alias_groups.get(i).and_then(|g| g.first().copied()).unwrap_or(i as u16) as usize)?;
+                Some((canon, canon))
+            }).collect()
+        }).collect();
+        // Opt 5: Pre-compute whether function needs caller slot propagation
+        vm.needs_caller_slots = (0..vm.functions.len()).map(|fi| {
+            let (params, body, _, _) = vm.functions[fi];
+            let param_names: alloc::collections::BTreeSet<&str> = params.iter()
+                .map(|p| p.trim_start_matches('*')).collect();
+            // Needs caller slots if body references names not in params/builtins/captures
+            body.names.iter().any(|n| {
+                let base = n.rfind('_').map(|p| &n[..p]).unwrap_or(n.as_str());
+                !param_names.contains(base) && !vm.globals.contains_key(n)
+            })
+        }).collect();
+        // Pre-compute default slot mappings
+        vm.default_slots = (0..vm.functions.len()).map(|fi| {
+            let (params, _, n_defaults, _) = vm.functions[fi];
+            let n_defaults = *n_defaults as usize;
+            if n_defaults == 0 { return Vec::new(); }
+            let pslots = &vm.param_slots[fi];
+            let n_params = params.len();
+            let offset = n_params.saturating_sub(n_defaults);
+            (0..n_defaults).filter_map(|di| {
+                pslots.get(offset + di).map(|&(_, slot)| (slot, Val::none()))
+            }).collect()
+        }).collect();
         for &name in BUILTIN_TYPES {
             if let Ok(type_obj) = vm.heap.alloc(HeapObj::Type(name.to_string())) {
                 vm.globals.insert(name.to_string(), type_obj);
@@ -245,7 +313,8 @@ impl<'a> VM<'a> {
             NativeFnId::All, NativeFnId::Any, NativeFnId::Bin, NativeFnId::Oct,
             NativeFnId::Hex, NativeFnId::Divmod, NativeFnId::Pow, NativeFnId::Repr,
             NativeFnId::Reversed, NativeFnId::Callable, NativeFnId::Id, NativeFnId::Hash,
-            NativeFnId::Format, NativeFnId::Ascii, NativeFnId::GetAttr, NativeFnId::HasAttr,
+            NativeFnId::Format, NativeFnId::Ascii, NativeFnId::GetAttr, NativeFnId::HasAttr, NativeFnId::Next,
+            NativeFnId::Run, NativeFnId::Sleep, NativeFnId::Receive,
         ];
         for &id in builtin_fns {
             if let Ok(v) = vm.heap.alloc(HeapObj::NativeFn(id)) {
@@ -253,6 +322,10 @@ impl<'a> VM<'a> {
                 vm.globals.insert(name.to_string(), v);
                 vm.globals.insert(s!(str name, "_0"), v);
             }
+        // Pre-compute fn_slots templates (after all globals are registered)
+        vm.slot_templates = vm.functions.iter().map(|(_, body, _, _)| {
+            vm.fill_builtins(&body.names)
+        }).collect();
         }
         vm
     }
@@ -327,18 +400,32 @@ impl<'a> VM<'a> {
         let result = match fast {
             FastOp::AddFloat if a.is_float() && b.is_float() => Val::float(a.as_float() + b.as_float()),
             FastOp::AddInt if a.is_int() && b.is_int() => {
-                let r = a.as_int() as i128 + b.as_int() as i128;
-                if r >= Val::INT_MIN as i128 && r <= Val::INT_MAX as i128 { Val::int(r as i64) } else { return Ok(false); }
+                match a.as_int().checked_add(b.as_int()).and_then(Val::int_checked) {
+                    Some(v) => v,
+                    None => return Ok(false),
+                }
             }
             FastOp::SubInt if a.is_int() && b.is_int() => {
-                let r = a.as_int() as i128 - b.as_int() as i128;
-                if r >= Val::INT_MIN as i128 && r <= Val::INT_MAX as i128 { Val::int(r as i64) } else { return Ok(false); }
+                match a.as_int().checked_sub(b.as_int()).and_then(Val::int_checked) {
+                    Some(v) => v,
+                    None => return Ok(false),
+                }
             }
             FastOp::MulInt if a.is_int() && b.is_int() => {
                 let r = a.as_int() as i128 * b.as_int() as i128;
                 if r >= Val::INT_MIN as i128 && r <= Val::INT_MAX as i128 { Val::int(r as i64) } else { return Ok(false); }
             }
             FastOp::MulFloat if a.is_float() && b.is_float() => Val::float(a.as_float() * b.as_float()),
+            FastOp::ModInt if a.is_int() && b.is_int() => {
+                let bv = b.as_int();
+                if bv == 0 { return Ok(false); }
+                Val::int(((a.as_int() % bv) + bv) % bv)
+            }
+            FastOp::FloorDivInt if a.is_int() && b.is_int() => {
+                let bv = b.as_int();
+                if bv == 0 { return Ok(false); }
+                Val::int(a.as_int().div_euclid(bv))
+            }
 
             FastOp::LtInt if a.is_int() && b.is_int() => Val::bool(a.as_int() < b.as_int()),
             FastOp::LtFloat if a.is_float() && b.is_float() => Val::bool(a.as_float() < b.as_float()),
@@ -375,6 +462,7 @@ impl<'a> VM<'a> {
     /// already collapsed to CallMethod+CallMethodArgs). IC is checked inline
     /// for hot arith/compare opcodes.
     pub(crate) fn exec(&mut self, chunk: &SSAChunk, slots: &mut [Option<Val>]) -> Result<Val, VmErr> {
+
         let slots_base = self.live_slots.len();
         let exc_base   = self.exception_stack.len();
         let key        = chunk as *const _;
@@ -385,8 +473,8 @@ impl<'a> VM<'a> {
 
         let result: Result<Val, VmErr> = (|| {
             let n          = cache.fused_ref().len();
-            let mut ip     = 0usize;
-            let prev_slots = chunk.prev_slots.as_slice();
+            let mut ip     = self.resume_ip;
+            self.resume_ip = 0;
 
             loop {
                 if ip >= n {
@@ -394,8 +482,17 @@ impl<'a> VM<'a> {
                     return Ok(Val::none());
                 }
 
-                match self.dispatch(chunk, slots, &mut cache, &mut ip, n, prev_slots) {
-                    Ok(None) => {}
+                match self.dispatch(chunk, slots, &mut cache, &mut ip, n) {
+                    Ok(None) => {
+                        if self.yielded {
+                            let val = self.pop().unwrap_or(Val::none());
+                            // Skip the PopTop after Yield on resume
+                            self.resume_ip = if ip < n && matches!(cache.fused_ref().get(ip), Some(ins) if ins.opcode == OpCode::PopTop) { ip + 1 } else { ip };
+                            self.live_slots.truncate(slots_base);
+                            self.exception_stack.truncate(exc_base);
+                            return Ok(val);
+                        }
+                    }
                     Ok(Some(v)) => {
                         self.live_slots.truncate(slots_base);
                         self.exception_stack.truncate(exc_base);
@@ -420,7 +517,11 @@ impl<'a> VM<'a> {
                                 VmErr::Runtime(_) => "RuntimeError",
                                 VmErr::Raised(_)  => "Exception",
                             };
-                            let exc = self.heap.alloc(HeapObj::Str(msg.to_string()))?;
+                            let exc = if let Some(&type_val) = self.globals.get(msg) {
+                                type_val
+                            } else {
+                                self.heap.alloc(HeapObj::Str(msg.to_string()))?
+                            };
                             self.push(exc);
                             ip = frame.handler_ip;
                         } else {
@@ -435,9 +536,14 @@ impl<'a> VM<'a> {
         result
     }
 
+    pub(crate) fn exec_from(&mut self, chunk: &SSAChunk, slots: &mut [Option<Val>], start_ip: usize) -> Result<Val, VmErr> {
+        self.resume_ip = start_ip;
+        self.exec(chunk, slots)
+    }
+
     /// CallMethod: resolves the bound method on the receiver and calls it
     /// directly, no BoundMethod heap alloc. Reads args from CallMethodArgs.
-    fn exec_call_method(&mut self, attr_idx: u16, call_op: u16, chunk: &SSAChunk) -> Result<(), VmErr> {
+    fn exec_call_method(&mut self, attr_idx: u16, call_op: u16, chunk: &SSAChunk, slots: &mut [Option<Val>]) -> Result<(), VmErr> {
         let raw = call_op as usize;
         let num_kw  = (raw >> 8) & 0xFF;
         let num_pos = raw & 0xFF;
@@ -456,6 +562,26 @@ impl<'a> VM<'a> {
         let name = chunk.names.get(attr_idx as usize)
             .ok_or(VmErr::Runtime("CallMethod: bad name index"))?;
 
+        // Check for user-defined method on Instance
+        if obj.is_heap() {
+            if let HeapObj::Instance(cls_val, _) = self.heap.get(obj) {
+                let cls_val = *cls_val;
+                if cls_val.is_heap() {
+                    if let HeapObj::Class(_, methods) = self.heap.get(cls_val) {
+                        if let Some((_, mv)) = methods.iter().find(|(n, _)| n == name.as_str()) {
+                            let mv = *mv;
+                            // Call the method with self prepended
+                            self.push(mv);
+                            self.push(obj);
+                            for a in &positional { self.push(*a); }
+                            let argc = (positional.len() + 1) as u16;
+                            let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
+                            return self.exec_call(encoded, chunk, slots);
+                        }
+                    }
+                }
+            }
+        }
         let method_id = handlers::methods::lookup_method(ty, name.as_str())
             .ok_or(VmErr::Type("'object' has no attribute"))?;
 
@@ -466,7 +592,6 @@ impl<'a> VM<'a> {
     fn dispatch(
         &mut self, chunk: &SSAChunk, slots: &mut [Option<Val>],
         cache: &mut OpcodeCache, ip: &mut usize, n: usize,
-        prev_slots: &[Option<u16>],
     ) -> Result<Option<Val>, VmErr> {
         let ins = cache.fused_ref()[*ip];
         let rip = *ip;
@@ -491,8 +616,7 @@ impl<'a> VM<'a> {
                 self.push(slots[op as usize].ok_or_else(|| VmErr::Name(chunk.names[op as usize].clone()))?);
             }
             OpCode::StoreName => {
-                self.handle_store(op, slots, prev_slots)?;
-                if self.heap.needs_gc() { self.collect(slots); }
+                self.handle_store(op, slots)?;
             }
             OpCode::LoadConst => {
                 let v = chunk.constants.get(op as usize)
@@ -509,7 +633,14 @@ impl<'a> VM<'a> {
                 }
                 self.handle_arith(ins.opcode, rip, cache)?;
             }
-            OpCode::Div | OpCode::Mod | OpCode::Pow | OpCode::FloorDiv | OpCode::Minus => {
+            OpCode::Mod | OpCode::FloorDiv => {
+                if let Some(fast) = cache.get_fast(rip) {
+                    if self.exec_fast(fast)? { return Ok(None); }
+                    cache.invalidate(rip);
+                }
+                self.handle_arith(ins.opcode, rip, cache)?;
+            }
+            OpCode::Div | OpCode::Pow | OpCode::Minus => {
                 self.handle_arith(ins.opcode, rip, cache)?;
             }
 
@@ -534,6 +665,20 @@ impl<'a> VM<'a> {
                 if self.budget == 0 { return Err(cold_budget()); }
                 self.budget -= 1;
                 if self.heap.needs_gc() { self.collect(slots); }
+                // Handle coroutine iteration specially
+                if let Some(IterFrame::Coroutine(coro_val)) = self.iter_stack.last() {
+                    let cv = *coro_val;
+                    self.push(cv);
+                    self.exec_call(0, chunk, slots)?;
+                    let result = self.pop().unwrap_or(Val::none());
+                    if result.is_none() {
+                        self.iter_stack.pop();
+                        *ip = op as usize;
+                    } else {
+                        self.push(result);
+                    }
+                    return Ok(None);
+                }
                 match self.iter_stack.last_mut().and_then(|f| f.next_item()) {
                     Some(item) => self.push(item),
                     None => {
@@ -576,17 +721,17 @@ impl<'a> VM<'a> {
             OpCode::Not => self.handle_logic(OpCode::Not)?,
 
             OpCode::Phi => {
-                Self::exec_phi(op, rip, &chunk.phi_map, slots, prev_slots, &chunk.phi_sources);
+                Self::exec_phi(op, rip, &chunk.phi_map, slots, &chunk.phi_sources);
             }
 
-            OpCode::LoadAttr => self.handle_load_attr(op, chunk)?,
+            OpCode::LoadAttr => { eprintln!("DISPATCH LoadAttr op={}", op); self.handle_load_attr(op, chunk)?; }
 
             // ── FUSED METHOD CALL ─────────────────────────────────────
             OpCode::CallMethod => {
                 // The next instruction is CallMethodArgs carrying the call op.
                 let call_op = cache.fused_ref()[*ip].operand;
                 *ip += 1; // consume CallMethodArgs
-                self.exec_call_method(op, call_op, chunk)?;
+                self.exec_call_method(op, call_op, chunk, slots)?;
             }
             OpCode::CallMethodArgs => {
                 // Should never be reached on its own — always consumed by CallMethod.
@@ -596,6 +741,45 @@ impl<'a> VM<'a> {
             // ── COLD OPCODES ──────────────────────────────────────────
             OpCode::And | OpCode::Or => {
                 return Err(cold_runtime("And/Or reached VM dispatch (should be short-circuited)"));
+            }
+
+            OpCode::MakeClass => {
+                let ci = op as usize;
+                let body = &chunk.classes[ci];
+                let mut class_slots = self.fill_builtins(&body.names);
+                self.exec(body, &mut class_slots)?;
+                let mut methods: Vec<(alloc::string::String, Val)> = Vec::new();
+                for (i, name) in body.names.iter().enumerate() {
+                    if let Some(Some(v)) = class_slots.get(i) {
+                        if v.is_heap() && matches!(self.heap.get(*v), HeapObj::Func(..)) {
+                            let base = name.rfind('_').map(|p| &name[..p]).unwrap_or(name);
+                            if !methods.iter().any(|(n, _)| n == base) {
+                                methods.push((base.to_string(), *v));
+                            }
+                        }
+                    }
+                }
+                let next_op = cache.fused_ref().get(*ip).map(|i| i.operand).unwrap_or(0);
+                let name_str = chunk.names.get(next_op as usize)
+                    .map(|n| n.rfind('_').map(|p| &n[..p]).unwrap_or(n))
+                    .unwrap_or("?").to_string();
+                let cls = self.heap.alloc(HeapObj::Class(name_str, methods))?;
+                self.push(cls);
+            }
+            OpCode::StoreAttr => {
+                eprintln!("STORE_ATTR: op={} name={:?}", op, chunk.names.get(op as usize));
+                let value = self.pop()?;
+                let obj = self.pop()?;
+                if !obj.is_heap() { return Err(cold_type("cannot set attribute")); }
+                let name = chunk.names.get(op as usize)
+                    .ok_or(cold_runtime("StoreAttr: bad name index"))?.clone();
+                let key = self.heap.alloc(HeapObj::Str(name))?;
+                match self.heap.get_mut(obj) {
+                    HeapObj::Instance(_, attrs) => {
+                        attrs.borrow_mut().insert(key, value);
+                    }
+                    _ => return Err(cold_type("cannot set attribute on this type")),
+                }
             }
 
             other => self.dispatch_generic(other, op, slots)?,
@@ -680,7 +864,7 @@ impl<'a> VM<'a> {
             }
             OpCode::PopExcept => { self.exception_stack.pop(); }
             OpCode::MakeClass | OpCode::StoreAttr => {
-                return Err(VmErr::Runtime("objects not yet supported"));
+                return Err(cold_runtime("MakeClass/StoreAttr must be in main dispatch"));
             }
             _ => return Err(cold_runtime("unexpected opcode in generic dispatch")),
         }
