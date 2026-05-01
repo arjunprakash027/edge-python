@@ -55,7 +55,7 @@ impl<'a> VM<'a> {
             let bf = self.to_f64_coerce(b).map_err(|_| cold_type("% requires numeric operands"))?;
             if bf == 0.0 { return Err(VmErr::ZeroDiv); }
             // Use floor division semantics: result has the same sign as the divisor.
-            let r = af - (af / bf).floor() * bf;
+            let r = af - ffloor(af / bf) * bf;
             return Ok(Val::float(r));
         }
         let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b))
@@ -70,7 +70,7 @@ impl<'a> VM<'a> {
             let bf = self.to_f64_coerce(b).map_err(|_| cold_type("// requires numeric operands"))?;
             if bf == 0.0 { return Err(VmErr::ZeroDiv); }
             // floor() is correct for all magnitudes, including large floats where as-i64 would overflow.
-            return Ok(Val::float((af / bf).floor()));
+            return Ok(Val::float(ffloor(af / bf)));
         }
         let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b))
             else { return Err(cold_type("// requires numeric operands")); };

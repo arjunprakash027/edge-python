@@ -7,7 +7,7 @@ pub(crate) mod methods;
 
 pub(super) use crate::modules::vm::{
     VM, Val, VmErr, HeapObj, DictMap, cache, ops,
-    types::{BigInt, cold_depth, cold_type, cold_value, cold_runtime, eq_vals_with_heap, fpowi, fpowf}
+    types::{BigInt, cold_depth, cold_type, cold_value, cold_runtime, eq_vals_with_heap, fpowi, fpowf, ffloor}
 };
 
 pub(super) use crate::modules::parser::{OpCode, SSAChunk};

@@ -934,3 +934,9 @@ pub fn fpowf(base: f64, exp: f64) -> f64 {
 pub fn p_store_ssa(slots: &mut [Option<Val>], slot: usize, v: Val) {
     slots[slot] = Some(v);
 }
+
+#[inline]
+pub fn ffloor(x: f64) -> f64 {
+    let i = x as i64 as f64;
+    if x < i { i - 1.0 } else { i }
+}
