@@ -9,7 +9,7 @@ class SimplePerceptron:
         self.bias: float = 0.0
         self.seed = seed
         
-    def train(self, labeled_data: dict[tuple[float | int, ...], int], epochs: int = 30, learning_rate: float = 0.001) -> None:
+    def train(self, labeled_data: dict[tuple[float | int, ...], int], epochs: int = 30, learning_rate: float = 0.1) -> None:
         input_dim = len(list(labeled_data.keys())[0])
         self.weights = [self._lcg() for _ in range(input_dim)]
         self.bias = self._lcg()
@@ -28,12 +28,12 @@ class SimplePerceptron:
                     for i in range(len(self.weights)): self.weights[i] += update * inputs[i]
                     self.bias += update
                     
+            print(f"For epoch {e}, the accuracy for actual model is {(len(labeled_data) - error_count) / len(labeled_data) * 100} percent.")
+
             if error_count == 0: # Simple early stopping mechanism to use less resources.
                 print(f"The model stopped converging at epoch {e}.")
                 return
-                    
-            print(f"For epoch {e}, the accuracy for actual model is {(len(labeled_data) - error_count) / len(labeled_data) * 100} percent.")
-                
+
     def inference(self, values: tuple[float | int, ...]) -> int:
         return self._binary_step(self._net_input(values))
         
