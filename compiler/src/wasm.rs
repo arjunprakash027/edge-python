@@ -1,7 +1,3 @@
-#![cfg_attr(target_arch = "wasm32", no_std)] // Enables no_std only for WASM builds.
-
-extern crate alloc; // Enables heap allocation without the standard library.
-
 #[cfg(target_arch = "wasm32")]
 mod runtime {
     use lol_alloc::LeakingPageAllocator;
