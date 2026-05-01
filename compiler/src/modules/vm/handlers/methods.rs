@@ -88,14 +88,13 @@ impl<'a> VM<'a> {
                     return Ok(());
                 }
                 if cls_val.is_heap()
-                    && let HeapObj::Class(_, methods) = self.heap.get(cls_val) {
-                        if let Some((_, mv)) = methods.iter().find(|(n, _)| n == name) {
-                            let mv = *mv;
+                    && let HeapObj::Class(_, methods) = self.heap.get(cls_val)
+                    && let Some((_, mv)) = methods.iter().find(|(n, _)| n == name) {
+                        let mv = *mv;
                             let bound = self.heap.alloc(HeapObj::BoundUserMethod(obj, mv))?;
                             self.push(bound);
                             return Ok(());
                         }
-                    }
                 return Err(VmErr::Type("attribute not found"));
             }
 

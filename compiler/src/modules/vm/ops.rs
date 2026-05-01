@@ -99,8 +99,7 @@ impl<'a> VM<'a> {
             HeapObj::BoundMethod(..) => "builtin_function_or_method",
             HeapObj::NativeFn(_) => "builtin_function_or_method",
             HeapObj::Class(_name, _) => "type",
-
-            HeapObj::BoundUserMethod(_, _) => "<bound method>".into(),
+            HeapObj::BoundUserMethod(_, _) => "<bound method>",
             HeapObj::Instance(..) => "object",
             HeapObj::Coroutine(..) => "coroutine",
         }}

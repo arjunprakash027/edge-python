@@ -1072,7 +1072,7 @@ impl<'a> VM<'a> {
                 if was_yielded {
                     // Check if it yielded a sleep request (negative int = sleep cycles)
                     let new_sleep = if result.is_int() && result.as_int() < 0 {
-                        (-result.as_int()) as i64
+                        -result.as_int()
                     } else { 0 };
                     next_queue.push((coro, new_sleep));
                 } else if result.is_none() {

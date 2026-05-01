@@ -147,7 +147,7 @@ impl<'a> VM<'a> {
                 args.extend_from_slice(&positional);
                 for a in &args { self.push(*a); }
                 let argc = args.len() as u16;
-                let encoded = ((0u16) << 8) | argc;
+                let encoded = argc;
                 self.exec_call(encoded, chunk, slots)?;
                 self.pop()?; // discard __init__ return
             }

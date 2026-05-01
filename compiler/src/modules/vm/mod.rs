@@ -251,11 +251,11 @@ impl<'a> VM<'a> {
             let (params, _, _, _) = vm.functions[fi];
             let bm = &vm.body_maps[fi];
             params.iter().map(|p| {
-                if p.starts_with("**") {
-                    let slot = bm.get(&alloc::format!("{}_0", &p[2..])).copied().unwrap_or(usize::MAX);
+                if let Some(stripped) = p.strip_prefix("**") {
+                    let slot = bm.get(&alloc::format!("{}_0", stripped)).copied().unwrap_or(usize::MAX);
                     (ParamKind::DoubleStar, slot)
-                } else if p.starts_with('*') {
-                    let slot = bm.get(&alloc::format!("{}_0", &p[1..])).copied().unwrap_or(usize::MAX);
+                } else if let Some(stripped) = p.strip_prefix('*') {
+                    let slot = bm.get(&alloc::format!("{}_0", stripped)).copied().unwrap_or(usize::MAX);
                     (ParamKind::Star, slot)
                 } else {
                     let slot = bm.get(&alloc::format!("{}_0", p)).copied().unwrap_or(usize::MAX);
@@ -566,10 +566,10 @@ impl<'a> VM<'a> {
         if obj.is_heap()
             && let HeapObj::Instance(cls_val, _) = self.heap.get(obj) {
                 let cls_val = *cls_val;
-                if cls_val.is_heap() {
-                    if let HeapObj::Class(_, methods) = self.heap.get(cls_val)
-                        && let Some((_, mv)) = methods.iter().find(|(n, _)| n == name.as_str()) {
-                            let mv = *mv;
+                if cls_val.is_heap()
+                    && let HeapObj::Class(_, methods) = self.heap.get(cls_val)
+                    && let Some((_, mv)) = methods.iter().find(|(n, _)| n == name.as_str()) {
+                        let mv = *mv;
                             // Call the method with self prepended
                             self.push(mv);
                             self.push(obj);
@@ -578,7 +578,6 @@ impl<'a> VM<'a> {
                             let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
                             return self.exec_call(encoded, chunk, slots);
                         }
-                }
             }
         let method_id = handlers::methods::lookup_method(ty, name.as_str())
             .ok_or(VmErr::Type("'object' has no attribute"))?;
