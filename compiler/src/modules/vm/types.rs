@@ -825,12 +825,12 @@ impl VmErr {
     pub fn render(&self) -> alloc::string::String {
         use crate::s;
         match self {
-            Self::Name(n)    => s!("NameError: name '", str n, "' is not defined"),
-            Self::Raised(m)  => s!("Exception: ", str m),
-            Self::Type(m)    => s!("TypeError: ", str m),
-            Self::Value(m)   => s!("ValueError: ", str m),
+            Self::Name(n) => s!("NameError: name '", str n, "' is not defined"),
+            Self::Raised(m) => s!("Exception: ", str m),
+            Self::Type(m) => s!("TypeError: ", str m),
+            Self::Value(m) => s!("ValueError: ", str m),
             Self::Runtime(m) => s!("RuntimeError: ", str m),
-            other            => alloc::string::String::from(other.as_str()),
+            other => alloc::string::String::from(other.as_str()),
         }
     }
 }
@@ -854,7 +854,7 @@ pub enum IterFrame {
 impl IterFrame {
     pub fn next_item(&mut self) -> Option<Val> {
         match self {
-            Self::Coroutine(_) => None, // handled in ForIter dispatch
+            Self::Coroutine(_) => None,
             Self::Seq { items, idx } => {
                 if *idx < items.len() { let v = items[*idx]; *idx += 1; Some(v) } else { None }
             }
