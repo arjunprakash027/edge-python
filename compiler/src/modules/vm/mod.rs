@@ -721,7 +721,7 @@ impl<'a> VM<'a> {
                 Self::exec_phi(op, rip, &chunk.phi_map, slots, &chunk.phi_sources);
             }
 
-            OpCode::LoadAttr => { eprintln!("DISPATCH LoadAttr op={}", op); self.handle_load_attr(op, chunk)?; }
+            OpCode::LoadAttr => { self.handle_load_attr(op, chunk)?; }
 
             // ── FUSED METHOD CALL ─────────────────────────────────────
             OpCode::CallMethod => {
@@ -763,7 +763,6 @@ impl<'a> VM<'a> {
                 self.push(cls);
             }
             OpCode::StoreAttr => {
-                eprintln!("STORE_ATTR: op={} name={:?}", op, chunk.names.get(op as usize));
                 let value = self.pop()?;
                 let obj = self.pop()?;
                 if !obj.is_heap() { return Err(cold_type("cannot set attribute")); }
