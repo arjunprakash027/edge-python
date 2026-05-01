@@ -458,10 +458,10 @@ pub enum HeapObj {
     BigInt(BigInt),
     BoundMethod(Val, BuiltinMethodId),
     NativeFn(NativeFnId),
-    Class(String, Vec<(String, Val)>), // (name, methods as (name, Func val) pairs)
+    Class(String, Vec<(String, Val)>),
     Instance(Val, Rc<RefCell<DictMap>>),
-    BoundUserMethod(Val, Val), // (self_instance, func_val) // (class_val, attributes)
-    Coroutine(usize, Vec<Option<Val>>, Vec<Val>, usize, Vec<IterFrame>), // (ip, slots, stack, func_idx, iter_frames)
+    BoundUserMethod(Val, Val),
+    Coroutine(usize, Vec<Option<Val>>, Vec<Val>, usize, Vec<IterFrame>),
 }
 
 pub use crate::modules::vm::handlers::methods::BuiltinMethodId;
@@ -469,39 +469,37 @@ pub use crate::modules::vm::handlers::methods::BuiltinMethodId;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum NativeFnId {
-    // Existentes
     Print, Len, Abs, Str, Int, Float, Bool, Type, Chr, Ord,
     Range, Round, Min, Max, Sum, Sorted, Enumerate, Zip,
-    List, Tuple, Dict, Set, IsInstance, Input,
-    All, Any, Bin, Oct, Hex, Divmod, Pow, Repr, Reversed,
-    Callable, Id, Hash,
-    // Nuevos
-    Format, Ascii, GetAttr, HasAttr, Next, Run, Sleep, Receive,
+    List, Tuple, Dict, Set, IsInstance, Input, All, Any, 
+    Bin, Oct, Hex, Divmod, Pow, Repr, Reversed, Callable, Id, 
+    Hash, Format, Ascii, GetAttr, HasAttr, Next, Run, Sleep, 
+    Receive,
 }
 
 impl NativeFnId {
     pub fn name(self) -> &'static str {
         match self {
-            Self::Print => "print",        Self::Len => "len",
-            Self::Abs => "abs",            Self::Str => "str",
-            Self::Int => "int",            Self::Float => "float",
-            Self::Bool => "bool",          Self::Type => "type",
-            Self::Chr => "chr",            Self::Ord => "ord",
-            Self::Range => "range",        Self::Round => "round",
-            Self::Min => "min",            Self::Max => "max",
-            Self::Sum => "sum",            Self::Sorted => "sorted",
+            Self::Print => "print", Self::Len => "len",
+            Self::Abs => "abs", Self::Str => "str",
+            Self::Int => "int", Self::Float => "float",
+            Self::Bool => "bool", Self::Type => "type",
+            Self::Chr => "chr", Self::Ord => "ord",
+            Self::Range => "range", Self::Round => "round",
+            Self::Min => "min", Self::Max => "max",
+            Self::Sum => "sum", Self::Sorted => "sorted",
             Self::Enumerate => "enumerate", Self::Zip => "zip",
-            Self::List => "list",          Self::Tuple => "tuple",
-            Self::Dict => "dict",          Self::Set => "set",
+            Self::List => "list", Self::Tuple => "tuple",
+            Self::Dict => "dict", Self::Set => "set",
             Self::IsInstance => "isinstance", Self::Input => "input",
-            Self::All => "all",            Self::Any => "any",
-            Self::Bin => "bin",            Self::Oct => "oct",
-            Self::Hex => "hex",            Self::Divmod => "divmod",
-            Self::Pow => "pow",            Self::Repr => "repr",
-            Self::Reversed => "reversed",  Self::Callable => "callable",
-            Self::Id => "id",              Self::Hash => "hash",
-            Self::Format => "format",      Self::Ascii => "ascii",
-            Self::GetAttr => "getattr",    Self::HasAttr => "hasattr",
+            Self::All => "all", Self::Any => "any",
+            Self::Bin => "bin", Self::Oct => "oct",
+            Self::Hex => "hex", Self::Divmod => "divmod",
+            Self::Pow => "pow", Self::Repr => "repr",
+            Self::Reversed => "reversed", Self::Callable => "callable",
+            Self::Id => "id", Self::Hash => "hash",
+            Self::Format => "format", Self::Ascii => "ascii",
+            Self::GetAttr => "getattr", Self::HasAttr => "hasattr",
             Self::Next => "next",
             Self::Run => "run", Self::Sleep => "sleep", Self::Receive => "receive",
         }
@@ -810,7 +808,6 @@ pub enum VmErr {
 }
 
 impl VmErr {
-    /// Mensaje estático — no requiere core::fmt::write
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::CallDepth => "RecursionError: max depth",

@@ -1,7 +1,4 @@
-// src/modules/fstr.rs
-//
-// String building and errors without core::fmt.
-// Deps: itoa (ints).
+// src/modules/fstr.r
 
 /// Format an f64 to a string suitable for Python display.
 pub fn format_f64(f: f64) -> alloc::string::String {
@@ -9,8 +6,7 @@ pub fn format_f64(f: f64) -> alloc::string::String {
     if f == f64::INFINITY { return alloc::string::String::from("inf"); }
     if f == f64::NEG_INFINITY { return alloc::string::String::from("-inf"); }
     if f == 0.0 {
-        return if f.is_sign_negative() { alloc::string::String::from("-0.0") }
-               else { alloc::string::String::from("0.0") };
+        return if f.is_sign_negative() { alloc::string::String::from("-0.0") } else { alloc::string::String::from("0.0") };
     }
 
     // Whole-number floats: use itoa + ".0"
@@ -28,8 +24,7 @@ pub fn format_f64(f: f64) -> alloc::string::String {
 }
 
 fn format_general(f: f64) -> alloc::string::String {
-    // Use the standard Rust float formatting via a small stack buffer.
-    // We write into a fixed buffer using core::fmt::Write.
+    // Use the standard Rust float formatting via a small stack buffer. We write into a fixed buffer using core::fmt::Write.
     let mut buf = FmtBuf::new();
     let _ = core::fmt::write(&mut buf, core::format_args!("{}", f));
     alloc::string::String::from(buf.as_str())
@@ -72,7 +67,6 @@ macro_rules! s {
     (@b $s:ident; float $v:expr $(, $($r:tt)*)?) => { $s.push_str(&$crate::modules::fstr::format_f64($v)); $($crate::s!(@b $s; $($r)*);)? };
     (@b $s:ident; char $v:expr $(, $($r:tt)*)?) => { $s.push($v); $($crate::s!(@b $s; $($r)*);)? };
     (@b $s:ident; bool $v:expr $(, $($r:tt)*)?) => { $s.push_str(if $v { "true" } else { "false" }); $($crate::s!(@b $s; $($r)*);)? };
-
     (cap: $c:expr; $($t:tt)*) => {{ let mut _s = alloc::string::String::with_capacity($c); $crate::s!(@b _s; $($t)*); _s }};
     ($($t:tt)*) => {{ let mut _s = alloc::string::String::new(); $crate::s!(@b _s; $($t)*); _s }};
 }

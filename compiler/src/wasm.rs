@@ -114,9 +114,7 @@ mod tests {
 
             let mut vm = VM::new(&chunk);
             vm.strict_input = true;
-            // Cases that supply an input buffer feed the VM normally; the
-            // strict_input flag only triggers when the VM tries to read past
-            // the end of the buffer (i.e. the WASM "no host data" path).
+
             vm.input_buffer = case.input.clone();
             let expects_input_error = case.input.is_empty()
                 && (case.src.contains("input(") || case.src.contains("input ("));
