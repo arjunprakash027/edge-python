@@ -39,9 +39,8 @@ impl FxBuildHasher {
     }
 }
 
-/// Avalanche mixer: one bit difference spreads across all 64 bits.
 #[inline]
-fn murmur3_fmix64(mut h: u64) -> u64 {
+fn murmur3_fmix64(mut h: u64) -> u64 { // Avalanche mixer: one bit difference spreads across all 64 bits.
     h ^= h >> 33;
     h = h.wrapping_mul(0xff51afd7ed558ccd);
     h ^= h >> 33;
