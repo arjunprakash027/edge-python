@@ -146,7 +146,7 @@ impl<'a> VM<'a> {
             HeapObj::NativeFn(id) => s!("<built-in function ", str id.name(), ">"),
             HeapObj::Class(name, _) => crate::s!("<class '", str name, "'>"  ),
             HeapObj::Instance(cls, _) => {
-                if cls.is_heap() { if let HeapObj::Class(name, _) = self.heap.get(*cls) { return crate::s!("<", str name, " instance>"); } }
+                if cls.is_heap() && let HeapObj::Class(name, _) = self.heap.get(*cls) { return crate::s!("<", str name, " instance>"); }
                 "<instance>".into()
             }
             HeapObj::BoundUserMethod(_, _) => "<bound method>".into(),

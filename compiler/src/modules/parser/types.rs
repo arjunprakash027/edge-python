@@ -155,14 +155,14 @@ impl SSAChunk {
 
         // Register coalescing: follow each chain to its root.
         let mut canonical: Vec<u16> = (0..n as u16).collect();
-        for i in 0..n {
+        for (i, item) in canonical.iter_mut().enumerate().take(n) {
             let mut root = i;
             while let Some(Some(p)) = ps.get(root) {
                 let p = *p as usize;
                 if p == root { break; }
                 root = p;
             }
-            canonical[i] = root as u16;
+            *item = root as u16;
         }
 
         // Rewrite LoadName/StoreName/Phi/Del operands to canonical slots.

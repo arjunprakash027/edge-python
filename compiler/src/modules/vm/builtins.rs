@@ -959,8 +959,8 @@ impl<'a> VM<'a> {
 
     pub fn call_next(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
-        if o.is_heap() {
-            if let HeapObj::Coroutine(..) = self.heap.get(o) {
+        if o.is_heap() 
+            && let HeapObj::Coroutine(..) = self.heap.get(o) {
                 self.push(o);
                 // Call the coroutine with 0 args via the resume path
                 // We need chunk/slots but next() is called from dispatch_native
@@ -1002,7 +1002,6 @@ impl<'a> VM<'a> {
                     return Ok(());
                 }
             }
-        }
         Err(cold_type("next() requires an iterator"))
     }
 

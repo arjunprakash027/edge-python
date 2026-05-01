@@ -563,12 +563,12 @@ impl<'a> VM<'a> {
             .ok_or(VmErr::Runtime("CallMethod: bad name index"))?;
 
         // Check for user-defined method on Instance
-        if obj.is_heap() {
-            if let HeapObj::Instance(cls_val, _) = self.heap.get(obj) {
+        if obj.is_heap()
+            && let HeapObj::Instance(cls_val, _) = self.heap.get(obj) {
                 let cls_val = *cls_val;
                 if cls_val.is_heap() {
-                    if let HeapObj::Class(_, methods) = self.heap.get(cls_val) {
-                        if let Some((_, mv)) = methods.iter().find(|(n, _)| n == name.as_str()) {
+                    if let HeapObj::Class(_, methods) = self.heap.get(cls_val)
+                        && let Some((_, mv)) = methods.iter().find(|(n, _)| n == name.as_str()) {
                             let mv = *mv;
                             // Call the method with self prepended
                             self.push(mv);
@@ -578,10 +578,8 @@ impl<'a> VM<'a> {
                             let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
                             return self.exec_call(encoded, chunk, slots);
                         }
-                    }
                 }
             }
-        }
         let method_id = handlers::methods::lookup_method(ty, name.as_str())
             .ok_or(VmErr::Type("'object' has no attribute"))?;
 
@@ -750,14 +748,13 @@ impl<'a> VM<'a> {
                 self.exec(body, &mut class_slots)?;
                 let mut methods: Vec<(alloc::string::String, Val)> = Vec::new();
                 for (i, name) in body.names.iter().enumerate() {
-                    if let Some(Some(v)) = class_slots.get(i) {
-                        if v.is_heap() && matches!(self.heap.get(*v), HeapObj::Func(..)) {
+                    if let Some(Some(v)) = class_slots.get(i)
+                        && v.is_heap() && matches!(self.heap.get(*v), HeapObj::Func(..)) {
                             let base = name.rfind('_').map(|p| &name[..p]).unwrap_or(name);
                             if !methods.iter().any(|(n, _)| n == base) {
                                 methods.push((base.to_string(), *v));
                             }
                         }
-                    }
                 }
                 let next_op = cache.fused_ref().get(*ip).map(|i| i.operand).unwrap_or(0);
                 let name_str = chunk.names.get(next_op as usize)

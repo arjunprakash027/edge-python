@@ -264,18 +264,16 @@ impl<'a> VM<'a> {
         }
 
         // Opt 2: Borrow defaults from heap instead of cloning
-        if let HeapObj::Func(_, defaults, _) = self.heap.get(callee) {
-            if !defaults.is_empty() {
+        if let HeapObj::Func(_, defaults, _) = self.heap.get(callee)
+            && !defaults.is_empty() {
                 let ds = &self.default_slots[fi];
                 for (di, &dv) in defaults.iter().enumerate() {
-                    if let Some(&(slot, _)) = ds.get(di) {
-                        if slot < fn_slots.len() && fn_slots[slot].is_none() {
+                    if let Some(&(slot, _)) = ds.get(di)
+                        && slot < fn_slots.len() && fn_slots[slot].is_none() {
                             fn_slots[slot] = Some(dv);
                         }
-                    }
                 }
             }
-        }
 
         // Opt 2: Borrow captures from heap instead of cloning
         if let HeapObj::Func(_, _, captures) = self.heap.get(callee) {

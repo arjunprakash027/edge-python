@@ -77,8 +77,8 @@ impl<'a> VM<'a> {
         let obj = self.pop()?;
 
         // Instance: check attrs first, then class methods
-        if obj.is_heap() {
-            if let HeapObj::Instance(cls_val, attrs) = self.heap.get(obj) {
+        if obj.is_heap()
+            && let HeapObj::Instance(cls_val, attrs) = self.heap.get(obj) {
                 let cls_val = *cls_val;
                 let found = attrs.borrow().entries.iter()
                     .find(|(k, _)| k.is_heap() && matches!(self.heap.get(*k), HeapObj::Str(s) if s == name))
@@ -87,8 +87,8 @@ impl<'a> VM<'a> {
                     self.push(v);
                     return Ok(());
                 }
-                if cls_val.is_heap() {
-                    if let HeapObj::Class(_, methods) = self.heap.get(cls_val) {
+                if cls_val.is_heap()
+                    && let HeapObj::Class(_, methods) = self.heap.get(cls_val) {
                         if let Some((_, mv)) = methods.iter().find(|(n, _)| n == name) {
                             let mv = *mv;
                             let bound = self.heap.alloc(HeapObj::BoundUserMethod(obj, mv))?;
@@ -96,10 +96,8 @@ impl<'a> VM<'a> {
                             return Ok(());
                         }
                     }
-                }
                 return Err(VmErr::Type("attribute not found"));
             }
-        }
 
         // Built-in type methods
         let ty = self.type_name(obj);
