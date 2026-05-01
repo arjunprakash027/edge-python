@@ -187,6 +187,10 @@ impl SSAChunk {
         for (_, body, _, _) in &mut self.functions {
             body.finalize_prev_slots();
         }
+        
+        for body in &mut self.classes {
+            body.finalize_prev_slots();
+        }
 
         let phi_count = self.instructions.iter().filter(|i| i.opcode == OpCode::Phi).count();
         if phi_count > 0 {

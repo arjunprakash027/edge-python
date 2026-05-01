@@ -535,6 +535,7 @@
   {"src": "class Counter:\n    def __init__(self):\n        self.n = 0\n    def inc(self):\n        self.n = self.n + 1\n        return self.n\nc = Counter()\nprint(c.inc())\nprint(c.inc())\nprint(c.inc())", "output": ["1", "2", "3"]},
   {"src": "class Box:\n    def __init__(self, v):\n        self.v = v\na = Box(1)\nb = Box(2)\nprint(a.v)\nprint(b.v)", "output": ["1", "2"]},
   {"src": "class Calc:\n    def __init__(self, base):\n        self.base = base\n    def add(self, n):\n        return self.base + n\nc = Calc(10)\nprint(c.add(5))\nprint(c.add(20))", "output": ["15", "30"]},
+  {"src": "class Euler:\n    def __init__(self, n_terms):\n        self.accuracy = n_terms\n        self.terms = [1 / self._factorial(n) for n in range(self.accuracy)]\n        self.value = sum(self.terms)\n    def _factorial(self, n):\n        res = 1\n        for i in range(2, n + 1):\n            res *= i\n        return res\ne = Euler(10)\nprint(f\"Result: {e.value}\")", "output": ["Result: 2.7182815255731922"]},
   {"src": "class Foo:\n    pass\nf = Foo()\nprint(type(f))", "output": ["<class 'object'>"]},
   {"src": "def f(**kw):\n    return kw\nprint(f(a=1, b=2))", "output": ["{'a': 1, 'b': 2}"]},
   {"src": "def f(x, **kw):\n    return (x, kw)\nprint(f(1, y=2, z=3))", "output": ["(1, {'y': 2, 'z': 3})"]},
