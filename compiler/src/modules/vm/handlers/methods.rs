@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::alloc::string::ToString;
+use crate::s;
 
 #[inline]
 fn recv_str(vm: &VM, recv: Val) -> Result<String, VmErr> {
@@ -93,13 +94,14 @@ impl<'a> VM<'a> {
                             self.push(bound);
                             return Ok(());
                         }
-                return Err(VmErr::Type("attribute not found"));
+                let ty = self.type_name(obj);
+                return Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str name, "'")));
             }
 
         // Builtin type method.
         let ty = self.type_name(obj);
         let method_id = lookup_method(ty, name.as_str())
-            .ok_or(VmErr::Type("'object' has no attribute"))?;
+            .ok_or_else(|| VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str name, "'")))?;
         let bound = self.heap.alloc(HeapObj::BoundMethod(obj, method_id))?;
         self.push(bound);
         Ok(())

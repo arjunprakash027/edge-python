@@ -778,13 +778,17 @@ fn bigint_of(v: Val, heap: &HeapPool) -> Option<&BigInt> {
 }
 
 /* Runtime errors. Static-string variants avoid alloc on the hot error path;
-   Name/Raised carry the offending text. */
+   *Msg / Name / Attribute / Raised variants carry dynamic text so the user
+   sees the actual offending name or object type instead of a generic
+   "attribute not found". */
 pub enum VmErr {
     CallDepth, Heap, Budget, ZeroDiv,
     Name(String),
     Type(&'static str),
+    TypeMsg(String),
     Value(&'static str),
     Runtime(&'static str),
+    Attribute(String),
     Raised(String),
 }
 
@@ -798,6 +802,8 @@ impl VmErr {
             Self::Type(s) => s,
             Self::Value(s) => s,
             Self::Runtime(s) => s,
+            Self::TypeMsg(_) => "TypeError",
+            Self::Attribute(_) => "AttributeError",
             Self::Name(_) => "NameError",
             Self::Raised(_) => "Exception",
         }
@@ -809,8 +815,10 @@ impl VmErr {
             Self::Name(n) => s!("NameError: name '", str n, "' is not defined"),
             Self::Raised(m) => s!("Exception: ", str m),
             Self::Type(m) => s!("TypeError: ", str m),
+            Self::TypeMsg(m) => s!("TypeError: ", str m),
             Self::Value(m) => s!("ValueError: ", str m),
             Self::Runtime(m) => s!("RuntimeError: ", str m),
+            Self::Attribute(m) => s!("AttributeError: ", str m),
             other => alloc::string::String::from(other.as_str()),
         }
     }

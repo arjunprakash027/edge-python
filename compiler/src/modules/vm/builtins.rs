@@ -470,7 +470,9 @@ impl<'a> VM<'a> {
     /* Extract a Vec<Val> from list/tuple/set; optionally materialise Range.
        Str is handled at the call site (it needs heap-allocated chars, not ints). */
     fn extract_iter(&self, o: Val, include_range: bool) -> Result<Vec<Val>, VmErr> {
-        if !o.is_heap() { return Err(cold_type("object is not iterable")); }
+        if !o.is_heap() {
+            return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable")));
+        }
         Ok(match self.heap.get(o) {
             HeapObj::List(v)  => v.borrow().clone(),
             HeapObj::Tuple(v) => v.clone(),
@@ -482,7 +484,7 @@ impl<'a> VM<'a> {
                 else        { while cur > end { out.push(Val::int(cur)); cur += step; } }
                 out
             }
-            _ => return Err(cold_type("object is not iterable")),
+            _ => return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable"))),
         })
     }
 
@@ -952,7 +954,7 @@ impl<'a> VM<'a> {
             self.push(d);
             return Ok(());
         }
-        Err(cold_type("attribute not found"))
+        Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")))
     }
 
     // hasattr(obj, name).

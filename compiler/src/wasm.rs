@@ -5,7 +5,7 @@
 #[cfg(target_arch = "wasm32")]
 mod runtime {
     use lol_alloc::LeakingPageAllocator;
-    use crate::modules::{lexer::lex, parser::{Parser, Diagnostic}, vm::{VM, Limits, VmErr}};
+    use crate::modules::{lexer::lex, parser::{Parser, Diagnostic}, vm::{VM, Limits}};
     use alloc::string::String;
     use crate::s;
 
@@ -81,14 +81,7 @@ mod runtime {
             }
             match vm.run() {
                 Ok(_) => String::new(),
-                Err(e) => match &e {
-                    VmErr::Type(m) => s!("TypeError: ", str m),
-                    VmErr::Value(m) => s!("ValueError: ", str m),
-                    VmErr::Runtime(m) => s!("RuntimeError: ", str m),
-                    VmErr::Name(n) => s!("NameError: '", str n, "'"),
-                    VmErr::Raised(r) => s!("Exception: ", str r),
-                    other => other.as_str().into(),
-                }
+                Err(e) => e.render(),
             }
         };
 

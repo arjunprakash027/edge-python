@@ -184,7 +184,10 @@ impl<'a> VM<'a> {
             && let (HeapObj::Str(x), HeapObj::Str(y)) = (self.heap.get(a), self.heap.get(b)) {
                 return Ok(x < y);
         }
-        Err(VmErr::Type("'<' not supported between these types"))
+        Err(VmErr::TypeMsg(s!(
+            "'<' not supported between instances of '",
+            str self.type_name(a), "' and '", str self.type_name(b), "'"
+        )))
     }
 
     /* Item presence in list/tuple/dict/set, or substring in string. */
@@ -234,7 +237,10 @@ impl<'a> VM<'a> {
                 _ => {}
             }
         }
-        Err(cold_type("unsupported operand type(s) for '+'"))
+        Err(VmErr::TypeMsg(s!(
+            "unsupported operand type(s) for +: '",
+            str self.type_name(a), "' and '", str self.type_name(b), "'"
+        )))
     }
 
     pub fn sub_vals(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
@@ -249,7 +255,10 @@ impl<'a> VM<'a> {
         if let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b)) {
             return self.bigint_to_val(ba.sub(&bb));
         }
-        Err(cold_type("unsupported operand type(s) for '-'"))
+        Err(VmErr::TypeMsg(s!(
+            "unsupported operand type(s) for -: '",
+            str self.type_name(a), "' and '", str self.type_name(b), "'"
+        )))
     }
 
     pub fn mul_vals(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
@@ -266,7 +275,12 @@ impl<'a> VM<'a> {
         }
         let (seq_val, count) = if a.is_heap() && b.is_int() { (a, b.as_int()) }
                 else if a.is_int() && b.is_heap() { (b, a.as_int()) }
-                else { return Err(cold_type("unsupported operand type(s) for '*'")); };
+                else {
+                    return Err(VmErr::TypeMsg(s!(
+                        "unsupported operand type(s) for *: '",
+                        str self.type_name(a), "' and '", str self.type_name(b), "'"
+                    )));
+                };
         let n = count.max(0) as usize;
         match self.heap.get(seq_val) {
             HeapObj::Str(s) => {
@@ -287,7 +301,10 @@ impl<'a> VM<'a> {
             }
             _ => {}
         }
-        Err(cold_type("unsupported operand type(s) for '*'"))
+        Err(VmErr::TypeMsg(s!(
+            "unsupported operand type(s) for *: '",
+            str self.type_name(a), "' and '", str self.type_name(b), "'"
+        )))
     }
 
     pub fn div_vals(&self, a: Val, b: Val) -> Result<Val, VmErr> {

@@ -339,7 +339,17 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
     /* Class header + body in a fresh chunk + MakeClass + StoreName. */
     pub(super) fn class_def(&mut self) {
-        let cname = self.advance_text();
+        // `class :` / `class (Foo):` etc. — push a non-syncing diagnostic
+        // (the regular `eat(Colon)` below will pick up where we left off)
+        // and synthesize a name so the body still parses. Without this,
+        // advance_text would swallow the colon as the class name and produce
+        // a misleading cascade.
+        let cname = if matches!(self.peek(), Some(TokenType::Name)) {
+            self.advance_text()
+        } else {
+            self.diag_at_peek("expected class name");
+            "<missing>".to_string()
+        };
 
         if self.eat_if(TokenType::Lpar) {
             while !matches!(self.peek(), Some(TokenType::Rpar) | None) {
@@ -365,7 +375,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     /* `def` (sync or async): parse signature, compile body, emit
        MakeFunction / MakeCoroutine, apply decorators, then StoreName. */
     pub(super) fn func_def_inner(&mut self, decorators: u16, is_async: bool) {
-        let fname = self.advance_text();
+        // `def (...)` / `def :` — same treatment as class_def: non-syncing
+        // diagnostic + synthetic name so signature + body still parse.
+        let fname = if matches!(self.peek(), Some(TokenType::Name)) {
+            self.advance_text()
+        } else {
+            self.diag_at_peek("expected function name");
+            "<missing>".to_string()
+        };
         let (params, defaults) = self.parse_params();
         let body = self.compile_body(&params);
 
@@ -384,10 +401,24 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     }
 
     pub(super) fn parse_params(&mut self) -> (Vec<String>, u16) {
+        // Bail out early on `def name:` (no parens). The synthetic-name path
+        // in `func_def_inner` lands here with peek() == Colon; without this
+        // guard we'd swallow the colon as the `(` and then chase a phantom
+        // `)` to EOF. Eat the trailing `:` ourselves so compile_body's
+        // block lexer starts at Indent — otherwise the body parses the
+        // colon as a statement and emits "expected expression".
+        if !matches!(self.peek(), Some(TokenType::Lpar)) {
+            self.diag_at_peek("expected '('");
+            self.eat_if(TokenType::Colon);
+            return (Vec::new(), 0);
+        }
         self.advance();
         let mut params = Vec::new();
         let mut defaults = 0u16;
-        while !matches!(self.peek(), Some(TokenType::Rpar) | None) {
+        // Also break on `Rarrow`: drain_annotation surfaces it when it ran past
+        // a malformed annotation, and from here it means "params are over,
+        // return type follows" — eat(Rpar) below will anchor at the unclosed `(`.
+        while !matches!(self.peek(), Some(TokenType::Rpar | TokenType::Rarrow) | None) {
             if self.eat_if(TokenType::Slash) {
                 self.eat_if(TokenType::Comma);
                 continue;
@@ -404,7 +435,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             }
             self.eat_if(TokenType::Comma);
         }
-        self.advance();
+        self.eat(TokenType::Rpar);
         if self.eat_if(TokenType::Rarrow) {
             while !matches!(self.peek(), Some(TokenType::Colon) | None) { self.advance(); }
         }
@@ -412,23 +443,32 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         (params, defaults)
     }
 
+    /* Eat a parameter / variable annotation. Tracks its OWN bracket depth and
+       uses `advance_raw` so the parser's structural `bracket_stack` stays
+       clean — otherwise an unclosed annotation like `tuple[float | int,` would
+       leave a stray `Lsqb` on the stack and confuse downstream `eat(Rpar)`.
+       Breaks unconditionally on `Rarrow`: return-type arrow can't appear
+       inside an annotation, so it reliably signals "we drifted past the
+       annotation"; without this guard, depth would pin at 1 forever and the
+       drain would silently consume the rest of the module. */
     pub(super) fn drain_annotation(&mut self) {
         if self.eat_if(TokenType::Colon) {
             let mut depth = 0u32;
             loop {
                 match self.peek() {
                     None => break,
+                    Some(TokenType::Rarrow) => break,
                     Some(TokenType::Lsqb | TokenType::Lpar | TokenType::Lbrace) => {
                         depth += 1;
-                        self.advance();
+                        self.advance_raw();
                     }
                     Some(TokenType::Rsqb | TokenType::Rpar | TokenType::Rbrace) => {
                         if depth == 0 { break; }
                         depth -= 1;
-                        self.advance();
+                        self.advance_raw();
                     }
                     Some(TokenType::Equal | TokenType::Comma) if depth == 0 => break,
-                    _ => { self.advance(); }
+                    _ => { self.advance_raw(); }
                 }
             }
         }

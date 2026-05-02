@@ -267,6 +267,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 }
                 false
             }
+            // Stray Dedent reaching `stmt()` is always a recovery artifact —
+            // when a block header errors mid-parse, its `compile_block` may
+            // exit with `indented=false` and leave its matching Dedent in the
+            // stream. Skip silently instead of triggering "expected expression".
+            Some(TokenType::Dedent) => {
+                self.tokens.next();
+                false
+            }
             _ => {
                 self.expr();
                 // `expr:` at statement level is almost always a missing block

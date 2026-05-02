@@ -162,7 +162,9 @@ impl<'a> VM<'a> {
     }
 
     fn make_iter_frame(&mut self, obj: Val) -> Result<IterFrame, VmErr> {
-        if !obj.is_heap() { return Err(cold_type("object is not iterable")); }
+        if !obj.is_heap() {
+            return Err(VmErr::TypeMsg(s!("'", str self.type_name(obj), "' object is not iterable")));
+        }
         Ok(match self.heap.get(obj) {
             HeapObj::Range(s, e, st) => IterFrame::Range { cur: *s, end: *e, step: *st },
             HeapObj::List(v) => IterFrame::Seq { items: v.borrow().clone(), idx: 0 },
@@ -179,7 +181,7 @@ impl<'a> VM<'a> {
                 IterFrame::Seq { items, idx: 0 }
             },
             HeapObj::Coroutine(..) => return Ok(IterFrame::Coroutine(obj)),
-            _ => return Err(cold_type("object is not iterable")),
+            _ => return Err(VmErr::TypeMsg(s!("'", str self.type_name(obj), "' object is not iterable"))),
         })
     }
 
@@ -541,15 +543,17 @@ impl<'a> VM<'a> {
                             // key. `Raised` carries the user-supplied class
                             // name so `except <Type>` can match it.
                             let msg: alloc::string::String = match &e {
-                                VmErr::ZeroDiv    => "ZeroDivisionError".into(),
-                                VmErr::Type(_)    => "TypeError".into(),
-                                VmErr::Value(_)   => "ValueError".into(),
-                                VmErr::Name(_)    => "NameError".into(),
-                                VmErr::CallDepth  => "RecursionError".into(),
-                                VmErr::Heap       => "MemoryError".into(),
-                                VmErr::Budget     => "RuntimeError".into(),
-                                VmErr::Runtime(_) => "RuntimeError".into(),
-                                VmErr::Raised(s)  => s.clone(),
+                                VmErr::ZeroDiv     => "ZeroDivisionError".into(),
+                                VmErr::Type(_)     => "TypeError".into(),
+                                VmErr::TypeMsg(_)  => "TypeError".into(),
+                                VmErr::Value(_)    => "ValueError".into(),
+                                VmErr::Attribute(_)=> "AttributeError".into(),
+                                VmErr::Name(_)     => "NameError".into(),
+                                VmErr::CallDepth   => "RecursionError".into(),
+                                VmErr::Heap        => "MemoryError".into(),
+                                VmErr::Budget      => "RuntimeError".into(),
+                                VmErr::Runtime(_)  => "RuntimeError".into(),
+                                VmErr::Raised(s)   => s.clone(),
                             };
                             let exc = if let Some(&type_val) = self.globals.get(&msg) {
                                 type_val
@@ -614,7 +618,7 @@ impl<'a> VM<'a> {
                     }
             }
         let method_id = handlers::methods::lookup_method(ty, name.as_str())
-            .ok_or(VmErr::Type("'object' has no attribute"))?;
+            .ok_or_else(|| VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")))?;
 
         self.exec_bound_method(obj, method_id, positional, kw_flat)
     }

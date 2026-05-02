@@ -51,6 +51,12 @@ pub struct Parser<'src, I: Iterator<Item = Token>> {
     pub(super) join_stack: Vec<JoinNode>,
     pub(super) loop_starts: Vec<u16>,
     pub(super) last_line: usize,
+    /* End offset of the last advance()'d token. Lets diagnostics anchor at
+       end-of-previous-line when the next significant token lives on a later
+       line — the common "missing `:` at end of header" case where peek()
+       has already skipped a Newline so the offending position is no longer
+       in the token stream. */
+    pub(super) last_end: usize,
     pub(super) loop_breaks: Vec<Vec<usize>>,
     // Parallel to loop_starts/loop_breaks: true for `for` loops (which push
     // an iter on iter_stack), false for `while`. Lets `break` emit PopIter
@@ -190,12 +196,27 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 // Token-stream utilities: advance/peek/eat + diagnostics.
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
+    /* Raw advance: same fallback to Endmarker, but bypasses bracket_stack
+       tracking. Reserved for recovery-style consumers (drain_annotation,
+       panic-mode sync, etc.) that have their own bracket-balance bookkeeping
+       and shouldn't pollute the parser's structural stack. */
+    pub(super) fn advance_raw(&mut self) -> Token {
+        let tok = self.tokens.next().unwrap_or(Token {
+            kind: TokenType::Endmarker,
+            line: 0, start: 0, end: 0,
+        });
+        self.last_line = tok.line;
+        if tok.end > 0 { self.last_end = tok.end; }
+        tok
+    }
+
     pub(super) fn advance(&mut self) -> Token {
         let tok = self.tokens.next().unwrap_or(Token {
             kind: TokenType::Endmarker,
             line: 0, start: 0, end: 0,
         });
         self.last_line = tok.line;
+        if tok.end > 0 { self.last_end = tok.end; }
         match tok.kind {
             TokenType::Lpar | TokenType::Lsqb | TokenType::Lbrace => {
                 self.bracket_stack.push((tok.kind, tok.start, tok.end, self.errors.len()));
@@ -240,6 +261,22 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             _ => {}
         }
         tok
+    }
+
+    /* Push a Diagnostic at peek's position WITHOUT panic-mode sync. For
+       use when the caller wants to report a missing/wrong token but keep
+       the surrounding parser flow intact (e.g. `class :` where a synthetic
+       name lets `eat(Colon)` and the body parse normally). Anchors at
+       end-of-prev-line when peek crossed a newline, mirroring `eat()`'s
+       behavior. */
+    pub(super) fn diag_at_peek(&mut self, msg: &str) {
+        let n = self.source.len();
+        let (start, end) = match self.tokens.peek() {
+            Some(t) if t.line > self.last_line && self.last_end > 0 => (self.last_end, self.last_end),
+            Some(t) => (t.start, t.end),
+            None => (n, n),
+        };
+        self.errors.push(Diagnostic { start, end, msg: msg.to_string() });
     }
 
     /* Push a Diagnostic anchored at the next token's span (or at end-of-source
@@ -342,15 +379,23 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             {
                 return;
             }
-            let at_eof = matches!(peeked, None | Some(TokenType::Endmarker));
-            if at_eof
-                && let Some(&(opener_kind, start, end, errors_at_open)) = self.bracket_stack.last()
+            // Whenever the matching opener sits at the top of the stack and we
+            // can't produce its closer, anchor at the opener — this catches
+            // both EOF and mid-stream cases (e.g. a `[` followed by a newline
+            // is "lost" because Nl is suppressed inside brackets, so the
+            // generic fallback would point at the next-line token instead).
+            let want_open = match kind {
+                TokenType::Rpar => TokenType::Lpar,
+                TokenType::Rsqb => TokenType::Lsqb,
+                _ => TokenType::Lbrace,
+            };
+            if let Some(&(opener_kind, start, end, errors_at_open)) = self.bracket_stack.last()
+                && opener_kind == want_open
             {
                 self.errors.truncate(errors_at_open);
-                let opener_lbl = open_str(opener_kind);
                 self.errors.push(Diagnostic {
                     start, end,
-                    msg: s!(str opener_lbl, " was never closed"),
+                    msg: s!(str open_str(opener_kind), " was never closed"),
                 });
                 self.bracket_stack.pop();
                 return;
@@ -368,7 +413,23 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             }
             None => "EOF".to_string(),
         };
-        self.error(&s!("expected ", str kind.as_str(), ", got ", str &label));
+        let msg = s!("expected ", str kind.as_str(), ", got ", str &label);
+        // Anchor at end-of-previous-line when the next significant token is
+        // on a later line than the last consumed one. peek() has already
+        // swallowed the Newline, so the offending position no longer exists
+        // in the token stream — without this, the caret lands on the next
+        // line's first token (e.g. `Indent`) which is misleading for the
+        // user. Most common case: missing `:` at the end of an `if/for/def`
+        // header.
+        if let Some(t) = self.tokens.peek()
+            && t.line > self.last_line
+            && self.last_end > 0
+        {
+            let p = self.last_end;
+            self.error_at(p, p, &msg);
+        } else {
+            self.error(&msg);
+        }
     }
 
     pub(super) fn eat_if(&mut self, kind: TokenType) -> bool {
@@ -397,6 +458,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             saw_newline: false,
             expr_depth: 0,
             last_line: 0,
+            last_end: 0,
             bracket_stack: Vec::new(),
             errors: Vec::new(),
         }
