@@ -283,7 +283,7 @@ el.btn.addEventListener('click', () => PythonWorker.run(Editor.getCode()));
 loadIcons();
 PythonWorker.load();
 
-fetch(`/${EXAMPLE_FILE}`, FETCH_OPTS ?? {}).then(r => {
+fetch(`./${EXAMPLE_FILE}`, FETCH_OPTS ?? {}).then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.text();
     }).then(code => {
