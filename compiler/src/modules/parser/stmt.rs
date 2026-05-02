@@ -50,9 +50,23 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             Some(TokenType::Yield) => {
                 self.advance();
                 if self.eat_if(TokenType::From) {
+                    // Lower `yield from <expr>` into a for-loop that re-yields
+                    // each value: GetIter pushes onto iter_stack, ForIter pulls
+                    // the next item, Yield re-yields it, PopTop discards the
+                    // (None) send value on resume, Jump back. LoadNone at the
+                    // end gives the expression a value (sub-generator return
+                    // value isn't tracked, so always None).
                     self.expr();
-                    self.chunk.emit(OpCode::YieldFrom, 0);
-                } else if matches!(self.peek(), Some(TokenType::Newline | TokenType::Endmarker)) {
+                    self.chunk.emit(OpCode::GetIter, 0);
+                    let loop_start = self.chunk.instructions.len() as u16;
+                    self.chunk.emit(OpCode::ForIter, 0);
+                    let fi = self.chunk.instructions.len() - 1;
+                    self.chunk.emit(OpCode::Yield, 0);
+                    self.chunk.emit(OpCode::PopTop, 0);
+                    self.chunk.emit(OpCode::Jump, loop_start);
+                    self.patch(fi);
+                    self.chunk.emit(OpCode::LoadNone, 0);
+                } else if matches!(self.peek(), Some(TokenType::Newline) | None) {
                     self.chunk.emit(OpCode::LoadNone, 0);
                     self.chunk.emit(OpCode::Yield, 0);
                 } else {
@@ -141,14 +155,27 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             }
             Some(TokenType::Del) => {
                 self.advance();
-                let name = self.advance_text();
-                let idx = self.push_ssa_name(&name, self.current_version(&name));
-                self.chunk.emit(OpCode::Del, idx);
+                loop {
+                    let name = self.advance_text();
+                    if self.eat_if(TokenType::Lsqb) {
+                        // del x[k]: load container + key, mutate in place.
+                        // Slice deletion (x[i:j]) is not supported — `expr()`
+                        // stops at `:` so the eat(Rsqb) below errors cleanly.
+                        self.emit_load_ssa(name);
+                        self.expr();
+                        self.eat(TokenType::Rsqb);
+                        self.chunk.emit(OpCode::DelItem, 0);
+                    } else {
+                        let idx = self.push_ssa_name(&name, self.current_version(&name));
+                        self.chunk.emit(OpCode::Del, idx);
+                    }
+                    if !self.eat_if(TokenType::Comma) { break; }
+                }
                 false
             }
             Some(TokenType::Raise) => {
                 self.advance();
-                if !matches!(self.peek(), Some(TokenType::Newline | TokenType::Endmarker)) {
+                if !matches!(self.peek(), Some(TokenType::Newline) | None) {
                     self.expr();
                     if self.eat_if(TokenType::From) {
                         self.expr();
@@ -166,6 +193,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 if self.loop_breaks.is_empty() {
                     self.error("'break' outside loop");
                 } else {
+                    // For-loops own an iter on iter_stack; pop it before
+                    // jumping out, otherwise the surrounding for-iter would
+                    // read the abandoned iterator.
+                    if let Some(true) = self.loop_kinds.last() {
+                        self.chunk.emit(OpCode::PopIter, 0);
+                    }
                     self.chunk.emit(OpCode::Jump, 0);
                     if let Some(breaks) = self.loop_breaks.last_mut() {
                         breaks.push(self.chunk.instructions.len() - 1);
@@ -251,7 +284,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 break;
             }
             let produced_value = self.stmt();
-            if !self.at_end() && produced_value {
+            if produced_value {
                 self.chunk.emit(OpCode::PopTop, 0);
             }
             if indented { continue; }

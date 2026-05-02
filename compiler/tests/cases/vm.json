@@ -1195,5 +1195,83 @@
   {"src": "acc = []\nfor i in range(1, 7):\n    for j in range(1, 7):\n        if i * j == 12:\n            acc.append((i, j))\nprint(acc)", "output": ["[(2, 6), (3, 4), (4, 3), (6, 2)]"]},
   {"src": "def pascal(n):\n    row = [1]\n    for _ in range(n):\n        row = [a+b for a,b in zip([0]+row, row+[0])]\n    return row\nprint(pascal(4))", "output": ["[1, 4, 6, 4, 1]"]},
   {"src": "def moving_avg(lst, k):\n    return [sum(lst[i:i+k])/k for i in range(len(lst)-k+1)]\nprint(moving_avg([1.0,2.0,3.0,4.0,5.0], 3))", "output": ["[2.0, 3.0, 4.0]"]},
-  {"src": "class ObservableList:\n    def __init__(self):\n        self._data = []\n        self._listeners = []\n    def append(self, x):\n        self._data.append(x)\n        for l in self._listeners:\n            l(x)\n    def on_append(self, fn):\n        self._listeners.append(fn)\nlog = []\nol = ObservableList()\nol.on_append(lambda x: log.append(x * 2))\nol.append(1)\nol.append(2)\nol.append(3)\nprint(log)", "output": ["[2, 4, 6]"]}
+  {"src": "class ObservableList:\n    def __init__(self):\n        self._data = []\n        self._listeners = []\n    def append(self, x):\n        self._data.append(x)\n        for l in self._listeners:\n            l(x)\n    def on_append(self, fn):\n        self._listeners.append(fn)\nlog = []\nol = ObservableList()\nol.on_append(lambda x: log.append(x * 2))\nol.append(1)\nol.append(2)\nol.append(3)\nprint(log)", "output": ["[2, 4, 6]"]},
+
+  {"src": "print()", "output": [""]},
+  {"src": "print(1, 2, 3)", "output": ["1 2 3"]},
+  {"src": "print(float(0))", "output": ["0.0"]},
+  {"src": "print(float('-3.5'))", "output": ["-3.5"]},
+  {"src": "print(bool(' '))", "output": ["True"]},
+
+  {"src": "print(abs(-3.5))", "output": ["3.5"]},
+  {"src": "print(min(-1, -5, -3))", "output": ["-5"]},
+  {"src": "print(pow(3, 200, 7))", "output": ["2"]},
+
+  {"src": "print(round(3.5))", "output": ["4"]},
+  {"src": "print(round(-2.5))", "output": ["-2"]},
+  {"src": "print(round(3.14159, 2))", "output": ["3.14"]},
+  {"src": "print(chr(0x1F600))", "output": ["😀"]},
+  {"src": "print(ord('😀'))", "output": ["128512"]},
+
+  {"src": "print(sorted(list('banana')))", "output": ["['a', 'a', 'a', 'b', 'n', 'n']"]},
+  {"src": "print(list(reversed([1,2,3])))", "output": ["[3, 2, 1]"]},
+  {"src": "print(list(reversed('abc')))", "output": ["['c', 'b', 'a']"]},
+
+  {"src": "print('-5'.zfill(4))", "output": ["-005"]},
+  {"src": "print('abc'.endswith('zz'))", "output": ["False"]},
+
+  {"src": "for i in range(3):\n    for j in range(3):\n        if j == 2: break\n        print(i, j)", "output": ["0 0", "0 1", "1 0", "1 1", "2 0", "2 1"]},
+
+  {"src": "try:\n    raise ValueError\nexcept ValueError:\n    print('caught')", "output": ["caught"]},
+  {"src": "try:\n    raise TypeError\nexcept ValueError:\n    print('value')\nexcept TypeError:\n    print('type')", "output": ["type"]},
+  {"src": "def f():\n    try:\n        raise KeyError\n    except:\n        return 'inner'\n    return 'outer'\nprint(f())", "output": ["inner"]},
+
+  {"src": "def even(n):\n    for i in range(n):\n        if i % 2 == 0:\n            yield i\nprint(list(even(10)))", "output": ["[0, 2, 4, 6, 8]"]},
+
+  {"src": "x = 0b1100\nx &= 0b1010\nprint(x)", "output": ["8"]},
+  {"src": "x = 1\nx |= 2\nprint(x)", "output": ["3"]},
+  {"src": "x = 5\nx ^= 3\nprint(x)", "output": ["6"]},
+  {"src": "x = 1\nx <<= 4\nprint(x)", "output": ["16"]},
+  {"src": "x = 16\nx >>= 2\nprint(x)", "output": ["4"]},
+
+  {"src": "print('café'.upper())", "output": ["CAFÉ"]},
+  {"src": "print(len('αβγ'))", "output": ["3"]},
+  {"src": "print('αβγ'[1])", "output": ["β"]},
+  {"src": "print(list('αβγ'))", "output": ["['α', 'β', 'γ']"]},
+
+  {"src": "print(2 ** 47)", "output": ["140737488355328"]},
+  {"src": "print(2 ** 62 + 2 ** 62)", "output": ["9223372036854775808"]},
+
+  {"src": "print(0.1 + 0.2)", "output": ["0.30000000000000004"]},
+  {"src": "print(0.0 == -0.0)", "output": ["True"]},
+  {"src": "print(7 % -2)", "output": ["-1"]},
+
+  {"src": "print(divmod(10, 0))", "output": [], "error": "ZeroDivisionError"},
+  {"src": "print(2 ** -1)", "output": ["0.5"]},
+  {"src": "print([1, 2, 3][-5])", "output": [], "error": "list index out of range"},
+  {"src": "print('abc'[10])", "output": [], "error": "string index out of range"},
+  {"src": "print({1: 2}[3])", "output": [], "error": "key not found"},
+  {"src": "print(undefined_var)", "output": [], "error": "NameError"},
+  {"src": "x = 'abc'\nx[0] = 'z'", "output": [], "error": "object does not support item assignment"},
+  {"src": "x = (1, 2)\nx[0] = 99", "output": [], "error": "tuple does not support item assignment"},
+  {"src": "(1, 2) + [3]", "output": [], "error": "unsupported operand"},
+  {"src": "'a' + 1", "output": [], "error": "unsupported operand"},
+  {"src": "True + 'no'", "output": [], "error": "unsupported operand"},
+  {"src": "abs('hello')", "output": [], "error": "abs() requires a number"},
+  {"src": "len(42)", "output": [], "error": "object has no len()"},
+  {"src": "ord('ab')", "output": [], "error": "ord() requires string of length 1"},
+  {"src": "chr(-1)", "output": [], "error": "chr() arg out of range"},
+  {"src": "int('not a number')", "output": [], "error": "int(): invalid literal"},
+  {"src": "float('xyz')", "output": [], "error": "float(): invalid literal"},
+
+  {"src": "x = [1, 2, 3]\ndel x[0]\nprint(x)", "output": ["[2, 3]"]},
+  {"src": "x = [10, 20, 30, 40]\ndel x[-1]\nprint(x)", "output": ["[10, 20, 30]"]},
+  {"src": "d = {'a': 1, 'b': 2}\ndel d['a']\nprint(d)", "output": ["{'b': 2}"]},
+  {"src": "x = [1, 2, 3, 4]\ndel x[0], x[1]\nprint(x)", "output": ["[2, 4]"]},
+  {"src": "x = [1, 2]\ntry:\n    del x[10]\nexcept ValueError:\n    print('ok')", "output": ["ok"]},
+  {"src": "x = 5\ndel x\ntry:\n    print(x)\nexcept NameError:\n    print('gone')", "output": ["gone"]},
+
+  {"src": "def gen():\n    yield 1\n    yield 2\ndef outer():\n    yield from gen()\n    yield 3\nfor v in outer(): print(v)", "output": ["1", "2", "3"]},
+  {"src": "def g():\n    yield from [10, 20, 30]\nfor v in g(): print(v)", "output": ["10", "20", "30"]},
+  {"src": "def inner():\n    yield 'a'\n    yield 'b'\ndef top():\n    yield from inner()\n    yield 'c'\nfor v in top(): print(v)", "output": ["a", "b", "c"]}
 ]

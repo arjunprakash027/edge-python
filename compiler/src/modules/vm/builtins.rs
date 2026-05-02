@@ -309,15 +309,29 @@ impl<'a> VM<'a> {
         sort_err.map_or(Ok(()), Err)
     }
 
-    /* Materialises an iterable to a list/tuple. Strings expand to chars;
-       ranges materialise eagerly. */
+    /* Materialises an iterable to a list. Strings expand to chars;
+       ranges materialise eagerly; coroutines are drained by repeated resume. */
     pub fn call_list(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
-        if o.is_heap()
-            && let HeapObj::Str(s) = self.heap.get(o) {
-                let s = s.clone();
-                let items = self.str_to_char_vals(&s)?;
-                return self.alloc_and_push_list(items);
+        if o.is_heap() {
+            match self.heap.get(o) {
+                HeapObj::Str(s) => {
+                    let s = s.clone();
+                    let items = self.str_to_char_vals(&s)?;
+                    return self.alloc_and_push_list(items);
+                }
+                HeapObj::Coroutine(..) => {
+                    let mut out = Vec::new();
+                    loop {
+                        let v = self.resume_coroutine(o)?;
+                        if !self.yielded { break; }
+                        self.yielded = false;
+                        out.push(v);
+                    }
+                    return self.alloc_and_push_list(out);
+                }
+                _ => {}
+            }
         }
         let items = self.extract_iter(o, true)?;
         self.alloc_and_push_list(items)
@@ -661,6 +675,29 @@ impl<'a> VM<'a> {
             HeapObj::Dict(p) => { p.borrow_mut().insert(idx_val, value); }
             HeapObj::Tuple(_) => return Err(cold_type("tuple does not support item assignment")),
             _ => return Err(cold_type("object does not support item assignment")),
+        }
+        Ok(())
+    }
+
+    pub fn del_item(&mut self) -> Result<(), VmErr> {
+        let idx_val = self.pop()?;
+        let cont    = self.pop()?;
+        if !cont.is_heap() { return Err(cold_type("object does not support item deletion")); }
+        match self.heap.get_mut(cont) {
+            HeapObj::List(v) => {
+                if !idx_val.is_int() { return Err(cold_type("list indices must be integers")); }
+                let mut b = v.borrow_mut();
+                let ui = normalize_index(idx_val.as_int(), b.len());
+                if ui >= b.len() { return Err(cold_value("list index out of range")); }
+                b.remove(ui);
+            }
+            HeapObj::Dict(p) => {
+                if p.borrow_mut().remove(&idx_val).is_none() {
+                    return Err(cold_value("KeyError"));
+                }
+            }
+            HeapObj::Tuple(_) => return Err(cold_type("tuple does not support item deletion")),
+            _ => return Err(cold_type("object does not support item deletion")),
         }
         Ok(())
     }

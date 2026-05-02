@@ -222,9 +222,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 }
             }
             TokenType::Lambda => self.parse_lambda(),
-            _ => {
-                if t.kind != TokenType::Endmarker { self.error("unexpected token"); }
-            }
+            // Anchor at the consumed token so the caret points at the
+            // structural marker (newline, dedent, etc.) the user actually wrote.
+            _ => self.error_at(t.start, t.end, "expected expression"),
         }
         self.postfix_tail();
     }

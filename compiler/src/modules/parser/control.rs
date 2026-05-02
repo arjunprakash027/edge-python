@@ -106,6 +106,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let loop_start = self.chunk.instructions.len() as u16;
         self.loop_starts.push(loop_start);
         self.loop_breaks.push(vec![]);
+        self.loop_kinds.push(false);
 
         self.expr();
         self.chunk.emit(OpCode::JumpIfFalse, 0);
@@ -123,6 +124,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
 
         self.loop_starts.pop();
+        self.loop_kinds.pop();
         for pos in self.loop_breaks.pop().unwrap_or_default() {
             self.patch(pos);
         }
@@ -157,6 +159,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let loop_start = self.chunk.instructions.len() as u16;
         self.loop_starts.push(loop_start);
         self.loop_breaks.push(vec![]);
+        self.loop_kinds.push(true);
 
         self.chunk.emit(OpCode::ForIter, 0);
         let fi = self.chunk.instructions.len() - 1;
@@ -186,6 +189,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
 
         self.loop_starts.pop();
+        self.loop_kinds.pop();
         for pos in self.loop_breaks.pop().unwrap_or_default() {
             self.patch(pos);
         }

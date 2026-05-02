@@ -18,8 +18,9 @@ pub enum OpCode {
     BitNot, Shl, Shr, In, NotIn, Is, IsNot, UnpackSequence, BuildTuple, SetupWith, ExitWith, Yield, 
     Del, Assert, Global, Nonlocal, UnpackArgs, ListAppend, SetAdd, MapAdd, BuildSet, RaiseFrom, 
     UnpackEx, LoadEllipsis, Await, MakeCoroutine, YieldFrom, TypeAlias, StoreItem, Dup2, 
-    JumpIfFalseOrPop, JumpIfTrueOrPop, Dup, CallMethod, CallMethodArgs, CallAll, CallAny, CallBin, 
+    JumpIfFalseOrPop, JumpIfTrueOrPop, Dup, CallMethod, CallMethodArgs, CallAll, CallAny, CallBin,
     CallOct, CallHex, CallDivmod, CallPow, CallRepr, CallReversed, CallCallable, CallId, CallHash,
+    PopIter, DelItem,
 }
 
 // Python builtin name → (specialised OpCode, leaves_value_on_stack).
@@ -206,21 +207,76 @@ pub(crate) struct JoinNode {
     pub(super) then: Option<HashMap<String, u32>>,
 }
 
+/* Production-style diagnostic. `start`/`end` are byte offsets into the
+   original source. Line/column are computed at render time so the parser
+   never has to track them, and they're always char-accurate (UTF-8 safe). */
 pub struct Diagnostic {
-    pub line: usize,
-    pub col: usize,
+    pub start: usize,
     pub end: usize,
     pub msg: String,
 }
 
+impl Diagnostic {
+    /* Convert a byte offset into (line, column), both 1-indexed.
+       Counts CHARS (not bytes) within the line for UTF-8 correctness. */
+    fn line_col(src: &str, byte: usize) -> (usize, usize) {
+        let byte = byte.min(src.len());
+        let line = src[..byte].matches('\n').count() + 1;
+        let line_start = src[..byte].rfind('\n').map_or(0, |p| p + 1);
+        let col = src[line_start..byte].chars().count() + 1;
+        (line, col)
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 impl Diagnostic {
-    pub fn render(&self) -> alloc::string::String {
-        crate::s!("line ", int self.line + 1, ":", int self.col, ": ", str &self.msg)
-    }
+    /* rustc-style multi-line render with source preview and caret:
 
-    pub fn render_with_path(&self, path: &str) -> alloc::string::String {
-        crate::s!(str path, ":", int self.line + 1, ":", int self.col, ": ", str &self.msg)
+         error: <msg>
+            --> path:line:col
+             |
+           N | <source line>
+             |     ^^^
+
+       `path` is shown as `<input>` if None. The caret spans `start..end` (char-counted),
+       always at least one column. */
+    pub fn render(&self, src: &str, path: Option<&str>) -> alloc::string::String {
+        let path = path.unwrap_or("<input>");
+        let s_off = self.start.min(src.len());
+        let e_off = self.end.min(src.len()).max(s_off);
+        let (line_no, col) = Self::line_col(src, s_off);
+        let line_start = src[..s_off].rfind('\n').map_or(0, |p| p + 1);
+        let line_end = src[s_off..].find('\n').map_or(src.len(), |p| s_off + p);
+        let line_txt = &src[line_start..line_end];
+        let mark = src[s_off..e_off].chars().count().max(1);
+        let mut buf = itoa::Buffer::new();
+        let pad_len = buf.format(line_no).len();
+        let pad: String = " ".repeat(pad_len);
+        let mut o = alloc::string::String::with_capacity(line_txt.len() + 96);
+        o.push_str("error: "); o.push_str(&self.msg); o.push('\n');
+        o.push_str(&pad); o.push_str(" --> ");
+        o.push_str(path); o.push(':');
+        o.push_str(buf.format(line_no)); o.push(':'); o.push_str(buf.format(col)); o.push('\n');
+        o.push_str(&pad); o.push_str(" |\n");
+        o.push_str(buf.format(line_no)); o.push_str(" | "); o.push_str(line_txt); o.push('\n');
+        o.push_str(&pad); o.push_str(" | ");
+        for _ in 1..col { o.push(' '); }
+        for _ in 0..mark { o.push('^'); }
+        o.push('\n');
+        o
+    }
+}
+
+impl Diagnostic {
+    /* Compact one-line render: `path:line:col: msg`. No source preview.
+       Used by WASM (host renders preview) and by tests. */
+    pub fn render_oneline(&self, src: &str, path: Option<&str>) -> alloc::string::String {
+        use crate::s;
+        let (line, col) = Self::line_col(src, self.start);
+        match path {
+            Some(p) => s!(str p, ":", int line, ":", int col, ": ", str &self.msg),
+            None => s!("line ", int line, ":", int col, ": ", str &self.msg),
+        }
     }
 }
 

@@ -535,21 +535,24 @@ impl<'a> VM<'a> {
                             self.with_stack.truncate(frame.with_depth);
                             self.pending_pos_delta = 0;
                             self.pending_kw_delta  = 0;
-                            let msg = match &e {
-                                VmErr::ZeroDiv    => "ZeroDivisionError",
-                                VmErr::Type(_)    => "TypeError",
-                                VmErr::Value(_)   => "ValueError",
-                                VmErr::Name(_)    => "NameError",
-                                VmErr::CallDepth  => "RecursionError",
-                                VmErr::Heap       => "MemoryError",
-                                VmErr::Budget     => "RuntimeError",
-                                VmErr::Runtime(_) => "RuntimeError",
-                                VmErr::Raised(_)  => "Exception",
+                            // Cold path: allocate-once String for the lookup
+                            // key. `Raised` carries the user-supplied class
+                            // name so `except <Type>` can match it.
+                            let msg: alloc::string::String = match &e {
+                                VmErr::ZeroDiv    => "ZeroDivisionError".into(),
+                                VmErr::Type(_)    => "TypeError".into(),
+                                VmErr::Value(_)   => "ValueError".into(),
+                                VmErr::Name(_)    => "NameError".into(),
+                                VmErr::CallDepth  => "RecursionError".into(),
+                                VmErr::Heap       => "MemoryError".into(),
+                                VmErr::Budget     => "RuntimeError".into(),
+                                VmErr::Runtime(_) => "RuntimeError".into(),
+                                VmErr::Raised(s)  => s.clone(),
                             };
-                            let exc = if let Some(&type_val) = self.globals.get(msg) {
+                            let exc = if let Some(&type_val) = self.globals.get(&msg) {
                                 type_val
                             } else {
-                                self.heap.alloc(HeapObj::Str(msg.to_string()))?
+                                self.heap.alloc(HeapObj::Str(msg))?
                             };
                             self.push(exc);
                             ip = frame.handler_ip;
@@ -834,6 +837,7 @@ impl<'a> VM<'a> {
             | OpCode::BuildString | OpCode::BuildSet | OpCode::BuildSlice => self.handle_build(opcode, operand)?,
 
             OpCode::StoreItem => { self.mark_impure(); self.store_item()?; }
+            OpCode::DelItem => { self.mark_impure(); self.del_item()?; }
             OpCode::UnpackSequence | OpCode::UnpackEx | OpCode::FormatValue => self.handle_container(opcode, operand)?,
 
             OpCode::ListAppend | OpCode::SetAdd | OpCode::MapAdd => self.handle_comprehension(opcode)?,
@@ -897,6 +901,9 @@ impl<'a> VM<'a> {
                 }
             }
             OpCode::PopExcept => { self.exception_stack.pop(); }
+            // Emitted by `break` inside a for-loop to drop the abandoned
+            // iterator so the surrounding for-iter reads from its own iter.
+            OpCode::PopIter => { self.iter_stack.pop(); }
             OpCode::MakeClass | OpCode::StoreAttr => {
                 return Err(cold_runtime("MakeClass/StoreAttr must be in main dispatch"));
             }

@@ -26,7 +26,7 @@ The language reads like Python because it parses Python's syntax. It runs differ
 
 These parse for syntactic compatibility but raise at runtime, or simply don't exist:
 
-- **Classes**: supported with `__init__`, attributes, and methods. No inheritance or MRO.
+- **Inheritance / MRO**: classes work with `__init__`, attributes, and methods, but there is no base-class chain, no `super`, no method resolution order.
 - **Modules**: `import` and `from ... import` parse but raise. There is no module system, no standard library beyond the built-ins documented here, no third-party packages.
 - **I/O**: `input()` reads from a host-provided buffer (native: stdin, WASM: FFI). There is no file system, no network, no `os`, no `sys`.
 - **Async**: `async def` creates real coroutines. `run()` provides cooperative scheduling with `sleep()` and `receive()`.

@@ -23,6 +23,10 @@ pub struct Parser<'src, I: Iterator<Item = Token>> {
     pub(super) loop_starts: Vec<u16>,
     pub(super) last_line: usize,
     pub(super) loop_breaks: Vec<Vec<usize>>,
+    // Parallel to loop_starts/loop_breaks: true for `for` loops (which push
+    // an iter on iter_stack), false for `while`. Lets `break` emit PopIter
+    // only when escaping a for-loop, so nested for/while combinations work.
+    pub(super) loop_kinds: Vec<bool>,
     pub(super) expr_depth: usize,
     pub(super) saw_newline: bool,
     pub errors: Vec<Diagnostic>,
@@ -161,19 +165,22 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         tok
     }
 
+    /* Push a Diagnostic anchored at the next token's span (or at end-of-source
+       if we ran past EOF) and panic-mode sync to the next statement boundary
+       so we can keep reporting downstream errors. */
     pub(super) fn error(&mut self, msg: &str) {
-        let (line, byte_offset, end) = self
-            .tokens
-            .peek()
-            .map(|t| (t.line, t.start, t.end))
-            .unwrap_or((self.last_line, 0, 0));
+        let n = self.source.len();
+        let (start, end) = self.tokens.peek()
+            .map(|t| (t.start, t.end))
+            .unwrap_or((n, n));
+        self.error_at(start, end, msg);
+    }
 
-        let col = self.source[..byte_offset]
-            .rfind('\n')
-            .map(|line_start| byte_offset - line_start - 1)
-            .unwrap_or(byte_offset);
-
-        self.errors.push(Diagnostic { line, col, end, msg: msg.to_string() });
+    /* Same as `error` but anchored at the caller-provided span. Use when
+       a parser has already consumed the offending token and wants the
+       diagnostic to point at it (not at whatever comes next). */
+    pub(super) fn error_at(&mut self, start: usize, end: usize, msg: &str) {
+        self.errors.push(Diagnostic { start, end, msg: msg.to_string() });
         loop {
             match self.tokens.peek().map(|t| t.kind) {
                 None | Some(TokenType::Newline | TokenType::Dedent | TokenType::Endmarker) => break,
@@ -192,6 +199,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.lexeme(&t).to_string()
     }
 
+    /* Surface user-visible tokens. Skips Newline (latching `saw_newline`),
+       Nl, Comment. Treats Endmarker as None so `at_end()` and "loop while
+       not closer/None" patterns terminate cleanly without explicit Endmarker
+       checks at every site. The raw iterator (`self.tokens.peek()`) still
+       sees Endmarker for diagnostic anchoring in `error()` / `eat()`. */
     pub(super) fn peek(&mut self) -> Option<TokenType> {
         loop {
             match self.tokens.peek().map(|t| t.kind) {
@@ -200,8 +212,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     self.tokens.next();
                 }
                 Some(TokenType::Nl | TokenType::Comment) => { self.tokens.next(); }
+                Some(TokenType::Endmarker) | None => return None,
                 Some(k) => return Some(k),
-                None => return None,
             }
         }
     }
@@ -210,16 +222,27 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.chunk.instructions[pos].operand = self.chunk.instructions.len() as u16;
     }
 
+    /* Consume `kind` or push a diagnostic with a friendly description of
+       what was actually found (lexeme for normal tokens, kind label for
+       synthetic Endmarker / structural tokens, and "EOF" past end). */
     pub(super) fn eat(&mut self, kind: TokenType) {
         if matches!(self.peek(), Some(k) if k == kind) {
             self.advance();
-        } else {
-            let token_text = match self.tokens.peek() {
-                Some(t) => &self.source[t.start..t.end],
-                None => "EOF",
-            };
-            self.error(&s!("expected ", str kind.as_str(), ", got '", str token_text, "'"));
+            return;
         }
+        let label: alloc::string::String = match self.tokens.peek() {
+            Some(t) if t.kind == TokenType::Endmarker => "EOF".to_string(),
+            Some(t) if t.kind == TokenType::Newline || t.kind == TokenType::Nl => "newline".to_string(),
+            Some(t) if t.kind == TokenType::Indent => "indent".to_string(),
+            Some(t) if t.kind == TokenType::Dedent => "dedent".to_string(),
+            Some(t) if t.start == t.end => t.kind.as_str().to_string(),
+            Some(t) => {
+                let mut s = alloc::string::String::with_capacity(t.end - t.start + 2);
+                s.push('\''); s.push_str(&self.source[t.start..t.end]); s.push('\''); s
+            }
+            None => "EOF".to_string(),
+        };
+        self.error(&s!("expected ", str kind.as_str(), ", got ", str &label));
     }
 
     pub(super) fn eat_if(&mut self, kind: TokenType) -> bool {
@@ -244,6 +267,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             join_stack: Vec::new(),
             loop_starts: Vec::new(),
             loop_breaks: Vec::new(),
+            loop_kinds: Vec::new(),
             saw_newline: false,
             expr_depth: 0,
             last_line: 0,
@@ -257,21 +281,33 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             if self.at_end() { break; }
 
             let produced_value = self.stmt();
-            if !self.at_end() && produced_value { self.chunk.emit(OpCode::PopTop, 0); }
+            // Always pop expression-statement results: the implicit ReturnValue
+            // at chunk end returns Val::none() if the stack is empty.
+            if produced_value { self.chunk.emit(OpCode::PopTop, 0); }
         }
 
         if self.chunk.overflow {
-            let line = self.errors.last().map(|e| e.line).unwrap_or(0);
+            let n = self.source.len();
             self.errors.push(Diagnostic {
-                line, col: 0, end: 0,
+                start: n, end: n,
                 msg: "program too large: exceeded maximum instruction limit".to_string()
             });
         }
 
         if !self.errors.is_empty() {
+            // Wipe ALL bytecode side-state so finalize_prev_slots doesn't
+            // index `canonical` (built from `names`) with stale phi sources.
             self.chunk.instructions.clear();
             self.chunk.constants.clear();
             self.chunk.names.clear();
+            self.chunk.phi_sources.clear();
+            self.chunk.phi_map.clear();
+            self.chunk.functions.clear();
+            self.chunk.classes.clear();
+            self.chunk.name_index.clear();
+            self.chunk.nonlocals.clear();
+            self.chunk.annotations.clear();
+            self.loop_kinds.clear();
         }
 
         self.chunk.emit(OpCode::ReturnValue, 0);

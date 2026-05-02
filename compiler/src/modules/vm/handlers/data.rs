@@ -49,6 +49,10 @@ impl<'a> VM<'a> {
                 self.mark_impure();
                 self.store_item()?;
             }
+            OpCode::DelItem => {
+                self.mark_impure();
+                self.del_item()?;
+            }
             OpCode::UnpackSequence => self.exec_unpack_seq(operand as usize)?,
             OpCode::UnpackEx => self.unpack_ex(operand)?,
             OpCode::FormatValue => {
@@ -120,7 +124,14 @@ impl<'a> VM<'a> {
             OpCode::Raise | OpCode::RaiseFrom => {
                 self.mark_impure();
                 let exc = self.pop()?;
-                let msg = self.display(exc);
+                // For Type values, carry the bare class name so `except X`
+                // can match it via the global type lookup in the dispatch
+                // exception path. Otherwise fall back to display().
+                let msg = if exc.is_heap() && let HeapObj::Type(n) = self.heap.get(exc) {
+                    n.clone()
+                } else {
+                    self.display(exc)
+                };
                 return Err(VmErr::Raised(msg));
             }
             OpCode::Await => {

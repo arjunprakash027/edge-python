@@ -59,7 +59,7 @@ These prevent pathological asymmetric DoS — a small input that produces an exp
 
 ### Compile-time
 
-Reported as `Diagnostic { line, col, end, msg }`. Caught before any code runs.
+Reported as `Diagnostic { start, end, msg }` — `start`/`end` are byte offsets into the source; line and column are computed lazily by `render()` for human-facing output. Caught before any code runs.
 
 | Diagnostic                                | Cause                                  |
 |-------------------------------------------|----------------------------------------|

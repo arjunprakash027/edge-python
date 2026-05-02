@@ -59,16 +59,18 @@ fn parse_args() -> (String, usize, bool, bool) {
 }
 
 fn run(path: &str, sandbox: bool, verbosity: usize, quiet: bool) -> Result<(), String> {
-    let src = if path.ends_with(".py") {
+    let is_file = path.ends_with(".py");
+    let src = if is_file {
         fs::read_to_string(path).map_err(|_| s!("io: cannot access '", str path, "'"))?
     } else {
         path.to_string()
     };
+    let diag_path = if is_file { Some(path) } else { None };
 
     let (mut chunk, errs) = Parser::new(&src, lexer(&src)).parse();
     if !errs.is_empty() {
         for e in &errs {
-            eprint_msg(&s!("syntax: ", str &e.render_with_path(path)));
+            eprint_msg(&e.render(&src, diag_path));
         }
         exit(1);
     }

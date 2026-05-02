@@ -435,6 +435,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             i.opcode,
             OpCode::CallPrint
             | OpCode::StoreItem
+            | OpCode::DelItem
             | OpCode::StoreAttr
             | OpCode::CallInput
             | OpCode::Global

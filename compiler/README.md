@@ -20,7 +20,7 @@ What this leaves is a small, fast, deterministic core: arithmetic with arbitrary
 * **Lexer**: Hand-written, LUT-driven scanner over CPython 3.13 token kinds. Tokens are `(start, end, kind)` offsets into the source buffer; no string copies during lexing.
 * **Parser**: Single-pass, Pratt precedence climbing. Emits SSA-versioned bytecode directly (`x` -> `x_1`, `x_2`) with explicit `Phi` opcodes at control-flow joins. No intermediate AST.
 * **Optimizer**: One peephole pass: constant folding over adjacent literal operands, plus dead-code compaction with jump remapping. Does not propagate through `LoadName`.
-* **VM**: Stack-based interpreter over a pre-compiled `Vec<ThreadedOp>` where operands are baked into typed enum variants. Dispatch is a flat `match` over the variant. One LoadAttr+Call superinstruction (`CallMethod`).
+* **VM**: Stack-based interpreter over `Vec<Instruction>` where each `Instruction` is `(opcode: OpCode, operand: u16)`. Dispatch is a flat `match` on the opcode (Rust lowers it to a jump table). One LoadAttr+Call superinstruction (`CallMethod` + `CallMethodArgs`), fused once per chunk and cached in `cache.fused_ref()`.
 * **Inline Caching**: Per-instruction type-recording cache for arithmetic and comparisons. After 4 stable hits the IC stores a `FastOp` (`AddInt`, `LtFloat`, ...) used as a speculative fast path with type-guard deopt.
 * **Template Memoization**: Pure functions called repeatedly with the same arguments return cached results after 2 hits, bypassing full execution.
 * **Memory**: NaN-boxed 64-bit `Val` (48-bit signed int, IEEE-754 float, bool, None, 28-bit heap index). Mark-and-sweep GC. Arbitrary-precision `BigInt` fallback for integers outside the 48-bit range.
