@@ -85,7 +85,9 @@ Raised as `VmErr`. Most are catchable with `try` / `except`.
 | Variant         | Class name           | When                               |
 |-----------------|----------------------|------------------------------------|
 | `Type`          | `TypeError`          | Wrong operand type                 |
+| `TypeMsg`       | `TypeError`          | Wrong operand type (with context)  |
 | `Value`         | `ValueError`         | Right type, invalid value          |
+| `Attribute`     | `AttributeError`     | Attribute not found on object      |
 | `Name`          | `NameError`          | Undefined name                     |
 | `ZeroDiv`       | `ZeroDivisionError`  | Division or modulo by zero         |
 | `CallDepth`     | `RecursionError`     | Past `max_calls`                   |
