@@ -57,4 +57,5 @@ or_gate: dict[tuple[int, int], int] = {
 model = SimplePerceptron()
 model.train(or_gate)
 pred: int = model.inference((0, 0))
+
 print(f"Prediction for (0,0): {pred}")
