@@ -88,7 +88,8 @@ pub fn lex(source: &str) -> (Vec<Token>, Vec<LexError>) {
         if tok == TokenType::Endmarker { ended = true; }
 
         let is_soft = matches!(tok, TokenType::Match | TokenType::Case | TokenType::Type);
-        let next_demotes = match raw.get(i + 1) {
+        let next_demotes = matches!(
+            raw.get(i + 1),
             Some(&(
                 TokenType::Lpar
                 | TokenType::Colon
@@ -98,10 +99,8 @@ pub fn lex(source: &str) -> (Vec<Token>, Vec<LexError>) {
                 | TokenType::Rsqb
                 | TokenType::Newline,
                 _, _, _,
-            )) => true,
-            None => true,
-            _ => false,
-        };
+            )) | None
+        );
         let kind = if is_soft && next_demotes { TokenType::Name } else { tok };
         tokens.push(Token { kind, line, start, end });
     }
