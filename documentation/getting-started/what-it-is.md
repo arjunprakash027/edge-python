@@ -60,6 +60,6 @@ Hitting any limit raises a recoverable `RuntimeError` / `MemoryError` / `Recursi
 ## Where it runs
 
 - **Native**: `x86_64-linux`, `aarch64-darwin`, `x86_64-windows`. Single binary, no runtime dependencies.
-- **WebAssembly**: `wasm32-unknown-unknown`, `no_std`, `panic=abort`. Drops into any browser or wasm host.
+- **WebAssembly**: `wasm32-unknown-unknown`, `no_std`, `panic=abort`. Requires one host import — `env.js_print(ptr, len)` — called on every `print()` for real-time streaming output.
 
-The same compiler and the same VM run on both targets. There is no host-specific built-in.
+The same compiler and the same VM run on both targets. The only host-specific surface is `js_print` on the WASM target.
