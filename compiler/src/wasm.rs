@@ -108,7 +108,7 @@ mod runtime {
 
 #[cfg(all(test, feature = "wasm-tests"))]
 mod tests {
-    use crate::modules::{lexer::lexer, parser::Parser, vm::VM};
+    use crate::modules::{lexer::lex, parser::Parser, vm::VM};
 
     #[derive(serde::Deserialize)]
     struct Case {
@@ -127,7 +127,9 @@ mod tests {
         ).expect("invalid JSON");
 
         for case in cases {
-            let (chunk, errs) = Parser::new(&case.src, lexer(&case.src)).parse();
+            let (tokens, lex_errs) = lex(&case.src);
+            assert!(lex_errs.is_empty(), "lex error on {:?}: {:?}", case.src, lex_errs.iter().map(|e| e.msg).collect::<Vec<_>>());
+            let (chunk, errs) = Parser::new(&case.src, tokens.into_iter()).parse();
             assert!(errs.is_empty(), "parse error on {:?}: {:?}", case.src, errs.iter().map(|e| &e.msg).collect::<Vec<_>>());
 
             let mut vm = VM::new(&chunk);
