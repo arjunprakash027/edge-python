@@ -112,13 +112,16 @@ const PythonWorker = (() => {
     };
 })();
 
-// Pure transitions avoid execCommand, resolving auto-close degradation and the bug where backspace eats lines.
+// Pure-text editor. We take over Backspace, Tab, Shift+Tab and Enter with
+// VSCode `useTabStops` semantics so contenteditable / NBSP / cross-browser
+// quirks don't leak into indent behavior. CodeJar handles render+caret.
 
 const Editor = (() => {
     const PAIRS = { '(': ')', '[': ']', '{': '}', '"': '"', "'": "'" };
     const OPENERS = new Set(Object.keys(PAIRS));
     const CLOSERS = new Set(Object.values(PAIRS));
     const STRING_START = /^([fFrRbBuU]{0,2})("""|'''|"|')/;
+    const WS = /[ \t\u00a0]/;
 
     // Tiny state machine: walk from 0 to caret toggling between code/string; `quote === ''` means we're in code; otherwise we're inside that string.
     const stringCtx = (src, caret) => {
@@ -147,6 +150,18 @@ const Editor = (() => {
         return { inStr: !!quote, isF };
     };
 
+    // Locate the line containing `caret` and the column within it.
+    const lineAt = (text, caret) => {
+        const start = text.lastIndexOf('\n', caret - 1) + 1;
+        const nl = text.indexOf('\n', caret);
+        const end = nl === -1 ? text.length : nl;
+        return { start, end, body: text.slice(start, end), col: caret - start };
+    };
+    // Index of first non-whitespace char in `s`, or s.length if none.
+    const firstNonWS = (s) => { for (let i = 0; i < s.length; i++) if (!WS.test(s[i])) return i; return s.length; };
+    // VSCode prevIndentTabStop distance: chars to delete to reach previous stop.
+    const prevTabDist = (col) => { const r = col % TAB_SIZE; return r === 0 ? TAB_SIZE : r; };
+
     const transitions = {
         // Typed character: skip existing closer, or auto-close an opener.
         char: (text, caret, key) => {
@@ -165,30 +180,59 @@ const Editor = (() => {
             return null;
         },
 
-        // Backspace: delete empty pair, or snap indent to previous tab stop.
+        // Backspace: delete empty auto-close pair, else VSCode `useTabStops`
+        // snap when the cursor is in the line's leading whitespace.
         backspace: (text, caret) => {
             if (caret === 0) return null;
             if (PAIRS[text[caret - 1]] === text[caret]) {
-                return {
-                    text: text.slice(0, caret - 1) + text.slice(caret + 1),
-                    caret: caret - 1,
-                };
+                return { text: text.slice(0, caret - 1) + text.slice(caret + 1), caret: caret - 1 };
             }
-            const lineStart = text.lastIndexOf('\n', caret - 1) + 1;
-            const before = text.slice(lineStart, caret);
-            // contenteditable substitutes regular spaces with NBSP (U+00A0) on
-            // auto-indented lines after Enter. Without contemplating it the indent
-            // snap fails and backspace deletes one byte at a time.
-            if (!before.length || !/^[ \t\u00a0]+$/.test(before)) return null;
-            const prevStop = Math.floor((before.length - 1) / TAB_SIZE) * TAB_SIZE;
-            const del = before.length - prevStop;
-            return { text: text.slice(0, caret - del) + text.slice(caret), caret: caret - del };
+            if (!WS.test(text[caret - 1])) return null;
+            const ln = lineAt(text, caret);
+            if (ln.col === 0 || ln.col > firstNonWS(ln.body)) return null;
+            const dist = prevTabDist(ln.col);
+            return { text: text.slice(0, caret - dist) + text.slice(caret), caret: caret - dist };
+        },
+
+        // Tab: insert spaces to the next tab stop based on the current column.
+        tab: (text, caret) => {
+            const ln = lineAt(text, caret);
+            const pad = ' '.repeat(TAB_SIZE - (ln.col % TAB_SIZE));
+            return { text: text.slice(0, caret) + pad + text.slice(caret), caret: caret + pad.length };
+        },
+
+        // Shift+Tab: dedent the current line by one tab stop, snapped.
+        shiftTab: (text, caret) => {
+            const ln = lineAt(text, caret);
+            const indent = firstNonWS(ln.body);
+            if (indent === 0) return null;
+            const newIndent = Math.floor((indent - 1) / TAB_SIZE) * TAB_SIZE;
+            const removed = indent - newIndent;
+            const newCaret = ln.col >= removed ? caret - removed : ln.start;
+            return {
+                text: text.slice(0, ln.start) + ln.body.slice(removed) + text.slice(ln.end),
+                caret: newCaret,
+            };
+        },
+
+        // Enter: copy previous line's indent, add one tab if the line ends
+        // with `:` `[` `(` `{` (Python block / open bracket). VSCode behavior.
+        enter: (text, caret) => {
+            const ln = lineAt(text, caret);
+            const before = ln.body.slice(0, ln.col);
+            const indentMatch = before.match(/^[ \t\u00a0]*/);
+            const indent = indentMatch ? indentMatch[0] : '';
+            const extra = /[:\[({][ \t]*$/.test(before) ? ' '.repeat(TAB_SIZE) : '';
+            const pad = indent + extra;
+            return { text: text.slice(0, caret) + '\n' + pad + text.slice(caret), caret: caret + 1 + pad.length };
         },
     };
 
+    // Disable CodeJar's Tab/Enter/Backspace handling - we own them. CodeJar
+    // keeps render, save/restore, history, paste/cut.
     const jar = CodeJar(el.ed,
         (ed) => { ed.innerHTML = Highlighter.highlight(ed.textContent); },
-        { tab: ' '.repeat(TAB_SIZE), indentOn: /[:\[({][ \t]*$/, spellcheck: false, addClosing: false }
+        { spellcheck: false, addClosing: false, catchTab: false, preserveIdent: false }
     );
 
     const apply = (result) => {
@@ -218,6 +262,9 @@ const Editor = (() => {
         const text = jar.toString();
         const result =
             e.key === 'Backspace' ? transitions.backspace(text, pos.start) :
+            e.key === 'Enter'     ? transitions.enter(text, pos.start) :
+            e.key === 'Tab' && e.shiftKey ? transitions.shiftTab(text, pos.start) :
+            e.key === 'Tab'       ? transitions.tab(text, pos.start) :
             (OPENERS.has(e.key) || CLOSERS.has(e.key)) ? transitions.char(text, pos.start, e.key) :
             null;
 
