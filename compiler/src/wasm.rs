@@ -5,10 +5,11 @@
 #[cfg(target_arch = "wasm32")]
 mod runtime {
     use lol_alloc::LeakingPageAllocator;
-    use crate::modules::{lexer::lexer, parser::Parser, vm::{VM, Limits, VmErr}};
+    use crate::modules::{lexer::lex, parser::{Parser, Diagnostic}, vm::{VM, Limits, VmErr}};
     use alloc::string::String;
     use crate::s;
 
+    #[link(wasm_import_module = "env")]
     unsafe extern "C" {
         fn js_print(ptr: *const u8, len: usize);
     }
