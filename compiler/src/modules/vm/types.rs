@@ -17,6 +17,7 @@ impl Limits {
 
 const QNAN: u64 = 0x7FFC_0000_0000_0000;
 const SIGN: u64 = 0x8000_0000_0000_0000;
+const TAG_UNDEF: u64 = QNAN;        // payload bits all zero — distinct from NONE/TRUE/FALSE/HEAP
 const TAG_NONE: u64 = QNAN | 1;
 const TAG_TRUE: u64 = QNAN | 2;
 const TAG_FALSE: u64 = QNAN | 3;
@@ -60,6 +61,11 @@ impl Val {
     #[inline(always)] pub fn none() -> Self { Self(TAG_NONE) }
     #[inline(always)] pub fn bool(b: bool) -> Self { Self(if b { TAG_TRUE } else { TAG_FALSE }) }
     #[inline(always)] pub fn heap(idx: u32) -> Self { Self(TAG_HEAP | ((idx as u64) << 4)) }
+    /// Sentinel for an unbound local slot.  Distinct from `none()`, which
+    /// represents Python's `None`.  Allows replacing `Vec<Option<Val>>` with
+    /// `Vec<Val>` for slot storage; LoadName checks `is_undef()` to raise
+    /// NameError, which is a single u64 compare.
+    #[inline(always)] pub fn undef() -> Self { Self(TAG_UNDEF) }
 
     #[inline(always)] pub fn is_float(&self) -> bool { (self.0 & QNAN) != QNAN }
     #[inline(always)] pub fn is_int(&self) -> bool { (self.0 & (QNAN | SIGN)) == TAG_INT }
@@ -67,6 +73,7 @@ impl Val {
     #[inline(always)] pub fn is_true(&self) -> bool { self.0 == TAG_TRUE }
     #[inline(always)] pub fn is_false(&self) -> bool { self.0 == TAG_FALSE }
     #[inline(always)] pub fn is_bool(&self) -> bool { self.0 == TAG_TRUE || self.0 == TAG_FALSE }
+    #[inline(always)] pub fn is_undef(&self) -> bool { self.0 == TAG_UNDEF }
     #[inline(always)] pub fn is_heap(&self) -> bool {
         (self.0 & QNAN) == QNAN && (self.0 & SIGN) == 0 && (self.0 & 0xF) >= 4
     }
@@ -461,7 +468,7 @@ pub enum HeapObj {
     Class(String, Vec<(String, Val)>),
     Instance(Val, Rc<RefCell<DictMap>>),
     BoundUserMethod(Val, Val),
-    Coroutine(usize, Vec<Option<Val>>, Vec<Val>, usize, Vec<IterFrame>),
+    Coroutine(usize, Vec<Val>, Vec<Val>, usize, Vec<IterFrame>),
 }
 
 pub use crate::modules::vm::handlers::methods::BuiltinMethodId;
@@ -674,7 +681,7 @@ impl HeapPool {
                     }
                 }
                 Some(HeapObj::Coroutine(_, slots, stack, _, _)) => {
-                    for v in slots.iter().flatten() { if v.is_heap() { worklist.push(v.as_heap()); } }
+                    for v in slots.iter() { if v.is_heap() { worklist.push(v.as_heap()); } }
                     for v in stack { if v.is_heap() { worklist.push(v.as_heap()); } }
                 }
                 _ => {}
@@ -928,8 +935,8 @@ pub fn fpowf(base: f64, exp: f64) -> f64 {
 #[cold] #[inline(never)] pub fn cold_runtime(m: &'static str) -> VmErr { VmErr::Runtime(m) }
 /// SSA store — single write after register coalescing.
 #[inline(always)]
-pub fn p_store_ssa(slots: &mut [Option<Val>], slot: usize, v: Val) {
-    slots[slot] = Some(v);
+pub fn p_store_ssa(slots: &mut [Val], slot: usize, v: Val) {
+    slots[slot] = v;
 }
 
 #[inline]

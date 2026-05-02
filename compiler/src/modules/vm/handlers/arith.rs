@@ -148,9 +148,9 @@ impl<'a> VM<'a> {
 
     pub(crate) fn handle_compare(&mut self, op: OpCode, rip: usize, cache: &mut OpcodeCache) -> Result<(), VmErr> {
         let (a, b) = self.pop2()?;
-        if matches!(op, OpCode::Eq | OpCode::Lt) {
-            cached_binop!(self.heap, rip, &op, a, b, cache);
-        }
+        // Record type-key for every comparison op; cache::specialize() decides
+        // which ones have a FastOp variant. Eq/Lt/NotEq/Gt/LtEq/GtEq all do.
+        cached_binop!(self.heap, rip, &op, a, b, cache);
         let result = match op {
             OpCode::Eq => eq_vals_with_heap(a, b, &self.heap),
             OpCode::NotEq => !eq_vals_with_heap(a, b, &self.heap),

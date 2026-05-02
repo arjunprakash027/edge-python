@@ -481,6 +481,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             | OpCode::Yield
             | OpCode::YieldFrom
         ));
+        // Pre-compute generator flag once at parse time. Avoids the
+        // O(n_instructions) scan that exec_call would otherwise do per call.
+        body.is_generator = body.instructions.iter().any(|i| matches!(
+            i.opcode,
+            OpCode::Yield | OpCode::YieldFrom
+        ));
         body
     }
 }

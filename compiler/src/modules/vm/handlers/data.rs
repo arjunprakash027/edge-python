@@ -6,9 +6,9 @@ impl<'a> VM<'a> {
 
     /* StoreName con back-propagación SSA a versiones previas. */
     
-    pub(crate) fn handle_store(&mut self, operand: u16, slots: &mut [Option<Val>]) -> Result<(), VmErr> {
+    pub(crate) fn handle_store(&mut self, operand: u16, slots: &mut [Val]) -> Result<(), VmErr> {
         let v = self.pop()?;
-        slots[operand as usize] = Some(v);
+        slots[operand as usize] = v;
         Ok(())
     }
 
@@ -119,7 +119,7 @@ impl<'a> VM<'a> {
 
     /* Side-effects and impurities: assert, del, global/nonlocal, import, type aliases, exception handling stubs and await/yield-from. */
     
-    pub(crate) fn handle_side(&mut self, op: OpCode, operand: u16, slots: &mut [Option<Val>]) -> Result<(), VmErr> {
+    pub(crate) fn handle_side(&mut self, op: OpCode, operand: u16, slots: &mut [Val]) -> Result<(), VmErr> {
         match op {
             OpCode::Assert => {
                 let v = self.pop()?;
@@ -127,7 +127,7 @@ impl<'a> VM<'a> {
             }
             OpCode::Del => {
                 let slot = operand as usize;
-                if slot < slots.len() { slots[slot] = None; }
+                if slot < slots.len() { slots[slot] = Val::undef(); }
             }
             OpCode::Global | OpCode::Nonlocal => self.mark_impure(),
             OpCode::TypeAlias => { self.pop()?; }

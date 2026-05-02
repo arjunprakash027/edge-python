@@ -7,7 +7,7 @@ use super::super::types::IterFrame;
 impl<'a> VM<'a> {
     pub(crate) fn handle_function(
         &mut self, op: OpCode, operand: u16,
-        chunk: &SSAChunk, slots: &mut [Option<Val>]
+        chunk: &SSAChunk, slots: &mut [Val]
     ) -> Result<(), VmErr> {
         match op {
             OpCode::Call => self.exec_call(operand, chunk, slots),
@@ -60,7 +60,7 @@ impl<'a> VM<'a> {
         super::methods::dispatch_method(self, id, recv, pos, kw)
     }
 
-    fn exec_make_function(&mut self, opcode: OpCode, operand: u16, chunk: &SSAChunk, slots: &[Option<Val>]) -> Result<(), VmErr> {
+    fn exec_make_function(&mut self, opcode: OpCode, operand: u16, chunk: &SSAChunk, slots: &[Val]) -> Result<(), VmErr> {
         let global = self.fn_index
             .get(&(chunk as *const _))
             .and_then(|v| v.get(operand as usize).copied())
@@ -88,8 +88,9 @@ impl<'a> VM<'a> {
                 .unwrap_or(bi as u16) as usize;
             if !seen_canonical.insert(canon) { continue; }
             if let Some(&si) = chunk_map.get(bname.as_str())
-                && let Some(Some(v)) = slots.get(si) {
-                    captures.push((canon, *v));
+                && let Some(&v) = slots.get(si)
+                && !v.is_undef() {
+                    captures.push((canon, v));
                 }
         }
 
@@ -98,7 +99,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    pub(crate) fn exec_call(&mut self, operand: u16, chunk: &SSAChunk, slots: &mut [Option<Val>]) -> Result<(), VmErr> {
+    pub(crate) fn exec_call(&mut self, operand: u16, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let raw = operand as usize;
 
         let base_pos = (raw & 0xFF)        as i32;
@@ -230,17 +231,17 @@ impl<'a> VM<'a> {
                     // Collect remaining kwargs into a dict
                     let dm = DictMap::from_pairs(kw_flat.chunks_exact(2).map(|p| (p[0], p[1])).collect());
                     let dict_val = self.heap.alloc(HeapObj::Dict(Rc::new(RefCell::new(dm))))?;
-                    if slot < fn_slots.len() { fn_slots[slot] = Some(dict_val); }
+                    if slot < fn_slots.len() { fn_slots[slot] = dict_val; }
                 }
                 super::super::ParamKind::Star => {
                     let rest: Vec<Val> = positional[pos_idx..].to_vec();
                     pos_idx = positional.len();
                     let list_val = self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(rest))))?;
-                    if slot < fn_slots.len() { fn_slots[slot] = Some(list_val); }
+                    if slot < fn_slots.len() { fn_slots[slot] = list_val; }
                 }
                 super::super::ParamKind::Normal => {
                     if pos_idx >= positional.len() { continue; }
-                    if slot < fn_slots.len() { fn_slots[slot] = Some(positional[pos_idx]); }
+                    if slot < fn_slots.len() { fn_slots[slot] = positional[pos_idx]; }
                     pos_idx += 1;
                 }
             }
@@ -257,7 +258,7 @@ impl<'a> VM<'a> {
                 if params.iter().any(|p| p.trim_start_matches('*') == key.as_str()) {
                     let pname = s!(str &key, "_0");
                     if let Some(&s) = body_map.get(pname.as_str()) {
-                        fn_slots[s] = Some(pair[1]);
+                        fn_slots[s] = pair[1];
                     }
                 }
             }
@@ -269,8 +270,8 @@ impl<'a> VM<'a> {
                 let ds = &self.default_slots[fi];
                 for (di, &dv) in defaults.iter().enumerate() {
                     if let Some(&(slot, _)) = ds.get(di)
-                        && slot < fn_slots.len() && fn_slots[slot].is_none() {
-                            fn_slots[slot] = Some(dv);
+                        && slot < fn_slots.len() && fn_slots[slot].is_undef() {
+                            fn_slots[slot] = dv;
                         }
                 }
             }
@@ -278,23 +279,25 @@ impl<'a> VM<'a> {
         // Opt 2: Borrow captures from heap instead of cloning
         if let HeapObj::Func(_, _, captures) = self.heap.get(callee) {
             for &(bi, val) in captures {
-                if bi < fn_slots.len() && fn_slots[bi].is_none() {
-                    fn_slots[bi] = Some(val);
+                if bi < fn_slots.len() && fn_slots[bi].is_undef() {
+                    fn_slots[bi] = val;
                 }
             }
         }
 
-        // Propagate caller slots: override captured values with current values
+        // Propagate caller slots: override captured values with current values.
+        // Uses pre-computed is_param_slot bitmap (built once at VM init) instead
+        // of allocating a BTreeSet<usize> on every call.
         if self.needs_caller_slots[fi] {
             let body_map = &self.body_maps[fi];
-            let pslot_set: alloc::collections::BTreeSet<usize> = self.param_slots[fi].iter().map(|&(_, s)| s).collect();
-            for (si, sv) in slots.iter().enumerate() {
-                if let Some(v) = sv
+            let param_bm = &self.is_param_slot[fi];
+            for (si, &v) in slots.iter().enumerate() {
+                if !v.is_undef()
                     && let Some(name) = chunk.names.get(si)
                     && let Some(&bs) = body_map.get(name.as_str())
-                    && !pslot_set.contains(&bs)
+                    && !param_bm.get(bs).copied().unwrap_or(false)
                 {
-                    fn_slots[bs] = Some(*v);
+                    fn_slots[bs] = v;
                 }
             }
         }
@@ -310,16 +313,17 @@ impl<'a> VM<'a> {
             let versioned = s!(str base, "_0");
             let body_map = &self.body_maps[fi];
             if let Some(&slot) = body_map.get(versioned.as_str())
-                && fn_slots[slot].is_none()
+                && fn_slots[slot].is_undef()
             {
-                fn_slots[slot] = Some(callee);
+                fn_slots[slot] = callee;
             }
         }
 
-        // If this function contains yield, create a suspended coroutine
-        let (_, body_check, _, _) = self.functions[fi];
+        // If this function contains yield, create a suspended coroutine.
+        // is_generator is pre-computed at parse time (parser/literals.rs)
+        // and is_async at VM init, both O(1) — no per-call body scan.
         let is_async_fn = self.is_async.get(fi).copied().unwrap_or(false);
-        if is_async_fn || body_check.instructions.iter().any(|i| i.opcode == OpCode::Yield) {
+        if is_async_fn || body.is_generator {
             let coro = self.heap.alloc(HeapObj::Coroutine(0, fn_slots, Vec::new(), fi, Vec::new()))?;
             self.push(coro);
             self.depth -= 1;
@@ -328,9 +332,11 @@ impl<'a> VM<'a> {
 
         let yields_before = self.yields.len();
 
-        // Opt 3: Store range instead of copying all slot values for GC
+        // Opt 3: Store range instead of copying all slot values for GC.
+        // mark() ignores undef and other non-heap values, so we just push
+        // the whole slice — no per-element filter needed now.
         let snap = self.live_slots.len();
-        for &v in slots.iter().flatten() { self.live_slots.push(v); }
+        self.live_slots.extend_from_slice(slots);
 
         self.observed_impure.push(false);
         let exec_result = self.exec(body, &mut fn_slots);
@@ -342,14 +348,14 @@ impl<'a> VM<'a> {
         let nl_table = &self.nonlocal_tables[fi];
         if !nl_table.is_empty() {
             for &(canon_body, _) in nl_table {
-                if let Some(Some(val)) = fn_slots.get(canon_body) {
-                    let val = *val;
+                if let Some(&val) = fn_slots.get(canon_body) {
+                    if val.is_undef() { continue; }
                     // Back-propagate to caller
                     for base in &body.nonlocals {
                         for (si, sname) in chunk.names.iter().enumerate() {
                             if let Some(p) = sname.rfind('_')
                                 && &sname[..p] == base.as_str() && si < slots.len() {
-                                    slots[si] = Some(val);
+                                    slots[si] = val;
                             }
                         }
                         // Update closure captures

@@ -100,6 +100,7 @@ pub struct SSAChunk {
     pub phi_sources: Vec<(u16, u16)>,
     pub classes: Vec<SSAChunk>,
     pub is_pure: bool,
+    pub is_generator: bool,
     pub overflow: bool,
     pub prev_slots: Vec<Option<u16>>,
     pub alias_groups: Vec<Vec<u16>>,

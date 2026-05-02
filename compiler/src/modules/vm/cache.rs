@@ -1,10 +1,10 @@
 // vm/cache.rs
 
-use super::types::{Val, eq_vals_with_heap};
-use crate::modules::parser::{OpCode, SSAChunk, Instruction};
+use super::types::{Val, HeapObj, HeapPool, VmErr, BigInt, eq_vals_with_heap};
+use crate::modules::parser::{OpCode, SSAChunk, Instruction, Value};
 use crate::modules::fx::FxHashMap as HashMap;
 
-use alloc::{vec, vec::Vec};
+use alloc::{vec, vec::Vec, string::ToString};
 
 /* Specialized operation types for inline cache type-stable binary dispatch. */
 
@@ -34,6 +34,10 @@ struct CacheSlot {
 pub struct OpcodeCache {
     slots: Vec<CacheSlot>,
     fused: Option<Vec<Instruction>>,
+    /// Pre-materialized constant pool. Built once per chunk on first exec, so
+    /// LoadConst becomes a single indexed load instead of a per-iteration
+    /// match on `Value` + (for strings/bigints) heap alloc.
+    const_vals: Option<Vec<Val>>,
 }
 
 impl OpcodeCache {
@@ -41,6 +45,7 @@ impl OpcodeCache {
         Self {
             slots: vec![CacheSlot::default(); chunk.instructions.len()],
             fused: None,
+            const_vals: None,
         }
     }
 
@@ -55,6 +60,38 @@ impl OpcodeCache {
     /// Direct access (caller must have called `ensure_fused`).
     pub fn fused_ref(&self) -> &[Instruction] {
         self.fused.as_ref().expect("fused code not compiled")
+    }
+
+    /// Materialize the constant pool. Int/Float/Bool/None become inline Vals
+    /// (no heap touch); Str/BigInt allocate once and are shared. Subsequent
+    /// LoadConst executions just index into the resulting slice.
+    pub fn ensure_const_vals(&mut self, chunk: &SSAChunk, heap: &mut HeapPool)
+        -> Result<&[Val], VmErr>
+    {
+        if self.const_vals.is_none() {
+            let mut out = Vec::with_capacity(chunk.constants.len());
+            for c in &chunk.constants {
+                let v = match c {
+                    Value::Int(i) => {
+                        if *i >= Val::INT_MIN && *i <= Val::INT_MAX { Val::int(*i) }
+                        else { heap.alloc(HeapObj::BigInt(BigInt::from_i64(*i)))? }
+                    }
+                    Value::BigInt(s) => heap.alloc(HeapObj::BigInt(BigInt::from_decimal(s)))?,
+                    Value::Float(f) => Val::float(*f),
+                    Value::Bool(b) => Val::bool(*b),
+                    Value::None => Val::none(),
+                    Value::Str(s) => heap.alloc(HeapObj::Str(s.to_string()))?,
+                };
+                out.push(v);
+            }
+            self.const_vals = Some(out);
+        }
+        Ok(self.const_vals.as_ref().unwrap())
+    }
+
+    /// Precomputed constant pool. Caller must have invoked ensure_const_vals.
+    pub fn const_vals_ref(&self) -> &[Val] {
+        self.const_vals.as_ref().expect("const pool not materialized")
     }
 
     pub fn record(&mut self, ip: usize, opcode: &OpCode, ta: u8, tb: u8) {

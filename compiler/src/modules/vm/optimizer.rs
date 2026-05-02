@@ -1,18 +1,22 @@
 // vm/optimizer.rs
 //
-// Constant folding pass over SSA bytecode chunks.
+// Bytecode-level optimization passes run after parsing/SSA finalization.
 //
-// Folds:
+// Pass 1 — Constant folding.  Folds:
 //   LoadConst a, LoadConst b, BinOp     -> LoadConst (a OP b)
 //   LoadConst v, Not                    -> LoadTrue / LoadFalse
 //   LoadConst v, Minus                  -> LoadConst (-v)
 //
-// Does NOT fold LoadName even when the value is statically known. SSA name
+// Pass 2 — Phi-noop elimination.  After register coalescing in
+// finalize_prev_slots, a Phi whose two source slots and dest slot all canonicalize
+// to the same index is `slots[X] = slots[X]`. Such Phis are pure overhead inside
+// hot loops, so we mark them dead and compact.
+//
+// LoadName is NOT folded even when the value is statically known. SSA name
 // loads carry information used by tier-1 IC, super-op detection, and the
 // memoization layer; replacing them with constants pessimises those paths.
 //
-// After folding, instructions marked dead are removed and all jump operands
-// are remapped to their new positions in the compacted array.
+// After any pass, dead instructions are removed and jump operands remapped.
 
 use crate::modules::parser::{OpCode, SSAChunk, Instruction, Value};
 use super::types::Val;
@@ -47,8 +51,45 @@ pub fn constant_fold(chunk: &mut SSAChunk) {
         }
     }
 
+    // Pass 2: phi-noop elimination.  Capture each Phi's source pair *before*
+    // marking it dead so we can rebuild phi_sources in pre-compaction order.
+    let mut surviving_pairs: Vec<(u16, u16)> = Vec::new();
+    if !chunk.phi_map.is_empty() && !chunk.phi_sources.is_empty() {
+        for (ip, ins) in chunk.instructions.iter().enumerate() {
+            if dead[ip] || ins.opcode != OpCode::Phi { continue; }
+            let phi_idx = chunk.phi_map[ip];
+            let Some(&(a, b)) = chunk.phi_sources.get(phi_idx) else { continue };
+            // After SSA register coalescing all three operands collapse to
+            // the same canonical slot id, making the Phi `slots[X] = slots[X]`.
+            // Pure dispatch overhead, safely removable.
+            if a == b && a == ins.operand {
+                dead[ip] = true;
+            } else {
+                surviving_pairs.push((a, b));
+            }
+        }
+    }
+
     if dead.iter().any(|&d| d) {
         compact_with_jump_remap(chunk, &dead);
+        // Rebuild phi_map for the new instruction layout. Surviving Phis appear
+        // in the same relative order they had pre-compaction, so we can match
+        // each to its captured source pair sequentially.
+        if !surviving_pairs.is_empty() {
+            chunk.phi_sources = surviving_pairs;
+            chunk.phi_map = vec![0; chunk.instructions.len()];
+            let mut idx = 0usize;
+            for (i, ins) in chunk.instructions.iter().enumerate() {
+                if ins.opcode == OpCode::Phi {
+                    chunk.phi_map[i] = idx;
+                    idx += 1;
+                }
+            }
+        } else if !chunk.phi_map.is_empty() {
+            // All Phis were eliminated; clear both metadata vectors.
+            chunk.phi_sources.clear();
+            chunk.phi_map.clear();
+        }
     }
 
     for (_, body, _, _) in chunk.functions.iter_mut() {
