@@ -22,18 +22,27 @@ const handlers = {
             return;
         }
 
-        const { exports: wasm } = await WebAssembly.instantiate(wasmModule);
+        // js_print is called by the VM on every print(); each line is fired to
+        // the main thread immediately as WASM executes, before run() returns.
+        let exports;
+        const imports = { env: { js_print: (ptr, len) => {
+            const line = new TextDecoder().decode(
+                new Uint8Array(exports.memory.buffer, ptr, len)
+            );
+            self.postMessage({ type: 'line', line });
+        }}};
 
-        // Copy source bytes into WASM linear memory.
-        new Uint8Array(wasm.memory.buffer).set(srcBytes, wasm.src_ptr());
+        ({ exports } = await WebAssembly.instantiate(wasmModule, imports));
+
+        new Uint8Array(exports.memory.buffer).set(srcBytes, exports.src_ptr());
 
         const t0 = performance.now();
-        const len = wasm.run(srcBytes.length);
+        const len = exports.run(srcBytes.length);
         const ms = performance.now() - t0;
 
-        // Extract output from WASM memory using returned length and pointer
+        // `out` is empty on success (streamed); non-empty only for errors.
         const out = new TextDecoder().decode(
-            new Uint8Array(wasm.memory.buffer, wasm.out_ptr(), len)
+            new Uint8Array(exports.memory.buffer, exports.out_ptr(), len)
         );
 
         self.postMessage({ type: 'result', out, ms });

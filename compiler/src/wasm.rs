@@ -1,9 +1,21 @@
+/* Output streaming: each print() calls the host-imported `js_print` instead of
+   buffering, so the Worker fires a postMessage per line as WASM executes.
+   Future DOM pool: same import pattern — WASM writes commands to linear memory,
+   host reads them on each signal; no serialization, one transferable per frame. */
 #[cfg(target_arch = "wasm32")]
 mod runtime {
     use lol_alloc::LeakingPageAllocator;
     use crate::modules::{lexer::lexer, parser::Parser, vm::{VM, Limits, VmErr}};
     use alloc::string::String;
     use crate::s;
+
+    unsafe extern "C" {
+        fn js_print(ptr: *const u8, len: usize);
+    }
+
+    fn stream_print(s: &str) {
+        unsafe { js_print(s.as_ptr(), s.len()); }
+    }
 
     #[global_allocator]
     static A: LeakingPageAllocator = LeakingPageAllocator;
@@ -51,6 +63,7 @@ mod runtime {
         } else {
             crate::modules::vm::optimizer::constant_fold(&mut chunk);
             let mut vm = VM::with_limits(&chunk, Limits::sandbox());
+            vm.print_hook = Some(stream_print);
             vm.strict_input = true;
             let inp_len = unsafe { INP_LEN };
             if inp_len > 0 {
@@ -61,7 +74,7 @@ mod runtime {
                 unsafe { INP_LEN = 0; }
             }
             match vm.run() {
-                Ok(_) => vm.output.join("\n"),
+                Ok(_) => String::new(),
                 Err(e) => match &e {
                     VmErr::Type(m) => s!("TypeError: ", str m),
                     VmErr::Value(m) => s!("ValueError: ", str m),

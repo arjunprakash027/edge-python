@@ -74,7 +74,8 @@ impl<'a> VM<'a> {
         }
     }
 
-    /* Pops N args, joins with single spaces, appends one line to `output`. */
+    /* Pops N args, joins with single spaces. Calls `print_hook` if set (streaming),
+       otherwise buffers into `output`. */
     pub fn call_print(&mut self, op: u16) -> Result<(), VmErr> {
         let args = self.pop_n(op as usize)?;
         let mut out = String::new();
@@ -82,7 +83,10 @@ impl<'a> VM<'a> {
             if i > 0 { out.push(' '); }
             out.push_str(&self.display(*v));
         }
-        self.output.push(out);
+        match self.print_hook {
+            Some(hook) => hook(&out),
+            None       => self.output.push(out),
+        }
         Ok(())
     }
 

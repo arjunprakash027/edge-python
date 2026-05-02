@@ -107,9 +107,15 @@ const PythonWorker = (() => {
     };
 
     const onMsg = {
-        ready: ({ ms }) => { el.btn.disabled = false; ok(`Ready${DEV ? ' - Dev' : ''} (Loaded in ${fmt(ms)})`); },
-        result: ({ out, ms }) => { el.term.textContent = out; ok(`Ran in ${fmt(ms)}`); el.btn.disabled = false; },
-        error: ({ message }) => { err('Load failed'); el.term.textContent = `Could not load WASM.\n\n${message}`; },
+        ready:  ({ ms }) => { el.btn.disabled = false; ok(`Ready${DEV ? ' - Dev' : ''} (Loaded in ${fmt(ms)})`); },
+        line:   ({ line }) => { el.term.textContent += (el.term.textContent ? '\n' : '') + line; },
+        result: ({ out, ms }) => {
+            // `out` is empty on success (already streamed); non-empty only for errors.
+            if (out) el.term.textContent = out;
+            ok(`Ran in ${fmt(ms)}`);
+            el.btn.disabled = false;
+        },
+        error:  ({ message }) => { err('Load failed'); el.term.textContent = `Could not load WASM.\n\n${message}`; },
     };
     worker.onmessage = ({ data }) => onMsg[data.type]?.(data);
 
@@ -120,6 +126,7 @@ const PythonWorker = (() => {
         },
         run: (src) => {
             ok('Running...');
+            el.term.textContent = '';
             el.btn.disabled = true;
             worker.postMessage({ type: 'run', src });
         },
