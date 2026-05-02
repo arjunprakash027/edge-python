@@ -315,7 +315,10 @@ fetch(`./${EXAMPLE_FILE}`, FETCH_OPTS ?? {}).then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.text();
     }).then(code => {
-        Editor.setCode(code);
+        // Normalize CRLF/CR to LF — `<div id="ed">` uses white-space: pre, which
+        // preserves stray `\r` chars and renders them as visible glyphs in some
+        // browsers (showing up as phantom trailing whitespace).
+        Editor.setCode(code.replace(/\r\n?/g, '\n'));
     }).catch(() => {
         console.warn(`${EXAMPLE_FILE} could not be loaded, using default code.`);
     }
