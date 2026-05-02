@@ -63,9 +63,22 @@ const Highlighter = (() => {
         if (com) return span('tk-com', com);
         if (str) {
             if (/^[fFrRbBuU]*[fF]/.test(str)) {
-                return span('tk-str', str.replace(/\{\{|\}\}|\{([^{}]*)\}/g, (m2, expr) =>
-                    expr != null ? `{${expr.replace(new RegExp(TOKEN_RE.source, TOKEN_RE.flags), tokenize)}}` : m2
-                ));
+                let result = '';
+                let last = 0;
+                const fRe = /\{\{|\}\}|\{([^{}]*)\}/g;
+                let fm;
+                while ((fm = fRe.exec(str)) !== null) {
+                    if (last < fm.index) result += span('tk-str', str.slice(last, fm.index));
+                    if (fm[1] != null) {
+                        const inner = fm[1].replace(new RegExp(TOKEN_RE.source, TOKEN_RE.flags), tokenize);
+                        result += span('tk-fexpr', `{${inner}}`);
+                    } else {
+                        result += span('tk-str', fm[0]);
+                    }
+                    last = fRe.lastIndex;
+                }
+                if (last < str.length) result += span('tk-str', str.slice(last));
+                return result;
             }
             return span('tk-str', str);
         }
@@ -73,6 +86,7 @@ const Highlighter = (() => {
         if (word) {
             if (full[offset - 1] === '&' && full[offset + word.length] === ';') return word;
             for (const [set, cls] of CLASSES) if (set.has(word)) return span(cls, word);
+            if (/^[A-Z]/.test(word)) return span('tk-class', word);
             return span(/^\s*\(/.test(full.slice(offset + word.length)) ? 'tk-func' : 'tk-var', word);
         }
         return m;
@@ -172,6 +186,13 @@ const Editor = (() => {
                 const { inStr, isF } = stringCtx(text, caret);
                 // Inside a normal string we don't auto-close anything; inside an f-string we still want `{` -> `{}` for expressions.
                 if (inStr && !(isF && key === '{')) return null;
+                // Triple-quote opening: "" + " → """""" (or '' + ' → '''''')
+                if ((key === '"' || key === "'") && caret >= 2 && text[caret - 2] === key && text[caret - 1] === key) {
+                    return {
+                        text: text.slice(0, caret - 2) + key.repeat(6) + text.slice(caret),
+                        caret: caret - 2 + 3,
+                    };
+                }
                 return {
                     text: text.slice(0, caret) + key + PAIRS[key] + text.slice(caret),
                     caret: caret + 1,

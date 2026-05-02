@@ -21,6 +21,7 @@
 .tk-kw { color: #c586c0 }
 .tk-lit { color: #569cd6 }
 .tk-bi { color: #4ec9b0 }
+.tk-class { color: #4ec9b0 }
 .tk-num { color: #b5cea8 }
 .tk-str { color: #ce9178 }
 .tk-com { color: #6a9955; font-style: italic }
