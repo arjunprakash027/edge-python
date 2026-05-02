@@ -228,7 +228,6 @@ impl Diagnostic {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl Diagnostic {
     /* rustc-style multi-line render with source preview and caret:
 
@@ -268,8 +267,7 @@ impl Diagnostic {
 }
 
 impl Diagnostic {
-    /* Compact one-line render: `path:line:col: msg`. No source preview.
-       Used by WASM (host renders preview) and by tests. */
+    /* Compact one-line render: `path:line:col: msg`. No source preview. Used by tests. */
     pub fn render_oneline(&self, src: &str, path: Option<&str>) -> alloc::string::String {
         use crate::s;
         let (line, col) = Self::line_col(src, self.start);

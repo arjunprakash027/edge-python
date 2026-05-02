@@ -45,7 +45,7 @@ mod runtime {
             let mut s = String::new();
             for (i, e) in errs.iter().enumerate() {
                 if i > 0 { s.push('\n'); }
-                s.push_str(&s!("syntax error at ", str &e.render_oneline(src, None)));
+                s.push_str(&e.render(src, None));
             }
             s
         } else {
