@@ -5,7 +5,7 @@
 #[cfg(target_arch = "wasm32")]
 mod runtime {
     use lol_alloc::LeakingPageAllocator;
-    use crate::modules::{lexer::lexer, parser::Parser, vm::{VM, Limits, VmErr}};
+    use crate::modules::{lexer::lex, parser::{Parser, Diagnostic}, vm::{VM, Limits, VmErr}};
     use alloc::string::String;
     use crate::s;
 
@@ -52,7 +52,12 @@ mod runtime {
             },
         };
 
-        let (mut chunk, errs) = Parser::new(src, lexer(src)).parse();
+        let (tokens, lex_errs) = lex(src);
+        let mut p = Parser::new(src, tokens.into_iter());
+        for e in lex_errs {
+            p.errors.push(Diagnostic { start: e.start, end: e.end, msg: e.msg.into() });
+        }
+        let (mut chunk, errs) = p.parse();
 
         let out: String = if !errs.is_empty() {
             let mut s = String::new();

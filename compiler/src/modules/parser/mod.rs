@@ -14,6 +14,35 @@ use crate::modules::fx::FxHashMap as HashMap;
 use alloc::{string::{String, ToString}, vec::Vec};
 use core::iter::Peekable;
 
+// Bracket diagnostic helpers — keep human-readable strings out of the hot path.
+#[inline]
+pub(super) const fn open_str(k: TokenType) -> &'static str {
+    match k {
+        TokenType::Lpar => "'('",
+        TokenType::Lsqb => "'['",
+        TokenType::Lbrace => "'{'",
+        _ => "bracket",
+    }
+}
+#[inline]
+pub(super) const fn close_str(k: TokenType) -> &'static str {
+    match k {
+        TokenType::Rpar => "')'",
+        TokenType::Rsqb => "']'",
+        TokenType::Rbrace => "'}'",
+        _ => "bracket",
+    }
+}
+#[inline]
+pub(super) const fn match_close_str(open: TokenType) -> &'static str {
+    match open {
+        TokenType::Lpar => "')'",
+        TokenType::Lsqb => "']'",
+        TokenType::Lbrace => "'}'",
+        _ => "bracket",
+    }
+}
+
 pub struct Parser<'src, I: Iterator<Item = Token>> {
     pub(super) source: &'src str,
     pub(super) tokens: Peekable<I>,
@@ -29,6 +58,11 @@ pub struct Parser<'src, I: Iterator<Item = Token>> {
     pub(super) loop_kinds: Vec<bool>,
     pub(super) expr_depth: usize,
     pub(super) saw_newline: bool,
+    /* Every `(`, `[`, `{` consumed-but-not-yet-closed, with the error count at
+       the time it opened. Lets us anchor "X was never closed" diagnostics at
+       the opener (instead of at EOF where the cascade lands), and drop the
+       in-bracket cascade since those errors are downstream consequences. */
+    pub(super) bracket_stack: Vec<(TokenType, usize, usize, usize)>,
     pub errors: Vec<Diagnostic>,
 }
 
@@ -162,6 +196,49 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             line: 0, start: 0, end: 0,
         });
         self.last_line = tok.line;
+        match tok.kind {
+            TokenType::Lpar | TokenType::Lsqb | TokenType::Lbrace => {
+                self.bracket_stack.push((tok.kind, tok.start, tok.end, self.errors.len()));
+            }
+            TokenType::Rpar | TokenType::Rsqb | TokenType::Rbrace => {
+                let want_open = match tok.kind {
+                    TokenType::Rpar => TokenType::Lpar,
+                    TokenType::Rsqb => TokenType::Lsqb,
+                    _ => TokenType::Lbrace,
+                };
+                /* Walk the stack to find the matching opener. Anything sitting
+                   above it is unclosed — surface those with their own
+                   "X was never closed" anchored at the offender, then pop the
+                   matching opener. If no match is in the stack at all, the
+                   closer mismatches the innermost opener (or is orphan) and
+                   we report accordingly without desyncing further. */
+                if let Some(idx) = self.bracket_stack.iter().rposition(|&(k, _, _, _)| k == want_open) {
+                    while self.bracket_stack.len() > idx + 1 {
+                        let (k, st, en, ov) = self.bracket_stack.pop().unwrap();
+                        self.errors.truncate(ov);
+                        self.errors.push(Diagnostic {
+                            start: st, end: en,
+                            msg: s!(str open_str(k), " was never closed"),
+                        });
+                    }
+                    self.bracket_stack.pop();
+                } else if let Some(&(top_k, _, _, _)) = self.bracket_stack.last() {
+                    self.errors.push(Diagnostic {
+                        start: tok.start, end: tok.end,
+                        msg: s!(str close_str(tok.kind), " does not match ",
+                                str open_str(top_k), ", expected ",
+                                str match_close_str(top_k)),
+                    });
+                    self.bracket_stack.pop();
+                } else {
+                    self.errors.push(Diagnostic {
+                        start: tok.start, end: tok.end,
+                        msg: s!("unexpected ", str close_str(tok.kind), ", no matching opener"),
+                    });
+                }
+            }
+            _ => {}
+        }
         tok
     }
 
@@ -178,12 +255,32 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
     /* Same as `error` but anchored at the caller-provided span. Use when
        a parser has already consumed the offending token and wants the
-       diagnostic to point at it (not at whatever comes next). */
+       diagnostic to point at it (not at whatever comes next).
+
+       Panic-mode sync: stop at statement boundaries (Newline/Dedent/Endmarker).
+       When inside one or more open brackets, also stop at Comma or the
+       matching close bracket of our current nesting level so we can resume
+       parsing the next argument/element. We track nested openers/closers
+       internally so a `)` inside `range(epochs)` doesn't terminate sync that
+       started inside an outer unclosed `(`. */
     pub(super) fn error_at(&mut self, start: usize, end: usize, msg: &str) {
         self.errors.push(Diagnostic { start, end, msg: msg.to_string() });
+        let in_brackets = !self.bracket_stack.is_empty();
+        let mut depth: i32 = 0;
         loop {
-            match self.tokens.peek().map(|t| t.kind) {
+            let kind = self.tokens.peek().map(|t| t.kind);
+            match kind {
                 None | Some(TokenType::Newline | TokenType::Dedent | TokenType::Endmarker) => break,
+                Some(TokenType::Comma) if in_brackets && depth == 0 => break,
+                Some(TokenType::Rpar | TokenType::Rsqb | TokenType::Rbrace) => {
+                    if in_brackets && depth == 0 { break; }
+                    depth -= 1;
+                    self.tokens.next();
+                }
+                Some(TokenType::Lpar | TokenType::Lsqb | TokenType::Lbrace) => {
+                    depth += 1;
+                    self.tokens.next();
+                }
                 _ => { self.tokens.next(); }
             }
         }
@@ -224,11 +321,40 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
     /* Consume `kind` or push a diagnostic with a friendly description of
        what was actually found (lexeme for normal tokens, kind label for
-       synthetic Endmarker / structural tokens, and "EOF" past end). */
+       synthetic Endmarker / structural tokens, and "EOF" past end).
+
+       Special path for close brackets at EOF: anchor at the matching opener
+       on `bracket_stack` and drop any cascade errors that piled up inside
+       the unclosed bracket — those are downstream consequences of the same
+       unclosed-bracket bug and only confuse the user. */
     pub(super) fn eat(&mut self, kind: TokenType) {
         if matches!(self.peek(), Some(k) if k == kind) {
             self.advance();
             return;
+        }
+        if matches!(kind, TokenType::Rpar | TokenType::Rsqb | TokenType::Rbrace) {
+            let peeked = self.tokens.peek().map(|t| t.kind);
+            // Different closer in stream — silently bail; advance() will fire a
+            // "X does not match Y" / "Y was never closed" when the wrong closer
+            // is consumed up the call chain. Avoids a redundant generic error.
+            if matches!(peeked, Some(TokenType::Rpar | TokenType::Rsqb | TokenType::Rbrace))
+                && peeked != Some(kind)
+            {
+                return;
+            }
+            let at_eof = matches!(peeked, None | Some(TokenType::Endmarker));
+            if at_eof
+                && let Some(&(opener_kind, start, end, errors_at_open)) = self.bracket_stack.last()
+            {
+                self.errors.truncate(errors_at_open);
+                let opener_lbl = open_str(opener_kind);
+                self.errors.push(Diagnostic {
+                    start, end,
+                    msg: s!(str opener_lbl, " was never closed"),
+                });
+                self.bracket_stack.pop();
+                return;
+            }
         }
         let label: alloc::string::String = match self.tokens.peek() {
             Some(t) if t.kind == TokenType::Endmarker => "EOF".to_string(),
@@ -271,6 +397,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             saw_newline: false,
             expr_depth: 0,
             last_line: 0,
+            bracket_stack: Vec::new(),
             errors: Vec::new(),
         }
     }

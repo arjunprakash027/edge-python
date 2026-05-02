@@ -250,8 +250,35 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 let t = self.advance();
                 self.name_stmt(t)
             }
+            // Dangling Indent: a previous error left an orphaned indented
+            // block (e.g. malformed block header). Skip the entire block
+            // silently so we don't flag every line inside as "expected
+            // expression".
+            Some(TokenType::Indent) => {
+                self.tokens.next();
+                let mut depth = 1u32;
+                while depth > 0 {
+                    match self.tokens.peek().map(|t| t.kind) {
+                        Some(TokenType::Indent) => { self.tokens.next(); depth += 1; }
+                        Some(TokenType::Dedent) => { self.tokens.next(); depth -= 1; }
+                        None | Some(TokenType::Endmarker) => break,
+                        _ => { self.tokens.next(); }
+                    }
+                }
+                false
+            }
             _ => {
                 self.expr();
+                // `expr:` at statement level is almost always a missing block
+                // keyword (if/while/for/def/class/...). Surface that hypothesis
+                // directly instead of "expected expression" anchored at the colon.
+                if matches!(self.peek(), Some(TokenType::Colon)) {
+                    let t = self.advance();
+                    self.error_at(
+                        t.start, t.end,
+                        "unexpected ':' (missing 'if', 'while', 'for', or other statement keyword?)",
+                    );
+                }
                 true
             }
         }
@@ -474,6 +501,15 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             _ => {
                 self.emit_load_ssa(name);
                 self.expr_tails();
+                // Same heuristic as stmt's `_` arm: `expr:` at statement level
+                // means the user forgot a keyword like `if`/`while`/`for`.
+                if matches!(self.peek(), Some(TokenType::Colon)) {
+                    let t = self.advance();
+                    self.error_at(
+                        t.start, t.end,
+                        "unexpected ':' (missing 'if', 'while', 'for', or other statement keyword?)",
+                    );
+                }
                 true
             }
         }

@@ -216,14 +216,49 @@ pub struct Diagnostic {
     pub msg: String,
 }
 
+/* Display width for a Unicode codepoint — 0 for combining marks / ZWJ /
+   variation selectors, 2 for CJK & common wide emoji blocks, 1 otherwise.
+   Approximation of Unicode Standard Annex #11 (East Asian Width); pulls in
+   only the ranges that overwhelmingly account for misalignment in normal
+   source code. Used so the caret in rustc-style diagnostics stays under the
+   span when the line contains CJK or emoji. */
+const fn char_width(c: char) -> usize {
+    let cp = c as u32;
+    if matches!(cp,
+        0x0300..=0x036F | 0x0483..=0x0489 | 0x0591..=0x05BD | 0x05BF
+        | 0x05C1..=0x05C2 | 0x05C4..=0x05C5 | 0x05C7 | 0x0610..=0x061A
+        | 0x064B..=0x065F | 0x0670 | 0x06D6..=0x06DC | 0x06DF..=0x06E4
+        | 0x06E7..=0x06E8 | 0x06EA..=0x06ED | 0x0711 | 0x0730..=0x074A
+        | 0x07A6..=0x07B0 | 0x07EB..=0x07F3 | 0x200B..=0x200F | 0x202A..=0x202E
+        | 0x2060..=0x206F | 0xFE00..=0xFE0F | 0xFEFF | 0xE0100..=0xE01EF)
+    {
+        0
+    } else if matches!(cp,
+        0x1100..=0x115F | 0x2E80..=0x303E | 0x3041..=0x33FF | 0x3400..=0x4DBF
+        | 0x4E00..=0x9FFF | 0xA000..=0xA4CF | 0xAC00..=0xD7A3 | 0xF900..=0xFAFF
+        | 0xFE30..=0xFE4F | 0xFF00..=0xFF60 | 0xFFE0..=0xFFE6
+        | 0x1F300..=0x1FAFF | 0x20000..=0x3FFFD)
+    {
+        2
+    } else {
+        1
+    }
+}
+
+#[inline]
+fn display_width(s: &str) -> usize {
+    s.chars().map(char_width).sum()
+}
+
 impl Diagnostic {
     /* Convert a byte offset into (line, column), both 1-indexed.
-       Counts CHARS (not bytes) within the line for UTF-8 correctness. */
+       Column counts terminal display cells (CJK = 2, combining = 0) so the
+       caret line aligns with the source line for users with wide characters. */
     fn line_col(src: &str, byte: usize) -> (usize, usize) {
         let byte = byte.min(src.len());
         let line = src[..byte].matches('\n').count() + 1;
         let line_start = src[..byte].rfind('\n').map_or(0, |p| p + 1);
-        let col = src[line_start..byte].chars().count() + 1;
+        let col = display_width(&src[line_start..byte]) + 1;
         (line, col)
     }
 }
@@ -247,7 +282,7 @@ impl Diagnostic {
         let line_start = src[..s_off].rfind('\n').map_or(0, |p| p + 1);
         let line_end = src[s_off..].find('\n').map_or(src.len(), |p| s_off + p);
         let line_txt = &src[line_start..line_end];
-        let mark = src[s_off..e_off].chars().count().max(1);
+        let mark = display_width(&src[s_off..e_off]).max(1);
         let mut buf = itoa::Buffer::new();
         let pad_len = buf.format(line_no).len();
         let pad: String = " ".repeat(pad_len);

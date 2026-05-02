@@ -11,7 +11,10 @@ use alloc::{string::{String, ToString}, vec::Vec};
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
-    /* `{}`: dict literal, set literal, dict-comp, or set-comp. */
+    /* `{}`: dict literal, set literal, dict-comp, or set-comp.
+       Always close via `eat(Rbrace)`: an unconditional `advance()` would
+       silently swallow whatever's there if `}` is missing, hiding the
+       unclosed-bracket error and leaving `bracket_stack` desynced. */
     pub(super) fn brace_literal(&mut self) {
         if matches!(self.peek(), Some(TokenType::Rbrace)) {
             self.advance();
@@ -31,7 +34,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     let key_ins: Vec<Instruction> = self.chunk.instructions.drain(key_start..).collect();
                     self.chunk.emit(OpCode::BuildDict, 0);
                     self.comprehension_loop(&[key_ins, val_ins], OpCode::MapAdd, &versions_before);
-                    self.advance();
+                    self.eat(TokenType::Rbrace);
                 } else {
                     let mut pairs = 1u16;
                     while self.eat_if(TokenType::Comma) {
@@ -41,7 +44,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                         self.expr();
                         pairs += 1;
                     }
-                    self.advance();
+                    self.eat(TokenType::Rbrace);
                     self.chunk.emit(OpCode::BuildDict, pairs);
                 }
             }
@@ -50,7 +53,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 let elem_ins: Vec<Instruction> = self.chunk.instructions.drain(key_start..).collect();
                 self.chunk.emit(OpCode::BuildSet, 0);
                 self.comprehension_loop(&[elem_ins], OpCode::SetAdd, &versions_before);
-                self.advance();
+                self.eat(TokenType::Rbrace);
             }
             _ => {
                 let mut count = 1u16;
@@ -59,13 +62,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     self.expr();
                     count += 1;
                 }
-                self.advance();
+                self.eat(TokenType::Rbrace);
                 self.chunk.emit(OpCode::BuildSet, count);
             }
         }
     }
 
-    /* `[]`: list literal or list-comp. */
+    /* `[]`: list literal or list-comp. Same rationale as `brace_literal`:
+       always close via `eat(Rsqb)`. */
     pub(super) fn list_literal(&mut self) {
         if matches!(self.peek(), Some(TokenType::Rsqb)) {
             self.advance();
@@ -79,7 +83,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             let elem_ins: Vec<Instruction> = self.chunk.instructions.drain(elem_start..).collect();
             self.chunk.emit(OpCode::BuildList, 0);
             self.comprehension_loop(&[elem_ins], OpCode::ListAppend, &versions_before);
-            self.advance();
+            self.eat(TokenType::Rsqb);
         } else {
             let mut count = 1u16;
             while self.eat_if(TokenType::Comma) {
@@ -87,7 +91,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.expr();
                 count += 1;
             }
-            self.advance();
+            self.eat(TokenType::Rsqb);
             self.chunk.emit(OpCode::BuildList, count);
         }
     }
@@ -168,9 +172,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     }
 
     /* F-string: alternates literal middles with `{expr[:spec]}` chunks
-       until FstringEnd; emits BuildString to concatenate. */
-    pub(super) fn fstring(&mut self) {
+       until FstringEnd; emits BuildString to concatenate. `fs_start`/`fs_end`
+       point at the opening `f"`/`f'` so we can anchor "f-string was never
+       closed" if the lexer hit EOF before producing FstringEnd. */
+    pub(super) fn fstring(&mut self, fs_start: usize, fs_end: usize) {
         let mut parts = 0u16;
+        let mut got_end = false;
         if matches!(self.peek(), Some(TokenType::FstringEnd)) {
             self.advance();
             self.emit_const(Value::Str(String::new()));
@@ -226,10 +233,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 }
                 Some(TokenType::FstringEnd) => {
                     self.advance();
+                    got_end = true;
                     break;
                 }
                 _ => break
             }
+        }
+        if !got_end {
+            self.error_at(fs_start, fs_end, "f-string was never closed");
         }
         if parts > 0 {
             self.chunk.emit(OpCode::BuildString, parts);
@@ -272,7 +283,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             argc += 1;
             self.eat_if(TokenType::Comma);
         }
-        self.advance();
+        self.eat(TokenType::Rpar);
         self.chunk.emit(OpCode::CallRange, argc);
     }
 

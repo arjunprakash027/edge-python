@@ -64,6 +64,14 @@ Reported as `Diagnostic { start, end, msg }` — `start`/`end` are byte offsets 
 | Diagnostic                                | Cause                                  |
 |-------------------------------------------|----------------------------------------|
 | `expected X, got 'Y'`                     | Unexpected token                       |
+| `'(' was never closed` (or `'['` / `'{'`) | Bracket opened with no matching closer |
+| `')' does not match '[', expected ']'`    | Wrong closer kind for innermost opener |
+| `unexpected ')', no matching opener`      | Closer with no opener on the stack     |
+| `unexpected ':' (missing 'if', 'while', 'for', ...)` | `expr:` at statement level  |
+| `unterminated string literal`             | String missing closing quote           |
+| `unterminated triple-quoted string literal` | Triple-quoted string hit EOF         |
+| `f-string was never closed`               | F-string body hit EOF before close     |
+| `inconsistent indentation: mixing tabs and spaces` | Indent mixes both whitespace kinds |
 | `'break' outside loop`                    | Misplaced control keyword              |
 | `'continue' outside loop`                 | Misplaced control keyword              |
 | `default 'except:' must be last`          | Bare `except` not at end               |

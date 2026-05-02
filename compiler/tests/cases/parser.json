@@ -1606,7 +1606,7 @@
     "names": [],
     "instructions": [["ReturnValue", 0]],
     "annotations": {},
-    "errors": ["expected ')', got EOF"]
+    "errors": ["'(' was never closed"]
   },
   {
     "src": "x = '\\x41'", 

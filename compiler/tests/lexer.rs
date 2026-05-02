@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test {
 
-    use compiler_lib::modules::lexer::lexer;
+    use compiler_lib::modules::lexer::lex;
 
     #[derive(serde::Deserialize)]
     struct Case {
@@ -15,7 +15,8 @@ mod test {
 
         for case in cases {
             // Debug-format tokens for snapshot comparison (test-only).
-            let got: Vec<String> = lexer(&case.src).map(|t| format!("{:?}", t.kind)).collect();
+            let (toks, _) = lex(&case.src);
+            let got: Vec<String> = toks.iter().map(|t| format!("{:?}", t.kind)).collect();
             assert_eq!(got, case.tokens, "failed on: {:?}", case.src);
         }
     }

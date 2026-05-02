@@ -108,7 +108,7 @@ Edge Python uses CPython's INDENT/DEDENT model. The scanner tracks a stack of co
 | Indentation increased             | `Newline`, `Indent`                  |
 | Indentation decreased             | `Newline`, `Dedent` (× n levels)     |
 | Indentation unchanged             | `Newline`                            |
-| Mixed tabs and spaces in indent   | `Endmarker` (lex halt)               |
+| Mixed tabs and spaces in indent   | `Endmarker` (lex halt) + diagnostic  |
 
 The `nesting` counter is bumped by `(`, `[`, `{` and decremented by `)`, `]`. While `nesting > 0`, line breaks emit `Nl` and the indent stack is frozen — this is what allows multi-line expressions inside brackets without spurious INDENT/DEDENT.
 

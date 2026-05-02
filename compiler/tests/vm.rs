@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test {
 
-    use compiler_lib::modules::lexer::lexer;
+    use compiler_lib::modules::lexer::lex;
     use compiler_lib::modules::parser::Parser;
     use compiler_lib::modules::vm::VM;
 
@@ -20,7 +20,8 @@ mod test {
         let cases: Vec<Case> = serde_json::from_str(include_str!("cases/vm.json")).expect("invalid JSON");
 
         for case in cases {
-            let (chunk, _errors) = Parser::new(&case.src, lexer(&case.src)).parse();
+            let (tokens, _) = lex(&case.src);
+            let (chunk, _errors) = Parser::new(&case.src, tokens.into_iter()).parse();
             let mut vm = VM::new(&chunk);
             vm.input_buffer = case.input.clone();
             let result = vm.run();

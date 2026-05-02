@@ -1,6 +1,6 @@
 extern crate alloc;
 
-use compiler_lib::modules::{lexer::lexer, parser::Parser, vm::{VM, Limits}};
+use compiler_lib::modules::{lexer::lex, parser::{Parser, Diagnostic}, vm::{VM, Limits}};
 use std::{env, fs, process::exit};
 use compiler_lib::s;
 
@@ -67,7 +67,12 @@ fn run(path: &str, sandbox: bool, verbosity: usize, quiet: bool) -> Result<(), S
     };
     let diag_path = if is_file { Some(path) } else { None };
 
-    let (mut chunk, errs) = Parser::new(&src, lexer(&src)).parse();
+    let (tokens, lex_errs) = lex(&src);
+    let mut p = Parser::new(&src, tokens.into_iter());
+    for e in lex_errs {
+        p.errors.push(Diagnostic { start: e.start, end: e.end, msg: e.msg.to_string() });
+    }
+    let (mut chunk, errs) = p.parse();
     if !errs.is_empty() {
         for e in &errs {
             eprint_msg(&e.render(&src, diag_path));

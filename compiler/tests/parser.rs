@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod test {
 
-    use compiler_lib::modules::lexer::lexer;
-    use compiler_lib::modules::parser::{Parser, Value};
+    use compiler_lib::modules::lexer::lex;
+    use compiler_lib::modules::parser::{Parser, Value, Diagnostic};
     use compiler_lib::modules::fx::FxHashMap as HashMap;
 
     #[derive(serde::Deserialize)]
@@ -26,7 +26,12 @@ mod test {
             serde_json::from_str(include_str!("cases/parser.json")).expect("invalid JSON");
 
         for case in cases {
-            let (chunk, diagnostics) = Parser::new(&case.src, lexer(&case.src)).parse();
+            let (tokens, lex_errs) = lex(&case.src);
+            let mut parser = Parser::new(&case.src, tokens.into_iter());
+            for e in lex_errs {
+                parser.errors.push(Diagnostic { start: e.start, end: e.end, msg: e.msg.into() });
+            }
+            let (chunk, diagnostics) = parser.parse();
 
             let constants: Vec<String> = chunk
                 .constants

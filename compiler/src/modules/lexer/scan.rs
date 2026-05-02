@@ -1,4 +1,4 @@
-use super::TokenType;
+use super::{TokenType, LexError};
 use super::tables::*;
 
 use alloc::vec::Vec;
@@ -17,6 +17,10 @@ pub(super) struct Scanner<'a> {
     pub nesting: u32,
     pub line: usize,
     pub fstring_stack: Vec<(u8, bool, usize, u32)>,
+    /* Lex-time diagnostics (unterminated strings, mixed indent, etc.).
+       Surfaced to the caller alongside tokens so the parser can fold them
+       into its own error stream and the user sees one coherent report. */
+    pub errors: Vec<LexError>,
 }
 
 impl<'a> Scanner<'a> {
@@ -26,8 +30,14 @@ impl<'a> Scanner<'a> {
             pending: Vec::new(),
             indent_stack: Vec::new(),
             nesting: 0, line: 0,
-            fstring_stack: Vec::new()
+            fstring_stack: Vec::new(),
+            errors: Vec::new(),
         }
+    }
+
+    #[inline]
+    fn report(&mut self, start: usize, end: usize, msg: &'static str) {
+        self.errors.push(LexError { start, end, msg });
     }
 
     /* All inner scan loops use BYTE_CLASS indexed loads — zero branches per byte. */
@@ -113,35 +123,44 @@ impl<'a> Scanner<'a> {
 
     // Strings: single, double, triple-quoted (escape-aware).
 
-    fn scan_string(&mut self, quote: u8) {
+    fn scan_string(&mut self, quote: u8, start: usize) {
         if self.at(0) == Some(quote) && self.at(1) == Some(quote) {
             self.pos += 2;
-            self.scan_triple_string(quote);
+            self.scan_triple_string(quote, start);
         } else {
-            self.scan_single_string(quote);
+            self.scan_single_string(quote, start);
         }
     }
 
-    fn scan_single_string(&mut self, quote: u8) {
+    fn scan_single_string(&mut self, quote: u8, start: usize) {
         while self.pos < self.src.len() {
             let b = self.src[self.pos];
             if b == quote { self.pos += 1; return; }
-            if b == b'\\' { self.pos += 1; }
-            if b == b'\n' { break; }
+            if b == b'\\' && self.at(1).is_some() { self.pos += 1; }
+            if b == b'\n' {
+                // Unterminated single-line string: anchor at the opener so the
+                // user sees `^` on the offending quote, not at end-of-line.
+                self.report(start, start + 1, "unterminated string literal");
+                return;
+            }
             self.pos += 1;
         }
+        // Hit EOF without closing quote.
+        self.report(start, start + 1, "unterminated string literal");
     }
 
-    fn scan_triple_string(&mut self, quote: u8) {
+    fn scan_triple_string(&mut self, quote: u8, start: usize) {
         while self.pos < self.src.len() {
             let b = self.src[self.pos];
             if b == quote && self.at(1) == Some(quote) && self.at(2) == Some(quote) {
                 self.pos += 3; return;
             }
-            if b == b'\\' { self.pos += 1; }
+            if b == b'\\' && self.at(1).is_some() { self.pos += 1; }
             if b == b'\n' { self.line += 1; }
             self.pos += 1;
         }
+        // EOF inside triple-quoted string.
+        self.report(start, start + 3, "unterminated triple-quoted string literal");
     }
 
     // F-strings: emits Start/Middle/End and suspends at `{`.
@@ -224,6 +243,7 @@ impl<'a> Scanner<'a> {
         }
 
         if has_space && has_tab {
+            self.report(self.pos, p, "inconsistent indentation: mixing tabs and spaces");
             self.pending.push((TokenType::Endmarker, current_line, start, self.pos));
             self.pending.push((TokenType::Newline, current_line, start, self.pos));
             return;
@@ -240,6 +260,7 @@ impl<'a> Scanner<'a> {
         match level.cmp(&current) {
             Ordering::Greater => {
                 if self.indent_stack.len() >= MAX_INDENT_DEPTH {
+                    self.report(self.pos, line_pos, "indentation depth exceeds maximum (100)");
                     self.pending.push((TokenType::Endmarker, current_line, start, self.pos));
                     self.pending.push((TokenType::Newline, current_line, start, self.pos));
                     return;
@@ -331,8 +352,9 @@ impl<'a> Scanner<'a> {
                 && let Some(&q) = self.src.get(self.pos)
                 && (q == b'"' || q == b'\'')
             {
+                let q_start = self.pos;
                 self.pos += 1;
-                self.scan_string(q);
+                self.scan_string(q, q_start);
                 return Some((TokenType::String, line_at_start, start, self.pos));
             }
 
@@ -363,7 +385,7 @@ impl<'a> Scanner<'a> {
         // Bare string
         if b == b'"' || b == b'\'' {
             self.pos += 1;
-            self.scan_string(b);
+            self.scan_string(b, start);
             return Some((TokenType::String, line_at_start, start, self.pos));
         }
 

@@ -168,6 +168,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
     /* Primary atoms: literals, names, numbers, strings, f-strings, containers. */
     pub(super) fn parse_atom(&mut self) {
+        let errs_before = self.errors.len();
         let t = self.advance();
         match t.kind {
             TokenType::Name => self.name(t),
@@ -191,7 +192,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             TokenType::False => self.chunk.emit(OpCode::LoadFalse, 0),
             TokenType::None => self.chunk.emit(OpCode::LoadNone, 0),
             TokenType::Ellipsis => self.chunk.emit(OpCode::LoadEllipsis, 0),
-            TokenType::FstringStart => self.fstring(),
+            TokenType::FstringStart => self.fstring(t.start, t.end),
             TokenType::Lbrace => self.brace_literal(),
             TokenType::Lsqb => self.list_literal(),
             TokenType::Lpar => {
@@ -224,7 +225,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             TokenType::Lambda => self.parse_lambda(),
             // Anchor at the consumed token so the caret points at the
             // structural marker (newline, dedent, etc.) the user actually wrote.
-            _ => self.error_at(t.start, t.end, "expected expression"),
+            // Skip if advance() already reported (orphan/mismatched closer).
+            _ => {
+                if self.errors.len() == errs_before {
+                    self.error_at(t.start, t.end, "expected expression");
+                }
+            }
         }
         self.postfix_tail();
     }
