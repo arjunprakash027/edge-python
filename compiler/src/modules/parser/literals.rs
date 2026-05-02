@@ -134,7 +134,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             for_iters.push(fi);
         }
 
-        let mut var_map: HashMap<u16, u16> = HashMap::default();
+        // Tiny mapping (typical size 1-5); linear scan beats HashMap and
+        // avoids monomorphizing a hash table for u16 keys.
+        let mut var_map: Vec<(u16, u16)> = Vec::new();
         for var in &all_vars {
             let old_ver = versions_before.get(var).copied().unwrap_or(0);
             let new_ver = self.current_version(var);
@@ -144,13 +146,13 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             let Some(&old_slot) = self.chunk.name_index.get(old_name) else { continue };
             let mut nb = [0u8; 128];
             let new_slot = self.chunk.push_name(Self::ssa_name(var, new_ver, &mut nb));
-            var_map.insert(old_slot, new_slot);
+            var_map.push((old_slot, new_slot));
         }
 
         for body in elem_bodies {
             for ins in body {
                 let operand = if matches!(ins.opcode, OpCode::LoadName | OpCode::StoreName) {
-                    var_map.get(&ins.operand).copied().unwrap_or(ins.operand)
+                    var_map.iter().find(|(k, _)| *k == ins.operand).map(|(_, v)| *v).unwrap_or(ins.operand)
                 } else {
                     ins.operand
                 };

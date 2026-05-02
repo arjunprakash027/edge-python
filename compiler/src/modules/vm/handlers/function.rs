@@ -46,7 +46,7 @@ impl<'a> VM<'a> {
             OpCode::CallCallable => self.call_callable(),
             OpCode::CallId       => self.call_id(),
             OpCode::CallHash     => self.call_hash(),
-            _ => unreachable!("non-function opcode in handle_function"),
+            _ => Err(cold_runtime("non-function opcode in handle_function")),
         }
     }
 
@@ -59,9 +59,10 @@ impl<'a> VM<'a> {
     }
 
     fn exec_make_function(&mut self, opcode: OpCode, operand: u16, chunk: &SSAChunk, slots: &[Val]) -> Result<(), VmErr> {
-        let global = self.fn_index
-            .get(&(chunk as *const _))
-            .and_then(|v| v.get(operand as usize).copied())
+        let chunk_ptr = chunk as *const _;
+        let global = self.fn_index.iter()
+            .find(|(p, _)| *p == chunk_ptr)
+            .and_then(|(_, v)| v.get(operand as usize).copied())
             .ok_or(cold_runtime("MakeFunction: unknown function index"))? as usize;
 
         if opcode == OpCode::MakeCoroutine {
@@ -71,22 +72,21 @@ impl<'a> VM<'a> {
         let n_defaults = self.functions[global].2 as usize;
         let defaults = if n_defaults > 0 { self.pop_n(n_defaults)? } else { vec![] };
 
-        let chunk_map: HashMap<&str, usize> = chunk.names.iter()
-            .enumerate().map(|(i, n)| (n.as_str(), i)).collect();
-
         let (params, body, _, _) = self.functions[global];
-        let param_names: alloc::collections::BTreeSet<String> = params.iter().map(|p| s!(str p.trim_start_matches('*'), "_0")).collect();
+        let param_names: crate::modules::fx::FxHashSet<String> = params.iter().map(|p| s!(str p.trim_start_matches('*'), "_0")).collect();
         let mut captures: Vec<(usize, Val)> = Vec::new();
         // Capture closure values once per canonical (coalesced) slot, skipping
-        // names already bound as formal parameters.
-        let mut seen_canonical = alloc::collections::BTreeSet::new();
+        // names already bound as formal parameters. The body.names list is
+        // typically <30, so a linear scan over chunk.names is competitive
+        // with a HashMap and avoids a per-call monomorphization.
+        let mut seen_canonical: crate::modules::fx::FxHashSet<usize> = crate::modules::fx::FxHashSet::default();
         for (bi, bname) in body.names.iter().enumerate() {
             if param_names.contains(bname.as_str()) { continue; }
             let canon = body.alias_groups.get(bi)
                 .and_then(|g| g.first().copied())
                 .unwrap_or(bi as u16) as usize;
             if !seen_canonical.insert(canon) { continue; }
-            if let Some(&si) = chunk_map.get(bname.as_str())
+            if let Some((si, _)) = chunk.names.iter().enumerate().find(|(_, n)| n.as_str() == bname.as_str())
                 && let Some(&v) = slots.get(si)
                 && !v.is_undef() {
                     captures.push((canon, v));

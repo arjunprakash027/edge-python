@@ -1,6 +1,5 @@
 use super::types::{Val, HeapObj, HeapPool, VmErr, BigInt, eq_vals_with_heap};
 use crate::modules::parser::{OpCode, SSAChunk, Instruction, Value};
-use crate::modules::fx::FxHashMap as HashMap;
 
 use alloc::{vec, vec::Vec, string::ToString};
 
@@ -149,21 +148,24 @@ fn hash_args(args: &[Val]) -> u64 {
     h
 }
 
-pub struct Templates { map: HashMap<usize, Vec<TplEntry>> }
+// Indexed by `fi` (function id, dense from 0..N). Vec gives O(1) lookup
+// without a HashMap monomorphization.
+pub struct Templates { slots: Vec<Vec<TplEntry>> }
 
 impl Templates {
-    pub fn new() -> Self { Self { map: HashMap::default() } }
+    pub fn new() -> Self { Self { slots: Vec::new() } }
 
     pub fn lookup(&self, fi: usize, args: &[Val], heap: &super::types::HeapPool) -> Option<Val> {
         let h = hash_args(args);
-        self.map.get(&fi)?.iter()
+        self.slots.get(fi)?.iter()
             .find(|e| e.hits >= TPL_THRESH && args_match(e, args, h, heap))
             .map(|e| e.result)
     }
 
     pub fn record(&mut self, fi: usize, args: &[Val], result: Val, heap: &super::types::HeapPool) {
+        if self.slots.len() <= fi { self.slots.resize_with(fi + 1, Vec::new); }
         let h = hash_args(args);
-        let v = self.map.entry(fi).or_default();
+        let v = &mut self.slots[fi];
         if let Some(e) = v.iter_mut().find(|e| args_match(e, args, h, heap)) {
             e.hits += 1; e.result = result;
         } else if v.len() < 256 {
@@ -172,7 +174,7 @@ impl Templates {
     }
 
     pub fn count(&self) -> usize {
-        self.map.values().flat_map(|v| v.iter()).filter(|e| e.hits >= TPL_THRESH).count()
+        self.slots.iter().flat_map(|v| v.iter()).filter(|e| e.hits >= TPL_THRESH).count()
     }
 }
 

@@ -9,6 +9,5 @@ pub(super) use crate::modules::vm::{
 };
 
 pub(super) use crate::modules::parser::{OpCode, SSAChunk};
-pub(super) use crate::modules::fx::FxHashMap as HashMap;
 pub(super) use alloc::{rc::Rc, string::String, vec, vec::Vec};
 pub(super) use core::cell::RefCell;

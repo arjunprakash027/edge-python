@@ -323,8 +323,7 @@ define_methods! {
                 .map(|p| vm.heap.alloc(HeapObj::Str(p.to_string())))
                 .collect::<Result<_, _>>()?
         };
-        let v = vm.heap.alloc(HeapObj::List(Rc::new(RefCell::new(parts))))?;
-        vm.push(v); Ok(())
+        vm.alloc_and_push_list(parts)
     }),
     (StrJoin, "join", pure, |vm, recv, pos| {
         check_arity(&pos, 1, 1, "join takes 1 argument")?;
@@ -404,8 +403,7 @@ define_methods! {
     (ListCopy, "copy", pure, |vm, recv, pos| {
         check_arity(&pos, 0, 0, "copy takes no arguments")?;
         let items = list_clone(vm, recv)?;
-        let v = vm.heap.alloc(HeapObj::List(Rc::new(RefCell::new(items))))?;
-        vm.push(v); Ok(())
+        vm.alloc_and_push_list(items)
     }),
 
     // list: mutating.
@@ -516,15 +514,13 @@ define_methods! {
         check_arity(&pos, 0, 0, "keys takes no arguments")?;
         let entries = dict_entries(vm, recv)?;
         let keys: Vec<Val> = entries.into_iter().map(|(k, _)| k).collect();
-        let v = vm.heap.alloc(HeapObj::List(Rc::new(RefCell::new(keys))))?;
-        vm.push(v); Ok(())
+        vm.alloc_and_push_list(keys)
     }),
     (DictValues, "values", pure, |vm, recv, pos| {
         check_arity(&pos, 0, 0, "values takes no arguments")?;
         let entries = dict_entries(vm, recv)?;
         let vals: Vec<Val> = entries.into_iter().map(|(_, v)| v).collect();
-        let v = vm.heap.alloc(HeapObj::List(Rc::new(RefCell::new(vals))))?;
-        vm.push(v); Ok(())
+        vm.alloc_and_push_list(vals)
     }),
     (DictItems, "items", pure, |vm, recv, pos| {
         check_arity(&pos, 0, 0, "items takes no arguments")?;
@@ -534,8 +530,7 @@ define_methods! {
             let t = vm.heap.alloc(HeapObj::Tuple(vec![k, vv]))?;
             items.push(t);
         }
-        let v = vm.heap.alloc(HeapObj::List(Rc::new(RefCell::new(items))))?;
-        vm.push(v); Ok(())
+        vm.alloc_and_push_list(items)
     }),
     (DictGet, "get", pure, |vm, recv, pos| {
         check_arity(&pos, 1, 2, "get takes 1 or 2 arguments")?;

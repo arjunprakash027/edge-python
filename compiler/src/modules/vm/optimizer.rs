@@ -293,7 +293,7 @@ fn fold_binop(op: OpCode, a: Val, b: Val) -> Option<Val> {
             OpCode::Gt    => af >  bf,
             OpCode::LtEq  => af <= bf,
             OpCode::GtEq  => af >= bf,
-            _ => unreachable!(),
+            _ => return None,
         }));
     }
 

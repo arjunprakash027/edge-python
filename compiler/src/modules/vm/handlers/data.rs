@@ -36,7 +36,7 @@ impl<'a> VM<'a> {
             }
             OpCode::BuildSet   => self.build_set(operand)?,
             OpCode::BuildSlice => self.build_slice(operand)?,
-            _ => unreachable!("non-build opcode in handle_build"),
+            _ => return Err(cold_runtime("non-build opcode in handle_build")),
         }
         Ok(())
     }
@@ -58,7 +58,7 @@ impl<'a> VM<'a> {
                 let val = self.heap.alloc(HeapObj::Str(s))?;
                 self.push(val);
             }
-            _ => unreachable!("non-container opcode in handle_container"),
+            _ => return Err(cold_runtime("non-container opcode in handle_container")),
         }
         Ok(())
     }
@@ -69,7 +69,7 @@ impl<'a> VM<'a> {
             OpCode::ListAppend => ("list",  self.pop()?, None),
             OpCode::SetAdd     => ("set",   self.pop()?, None),
             OpCode::MapAdd     => { let v = self.pop()?; let k = self.pop()?; ("dict", v, Some(k)) }
-            _ => unreachable!("non-comprehension opcode in handle_comprehension"),
+            _ => return Err(cold_runtime("non-comprehension opcode in handle_comprehension")),
         };
         let acc = *self.stack.last().ok_or(VmErr::Runtime("stack underflow"))?;
         let corrupt = || VmErr::Runtime(match kind {
@@ -137,7 +137,7 @@ impl<'a> VM<'a> {
                 }
             }
             OpCode::YieldFrom => {}
-            _ => unreachable!("non-side opcode in handle_side"),
+            _ => return Err(cold_runtime("non-side opcode in handle_side")),
         }
         Ok(())
     }

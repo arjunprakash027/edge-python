@@ -134,6 +134,30 @@ impl<'a> VM<'a> {
         self.push(v); Ok(())
     }
 
+    /* Allocate a List from items and push. Centralises the
+       Rc::new(RefCell::new(items)) construction inlined ~15 times. */
+    pub(crate) fn alloc_list(&mut self, items: Vec<Val>) -> Result<Val, VmErr> {
+        self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(items))))
+    }
+
+    /* Allocate a List, push it, return Ok. */
+    pub(crate) fn alloc_and_push_list(&mut self, items: Vec<Val>) -> Result<(), VmErr> {
+        let v = self.alloc_list(items)?;
+        self.push(v); Ok(())
+    }
+
+    /* Allocate a Dict from a DictMap and push. */
+    pub(crate) fn alloc_and_push_dict(&mut self, dm: DictMap) -> Result<(), VmErr> {
+        let v = self.heap.alloc(HeapObj::Dict(Rc::new(RefCell::new(dm))))?;
+        self.push(v); Ok(())
+    }
+
+    /* Allocate a Tuple and push. */
+    pub(crate) fn alloc_and_push_tuple(&mut self, items: Vec<Val>) -> Result<(), VmErr> {
+        let v = self.heap.alloc(HeapObj::Tuple(items))?;
+        self.push(v); Ok(())
+    }
+
     pub fn call_int(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         if o.is_heap()
@@ -262,8 +286,7 @@ impl<'a> VM<'a> {
         let o = self.pop()?;
         let mut items = self.extract_iter(o, false)?;
         self.sort_by_lt(&mut items)?;
-        let val = self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(items))))?;
-        self.push(val); Ok(())
+        self.alloc_and_push_list(items)
     }
 
     /* In-place sort using lt_vals for ordering. Captures the first error
@@ -294,13 +317,10 @@ impl<'a> VM<'a> {
             && let HeapObj::Str(s) = self.heap.get(o) {
                 let s = s.clone();
                 let items = self.str_to_char_vals(&s)?;
-                let val = self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(items))))?;
-                self.push(val);
-                return Ok(());
+                return self.alloc_and_push_list(items);
         }
         let items = self.extract_iter(o, true)?;
-        let val = self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(items))))?;
-        self.push(val); Ok(())
+        self.alloc_and_push_list(items)
     }
 
     pub fn call_tuple(&mut self) -> Result<(), VmErr> {
@@ -310,8 +330,7 @@ impl<'a> VM<'a> {
             HeapObj::List(v)  => v.borrow().clone(),
             _ => return Err(cold_type("tuple() argument must be iterable")),
         }} else { return Err(cold_type("tuple() argument must be iterable")); };
-        let val = self.heap.alloc(HeapObj::Tuple(items))?;
-        self.push(val); Ok(())
+        self.alloc_and_push_tuple(items)
     }
 
     pub fn call_enumerate(&mut self) -> Result<(), VmErr> {
@@ -322,8 +341,7 @@ impl<'a> VM<'a> {
             let t = self.heap.alloc(HeapObj::Tuple(vec![Val::int(i as i64), x]))?;
             pairs.push(t);
         }
-        let val = self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(pairs))))?;
-        self.push(val); Ok(())
+        self.alloc_and_push_list(pairs)
     }
 
     /* Pairs elements from N iterables into tuples, truncating to the shortest. */
@@ -340,8 +358,7 @@ impl<'a> VM<'a> {
             let t = self.heap.alloc(HeapObj::Tuple(tuple))?;
             pairs.push(t);
         }
-        let val = self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(pairs))))?;
-        self.push(val); Ok(())
+        self.alloc_and_push_list(pairs)
     }
 
     /* Type-name based isinstance check. Accepts Type or NativeFn (for the
@@ -486,26 +503,22 @@ impl<'a> VM<'a> {
         }
         let mid = items.len() - after;
         for &v in items[mid..].iter().rev() { self.push(v); }
-        let star = self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(
-            items[before..mid].to_vec()
-        ))))?;
+        let star = self.alloc_list(items[before..mid].to_vec())?;
         self.push(star);
         for &v in items[..before].iter().rev() { self.push(v); }
         Ok(())
     }
 
     pub fn call_dict(&mut self, op: u16) -> Result<(), VmErr> {
-        if op == 0 {
-            let val = self.heap.alloc(HeapObj::Dict(Rc::new(RefCell::new(DictMap::new()))))?;
-            self.push(val);
+        let dm = if op == 0 {
+            DictMap::new()
         } else {
             let args = self.pop_n((op as usize) * 2)?;
             let mut dm = DictMap::with_capacity(op as usize);
             for pair in args.chunks(2) { dm.insert(pair[0], pair[1]); }
-            let val = self.heap.alloc(HeapObj::Dict(Rc::new(RefCell::new(dm))))?;
-            self.push(val);
-        }
-        Ok(())
+            dm
+        };
+        self.alloc_and_push_dict(dm)
     }
 
     pub fn call_set(&mut self, op: u16) -> Result<(), VmErr> {
@@ -716,8 +729,7 @@ impl<'a> VM<'a> {
         let (q, r) = ba.divmod(&bb).ok_or(VmErr::ZeroDiv)?;
         let qv = self.bigint_to_val(q)?;
         let rv = self.bigint_to_val(r)?;
-        let val = self.heap.alloc(HeapObj::Tuple(vec![qv, rv]))?;
-        self.push(val); Ok(())
+        self.alloc_and_push_tuple(vec![qv, rv])
     }
 
     pub fn call_pow(&mut self, op: u16) -> Result<(), VmErr> {
@@ -846,8 +858,7 @@ impl<'a> VM<'a> {
             self.extract_iter(o, true)?
         };
         items.reverse();
-        let v = self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(items))))?;
-        self.push(v); Ok(())
+        self.alloc_and_push_list(items)
     }
 
     // format(value [, spec]).

@@ -20,19 +20,27 @@ options:
 #[inline]
 fn eprint_msg(msg: &str) {
     use std::io::Write;
-    let _ = writeln!(std::io::stderr(), "{}", msg);
+    let mut e = std::io::stderr().lock();
+    let _ = e.write_all(msg.as_bytes());
+    let _ = e.write_all(b"\n");
 }
 
 #[inline]
 fn print_msg(level: &str, msg: &str) {
     use std::io::Write;
-    let _ = writeln!(std::io::stdout(), "[{}] {}", level, msg);
+    let mut o = std::io::stdout().lock();
+    let _ = o.write_all(b"[");
+    let _ = o.write_all(level.as_bytes());
+    let _ = o.write_all(b"] ");
+    let _ = o.write_all(msg.as_bytes());
+    let _ = o.write_all(b"\n");
 }
 
 fn parse_args() -> (String, usize, bool, bool) {
     let args: Vec<_> = env::args().skip(1).collect();
     if args.is_empty() || args.iter().any(|a| a == "-h") {
-        print!("{}", HELP);
+        use std::io::Write;
+        let _ = std::io::stdout().lock().write_all(HELP.as_bytes());
         exit(0);
     }
     let q = args.iter().any(|a| a == "-q");
@@ -76,7 +84,14 @@ fn run(path: &str, sandbox: bool, verbosity: usize, quiet: bool) -> Result<(), S
     let mut vm = VM::with_limits(&chunk, limits);
     let exec_result = vm.run();
 
-    vm.output.iter().for_each(|l| println!("{l}"));
+    {
+        use std::io::Write;
+        let mut out = std::io::stdout().lock();
+        for l in &vm.output {
+            let _ = out.write_all(l.as_bytes());
+            let _ = out.write_all(b"\n");
+        }
+    }
 
     if let Err(e) = exec_result {
         return Err(e.render());

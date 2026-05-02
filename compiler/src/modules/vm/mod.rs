@@ -41,7 +41,10 @@ pub struct VM<'a> {
     pub(crate) observed_impure: Vec<bool>,
     pub(crate) exception_stack: Vec<ExceptionFrame>,
     pub(crate) functions: Vec<&'a (Vec<String>, SSAChunk, u16, u16)>,
-    pub(crate) fn_index: HashMap<*const SSAChunk, Vec<u32>>,
+    // (chunk_ptr, [global_fn_id; chunk.functions.len()]). Linear scan; one
+    // entry per chunk (typically <20). Avoids HashMap monomorphization for
+    // a tiny pointer-keyed map.
+    pub(crate) fn_index: Vec<(*const SSAChunk, Vec<u32>)>,
     pub(crate) body_maps: Vec<HashMap<alloc::string::String, usize>>,
     pub(crate) param_slots: Vec<Vec<(ParamKind, usize)>>,
     pub(crate) slot_templates: Vec<Vec<Val>>,
@@ -82,7 +85,7 @@ impl<'a> VM<'a> {
             indices.push(global);
             self.build_function_table(&desc.1);
         }
-        self.fn_index.insert(chunk as *const _, indices);
+        self.fn_index.push((chunk as *const _, indices));
         for class_body in chunk.classes.iter() {
             self.build_function_table(class_body);
         }
@@ -166,18 +169,7 @@ impl<'a> VM<'a> {
             HeapObj::Dict(p) => IterFrame::Seq { items: p.borrow().keys().collect(), idx: 0 },
             HeapObj::Set(s) => {
                 let mut items: Vec<Val> = s.borrow().iter().cloned().collect();
-                items.sort_by(|a, b| {
-                    match (a.is_int() || a.is_float(), b.is_int() || b.is_float()) {
-                        (true, true) => {
-                            let fa = if a.is_int() { a.as_int() as f64 } else { a.as_float() };
-                            let fb = if b.is_int() { b.as_int() as f64 } else { b.as_float() };
-                            fa.partial_cmp(&fb).unwrap_or(core::cmp::Ordering::Equal)
-                        }
-                        (true, false) => core::cmp::Ordering::Less,
-                        (false, true) => core::cmp::Ordering::Greater,
-                        (false, false) => self.repr(*a).cmp(&self.repr(*b)),
-                    }
-                });
+                self.sort_set_items(&mut items);
                 IterFrame::Seq { items, idx: 0 }
             },
             HeapObj::Str(s) => {
@@ -252,7 +244,7 @@ impl<'a> VM<'a> {
             observed_impure: Vec::new(),
             exception_stack: Vec::new(),
             functions: Vec::new(),
-            fn_index: HashMap::default(),
+            fn_index: Vec::new(),
             body_maps: Vec::new(),
             param_slots: Vec::new(),
             slot_templates: Vec::new(),
@@ -272,16 +264,15 @@ impl<'a> VM<'a> {
             let (params, _, _, _) = vm.functions[fi];
             let bm = &vm.body_maps[fi];
             params.iter().map(|p| {
-                if let Some(stripped) = p.strip_prefix("**") {
-                    let slot = bm.get(&alloc::format!("{}_0", stripped)).copied().unwrap_or(usize::MAX);
-                    (ParamKind::DoubleStar, slot)
+                let (kind, bare) = if let Some(stripped) = p.strip_prefix("**") {
+                    (ParamKind::DoubleStar, stripped)
                 } else if let Some(stripped) = p.strip_prefix('*') {
-                    let slot = bm.get(&alloc::format!("{}_0", stripped)).copied().unwrap_or(usize::MAX);
-                    (ParamKind::Star, slot)
+                    (ParamKind::Star, stripped)
                 } else {
-                    let slot = bm.get(&alloc::format!("{}_0", p)).copied().unwrap_or(usize::MAX);
-                    (ParamKind::Normal, slot)
-                }
+                    (ParamKind::Normal, p.as_str())
+                };
+                let slot = bm.get(&s!(str bare, "_0")).copied().unwrap_or(usize::MAX);
+                (kind, slot)
             }).collect()
         }).collect();
 
@@ -298,7 +289,7 @@ impl<'a> VM<'a> {
         // True iff the body references names not in params/builtins/captures.
         vm.needs_caller_slots = (0..vm.functions.len()).map(|fi| {
             let (params, body, _, _) = vm.functions[fi];
-            let param_names: alloc::collections::BTreeSet<&str> = params.iter()
+            let param_names: crate::modules::fx::FxHashSet<&str> = params.iter()
                 .map(|p| p.trim_start_matches('*')).collect();
             body.names.iter().any(|n| {
                 let base = n.rfind('_').map(|p| &n[..p]).unwrap_or(n.as_str());
@@ -672,35 +663,28 @@ impl<'a> VM<'a> {
                 self.push(v);
             }
 
-            // Arith with inline cache.
-            OpCode::Add | OpCode::Sub | OpCode::Mul => {
-                if let Some(fast) = cache.get_fast(rip) {
-                    if self.exec_fast(fast)? { return Ok(None); }
-                    cache.invalidate(rip);
-                }
-                self.handle_arith(ins.opcode, rip, cache)?;
-            }
-            OpCode::Mod | OpCode::FloorDiv => {
-                if let Some(fast) = cache.get_fast(rip) {
-                    if self.exec_fast(fast)? { return Ok(None); }
-                    cache.invalidate(rip);
-                }
-                self.handle_arith(ins.opcode, rip, cache)?;
-            }
-            OpCode::Div | OpCode::Pow | OpCode::Minus => {
-                self.handle_arith(ins.opcode, rip, cache)?;
-            }
-
-            // Compare with inline cache — every comparison op has a FastOp
-            // variant in cache::FastOp and goes through the same fast-path /
-            // record cycle.
-            OpCode::Eq | OpCode::Lt | OpCode::NotEq
+            // Arith / compare with inline cache. Add/Sub/Mul/Mod/FloorDiv
+            // and every comparison op share the same fast-path / record /
+            // deopt cycle, so they collapse into one branch with handler
+            // selection at the bottom.
+            OpCode::Add | OpCode::Sub | OpCode::Mul
+            | OpCode::Mod | OpCode::FloorDiv
+            | OpCode::Eq | OpCode::Lt | OpCode::NotEq
             | OpCode::Gt | OpCode::LtEq | OpCode::GtEq => {
                 if let Some(fast) = cache.get_fast(rip) {
                     if self.exec_fast(fast)? { return Ok(None); }
                     cache.invalidate(rip);
                 }
-                self.handle_compare(ins.opcode, rip, cache)?;
+                if matches!(ins.opcode, OpCode::Eq | OpCode::Lt | OpCode::NotEq
+                    | OpCode::Gt | OpCode::LtEq | OpCode::GtEq)
+                {
+                    self.handle_compare(ins.opcode, rip, cache)?;
+                } else {
+                    self.handle_arith(ins.opcode, rip, cache)?;
+                }
+            }
+            OpCode::Div | OpCode::Pow | OpCode::Minus => {
+                self.handle_arith(ins.opcode, rip, cache)?;
             }
 
             OpCode::Jump => { *ip = self.checked_jump(op as usize, n)?; }

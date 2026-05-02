@@ -25,7 +25,7 @@ impl<'a> VM<'a> {
             OpCode::Mod => self.exec_mod(a, b)?,
             OpCode::Pow => self.exec_pow(a, b)?,
             OpCode::FloorDiv => self.exec_floordiv(a, b)?,
-            _ => unreachable!("non-arith opcode in handle_arith"),
+            _ => return Err(cold_runtime("non-arith opcode in handle_arith")),
         };
         self.push(result);
         Ok(())
@@ -101,7 +101,7 @@ impl<'a> VM<'a> {
             OpCode::BitXor => self.bitwise_op(a, b, |x, y| x ^ y)?,
             OpCode::Shl => self.exec_shl(a, b)?,
             OpCode::Shr => self.exec_shr(a, b)?,
-            _ => unreachable!("non-bitwise opcode in handle_bitwise"),
+            _ => return Err(cold_runtime("non-bitwise opcode in handle_bitwise")),
         };
         self.push(result);
         Ok(())
@@ -140,7 +140,7 @@ impl<'a> VM<'a> {
             OpCode::Gt => self.lt_vals(b, a)?,
             OpCode::LtEq => !self.lt_vals(b, a)?,
             OpCode::GtEq => !self.lt_vals(a, b)?,
-            _ => unreachable!("non-compare opcode in handle_compare"),
+            _ => return Err(cold_runtime("non-compare opcode in handle_compare")),
         };
         self.push(Val::bool(result));
         Ok(())
@@ -154,7 +154,7 @@ impl<'a> VM<'a> {
                 let v = self.pop()?;
                 self.push(Val::bool(!self.truthy(v)));
             }
-            _ => unreachable!("non-logic opcode in handle_logic"),
+            _ => return Err(cold_runtime("non-logic opcode in handle_logic")),
         }
         Ok(())
     }
@@ -167,7 +167,7 @@ impl<'a> VM<'a> {
             OpCode::NotIn => !self.contains(b, a),
             OpCode::Is => a.0 == b.0,
             OpCode::IsNot => a.0 != b.0,
-            _ => unreachable!("non-identity opcode in handle_identity"),
+            _ => return Err(cold_runtime("non-identity opcode in handle_identity")),
         };
         self.push(Val::bool(result));
         Ok(())
