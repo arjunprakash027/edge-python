@@ -1,5 +1,3 @@
-// lexer/mod.rs
-
 pub mod tables;
 pub use tables::utf8_char_len;
 
@@ -7,10 +5,8 @@ mod scan;
 
 use scan::Scanner;
 
-// Source size limit of 10 MiB.
 const MAX_SOURCE_SIZE: usize = 10 * 1024 * 1024;
 
-// Token kind with line number and byte-offset span into source.
 #[derive(Debug)]
 pub struct Token {
     pub kind: TokenType,
@@ -19,7 +15,6 @@ pub struct Token {
     pub end: usize,
 }
 
-// Enumeration of all lexical tokens produced by the scanner.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TokenType {
     // Keywords
@@ -47,7 +42,9 @@ pub enum TokenType {
     Comment, Newline, Indent, Dedent, Nl, Endmarker,
 }
 
-// Produces a parser ready iterator with indentation and soft keywords resolved.
+/* Parser-ready token iterator with indentation handled and soft keywords
+   (match/case/type) demoted to Name when followed by a token that
+   can't begin a soft-keyword construct. */
 pub fn lexer(source: &str) -> impl Iterator<Item = Token> + '_ {
     let bytes = source.as_bytes();
     let len = source.len();
@@ -80,14 +77,13 @@ pub fn lexer(source: &str) -> impl Iterator<Item = Token> + '_ {
         let is_soft = matches!(tok, TokenType::Match | TokenType::Case | TokenType::Type);
         let next_demotes = matches!(
             stream.peek(),
-            // Following token makes keyword a plain name.
             Some((
-                | TokenType::Lpar 
-                | TokenType::Colon 
-                | TokenType::Equal 
-                | TokenType::Comma 
-                | TokenType::Rpar 
-                | TokenType::Rsqb 
+                | TokenType::Lpar
+                | TokenType::Colon
+                | TokenType::Equal
+                | TokenType::Comma
+                | TokenType::Rpar
+                | TokenType::Rsqb
                 | TokenType::Newline,
                 _, _, _,
             )) | None

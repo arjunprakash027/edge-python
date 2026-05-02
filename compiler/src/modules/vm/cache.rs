@@ -1,13 +1,10 @@
-// vm/cache.rs
-
 use super::types::{Val, HeapObj, HeapPool, VmErr, BigInt, eq_vals_with_heap};
 use crate::modules::parser::{OpCode, SSAChunk, Instruction, Value};
 use crate::modules::fx::FxHashMap as HashMap;
 
 use alloc::{vec, vec::Vec, string::ToString};
 
-/* Specialized operation types for inline cache type-stable binary dispatch. */
-
+/* Type-specialised binop variants reachable from the inline cache. */
 #[derive(Debug, Clone, Copy)]
 pub enum FastOp {
     AddInt, AddFloat, AddStr,
@@ -20,8 +17,7 @@ pub enum FastOp {
     ModInt, FloorDivInt
 }
 
-/* Per-instruction IC slot. */
-
+/* Promote to `fast` after this many hits with a stable type key. */
 const QUICK_THRESH: u8 = 4;
 
 #[derive(Clone, Default)]
@@ -34,9 +30,9 @@ struct CacheSlot {
 pub struct OpcodeCache {
     slots: Vec<CacheSlot>,
     fused: Option<Vec<Instruction>>,
-    /// Pre-materialized constant pool. Built once per chunk on first exec, so
-    /// LoadConst becomes a single indexed load instead of a per-iteration
-    /// match on `Value` + (for strings/bigints) heap alloc.
+    /* Pre-materialised constant pool. Built once per chunk on first exec
+       so LoadConst is a single indexed load instead of a per-iteration
+       Value→Val conversion (strings/bigints would heap-alloc). */
     const_vals: Option<Vec<Val>>,
 }
 
@@ -49,7 +45,7 @@ impl OpcodeCache {
         }
     }
 
-    /// Compile fused instruction stream on first access; reuse afterward.
+    /* Compile the fused instruction stream on first access; reuse afterwards. */
     pub fn ensure_fused(&mut self, chunk: &SSAChunk) -> &[Instruction] {
         if self.fused.is_none() {
             self.fused = Some(fuse_method_calls(chunk));
@@ -57,14 +53,13 @@ impl OpcodeCache {
         self.fused.as_ref().unwrap()
     }
 
-    /// Direct access (caller must have called `ensure_fused`).
+    /* Direct access (caller must have called ensure_fused). */
     pub fn fused_ref(&self) -> &[Instruction] {
         self.fused.as_ref().expect("fused code not compiled")
     }
 
-    /// Materialize the constant pool. Int/Float/Bool/None become inline Vals
-    /// (no heap touch); Str/BigInt allocate once and are shared. Subsequent
-    /// LoadConst executions just index into the resulting slice.
+    /* Materialise the constant pool. Int/Float/Bool/None become inline Vals
+       (no heap touch); Str/BigInt allocate once and are then shared. */
     pub fn ensure_const_vals(&mut self, chunk: &SSAChunk, heap: &mut HeapPool)
         -> Result<&[Val], VmErr>
     {
@@ -89,7 +84,7 @@ impl OpcodeCache {
         Ok(self.const_vals.as_ref().unwrap())
     }
 
-    /// Precomputed constant pool. Caller must have invoked ensure_const_vals.
+    /* Direct access (caller must have called ensure_const_vals). */
     pub fn const_vals_ref(&self) -> &[Val] {
         self.const_vals.as_ref().expect("const pool not materialized")
     }
@@ -133,7 +128,7 @@ impl OpcodeCache {
     }
 }
 
-/* Template memoization — unchanged */
+// Template memoization for pure functions.
 
 fn args_match(e: &TplEntry, args: &[Val], h: u64, heap: &super::types::HeapPool) -> bool {
     e.hash == h
@@ -181,9 +176,9 @@ impl Templates {
     }
 }
 
-/// Fuses LoadAttr+Call into CallMethod+CallMethodArgs in-place. Replaces
-/// the two opcodes but keeps both operands and instruction count, so jump
-/// targets stay valid. Compiled once per chunk; cached above.
+/* Fuse adjacent LoadAttr+Call into CallMethod+CallMethodArgs in-place.
+   The two opcodes change but operands and instruction count stay, so
+   jump targets remain valid. Compiled once per chunk and then cached. */
 fn fuse_method_calls(chunk: &SSAChunk) -> Vec<Instruction> {
     let src = &chunk.instructions;
     let n = src.len();

@@ -1,5 +1,3 @@
-// parser/stmt.rs
-
 use crate::s;
 
 use super::Parser;
@@ -11,8 +9,8 @@ use alloc::{string::{String, ToString}, vec};
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
-    /* Routes each statement type (if/for/def/etc) to its specific handler. */
-
+    /* Top-level statement dispatch. Returns whether the statement leaves a
+       value on the stack (callers Pop it before the next statement). */
     pub(super) fn stmt(&mut self) -> bool {
         match self.peek() {
             Some(TokenType::If) => {
@@ -42,8 +40,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             }
             Some(TokenType::Type) => {
                 self.advance();
-                let t = self.advance();
-                let name = self.lexeme(&t).to_string();
+                let name = self.advance_text();
                 self.eat(TokenType::Equal);
                 self.expr();
                 let idx = self.chunk.push_name(&name);
@@ -126,8 +123,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             Some(TokenType::Nonlocal) => {
                 self.advance();
                 loop {
-                    let t = self.advance();
-                    let name = self.lexeme(&t).to_string();
+                    let name = self.advance_text();
                     let idx = self.chunk.push_name(&name);
                     self.chunk.emit(OpCode::Nonlocal, idx);
                     if !self.chunk.nonlocals.contains(&name) {
@@ -145,10 +141,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             }
             Some(TokenType::Del) => {
                 self.advance();
-                let t = self.advance();
-                let name = self.lexeme(&t).to_string();
-                let mut buf = [0u8; 128];
-                let idx = self.chunk.push_name( Self::ssa_name(&name, self.current_version(&name), &mut buf) );
+                let name = self.advance_text();
+                let idx = self.push_ssa_name(&name, self.current_version(&name));
                 self.chunk.emit(OpCode::Del, idx);
                 false
             }
@@ -190,12 +184,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             }
             Some(TokenType::Star) => {
                 self.advance();
-                let t = self.advance();
-                let mut targets = vec![s!("*", str self.lexeme(&t))];
+                let head = self.advance_text();
+                let mut targets = vec![s!("*", str &head)];
                 while self.eat_if(TokenType::Comma) {
                     if !matches!(self.peek(), Some(TokenType::Name)) { break; }
-                    let t = self.advance();
-                    targets.push(self.lexeme(&t).to_string());
+                    targets.push(self.advance_text());
                 }
                 self.eat(TokenType::Equal);
                 self.expr();
@@ -231,48 +224,24 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /*
-    Statement Helpers
-        Emits global/nonlocal lists and compiles indented statement blocks cleanly.
-    */
-
+    /* Comma-separated `name [, name]*` after a `global`/`nonlocal` keyword. */
     pub(super) fn emit_name_list(&mut self, op: OpCode) {
         self.advance();
         loop {
-            let t = self.advance();
-            let name = self.lexeme(&t).to_string();
+            let name = self.advance_text();
             let idx = self.chunk.push_name(&name);
             self.chunk.emit(op, idx);
             if !self.eat_if(TokenType::Comma) { break; }
         }
     }
 
-    /*
-    Block Compilation
-        Compiles indented statement sequence between Indent and Dedent tokens.
-    */
+    pub(super) fn compile_block(&mut self) { self.compile_block_inner(false); }
+    pub(super) fn compile_block_body(&mut self) { self.compile_block_inner(true); }
 
-    pub(super) fn compile_block(&mut self) {
-        let indented = self.eat_if(TokenType::Indent);
-        loop {
-            while self.eat_if(TokenType::Semi) {}
-
-            if self.at_end() { break; }
-            if matches!(self.peek(), Some(TokenType::Dedent)) {
-                self.advance();
-                break;
-            }
-
-            let produced_value = self.stmt();
-            if !self.at_end() && produced_value {
-                self.chunk.emit(OpCode::PopTop, 0);
-            }
-
-            if !indented && !matches!(self.peek(), Some(TokenType::Semi)) { break; }
-        }
-    }
-
-    pub(super) fn compile_block_body(&mut self) {
+    /* Compile an indented statement sequence between Indent/Dedent.
+       is_body=true (function/lambda body) stops on a trailing return so
+       dead code after return doesn't emit unreachable ops. */
+    fn compile_block_inner(&mut self, is_body: bool) {
         let indented = self.eat_if(TokenType::Indent);
         loop {
             while self.eat_if(TokenType::Semi) {}
@@ -285,26 +254,23 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             if !self.at_end() && produced_value {
                 self.chunk.emit(OpCode::PopTop, 0);
             }
-            if !indented {
+            if indented { continue; }
+            if is_body {
                 let just_returned = self.chunk.instructions.last()
-                    .map(|i| i.opcode == OpCode::ReturnValue)
-                    .unwrap_or(false);
+                    .is_some_and(|i| i.opcode == OpCode::ReturnValue);
                 if just_returned || !matches!(self.peek(), Some(TokenType::Semi)) { break; }
-            }
+            } else if !matches!(self.peek(), Some(TokenType::Semi)) { break; }
         }
     }
 
-    /* Name Parses assignments, augmented ops, attribute access, indexing and calls on names. */
-
+    /* Name-led statement: assignment, augmented op, attribute access,
+       indexing, call, or tuple unpacking. */
     pub(super) fn name_stmt(&mut self, t: Token) -> bool {
         let name = self.lexeme(&t).to_string();
 
     if self.eat_if(TokenType::Colon) {
         if matches!(self.peek(), Some(TokenType::Name)) {
-            let ann = {
-                let t = self.advance();
-                self.lexeme(&t).to_string()
-            };
+            let ann = self.advance_text();
             self.chunk.annotations.insert(name.clone(), ann);
         }
         while !matches!(
@@ -342,8 +308,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     self.expr();
                     self.chunk.emit(OpCode::StoreItem, 0);
                     false
-                } else if self.peek().and_then(|tok| Self::augmented_op(&tok)).is_some() {
-                    let op = Self::augmented_op(&self.peek().unwrap()).unwrap();
+                } else if let Some(op) = self.peek().and_then(|t| Self::augmented_op(&t)) {
                     self.advance();
                     self.chunk.emit(OpCode::Dup2, 0);
                     self.chunk.emit(OpCode::GetItem, 0);
@@ -379,8 +344,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     let idx = self.chunk.push_name(&self.source[attr_start..attr_end]);
                     self.chunk.emit(OpCode::StoreAttr, idx);
                     false
-                } else if self.peek().and_then(|tok| Self::augmented_op(&tok)).is_some() {
-                    let op = Self::augmented_op(&self.peek().unwrap()).unwrap();
+                } else if let Some(op) = self.peek().and_then(|t| Self::augmented_op(&t)) {
                     self.advance();
                     self.emit_load_ssa(name.clone());
                     self.emit_load_ssa(name);
@@ -429,11 +393,10 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 while self.eat_if(TokenType::Comma) {
                     if self.eat_if(TokenType::Star) {
                         star_pos = Some(targets.len());
-                        let t = self.advance();
-                        targets.push(s!("*", str self.lexeme(&t)));
+                        let nm = self.advance_text();
+                        targets.push(s!("*", str &nm));
                     } else if matches!(self.peek(), Some(TokenType::Name)) {
-                        let t = self.advance();
-                        targets.push(self.lexeme(&t).to_string());
+                        targets.push(self.advance_text());
                     } else {
                         break;
                     }
@@ -500,8 +463,6 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             _ => None,
         }
     }
-
-    /* Consumes = token, compiles RHS expression, stores into new SSA version. */
 
     pub(super) fn assign(&mut self, name: String) {
         self.advance();

@@ -1,9 +1,7 @@
-// vm/handlers/methods.rs
-//
-// Single source of truth for built-in methods (str/list/dict).
-// The macro generates the BuiltinMethodId enum, the name lookup, and the
-// dispatch function from one declarative table. Adding a new method means
-// adding one row here, nothing else.
+/* Single source of truth for built-in methods (str/list/dict). The
+   define_methods! macro at the bottom generates the BuiltinMethodId
+   enum, name lookup, and dispatcher from one declarative table — adding
+   a new method is one row. */
 
 use super::*;
 use crate::alloc::string::ToString;
@@ -76,7 +74,7 @@ impl<'a> VM<'a> {
             .ok_or(VmErr::Runtime("LoadAttr: bad name index"))?;
         let obj = self.pop()?;
 
-        // Instance: check attrs first, then class methods
+        // Instance attribute lookup: check `__dict__` first, then class methods.
         if obj.is_heap()
             && let HeapObj::Instance(cls_val, attrs) = self.heap.get(obj) {
                 let cls_val = *cls_val;
@@ -98,7 +96,7 @@ impl<'a> VM<'a> {
                 return Err(VmErr::Type("attribute not found"));
             }
 
-        // Built-in type methods
+        // Builtin type method.
         let ty = self.type_name(obj);
         let method_id = lookup_method(ty, name.as_str())
             .ok_or(VmErr::Type("'object' has no attribute"))?;
@@ -108,9 +106,9 @@ impl<'a> VM<'a> {
     }
 }
 
-/// One macro that generates: enum, name lookup, dispatcher.
-/// Each row: (Variant, "name", category, |vm, recv, pos| body)
-/// Category `mutating` adds an automatic mark_impure() after the body.
+/* Generates the BuiltinMethodId enum, name lookup, and dispatcher in
+   one go. Each row: (Variant, "name", category, |vm, recv, pos| body).
+   Category `mutating` auto-emits mark_impure() on success. */
 macro_rules! define_methods {
     ( $( ($variant:ident, $name:literal, $cat:ident, |$vm:ident, $recv:ident, $pos:ident| $body:block) ),* $(,)? ) => {
 
@@ -153,8 +151,8 @@ macro_rules! define_methods {
     (@maybe_impure pure, $vm:ident, $r:ident) => { $r };
 }
 
-/// (type, attr) -> BuiltinMethodId. Linear scan; only ~37 entries and not on
-/// the hot path (CallMethod fusion bypasses LoadAttr+Call).
+/* (type, attr) → BuiltinMethodId. Linear scan over ~37 entries.
+   Off the hot path: CallMethod fusion bypasses LoadAttr+Call entirely. */
 pub fn lookup_method(ty: &str, attr: &str) -> Option<BuiltinMethodId> {
     use BuiltinMethodId::*;
     Some(match (ty, attr) {
@@ -200,7 +198,7 @@ pub fn lookup_method(ty: &str, attr: &str) -> Option<BuiltinMethodId> {
 }
 
 define_methods! {
-    // ── str: zero-arg transforms ─────────────────────────────────────────
+    // str: zero-arg transforms.
     (StrUpper, "upper", pure, |vm, recv, pos| {
         check_arity(&pos, 0, 0, "upper takes no arguments")?;
         let s = recv_str(vm, recv)?;
@@ -232,7 +230,7 @@ define_methods! {
         vm.push(v); Ok(())
     }),
 
-    // ── str: optional separator ──────────────────────────────────────────
+    // str: optional separator.
     (StrLstrip, "lstrip", pure, |vm, recv, pos| {
         check_arity(&pos, 0, 1, "lstrip takes 0 or 1 arguments")?;
         let s = recv_str(vm, recv)?;
@@ -258,7 +256,7 @@ define_methods! {
         vm.push(v); Ok(())
     }),
 
-    // ── str: predicates ──────────────────────────────────────────────────
+    // str: predicates.
     (StrIsDigit, "isdigit", pure, |vm, recv, pos| {
         check_arity(&pos, 0, 0, "isdigit takes no arguments")?;
         let s = recv_str(vm, recv)?;
@@ -278,7 +276,7 @@ define_methods! {
         Ok(())
     }),
 
-    // ── str: queries with one string arg ─────────────────────────────────
+    // str: queries with one string arg.
     (StrStartswith, "startswith", pure, |vm, recv, pos| {
         check_arity(&pos, 1, 1, "startswith takes 1 argument")?;
         let s = recv_str(vm, recv)?;
@@ -311,7 +309,7 @@ define_methods! {
         Ok(())
     }),
 
-    // ── str: split / join / replace ──────────────────────────────────────
+    // str: split / join / replace.
     (StrSplit, "split", pure, |vm, recv, pos| {
         check_arity(&pos, 0, 1, "split takes 0 or 1 arguments")?;
         let s = recv_str(vm, recv)?;
@@ -350,7 +348,7 @@ define_methods! {
         vm.push(v); Ok(())
     }),
 
-    // ── str: padding ─────────────────────────────────────────────────────
+    // str: padding.
     (StrCenter, "center", pure, |vm, recv, pos| {
         check_arity(&pos, 1, 2, "center takes 1 or 2 arguments")?;
         let s = recv_str(vm, recv)?;
@@ -385,7 +383,7 @@ define_methods! {
         vm.push(v); Ok(())
     }),
 
-    // ── list: pure ───────────────────────────────────────────────────────
+    // list: pure.
     (ListIndex, "index", pure, |vm, recv, pos| {
         check_arity(&pos, 1, 1, "index takes 1 argument")?;
         let items = list_clone(vm, recv)?;
@@ -410,7 +408,7 @@ define_methods! {
         vm.push(v); Ok(())
     }),
 
-    // ── list: mutating ───────────────────────────────────────────────────
+    // list: mutating.
     (ListAppend, "append", mutating, |vm, recv, pos| {
         check_arity(&pos, 1, 1, "append takes 1 argument")?;
         match vm.heap.get_mut(recv) {
@@ -505,20 +503,7 @@ define_methods! {
     (ListSort, "sort", mutating, |vm, recv, pos| {
         check_arity(&pos, 0, 0, "sort takes no arguments")?;
         let mut sorted = list_clone(vm, recv)?;
-        let mut sort_err: Option<VmErr> = None;
-        sorted.sort_by(|&a, &b| {
-            if sort_err.is_some() { return core::cmp::Ordering::Equal; }
-            match vm.lt_vals(a, b) {
-                Ok(true) => core::cmp::Ordering::Less,
-                Ok(false) => match vm.lt_vals(b, a) {
-                    Ok(true) => core::cmp::Ordering::Greater,
-                    Ok(false) => core::cmp::Ordering::Equal,
-                    Err(e) => { sort_err = Some(e); core::cmp::Ordering::Equal }
-                },
-                Err(e) => { sort_err = Some(e); core::cmp::Ordering::Equal }
-            }
-        });
-        if let Some(e) = sort_err { return Err(e); }
+        vm.sort_by_lt(&mut sorted)?;
         match vm.heap.get_mut(recv) {
             HeapObj::List(rc) => *rc.borrow_mut() = sorted,
             _ => return Err(cold_type("sort: receiver is not a list")),
@@ -526,7 +511,7 @@ define_methods! {
         vm.push(Val::none()); Ok(())
     }),
 
-    // ── dict ─────────────────────────────────────────────────────────────
+    // dict.
     (DictKeys, "keys", pure, |vm, recv, pos| {
         check_arity(&pos, 0, 0, "keys takes no arguments")?;
         let entries = dict_entries(vm, recv)?;

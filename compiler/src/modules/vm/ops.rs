@@ -1,5 +1,3 @@
-// vm/ops.rs
-
 use crate::s;
 
 use super::types::*;
@@ -7,27 +5,18 @@ use super::types::*;
 use alloc::{string::String, vec::Vec, rc::Rc};
 use core::cell::RefCell;
 
-// Coerces numeric pair to f64; None if neither is float.
+/* Coerce a numeric pair to f64; returns None if neither operand is a float. */
 fn coerce_floats(a: Val, b: Val) -> Option<(f64, f64)> {
-    if !a.is_float() && !b.is_float() { 
-        return None; 
-    }
-
+    if !a.is_float() && !b.is_float() { return None; }
     let extract_f64 = |v: &Val| -> Option<f64> {
-        if v.is_float() {
-            Some(v.as_float())
-        } else if v.is_int() {
-            Some(v.as_int() as f64)
-        } else {
-            None
-        }
+        if v.is_float() { Some(v.as_float()) }
+        else if v.is_int() { Some(v.as_int() as f64) }
+        else { None }
     };
-
     Some((extract_f64(&a)?, extract_f64(&b)?))
 }
 
-/* Records heap type tags and promotes stable binary ops to fast path. */
-
+/* Record heap type tags so the IC can promote a stable binop to FastOp. */
 macro_rules! cached_binop {
     ($heap:expr, $rip:expr, $opcode:expr, $a:expr, $b:expr, $cache:expr) => {{
         let ta = $heap.val_tag($a);
@@ -36,8 +25,6 @@ macro_rules! cached_binop {
     }};
 }
 pub(crate) use cached_binop;
-
-/* All methods that need &self or &mut self access to HeapPool. */
 
 use super::VM;
 
@@ -194,7 +181,7 @@ impl<'a> VM<'a> {
         Err(VmErr::Type("'<' not supported between these types"))
     }
 
-    // Checks item presence in list, tuple, dict, set, or substring in string.
+    /* Item presence in list/tuple/dict/set, or substring in string. */
     pub fn contains(&self, container: Val, item: Val) -> bool {
         if !container.is_heap() { return false; }
         match self.heap.get(container) {

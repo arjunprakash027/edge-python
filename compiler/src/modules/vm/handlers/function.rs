@@ -1,10 +1,8 @@
-// vm/handlers/function.rs
-
 use crate::s;
 use super::*;
-use super::super::types::IterFrame;
 
 impl<'a> VM<'a> {
+    /* Dispatch every function-shaped opcode (Call, MakeFunction, builtins). */
     pub(crate) fn handle_function(
         &mut self, op: OpCode, operand: u16,
         chunk: &SSAChunk, slots: &mut [Val]
@@ -79,10 +77,11 @@ impl<'a> VM<'a> {
         let (params, body, _, _) = self.functions[global];
         let param_names: alloc::collections::BTreeSet<String> = params.iter().map(|p| s!(str p.trim_start_matches('*'), "_0")).collect();
         let mut captures: Vec<(usize, Val)> = Vec::new();
+        // Capture closure values once per canonical (coalesced) slot, skipping
+        // names already bound as formal parameters.
         let mut seen_canonical = alloc::collections::BTreeSet::new();
         for (bi, bname) in body.names.iter().enumerate() {
             if param_names.contains(bname.as_str()) { continue; }
-            // Use canonical slot from alias_groups (coalesced target).
             let canon = body.alias_groups.get(bi)
                 .and_then(|g| g.first().copied())
                 .unwrap_or(bi as u16) as usize;
@@ -135,28 +134,26 @@ impl<'a> VM<'a> {
             return self.dispatch_native(id, positional, kw_flat);
         }
 
-        // Call a class: create instance and run __init__
+        // Calling a class: create an instance and run __init__ if defined.
         if let HeapObj::Class(_, methods) = self.heap.get(callee) {
             let methods = methods.clone();
             let instance = self.heap.alloc(HeapObj::Instance(callee, Rc::new(RefCell::new(DictMap::new()))))?;
-            // Find and call __init__ if it exists
             if let Some((_, init_fn)) = methods.iter().find(|(n, _)| n == "__init__") {
                 let init_fn = *init_fn;
                 self.push(init_fn);
-                // Push self + positional args
                 let mut args = vec![instance];
                 args.extend_from_slice(&positional);
                 for a in &args { self.push(*a); }
                 let argc = args.len() as u16;
-                let encoded = argc;
-                self.exec_call(encoded, chunk, slots)?;
-                self.pop()?; // discard __init__ return
+                self.exec_call(argc, chunk, slots)?;
+                // Discard __init__'s return value.
+                self.pop()?;
             }
             self.push(instance);
             return Ok(());
         }
 
-        // Call a bound user method: prepend self to args
+        // Bound user method: prepend `self` to the arg list and re-dispatch.
         if let HeapObj::BoundUserMethod(recv, func) = self.heap.get(callee) {
             let (recv, func) = (*recv, *func);
             self.push(func);
@@ -167,39 +164,12 @@ impl<'a> VM<'a> {
             return self.exec_call(encoded, chunk, slots);
         }
 
-        // Resume suspended coroutine
-        if let HeapObj::Coroutine(ip, saved_slots, saved_stack, fi, saved_iters) = self.heap.get(callee) {
-            let (ip, fi) = (*ip, *fi);
-            let mut fn_slots = saved_slots.clone();
-            let saved_stack_len = self.stack.len();
-            self.stack.extend_from_slice(&saved_stack.clone());
-            let saved_iter_len = self.iter_stack.len();
-            self.iter_stack.extend(saved_iters.clone());
-            let saved_yielded = self.yielded;
-            self.yielded = false;
-            self.depth += 1;
-            let (_, body, _, _) = self.functions[fi];
-            let result = self.exec_from(body, &mut fn_slots, ip);
-            self.depth -= 1;
-            let result = result?;
-            if self.yielded {
-                self.yielded = false;
-                let resume_ip = self.resume_ip;
-                let remaining = self.stack.split_off(saved_stack_len);
-                let coro_iters: Vec<IterFrame> = self.iter_stack.drain(saved_iter_len..).collect();
-                if let HeapObj::Coroutine(sip, ss, sst, _, si) = self.heap.get_mut(callee) {
-                    *sip = resume_ip;
-                    *ss = fn_slots;
-                    *sst = remaining;
-                    *si = coro_iters;
-                }
-                self.push(result);
-            } else {
-                self.stack.truncate(saved_stack_len);
-                self.iter_stack.truncate(saved_iter_len);
-                self.yielded = saved_yielded;
-                self.push(result);
-            }
+        // Resume a suspended coroutine; the inner yield must NOT propagate
+        // to the surrounding function call.
+        if let HeapObj::Coroutine(..) = self.heap.get(callee) {
+            let result = self.resume_coroutine(callee)?;
+            if self.yielded { self.yielded = false; }
+            self.push(result);
             return Ok(());
         }
 
@@ -219,16 +189,15 @@ impl<'a> VM<'a> {
         let (params, body, _defaults, name_idx) = self.functions[fi];
         let name_idx = *name_idx;
 
-        // Opt 1: Clone pre-computed template instead of fill_builtins
+        // Pre-built slot template (builtins + undef) instead of `fill_builtins`.
         let mut fn_slots = self.slot_templates[fi].clone();
 
-        // Opt 3 (param binding): use pre-computed param_slots
+        // Param binding via pre-computed param_slots.
         let pslots = &self.param_slots[fi];
         let mut pos_idx = 0usize;
         for &(kind, slot) in pslots {
             match kind {
                 super::super::ParamKind::DoubleStar => {
-                    // Collect remaining kwargs into a dict
                     let dm = DictMap::from_pairs(kw_flat.chunks_exact(2).map(|p| (p[0], p[1])).collect());
                     let dict_val = self.heap.alloc(HeapObj::Dict(Rc::new(RefCell::new(dm))))?;
                     if slot < fn_slots.len() { fn_slots[slot] = dict_val; }
@@ -247,7 +216,7 @@ impl<'a> VM<'a> {
             }
         }
 
-        // Kwargs (rare path, not optimized)
+        // Kwargs binding (rare path, not optimised).
         if !kw_flat.is_empty() {
             let body_map = &self.body_maps[fi];
             for pair in kw_flat.chunks_exact(2) {
@@ -264,7 +233,7 @@ impl<'a> VM<'a> {
             }
         }
 
-        // Opt 2: Borrow defaults from heap instead of cloning
+        // Defaults: borrow from heap; only fill slots still undef after binding.
         if let HeapObj::Func(_, defaults, _) = self.heap.get(callee)
             && !defaults.is_empty() {
                 let ds = &self.default_slots[fi];
@@ -276,7 +245,7 @@ impl<'a> VM<'a> {
                 }
             }
 
-        // Opt 2: Borrow captures from heap instead of cloning
+        // Closure captures: same rule as defaults — only fill if undef.
         if let HeapObj::Func(_, _, captures) = self.heap.get(callee) {
             for &(bi, val) in captures {
                 if bi < fn_slots.len() && fn_slots[bi].is_undef() {
@@ -285,9 +254,9 @@ impl<'a> VM<'a> {
             }
         }
 
-        // Propagate caller slots: override captured values with current values.
-        // Uses pre-computed is_param_slot bitmap (built once at VM init) instead
-        // of allocating a BTreeSet<usize> on every call.
+        // Propagate caller slots into matching body slots (closures over the
+        // enclosing scope). is_param_slot is the precomputed bitmap of slots
+        // bound to formal parameters, which must NOT be overwritten.
         if self.needs_caller_slots[fi] {
             let body_map = &self.body_maps[fi];
             let param_bm = &self.is_param_slot[fi];
@@ -302,7 +271,8 @@ impl<'a> VM<'a> {
             }
         }
 
-        // Self-reference for recursion
+        // Self-reference: bind the function's own name slot to `callee` so
+        // recursive calls resolve without a global lookup.
         if name_idx != u16::MAX
             && let Some(raw_name) = chunk.names.get(name_idx as usize)
         {
@@ -319,9 +289,9 @@ impl<'a> VM<'a> {
             }
         }
 
-        // If this function contains yield, create a suspended coroutine.
-        // is_generator is pre-computed at parse time (parser/literals.rs)
-        // and is_async at VM init, both O(1) — no per-call body scan.
+        // Generator/coroutine functions return a suspended Coroutine instead
+        // of running. `is_generator` is set at parse time, `is_async` at VM
+        // init — both O(1) lookups, no per-call body scan.
         let is_async_fn = self.is_async.get(fi).copied().unwrap_or(false);
         if is_async_fn || body.is_generator {
             let coro = self.heap.alloc(HeapObj::Coroutine(0, fn_slots, Vec::new(), fi, Vec::new()))?;
@@ -332,9 +302,8 @@ impl<'a> VM<'a> {
 
         let yields_before = self.yields.len();
 
-        // Opt 3: Store range instead of copying all slot values for GC.
-        // mark() ignores undef and other non-heap values, so we just push
-        // the whole slice — no per-element filter needed now.
+        // Push caller slots onto live_slots so GC keeps them reachable.
+        // mark() short-circuits on non-heap values, so the whole slice is fine.
         let snap = self.live_slots.len();
         self.live_slots.extend_from_slice(slots);
 
@@ -344,13 +313,12 @@ impl<'a> VM<'a> {
         self.live_slots.truncate(snap);
         self.depth -= 1;
 
-        // Opt 4: Use pre-computed nonlocal table
+        // Back-propagate `nonlocal` writes to the caller's matching slots.
         let nl_table = &self.nonlocal_tables[fi];
         if !nl_table.is_empty() {
             for &(canon_body, _) in nl_table {
                 if let Some(&val) = fn_slots.get(canon_body) {
                     if val.is_undef() { continue; }
-                    // Back-propagate to caller
                     for base in &body.nonlocals {
                         for (si, sname) in chunk.names.iter().enumerate() {
                             if let Some(p) = sname.rfind('_')
@@ -358,7 +326,7 @@ impl<'a> VM<'a> {
                                     slots[si] = val;
                             }
                         }
-                        // Update closure captures
+                        // Sync closure-capture entries with the new value.
                         if let HeapObj::Func(_, _, caps) = self.heap.get_mut(callee) {
                             if let Some(cap) = caps.iter_mut().find(|(ci, _)| *ci == canon_body) {
                                 cap.1 = val;
@@ -418,12 +386,10 @@ impl<'a> VM<'a> {
         match id {
             // Variadic
             Print => {
-                // call_print is statement-shaped: the dedicated CallPrint opcode
-                // is emitted by the parser without a trailing Pop. When dispatched
-                // indirectly via Call (e.g. `p = print; p(42)`), the parser does
-                // emit a Pop to discard the expression-statement value, so we
-                // must materialize Python's implicit `None` return here to keep
-                // the stack balanced.
+                // CallPrint is statement-shaped: the dedicated opcode is emitted
+                // without a trailing Pop. When `print` is reached via Call (e.g.
+                // `p = print; p(42)`), the parser does emit Pop, so we must push
+                // an explicit None to keep the stack balanced.
                 self.call_print(argc)?;
                 self.push(Val::none());
                 Ok(())

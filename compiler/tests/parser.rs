@@ -44,7 +44,8 @@ mod test {
             let instructions: Vec<(String, u16)> = chunk
                 .instructions
                 .iter()
-                .map(|i| (format!("{:?}", i.opcode), i.operand)) // test-only; Debug formatting unavailable in s!
+                // Debug-format opcodes for snapshot comparison (test-only).
+                .map(|i| (format!("{:?}", i.opcode), i.operand))
                 .collect();
 
             assert_eq!(

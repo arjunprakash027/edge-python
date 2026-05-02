@@ -1,5 +1,3 @@
-// parser/literals.rs
-
 use crate::s;
 
 use super::Parser;
@@ -13,8 +11,7 @@ use alloc::{string::{String, ToString}, vec::Vec};
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
-    /* Parses {} for dict/set literals and dict/set comprehensions. */
-
+    /* `{}`: dict literal, set literal, dict-comp, or set-comp. */
     pub(super) fn brace_literal(&mut self) {
         if matches!(self.peek(), Some(TokenType::Rbrace)) {
             self.advance();
@@ -68,8 +65,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Parses [] for list literals and list comprehensions. */
-
+    /* `[]`: list literal or list-comp. */
     pub(super) fn list_literal(&mut self) {
         if matches!(self.peek(), Some(TokenType::Rsqb)) {
             self.advance();
@@ -96,8 +92,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Builds for/if scaffolding and reinjects element body with SSA slot rewriting. */
-
+    /* Build the for/if scaffolding for a comprehension and reinject the
+       element body, rewriting SSA slot indices to the loop-bound versions. */
     pub(super) fn comprehension_loop(&mut self, elem_bodies: &[Vec<Instruction>], append_op: OpCode, versions_before: &HashMap<String, u32>) {
         let mut loop_starts: Vec<u16> = Vec::new();
         let mut for_iters: Vec<usize> = Vec::new();
@@ -106,8 +102,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         while self.eat_if(TokenType::For) {
             let mut vars: Vec<String> = Vec::new();
             loop {
-                let t = self.advance();
-                vars.push(self.lexeme(&t).to_string());
+                vars.push(self.advance_text());
                 if !self.eat_if(TokenType::Comma) { break; }
                 if matches!(self.peek(), Some(TokenType::In)) { break; }
             }
@@ -170,8 +165,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Parses f-strings with embedded expressions and format specs. */
-
+    /* F-string: alternates literal middles with `{expr[:spec]}` chunks
+       until FstringEnd; emits BuildString to concatenate. */
     pub(super) fn fstring(&mut self) {
         let mut parts = 0u16;
         if matches!(self.peek(), Some(TokenType::FstringEnd)) {
@@ -239,8 +234,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Dispatches print/range/builtins or general function calls with args. */
-
+    /* Dispatches `name(args)`: print/range get dedicated opcodes; other
+       builtins map via the `builtin()` table; rest fall through to Call. */
     pub(super) fn call(&mut self, name: String) -> bool {
         if name == "print" {
             let (pos, kw) = self.parse_args();
@@ -259,9 +254,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             return leaves_value;
         }
 
-        let v = self.current_version(&name);
-        let mut buf = [0u8; 128];
-        let i = self.chunk.push_name(Self::ssa_name(&name, v, &mut buf));
+        let i = self.push_ssa_name(&name, self.current_version(&name));
         self.chunk.emit(OpCode::LoadName, i);
         let (pos, kw) = self.parse_args();
         let encoded = ((kw & 0xFF) << 8) | (pos & 0xFF);
@@ -275,9 +268,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         while !matches!(self.peek(), Some(TokenType::Rpar) | None) {
             self.expr();
             argc += 1;
-            if matches!(self.peek(), Some(TokenType::Comma)) {
-                self.advance();
-            }
+            self.eat_if(TokenType::Comma);
         }
         self.advance();
         self.chunk.emit(OpCode::CallRange, argc);
@@ -288,19 +279,19 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let mut pos = 0u16;
         let mut kw = 0u16;
         while !matches!(self.peek(), Some(TokenType::Rpar) | None) {
-            if self.eat_if(TokenType::Star) {
+            let unpack = if self.eat_if(TokenType::DoubleStar) { Some(2u16) }
+                         else if self.eat_if(TokenType::Star) { Some(1u16) }
+                         else { None };
+            if let Some(kind) = unpack {
                 self.expr();
-                self.chunk.emit(OpCode::UnpackArgs, 1);
-                pos += 1;
-            } else if self.eat_if(TokenType::DoubleStar) {
-                self.expr();
-                self.chunk.emit(OpCode::UnpackArgs, 2);
+                self.chunk.emit(OpCode::UnpackArgs, kind);
                 pos += 1;
             } else if matches!(self.peek(), Some(TokenType::Name)) {
                 let t = self.advance();
                 if matches!(self.peek(), Some(TokenType::Equal)) {
+                    let kw_name = self.lexeme(&t).to_string();
                     self.advance();
-                    let i = self.chunk.push_const(Value::Str(self.lexeme(&t).to_string()));
+                    let i = self.chunk.push_const(Value::Str(kw_name));
                     self.chunk.emit(OpCode::LoadConst, i);
                     self.expr();
                     kw += 1;
@@ -327,19 +318,15 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 }
                 pos += 1;
             }
-            if matches!(self.peek(), Some(TokenType::Comma)) {
-                self.advance();
-            }
+            self.eat_if(TokenType::Comma);
         }
         self.eat(TokenType::Rpar);
         (pos, kw)
     }
 
-    /* Parses class header, compiles body separately and emits MakeClass. */
-
+    /* Class header + body in a fresh chunk + MakeClass + StoreName. */
     pub(super) fn class_def(&mut self) {
-        let n = self.advance();
-        let cname = self.lexeme(&n).to_string();
+        let cname = self.advance_text();
 
         if self.eat_if(TokenType::Lpar) {
             while !matches!(self.peek(), Some(TokenType::Rpar) | None) {
@@ -362,20 +349,15 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.chunk.emit(OpCode::StoreName, i);
     }
 
-    /* Parses params/defaults, compiles body and emits MakeFunction or coroutine. */
-
+    /* `def` (sync or async): parse signature, compile body, emit
+       MakeFunction / MakeCoroutine, apply decorators, then StoreName. */
     pub(super) fn func_def_inner(&mut self, decorators: u16, is_async: bool) {
-        let fname = {
-            let n = self.advance();
-            self.lexeme(&n).to_string()
-        };
+        let fname = self.advance_text();
         let (params, defaults) = self.parse_params();
         let body = self.compile_body(&params);
 
         let fi = self.chunk.functions.len() as u16;
-        let cur_ver = self.current_version(&fname);
-        let mut buf = [0u8; 128];
-        let name_slot = self.chunk.push_name(Self::ssa_name(&fname, cur_ver + 1, &mut buf));
+        let name_slot = self.push_ssa_name(&fname, self.current_version(&fname) + 1);
         self.chunk.functions.push((params, body, defaults, name_slot));
         self.chunk.emit(if is_async { OpCode::MakeCoroutine } else { OpCode::MakeFunction }, fi);
 
@@ -384,8 +366,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
 
         let ver = self.increment_version(&fname);
-        let mut buf = [0u8; 128];
-        let i = self.chunk.push_name(Self::ssa_name(&fname, ver, &mut buf));
+        let i = self.push_ssa_name(&fname, ver);
         self.chunk.emit(OpCode::StoreName, i);
     }
 
@@ -395,41 +376,26 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let mut defaults = 0u16;
         while !matches!(self.peek(), Some(TokenType::Rpar) | None) {
             if self.eat_if(TokenType::Slash) {
-                if matches!(self.peek(), Some(TokenType::Comma)) {
-                    self.advance();
-                }
+                self.eat_if(TokenType::Comma);
                 continue;
             }
-            if self.eat_if(TokenType::Star) {
-                let p = self.advance();
-                params.push(s!("*", str self.lexeme(&p)));
-                self.drain_annotation();
-            } else if self.eat_if(TokenType::DoubleStar) {
-                let p = self.advance();
-                params.push(s!("**", str self.lexeme(&p)));
-                self.drain_annotation();
-            } else {
-                let p = self.advance();
-                params.push(self.lexeme(&p).to_string());
-                self.drain_annotation();
-                if self.eat_if(TokenType::Equal) {
-                    self.expr();
-                    defaults += 1;
-                }
+            let prefix = if self.eat_if(TokenType::DoubleStar) { "**" }
+                         else if self.eat_if(TokenType::Star) { "*" }
+                         else { "" };
+            let nm = self.advance_text();
+            params.push(if prefix.is_empty() { nm } else { s!(str prefix, str &nm) });
+            self.drain_annotation();
+            if prefix.is_empty() && self.eat_if(TokenType::Equal) {
+                self.expr();
+                defaults += 1;
             }
-            if matches!(self.peek(), Some(TokenType::Comma)) {
-                self.advance();
-            }
+            self.eat_if(TokenType::Comma);
         }
         self.advance();
         if self.eat_if(TokenType::Rarrow) {
-            while !matches!(self.peek(), Some(TokenType::Colon) | None) {
-                self.advance();
-            }
+            while !matches!(self.peek(), Some(TokenType::Colon) | None) { self.advance(); }
         }
-        if matches!(self.peek(), Some(TokenType::Colon)) {
-            self.advance();
-        }
+        if matches!(self.peek(), Some(TokenType::Colon)) { self.advance(); }
         (params, defaults)
     }
 
@@ -459,10 +425,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let mut body = self.with_fresh_chunk(|s| {
             for p in params {
                 s.ssa_versions.insert(p.clone(), 0);
-                
-                let bare = p.trim_start_matches('*');
-                let mut buf = [0u8; 128];
-                let _ = s.chunk.push_name(Self::ssa_name(bare, 0, &mut buf));
+                let _ = s.push_ssa_name(p.trim_start_matches('*'), 0);
             }
             s.compile_block_body();
         });
@@ -481,8 +444,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             | OpCode::Yield
             | OpCode::YieldFrom
         ));
-        // Pre-compute generator flag once at parse time. Avoids the
-        // O(n_instructions) scan that exec_call would otherwise do per call.
+        // Pre-compute is_generator once so exec_call avoids an O(n_instructions)
+        // scan per call.
         body.is_generator = body.instructions.iter().any(|i| matches!(
             i.opcode,
             OpCode::Yield | OpCode::YieldFrom

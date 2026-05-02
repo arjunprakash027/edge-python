@@ -1,19 +1,15 @@
-// vm/handlers/data.rs
-
 use super::*;
 
 impl<'a> VM<'a> {
 
-    /* StoreName con back-propagación SSA a versiones previas. */
-    
+    /* StoreName: single SSA slot write after register coalescing. */
     pub(crate) fn handle_store(&mut self, operand: u16, slots: &mut [Val]) -> Result<(), VmErr> {
         let v = self.pop()?;
         slots[operand as usize] = v;
         Ok(())
     }
 
-    /* Container constructors: list/tuple/dict/set/slice/string. */
-
+    /* Container constructors: list / tuple / dict / set / slice / string. */
     pub(crate) fn handle_build(&mut self, op: OpCode, operand: u16) -> Result<(), VmErr> {
         match op {
             OpCode::BuildList => {
@@ -45,8 +41,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Indexed access/allocation, unpacking, and value formatting. */
-
+    /* Indexed access/store, unpacking, and `{value!s:spec}` formatting. */
     pub(crate) fn handle_container(&mut self, op: OpCode, operand: u16) -> Result<(), VmErr> {
         match op {
             OpCode::GetItem => { self.get_item()?; }
@@ -68,48 +63,36 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Append/add to accumulators at the top of the stack during comprehensions. */
-
+    /* Append/add to the comprehension accumulator at the top of the stack. */
     pub(crate) fn handle_comprehension(&mut self, op: OpCode) -> Result<(), VmErr> {
-        match op {
-            OpCode::ListAppend => {
-                let v = self.pop()?;
-                let acc = *self.stack.last().ok_or(VmErr::Runtime("stack underflow"))?;
-                if !acc.is_heap() { return Err(VmErr::Runtime("list accumulator corrupted")); }
-                match self.heap.get(acc) {
-                    HeapObj::List(rc) => rc.borrow_mut().push(v),
-                    _ => return Err(VmErr::Runtime("list accumulator corrupted")),
-                }
-            }
-            OpCode::SetAdd => {
-                let v = self.pop()?;
-                let acc = *self.stack.last().ok_or(VmErr::Runtime("stack underflow"))?;
-                if !acc.is_heap() { return Err(VmErr::Runtime("set accumulator corrupted")); }
-                let already = match self.heap.get(acc) {
-                    HeapObj::Set(rc) => rc.borrow().iter().any(|&x| eq_vals_with_heap(x, v, &self.heap)),
-                    _ => return Err(VmErr::Runtime("set accumulator corrupted")),
-                };
-                if !already && let HeapObj::Set(rc) = self.heap.get(acc) {
-                    rc.borrow_mut().insert(v);
-                }
-            }
-            OpCode::MapAdd => {
-                let value = self.pop()?;
-                let key = self.pop()?;
-                let acc = *self.stack.last().ok_or(VmErr::Runtime("stack underflow"))?;
-                if !acc.is_heap() { return Err(VmErr::Runtime("dict accumulator corrupted")); }
-                match self.heap.get(acc) {
-                    HeapObj::Dict(rc) => { rc.borrow_mut().insert(key, value); }
-                    _ => return Err(VmErr::Runtime("dict accumulator corrupted")),
-                }
-            }
+        let (kind, value, key) = match op {
+            OpCode::ListAppend => ("list",  self.pop()?, None),
+            OpCode::SetAdd     => ("set",   self.pop()?, None),
+            OpCode::MapAdd     => { let v = self.pop()?; let k = self.pop()?; ("dict", v, Some(k)) }
             _ => unreachable!("non-comprehension opcode in handle_comprehension"),
+        };
+        let acc = *self.stack.last().ok_or(VmErr::Runtime("stack underflow"))?;
+        let corrupt = || VmErr::Runtime(match kind {
+            "list" => "list accumulator corrupted",
+            "set"  => "set accumulator corrupted",
+            _      => "dict accumulator corrupted",
+        });
+        if !acc.is_heap() { return Err(corrupt()); }
+        match (kind, self.heap.get(acc)) {
+            ("list", HeapObj::List(rc)) => { rc.borrow_mut().push(value); }
+            ("set",  HeapObj::Set(rc))  => {
+                let already = rc.borrow().iter().any(|&x| eq_vals_with_heap(x, value, &self.heap));
+                if !already && let HeapObj::Set(rc) = self.heap.get(acc) {
+                    rc.borrow_mut().insert(value);
+                }
+            }
+            ("dict", HeapObj::Dict(rc)) => { rc.borrow_mut().insert(key.unwrap(), value); }
+            _ => return Err(corrupt()),
         }
         Ok(())
     }
 
-    /* Accumulates value in the generator buffer and pushes None as a placeholder. */
-
+    /* Yield: keep the value on the stack and flag the executor to suspend. */
     pub(crate) fn handle_yield(&mut self) -> Result<(), VmErr> {
         let v = self.pop()?;
         self.push(v);
@@ -117,8 +100,8 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Side-effects and impurities: assert, del, global/nonlocal, import, type aliases, exception handling stubs and await/yield-from. */
-    
+    /* Side-effecting / impure ops: assert, del, global/nonlocal, import,
+       type alias, raise, await, yield-from. */
     pub(crate) fn handle_side(&mut self, op: OpCode, operand: u16, slots: &mut [Val]) -> Result<(), VmErr> {
         match op {
             OpCode::Assert => {
@@ -141,55 +124,15 @@ impl<'a> VM<'a> {
                 return Err(VmErr::Raised(msg));
             }
             OpCode::Await => {
-                // If awaiting a coroutine, run it to completion or yield
+                // Awaiting a coroutine resumes it; its yield (if any)
+                // propagates up via `self.yielded` (set by resume_coroutine).
+                // Sync values pass through unchanged.
                 let val = self.pop()?;
                 if val.is_heap() && matches!(self.heap.get(val), HeapObj::Coroutine(..)) {
-                    // Resume the inner coroutine
                     self.push(val);
-                    // Use Call dispatch with 0 args - callee is on stack
-                    let callee = val;
-                    if let HeapObj::Coroutine(ip, saved_slots, saved_stack, fi, saved_iters) = self.heap.get(callee) {
-                        let (ip, fi) = (*ip, *fi);
-                        let mut fn_slots = saved_slots.clone();
-                        let saved_stack_len = self.stack.len();
-                        let saved_iter_len = self.iter_stack.len();
-                        self.stack.extend_from_slice(&saved_stack.clone());
-                        self.iter_stack.extend(saved_iters.clone());
-                        let saved_yielded = self.yielded;
-                        self.yielded = false;
-                        self.depth += 1;
-                        let (_, body, _, _) = self.functions[fi];
-                        let result = self.exec_from(body, &mut fn_slots, ip);
-                        self.depth -= 1;
-                        let result = result?;
-                        if self.yielded {
-                            // Inner coroutine yielded - propagate yield upward
-                            self.yielded = false;
-                            let resume_ip = self.resume_ip;
-                            let remaining = self.stack.split_off(saved_stack_len);
-                            let coro_iters: Vec<super::super::types::IterFrame> = self.iter_stack.drain(saved_iter_len..).collect();
-                            if let HeapObj::Coroutine(sip, ss, sst, _, si) = self.heap.get_mut(callee) {
-                                *sip = resume_ip;
-                                *ss = fn_slots;
-                                *sst = remaining;
-                                *si = coro_iters;
-                            }
-                            // Propagate: yield the value from this coroutine too
-                            self.push(result);
-                            self.yielded = true;
-                        } else {
-                            // Inner coroutine finished - push its return value
-                            self.stack.truncate(saved_stack_len);
-                            self.iter_stack.truncate(saved_iter_len);
-                            self.yielded = saved_yielded;
-                            self.push(result);
-                        }
-                    } else {
-                        // Not a coroutine anymore (shouldn't happen)
-                        self.push(val);
-                    }
+                    let result = self.resume_coroutine(val)?;
+                    self.push(result);
                 } else {
-                    // Not a coroutine - just push the value (sync call already resolved)
                     self.push(val);
                 }
             }

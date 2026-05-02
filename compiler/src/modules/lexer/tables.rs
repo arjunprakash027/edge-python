@@ -1,9 +1,6 @@
-// lexer/tables.rs
-
 use super::TokenType;
 
-/* Byte class flags: ID_START, ID_CONT, DIGIT, SPACE. */
-
+/* Byte-class flags packed into a u8; combine with bitwise OR for membership tests. */
 pub const ID_START: u8 = 1;
 pub const ID_CONT: u8 = 2;
 pub const DIGIT: u8 = 4;
@@ -27,7 +24,7 @@ pub static BYTE_CLASS: [u8; 256] = {
     t
 };
 
-// Single-char operator dispatch: byte -> index -> TokenType.
+/* Single-char operator dispatch: byte → index into SINGLE_MAP. */
 pub static SINGLE_TOK: [u8; 128] = {
     let mut t = [0u8; 128];
     t[b'(' as usize] = 1; t[b')' as usize] = 2;
@@ -45,7 +42,7 @@ pub static SINGLE_TOK: [u8; 128] = {
     t
 };
 
-// Maps index from SINGLE_TOK to actual TokenType, 0 = not an operator.
+/* SINGLE_TOK index → TokenType. Index 0 = not an operator. */
 pub const SINGLE_MAP: [TokenType; 24] = [
     TokenType::Endmarker, // 0 = not found
     TokenType::Lpar, TokenType::Rpar, TokenType::Lsqb, // 1-3
@@ -59,7 +56,7 @@ pub const SINGLE_MAP: [TokenType; 24] = [
     TokenType::Semi, // 23
 ];
 
-// Keyword lookup: routes by (length, first byte) to skip most memcmps.
+/* Routes by (length, first byte) to skip most memcmps. */
 pub fn keyword(s: &[u8]) -> Option<TokenType> {
     match (s.len(), s[0]) {
         (1, b'_') => Some(TokenType::Underscore),
@@ -124,7 +121,7 @@ pub fn keyword(s: &[u8]) -> Option<TokenType> {
 }
 
 
-// Check if byte slice is an f-string prefix (f, F, fr, Fr, fR, FR, etc.).
+/* f-string prefix: f, F, fr, Fr, fR, FR, rf, rF, Rf, RF. */
 #[inline]
 pub fn is_fstring_prefix(s: &[u8]) -> bool {
     match s.len() {
@@ -137,7 +134,7 @@ pub fn is_fstring_prefix(s: &[u8]) -> bool {
     }
 }
 
-// Check if byte slice is a regular string prefix (b, r, u, br, rb, etc.).
+/* Regular string prefix: b, B, r, R, u, U, br, rb (any case). */
 #[inline]
 pub fn is_string_prefix(s: &[u8]) -> bool {
     match s.len() {
@@ -150,7 +147,7 @@ pub fn is_string_prefix(s: &[u8]) -> bool {
     }
 }
 
-// UTF-8 character length from lead byte (supports non-ASCII identifiers).
+/* UTF-8 byte length from lead byte; supports non-ASCII identifiers. */
 #[inline]
 pub fn utf8_char_len(first: u8) -> usize {
     match first {
@@ -161,7 +158,7 @@ pub fn utf8_char_len(first: u8) -> usize {
     }
 }
 
-// Reverse lookup mapping: Translates a `TokenType` enum variant into a static string slice. This is strictly used for zero-allocation error diagnostics and human-readable formatting.
+/* Reverse lookup for diagnostics: TokenType → quoted display name. */
 pub const fn token_to_str(kind: &TokenType) -> &'static str {
     match kind {
         // Keywords

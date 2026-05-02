@@ -1,5 +1,3 @@
-// parser/expr.rs
-
 use crate::s;
 
 use super::Parser;
@@ -12,8 +10,7 @@ use alloc::{string::ToString, vec::Vec, vec, string::String};
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
-    /* Main driver for expressions with recursion guard, ternary support and tails. */
-
+    /* Top-level expression entry: recursion guard + Pratt parser + ternary. */
     pub(super) fn expr(&mut self) {
         self.expr_depth += 1;
 
@@ -48,8 +45,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.infix_bp(0);
     }
 
-    /* Implements Pratt parsing for infix operators using binding powers and precedence. */
-
+    /* Pratt parser: unary + infix operators with binding powers from binding_power. */
     pub(super) fn expr_bp(&mut self, min_bp: u8) {
         match self.peek() {
             Some(TokenType::Not) => {
@@ -149,8 +145,6 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Recursively handles unary minus, bitwise not and await operators. */
-
     pub(super) fn parse_unary(&mut self) {
         match self.peek() {
             Some(TokenType::Minus) => {
@@ -172,8 +166,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Parses primary atoms: literals, names, numbers, strings, f-strings and containers. */
-
+    /* Primary atoms: literals, names, numbers, strings, f-strings, containers. */
     pub(super) fn parse_atom(&mut self) {
         let t = self.advance();
         match t.kind {
@@ -236,8 +229,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.postfix_tail();
     }
 
-    /* Special parsing for names including assignment, walrus operator and function calls. */
-
+    /* Name atom: assignment, walrus `:=`, call, or plain load. */
     pub(super) fn name(&mut self, t: Token) {
         let name = self.lexeme(&t).to_string();
         match self.peek() {
@@ -249,8 +241,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.advance();
                 self.expr();
                 let ver = self.increment_version(&name);
-                let mut buf = [0u8; 128];
-                let i = self.chunk.push_name(Self::ssa_name(&name, ver, &mut buf));
+                let i = self.push_ssa_name(&name, ver);
                 self.chunk.emit(OpCode::StoreName, i);
                 self.chunk.emit(OpCode::LoadName, i);
             }
@@ -300,23 +291,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             }
             if carry != 0 { limbs.push(carry as u32); }
         }
-        let mut out = String::new();
-        for (i, &l) in limbs.iter().rev().enumerate() {
-            if i == 0 { 
-                let mut b = itoa::Buffer::new(); 
-                out.push_str(b.format(l)); 
-            } else {
-                let s = {let mut b = itoa::Buffer::new(); b.format(l).to_string()};
-                for _ in 0..9usize.saturating_sub(s.len()) { out.push('0'); }
-                out.push_str(&s);
-            }
-        }
+        let mut out = crate::modules::fstr::format_dec_groups(&limbs);
         if out.is_empty() { out.push('0'); }
         out
     }
 
-    /* Handles attribute access, indexing, slicing and method calls after atoms. */
-    
+    /* Trailers after an atom: .attr, [i], [s:e], (args), chained. */
     pub(super) fn postfix_tail(&mut self) {
         loop {
             match self.peek() {
@@ -363,15 +343,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     let t = self.advance();
                     let (start, end) = (t.start, t.end);
                     let idx = self.chunk.push_name(&self.source[start..end]);
+                    // LoadAttr stays adjacent to any following Call so
+                    // cache::fuse_method_calls can collapse them at exec time.
                     self.chunk.emit(OpCode::LoadAttr, idx);
-                    // El `(...)` tras `.attr` lo recoge la rama Lpar de abajo en
-                    // la siguiente iteración; LoadAttr y Call quedan contiguos
-                    // para que cache::fuse_method_calls los siga fusionando.
                 }
                 Some(TokenType::Lpar) => {
-                    // Llamada tras cualquier trailer: fns[0](x), f()(x),
-                    // obj.attr[i](x). Sin esta rama el `(...)` se fugaba al
-                    // contexto exterior y se interpretaba como otra expresión.
+                    // Call after any trailer (fns[0](x), f()(x), obj.attr[i](x)).
                     let (pos, kw) = self.parse_args();
                     let encoded = ((kw & 0xFF) << 8) | (pos & 0xFF);
                     self.chunk.emit(OpCode::Call, encoded);
@@ -381,8 +358,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Parses lambda expressions by compiling body into a MakeFunction object. */
-
+    /* `lambda params: expr` → fresh chunk with Return, emit MakeFunction. */
     pub(super) fn parse_lambda(&mut self) {
         let mut params = Vec::new();
         let mut defaults = 0u16;

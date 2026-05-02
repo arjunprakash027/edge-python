@@ -1,5 +1,3 @@
-// vm/mod.rs
-
 pub mod types;
 mod cache;
 mod ops;
@@ -17,8 +15,7 @@ use types::*;
 use cache::{OpcodeCache, FastOp, Templates};
 use alloc::{string::{String, ToString}, vec::Vec, vec};
 
-/* Stack, heap, iterators, yield buffer, templates and sandbox counters. */
-
+/* Saved stack/iter/with depths for unwinding to a try arm's handler. */
 pub(crate) struct ExceptionFrame {
     pub handler_ip: usize,
     pub stack_depth: usize,
@@ -50,16 +47,15 @@ pub struct VM<'a> {
     pub(crate) slot_templates: Vec<Vec<Val>>,
     pub(crate) nonlocal_tables: Vec<Vec<(usize, usize)>>,
     pub(crate) needs_caller_slots: Vec<bool>,
-    /// One bitmap per function: `is_param_slot[fi][slot] == true` means that
-    /// `slot` is bound to a formal parameter and therefore must NOT be
-    /// overwritten by caller-slot propagation.  Replaces a per-call
-    /// `BTreeSet<usize>` allocation in `exec_call`.
+    /* `is_param_slot[fi][slot]` — true when slot is bound to a formal
+       parameter and must NOT be overwritten by caller-slot propagation.
+       Replaces a per-call BTreeSet<usize> allocation in exec_call. */
     pub(crate) is_param_slot: Vec<Vec<bool>>,
     pub(crate) is_async: Vec<bool>,
     pub(crate) default_slots: Vec<Vec<(usize, Val)>>,
     pub(crate) opcode_caches: HashMap<*const SSAChunk, OpcodeCache>,
-    /// Cached `Limits::ops == usize::MAX` so the hot dispatch path can skip
-    /// the budget decrement on every backward jump.  Set once at VM init.
+    /* Cached `Limits::ops == usize::MAX` so the hot dispatch path skips
+       the budget decrement on every backward jump. */
     pub(crate) sandbox_off: bool,
     pub(crate) with_stack: Vec<Val>,
     pub(crate) pending_pos_delta: i32,
@@ -75,9 +71,9 @@ pub struct VM<'a> {
 impl<'a> VM<'a> {
     pub fn new(chunk: &'a SSAChunk) -> Self { Self::with_limits(chunk, Limits::none()) }
 
-    /// One-shot recursive flatten of nested `def`s. Each chunk's local function
-    /// table maps to a contiguous range of global ids; nested bodies are walked
-    /// depth-first so a closure defined inside a nested function still resolves.
+    /* Recursively flatten nested `def`s into a single global function table,
+       depth-first so closures defined inside nested functions still resolve.
+       Class bodies are walked too, since they may host method `def`s. */
     fn build_function_table(&mut self, chunk: &'a SSAChunk) {
         let mut indices = Vec::with_capacity(chunk.functions.len());
         for desc in chunk.functions.iter() {
@@ -87,13 +83,12 @@ impl<'a> VM<'a> {
             self.build_function_table(&desc.1);
         }
         self.fn_index.insert(chunk as *const _, indices);
-        // Also register functions inside class bodies
         for class_body in chunk.classes.iter() {
             self.build_function_table(class_body);
         }
     }
 
-    /// Materializa un iterable en `Vec<Val>` para spread posicional.
+    /* Materialise an iterable into Vec<Val> for `*args` positional spread. */
     fn iter_to_vec_for_spread(&self, v: Val) -> Result<Vec<Val>, VmErr> {
         if !v.is_heap() {
             return Err(VmErr::Type("argument after * must be an iterable"));
@@ -115,7 +110,7 @@ impl<'a> VM<'a> {
         })
     }
 
-    /// Materializa un mapping en pares (clave_str, valor) para spread por nombre.
+    /* Materialise a mapping into (key_str, value) pairs for `**kwargs` spread. */
     fn mapping_to_kw_pairs(&self, v: Val) -> Result<Vec<(Val, Val)>, VmErr> {
         if !v.is_heap() {
             return Err(VmErr::Type("argument after ** must be a mapping"));
@@ -134,10 +129,9 @@ impl<'a> VM<'a> {
         }
     }
 
+    /* `Val::undef()` distinguishes unbound slots from None. LoadName
+       checks `is_undef()` to raise NameError, avoiding Option<Val> reads. */
     fn fill_builtins(&self, names: &[String]) -> Vec<Val> {
-        // `Val::undef()` distinguishes unbound slots from `None`.  LoadName
-        // checks `is_undef()` to raise NameError without pattern-matching
-        // an Option on every slot read.
         let mut slots = vec![Val::undef(); names.len()];
         for (i, name) in names.iter().enumerate() {
             if let Some(v) = self.globals.get(name) {
@@ -149,9 +143,8 @@ impl<'a> VM<'a> {
 
     #[inline]
     fn checked_jump(&mut self, target: usize, limit: usize) -> Result<usize, VmErr> {
-        // In non-sandboxed mode the budget is `usize::MAX` and never expires,
-        // so we elide the per-jump decrement entirely.  The bounds check
-        // remains, since malformed bytecode could still produce bad targets.
+        // Non-sandboxed mode has unlimited budget; skip the decrement entirely.
+        // Bounds check stays — malformed bytecode could still produce bad targets.
         if !self.sandbox_off {
             if self.budget == 0 { return Err(cold_budget()); }
             self.budget -= 1;
@@ -224,10 +217,9 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
+    /* Pick the first defined Phi source; if both are undef fall back to None. */
     fn exec_phi(op: u16, rip: usize, phi_map: &[usize], slots: &mut [Val], phi_sources: &[(u16, u16)]) {
         let (ia, ib) = phi_sources[phi_map[rip]];
-        // Pick the first defined source; if both are undef, fall back to None
-        // (matches the original `or().unwrap_or(none)` semantics).
         let a = slots[ia as usize];
         let val = if !a.is_undef() { a }
                   else { let b = slots[ib as usize]; if !b.is_undef() { b } else { Val::none() } };
@@ -293,7 +285,7 @@ impl<'a> VM<'a> {
             }).collect()
         }).collect();
 
-        // Opt 4: Pre-compute nonlocal resolution: (canonical_body_slot, canonical_body_slot) pairs
+        // Pre-compute nonlocal resolution: (canonical_body_slot, canonical_body_slot).
         vm.nonlocal_tables = vm.functions.iter().map(|(_, body, _, _)| {
             body.nonlocals.iter().filter_map(|base| {
                 let canon = body.names.iter().enumerate()
@@ -302,20 +294,20 @@ impl<'a> VM<'a> {
                 Some((canon, canon))
             }).collect()
         }).collect();
-        // Opt 5: Pre-compute whether function needs caller slot propagation
+
+        // True iff the body references names not in params/builtins/captures.
         vm.needs_caller_slots = (0..vm.functions.len()).map(|fi| {
             let (params, body, _, _) = vm.functions[fi];
             let param_names: alloc::collections::BTreeSet<&str> = params.iter()
                 .map(|p| p.trim_start_matches('*')).collect();
-            // Needs caller slots if body references names not in params/builtins/captures
             body.names.iter().any(|n| {
                 let base = n.rfind('_').map(|p| &n[..p]).unwrap_or(n.as_str());
                 !param_names.contains(base) && !vm.globals.contains_key(n)
             })
         }).collect();
-        // Pre-compute is_param_slot bitmap: `true` for slots bound to a formal
-        // parameter, so the caller-slot propagation path doesn't have to build
-        // a fresh BTreeSet on every function call.
+
+        // Bitmap of slots bound to formal parameters — used to skip caller-slot
+        // propagation without allocating a BTreeSet per call.
         vm.is_param_slot = (0..vm.functions.len()).map(|fi| {
             let (_, body, _, _) = vm.functions[fi];
             let n_slots = body.names.len();
@@ -325,7 +317,8 @@ impl<'a> VM<'a> {
             }
             bm
         }).collect();
-        // Pre-compute default slot mappings
+
+        // Default-slot table: (slot, placeholder) entries the call path overwrites.
         vm.default_slots = (0..vm.functions.len()).map(|fi| {
             let (params, _, n_defaults, _) = vm.functions[fi];
             let n_defaults = *n_defaults as usize;
@@ -343,7 +336,8 @@ impl<'a> VM<'a> {
                 vm.globals.insert(s!(str name, "_0"), type_obj);
             }
         }
-        // Register all built-in functions as first-class NativeFn values.
+        // Register builtins as first-class NativeFn values so `print = print`,
+        // `f = len; f([1,2])`, etc. work without a separate dispatch path.
         let builtin_fns: &[NativeFnId] = &[
             NativeFnId::Print, NativeFnId::Len, NativeFnId::Abs, NativeFnId::Str,
             NativeFnId::Int, NativeFnId::Float, NativeFnId::Bool, NativeFnId::Type,
@@ -363,10 +357,11 @@ impl<'a> VM<'a> {
                 vm.globals.insert(name.to_string(), v);
                 vm.globals.insert(s!(str name, "_0"), v);
             }
-        // Pre-compute fn_slots templates (after all globals are registered)
-        vm.slot_templates = vm.functions.iter().map(|(_, body, _, _)| {
-            vm.fill_builtins(&body.names)
-        }).collect();
+            // Slot templates depend on globals being populated, so build them
+            // here on every iteration — only the last one is actually used.
+            vm.slot_templates = vm.functions.iter().map(|(_, body, _, _)| {
+                vm.fill_builtins(&body.names)
+            }).collect();
         }
         vm
     }
@@ -376,6 +371,8 @@ impl<'a> VM<'a> {
         self.exec(self.chunk, &mut slots)
     }
 
+    /* Mark all reachable roots and sweep. mark() is a no-op on non-heap
+       values, so undef/None/int/float/bool slots are free to scan. */
     fn collect(&mut self, current_slots: &[Val]) {
         for &v in &self.stack { self.heap.mark(v); }
         for &v in &self.with_stack { self.heap.mark(v); }
@@ -385,7 +382,6 @@ impl<'a> VM<'a> {
                 for &v in items { self.heap.mark(v); }
             }
         }
-        // mark() short-circuits on non-heap values, so undef slots are free.
         for &v in current_slots { self.heap.mark(v); }
         for &v in &self.live_slots { self.heap.mark(v); }
         self.heap.sweep();
@@ -396,7 +392,7 @@ impl<'a> VM<'a> {
         (self.templates.count(), self.chunk.instructions.len())
     }
 
-    /* Stack helpers */
+    // Stack helpers.
 
     #[inline] pub(crate) fn push(&mut self, v: Val) { self.stack.push(v); }
 
@@ -412,8 +408,9 @@ impl<'a> VM<'a> {
         Ok(self.stack.split_off(at))
     }
 
-    /// Fast-path executor; peeks stack without popping. Returns false (with
-    /// stack untouched) on type-guard miss so caller can deopt.
+    /* Inline-cache fast path. Peeks the stack and only pops on success;
+       returns Ok(false) with the stack untouched on a type-guard miss
+       so the caller can fall back to the generic handler and deopt the IC. */
     #[inline]
     fn exec_fast(&mut self, fast: FastOp) -> Result<bool, VmErr> {
         let len = self.stack.len();
@@ -483,9 +480,9 @@ impl<'a> VM<'a> {
         Ok(true)
     }
 
-    /// Main dispatch loop. Walks the fused instruction stream (LoadAttr+Call
-    /// already collapsed to CallMethod+CallMethodArgs). IC is checked inline
-    /// for hot arith/compare opcodes.
+    /* Main dispatch loop. Walks the fused instruction stream (LoadAttr+Call
+       already collapsed to CallMethod+CallMethodArgs); checks the IC inline
+       for hot arith/compare opcodes. */
     pub(crate) fn exec(&mut self, chunk: &SSAChunk, slots: &mut [Val]) -> Result<Val, VmErr> {
 
         let slots_base = self.live_slots.len();
@@ -495,24 +492,21 @@ impl<'a> VM<'a> {
         let mut cache = self.opcode_caches.remove(&key)
             .unwrap_or_else(|| OpcodeCache::new(chunk));
         cache.ensure_fused(chunk);
-        // Pre-materialize the constant pool so LoadConst becomes O(1) indexed
-        // access. Done here (not in OpcodeCache::new) because Str/BigInt need
-        // the live HeapPool, which only exists at exec time.
+        // Pre-materialise the constant pool here (not in OpcodeCache::new)
+        // because Str/BigInt allocate into the live HeapPool.
         if let Err(e) = cache.ensure_const_vals(chunk, &mut self.heap) {
             self.opcode_caches.insert(key, cache);
             return Err(e);
         }
 
-        // Lift the immutable views out of the loop. `cache.fused_ref()` and
-        // `const_vals_ref()` each unwrap an Option internally; doing it once
-        // here avoids paying that cost per dispatched instruction.
-        // SAFETY: the slices alias borrows that live for the whole exec() call,
-        // and `cache` itself is a local — no other path mutates them.
+        // Hoist immutable views out of the loop so the inner dispatch doesn't
+        // re-unwrap `cache.fused_ref()` / `const_vals_ref()` per instruction.
+        // SAFETY: the slices borrow from `cache`, which is a stack local that
+        // lives for the entire exec() call; no other path mutates the cache.
         let insns_ptr: *const [Instruction] = cache.fused_ref();
         let consts_ptr: *const [Val] = cache.const_vals_ref();
         let result: Result<Val, VmErr> = (|| {
-            // SAFETY: see comment above. The reborrows are valid for the full
-            // closure body since `cache` cannot be moved while still in scope.
+            // SAFETY: see comment above.
             let insns: &[Instruction] = unsafe { &*insns_ptr };
             let consts: &[Val] = unsafe { &*consts_ptr };
             let n          = insns.len();
@@ -525,11 +519,12 @@ impl<'a> VM<'a> {
                     return Ok(Val::none());
                 }
 
-                match self.dispatch(chunk, slots, &mut cache, insns, consts, &mut ip, n) {
+                match self.dispatch(chunk, slots, &mut cache, insns, consts, &mut ip) {
                     Ok(None) => {
                         if self.yielded {
                             let val = self.pop().unwrap_or(Val::none());
-                            // Skip the PopTop after Yield on resume
+                            // Skip the PopTop following Yield on resume so the
+                            // yielded value isn't discarded twice.
                             self.resume_ip = if ip < n && matches!(insns.get(ip), Some(ins) if ins.opcode == OpCode::PopTop) { ip + 1 } else { ip };
                             self.live_slots.truncate(slots_base);
                             self.exception_stack.truncate(exc_base);
@@ -584,8 +579,9 @@ impl<'a> VM<'a> {
         self.exec(chunk, slots)
     }
 
-    /// CallMethod: resolves the bound method on the receiver and calls it
-    /// directly, no BoundMethod heap alloc. Reads args from CallMethodArgs.
+    /* Resolve the bound method on the receiver and call it directly,
+       avoiding a BoundMethod heap allocation. Args come from the paired
+       CallMethodArgs instruction. */
     fn exec_call_method(&mut self, attr_idx: u16, call_op: u16, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let raw = call_op as usize;
         let num_kw  = (raw >> 8) & 0xFF;
@@ -605,7 +601,7 @@ impl<'a> VM<'a> {
         let name = chunk.names.get(attr_idx as usize)
             .ok_or(VmErr::Runtime("CallMethod: bad name index"))?;
 
-        // Check for user-defined method on Instance
+        // User-defined method on Instance: call with self prepended.
         if obj.is_heap()
             && let HeapObj::Instance(cls_val, _) = self.heap.get(obj) {
                 let cls_val = *cls_val;
@@ -613,14 +609,13 @@ impl<'a> VM<'a> {
                     && let HeapObj::Class(_, methods) = self.heap.get(cls_val)
                     && let Some((_, mv)) = methods.iter().find(|(n, _)| n == name.as_str()) {
                         let mv = *mv;
-                            // Call the method with self prepended
-                            self.push(mv);
-                            self.push(obj);
-                            for a in &positional { self.push(*a); }
-                            let argc = (positional.len() + 1) as u16;
-                            let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
-                            return self.exec_call(encoded, chunk, slots);
-                        }
+                        self.push(mv);
+                        self.push(obj);
+                        for a in &positional { self.push(*a); }
+                        let argc = (positional.len() + 1) as u16;
+                        let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
+                        return self.exec_call(encoded, chunk, slots);
+                    }
             }
         let method_id = handlers::methods::lookup_method(ty, name.as_str())
             .ok_or(VmErr::Type("'object' has no attribute"))?;
@@ -628,23 +623,24 @@ impl<'a> VM<'a> {
         self.exec_bound_method(obj, method_id, positional, kw_flat)
     }
 
-    /// Hot dispatch.  Takes the fused instruction slice and constants slice as
-    /// borrowed parameters so the optimizer doesn't re-issue the inner `unwrap`
-    /// on `cache.fused_ref()` / `cache.const_vals_ref()` for every step.
+    /* Hot dispatch. Takes the fused instruction slice and constants slice as
+       borrowed parameters so the inner loop never re-unwraps cache.fused_ref()
+       or cache.const_vals_ref(). */
     #[inline]
     fn dispatch(
         &mut self, chunk: &SSAChunk, slots: &mut [Val],
         cache: &mut OpcodeCache,
         insns: &[Instruction], consts: &[Val],
-        ip: &mut usize, n: usize,
+        ip: &mut usize,
     ) -> Result<Option<Val>, VmErr> {
+        let n = insns.len();
         let ins = insns[*ip];
         let rip = *ip;
         let op = ins.operand;
         *ip += 1;
 
         match ins.opcode {
-            // ── SHORT-CIRCUIT JUMPS ───────────────────────────────────
+            // Short-circuit jumps.
             OpCode::JumpIfFalseOrPop => {
                 let v = *self.stack.last().ok_or(cold_runtime("stack underflow"))?;
                 if !self.truthy(v) { *ip = op as usize; }
@@ -656,7 +652,7 @@ impl<'a> VM<'a> {
                 else { self.pop()?; }
             }
 
-            // ── HOT OPCODES ───────────────────────────────────────────
+            // Hot opcodes.
             OpCode::LoadName => {
                 // Single u64 compare for unbound-slot detection — no Option.
                 let v = slots[op as usize];
@@ -669,15 +665,14 @@ impl<'a> VM<'a> {
                 self.handle_store(op, slots)?;
             }
             OpCode::LoadConst => {
-                // Constants are pre-materialized into a Vec<Val> at chunk
-                // entry; LoadConst is a single bounds-checked index now,
-                // not a per-iteration `Value` -> `Val` conversion.
+                // Constants are pre-materialised at exec entry, so this is a
+                // single bounds-checked index instead of a Value→Val conversion.
                 let v = *consts.get(op as usize)
                     .ok_or(cold_runtime("constant index out of bounds"))?;
                 self.push(v);
             }
 
-            // Arith with IC
+            // Arith with inline cache.
             OpCode::Add | OpCode::Sub | OpCode::Mul => {
                 if let Some(fast) = cache.get_fast(rip) {
                     if self.exec_fast(fast)? { return Ok(None); }
@@ -696,9 +691,9 @@ impl<'a> VM<'a> {
                 self.handle_arith(ins.opcode, rip, cache)?;
             }
 
-            // Compare with IC — all comparison opcodes go through the same
-            // fast-path/record cycle. FastOp variants exist for each one in
-            // cache.rs::FastOp; the dispatch was previously incomplete.
+            // Compare with inline cache — every comparison op has a FastOp
+            // variant in cache::FastOp and goes through the same fast-path /
+            // record cycle.
             OpCode::Eq | OpCode::Lt | OpCode::NotEq
             | OpCode::Gt | OpCode::LtEq | OpCode::GtEq => {
                 if let Some(fast) = cache.get_fast(rip) {
@@ -719,7 +714,7 @@ impl<'a> VM<'a> {
                     self.budget -= 1;
                 }
                 if self.heap.needs_gc() { self.collect(slots); }
-                // Handle coroutine iteration specially
+                // Coroutine iteration: resume via call instead of next_item().
                 if let Some(IterFrame::Coroutine(coro_val)) = self.iter_stack.last() {
                     let cv = *coro_val;
                     self.push(cv);
@@ -748,7 +743,7 @@ impl<'a> VM<'a> {
                 return Ok(Some(result));
             }
 
-            // ── WARM OPCODES ──────────────────────────────────────────
+            // Warm opcodes.
             OpCode::GetItem => { self.get_item()?; }
 
             OpCode::Call | OpCode::CallPrint | OpCode::CallLen | OpCode::CallAbs
@@ -780,20 +775,22 @@ impl<'a> VM<'a> {
 
             OpCode::LoadAttr => { self.handle_load_attr(op, chunk)?; }
 
-            // ── FUSED METHOD CALL ─────────────────────────────────────
+            // Fused method call.
             OpCode::CallMethod => {
-                // The next instruction is CallMethodArgs carrying the call op.
+                // Next instruction is the paired CallMethodArgs (consumed here).
                 let call_op = insns[*ip].operand;
-                *ip += 1; // consume CallMethodArgs
+                *ip += 1;
                 self.exec_call_method(op, call_op, chunk, slots)?;
             }
             OpCode::CallMethodArgs => {
-                // Should never be reached on its own — always consumed by CallMethod.
+                // Always consumed by CallMethod; reaching here is a bytecode bug.
                 return Err(cold_runtime("CallMethodArgs reached dispatch unpaired"));
             }
 
-            // ── COLD OPCODES ──────────────────────────────────────────
+            // Cold opcodes.
             OpCode::And | OpCode::Or => {
+                // Both should be short-circuited via JumpIfFalseOrPop / JumpIfTrueOrPop
+                // by the parser; reaching here is a codegen bug.
                 return Err(cold_runtime("And/Or reached VM dispatch (should be short-circuited)"));
             }
 

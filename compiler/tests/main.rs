@@ -1,7 +1,4 @@
-/*
-Initialization point for integration tests.
-*/
-
+// Integration test entry point.
 mod lexer;
 mod parser;
 mod vm;

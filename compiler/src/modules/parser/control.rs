@@ -1,6 +1,3 @@
-// parser/control.rs
-
-
 use crate::s;
 
 use super::Parser;
@@ -12,7 +9,7 @@ use alloc::{string::{String, ToString}, vec, vec::Vec};
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
-    /* Compiles if/elif/else chains with SSA block merging and conditional jumps. */
+    /* if / elif / else with SSA Phi at branch joins. */
 
     pub(super) fn if_stmt(&mut self) {
         self.advance();
@@ -55,7 +52,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Implements match/case with subject storage and equality-based dispatch. */
+    /* match/case: store subject once, equality-test each case arm. */
 
     pub(super) fn match_stmt(&mut self) {
         self.advance();
@@ -100,7 +97,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Builds while loops with break/continue support and optional else clause. */
+    /* while: cond + body + back-edge; optional else when cond falsifies. */
 
     pub(super) fn while_stmt(&mut self) {
         self.advance();
@@ -133,7 +130,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.commit_block();
     }
 
-    /* Parses for loops (sync or async) including variable unpacking and iterator logic. */
+    /* for / async for, with optional tuple/star unpacking. */
 
     pub(super) fn for_stmt_inner(&mut self, is_async: bool) {
         self.advance();
@@ -142,20 +139,10 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let mut vars = Vec::new();
         let mut star_pos: Option<usize> = None;
         loop {
-            if self.eat_if(TokenType::Star) {
-                star_pos = Some(vars.len());
-                let t = self.advance();
-                vars.push(self.lexeme(&t).to_string());
-            } else {
-                let t = self.advance();
-                vars.push(self.lexeme(&t).to_string());
-            }
-            if !self.eat_if(TokenType::Comma) {
-                break;
-            }
-            if matches!(self.peek(), Some(TokenType::In | TokenType::Rpar)) {
-                break;
-            }
+            if self.eat_if(TokenType::Star) { star_pos = Some(vars.len()); }
+            vars.push(self.advance_text());
+            if !self.eat_if(TokenType::Comma) { break; }
+            if matches!(self.peek(), Some(TokenType::In | TokenType::Rpar)) { break; }
         }
         if parens {
             self.eat(TokenType::Rpar);
@@ -176,18 +163,15 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
         if vars.len() == 1 && star_pos.is_none() {
             self.store_name(vars[0].clone());
-        } else if let Some(sp) = star_pos {
-            let before = sp as u16;
-            let after = (vars.len() - sp - 1) as u16;
-            self.chunk.emit(OpCode::UnpackEx, (before << 8) | after);
-            for var in &vars {
-                self.store_name(var.clone());
-            }
         } else {
-            self.chunk.emit(OpCode::UnpackSequence, vars.len() as u16);
-            for var in &vars {
-                self.store_name(var.clone());
+            if let Some(sp) = star_pos {
+                let before = sp as u16;
+                let after = (vars.len() - sp - 1) as u16;
+                self.chunk.emit(OpCode::UnpackEx, (before << 8) | after);
+            } else {
+                self.chunk.emit(OpCode::UnpackSequence, vars.len() as u16);
             }
+            for var in &vars { self.store_name(var.clone()); }
         }
 
         self.eat(TokenType::Colon);
@@ -209,7 +193,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.commit_block();
     }
 
-    /* Handles try/except/else/finally with exception setup and cleanup jumps. */
+    /* try / except / else / finally with exception arm chaining. */
 
     pub(super) fn try_stmt(&mut self) {
         self.advance();
@@ -234,9 +218,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let mut had_bare = false;
 
         while self.eat_if(TokenType::Except) {
-            if let Some(j) = next_arm_jump.take() {
-                self.patch(j);
-            }
+            if let Some(j) = next_arm_jump.take() { self.patch(j); }
             if had_bare {
                 self.error("default 'except:' must be last");
                 break;
@@ -253,12 +235,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 next_arm_jump = Some(self.chunk.instructions.len() - 1);
 
                 if self.eat_if(TokenType::As) {
-                    let t = self.advance();
-                    let name = self.lexeme(&t).to_string();
-                    self.store_name(name);
-                } else {
-                    self.chunk.emit(OpCode::PopTop, 0);
-                }
+                    let n = self.advance_text();
+                    self.store_name(n);
+                } else { self.chunk.emit(OpCode::PopTop, 0); }
             }
             self.eat(TokenType::Colon);
             self.compile_block();
@@ -296,7 +275,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.commit_block();
     }
 
-    /* Compiles with/as blocks (sync/async) including context manager enter/exit. */
+    /* with / async with: SetupWith per CM, ExitWith 1:1 on unwind. */
 
     pub(super) fn with_stmt_inner(&mut self, is_async: bool) {
         self.advance();
@@ -307,23 +286,20 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             self.chunk.emit(OpCode::SetupWith, operand);
             cm_count += 1;
             if self.eat_if(TokenType::As) {
-                let t = self.advance();
-                let name = self.lexeme(&t).to_string();
+                let name = self.advance_text();
                 self.store_name(name);
             }
-            if !self.eat_if(TokenType::Comma) {
-                break;
-            }
+            if !self.eat_if(TokenType::Comma) { break; }
         }
         self.eat(TokenType::Colon);
         self.compile_block();
-        // Un ExitWith por cada SetupWith emitido — empareja 1:1 al desarmar.
+        // One ExitWith per SetupWith — paired 1:1 on unwind.
         for _ in 0..cm_count {
             self.chunk.emit(OpCode::ExitWith, operand);
         }
     }
 
-    /* Parses import and from-import syntax with optional aliases and star imports. */
+    /* import / from-import with aliases and star imports. */
 
     pub(super) fn import_stmt(&mut self) {
         self.advance();
@@ -331,17 +307,13 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             let module = self.dotted_name();
             let mod_idx = self.chunk.push_name(&module);
             self.chunk.emit(OpCode::Import, mod_idx);
-            if self.eat_if(TokenType::As) {
-                let t = self.advance();
-                let alias = self.lexeme(&t).to_string();
-                self.store_name(alias);
+            let alias = if self.eat_if(TokenType::As) {
+                self.advance_text()
             } else {
-                let root = module.split('.').next().unwrap().to_string();
-                self.store_name(root);
-            }
-            if !self.eat_if(TokenType::Comma) {
-                break;
-            }
+                module.split('.').next().unwrap().to_string()
+            };
+            self.store_name(alias);
+            if !self.eat_if(TokenType::Comma) { break; }
         }
     }
 
@@ -356,31 +328,22 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             self.chunk.emit(OpCode::ImportFrom, star);
         } else {
             loop {
-                let t = self.advance();
-                let name = self.lexeme(&t).to_string();
+                let name = self.advance_text();
                 let name_idx = self.chunk.push_name(&name);
                 self.chunk.emit(OpCode::ImportFrom, name_idx);
-                if self.eat_if(TokenType::As) {
-                    let t = self.advance();
-                    let alias = self.lexeme(&t).to_string();
-                    self.store_name(alias);
-                } else {
-                    self.store_name(name);
-                }
-                if !self.eat_if(TokenType::Comma) {
-                    break;
-                }
+                let alias = if self.eat_if(TokenType::As) { self.advance_text() } else { name };
+                self.store_name(alias);
+                if !self.eat_if(TokenType::Comma) { break; }
             }
         }
         self.chunk.emit(OpCode::PopTop, 0);
     }
 
     pub(super) fn dotted_name(&mut self) -> String {
-        let t = self.advance();
-        let mut name = self.lexeme(&t).to_string();
+        let mut name = self.advance_text();
         while self.eat_if(TokenType::Dot) {
-            let t = self.advance();
             name.push('.');
+            let t = self.advance();
             name.push_str(self.lexeme(&t));
         }
         name

@@ -1,11 +1,8 @@
-// vm/types.rs
-
-use alloc::{string::{String}, vec::Vec, vec, rc::Rc};
-use core::{cell::RefCell};
+use alloc::{string::String, vec::Vec, vec, rc::Rc};
+use core::cell::RefCell;
 use crate::modules::fx::{FxHashMap as HashMap, FxHashSet as HashSet};
 
-/* Configurable call depth, operation budget and heap quota per execution. */
-
+/* Per-execution resource caps: max recursion depth, op budget, heap quota. */
 pub struct Limits { pub calls: usize, pub ops: usize, pub heap: usize }
 
 impl Limits {
@@ -13,11 +10,11 @@ impl Limits {
     pub fn sandbox() -> Self { Self { calls: 256, ops: 100_000_000, heap: 100_000 } }
 }
 
-/* NaN-boxed 8-byte value: int, float, bool, None or heap index inline. */
-
+/* NaN-boxed 8-byte value: int (47-bit), float, bool, None, undef, or heap idx.
+   Tags live in the QNAN bit pattern; payload bits decide the variant. */
 const QNAN: u64 = 0x7FFC_0000_0000_0000;
 const SIGN: u64 = 0x8000_0000_0000_0000;
-const TAG_UNDEF: u64 = QNAN;        // payload bits all zero — distinct from NONE/TRUE/FALSE/HEAP
+const TAG_UNDEF: u64 = QNAN;        // payload all zero — distinct from None/True/False/Heap
 const TAG_NONE: u64 = QNAN | 1;
 const TAG_TRUE: u64 = QNAN | 2;
 const TAG_FALSE: u64 = QNAN | 3;
@@ -40,7 +37,7 @@ impl core::hash::Hash for Val {
 }
 
 impl Val {
-    /// Canonical NaN stored outside the QNAN tag space so `is_float()` stays true.
+    /* Canonical NaN stored outside the tag space so is_float() stays true. */
     const CANON_NAN: u64 = 0x7FF8_0000_0000_0000;
     #[inline(always)] pub fn float(f: f64) -> Self {
         let bits = f.to_bits();
@@ -61,10 +58,9 @@ impl Val {
     #[inline(always)] pub fn none() -> Self { Self(TAG_NONE) }
     #[inline(always)] pub fn bool(b: bool) -> Self { Self(if b { TAG_TRUE } else { TAG_FALSE }) }
     #[inline(always)] pub fn heap(idx: u32) -> Self { Self(TAG_HEAP | ((idx as u64) << 4)) }
-    /// Sentinel for an unbound local slot.  Distinct from `none()`, which
-    /// represents Python's `None`.  Allows replacing `Vec<Option<Val>>` with
-    /// `Vec<Val>` for slot storage; LoadName checks `is_undef()` to raise
-    /// NameError, which is a single u64 compare.
+    /* Unbound-local sentinel, distinct from none(). Lets slot storage be
+       Vec<Val> instead of Vec<Option<Val>>; LoadName raises NameError
+       via a single u64 compare. */
     #[inline(always)] pub fn undef() -> Self { Self(TAG_UNDEF) }
 
     #[inline(always)] pub fn is_float(&self) -> bool { (self.0 & QNAN) != QNAN }
@@ -87,8 +83,8 @@ impl Val {
     #[inline(always)] pub fn as_heap(&self) -> u32 { ((self.0 >> 4) & 0x0FFF_FFFF) as u32 }
 }
 
-/* Implements signed arbitrary precision integers using base-2^32 little-endian limb storage. */
-
+/* Signed arbitrary-precision integer, base-2³² little-endian limbs.
+   Empty limbs means zero (then neg must be false). */
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BigInt {
     pub neg: bool,
@@ -339,7 +335,7 @@ impl BigInt {
         (q, rem)
     }
 
-    /// Shift left, returning n+1 limbs to hold overflow.
+    /* Shift left, returning n+1 limbs to hold overflow. */
     fn shl_limbs_ext(limbs: &[u32], shift: u32) -> Vec<u32> {
         let mut out = vec![0u32; limbs.len() + 1];
         if shift == 0 {
@@ -354,7 +350,7 @@ impl BigInt {
         out
     }
 
-    /// Shift left without overflow limb.
+    /* Shift left without overflow limb. */
     fn shl_limbs(limbs: &[u32], shift: u32) -> Vec<u32> {
         if shift == 0 { return limbs.to_vec(); }
         let mut out = vec![0u32; limbs.len()];
@@ -365,7 +361,7 @@ impl BigInt {
         out
     }
 
-    /// Shift right to undo normalization.
+    /* Shift right to undo normalization. */
     fn shr_limbs(limbs: &[u32], shift: u32) -> Vec<u32> {
         if shift == 0 { return limbs.to_vec(); }
         let mut out = vec![0u32; limbs.len()];
@@ -420,16 +416,7 @@ impl BigInt {
         }
         let mut s = alloc::string::String::new();
         if self.neg { s.push('-'); }
-        for (i, &g) in groups.iter().rev().enumerate() {
-            if i == 0 {
-                let mut b = itoa::Buffer::new();
-                s.push_str(b.format(g));
-            } else {
-                let n = { let mut b = itoa::Buffer::new(); alloc::string::String::from(b.format(g)) };
-                for _ in 0..9usize.saturating_sub(n.len()) { s.push('0'); }
-                s.push_str(&n);
-            }
-        }
+        s.push_str(&crate::modules::fstr::format_dec_groups(&groups));
         s
     }
 }
@@ -449,8 +436,8 @@ impl Ord for BigInt {
     }
 }
 
-/* Str, List, Dict, Set, Tuple, Func, Range and Slice stored in arena. */
-
+/* Heap-allocated value variants. Stored in HeapPool's arena; addressed
+   by index via the Val::heap tag. */
 #[derive(Clone, Debug)]
 pub enum HeapObj {
     Str(String),
@@ -485,36 +472,22 @@ pub enum NativeFnId {
 }
 
 impl NativeFnId {
+    /* Static name table indexed by `self as usize`. The order MUST match
+       the enum declaration above; #[repr(u8)] keeps discriminants stable. */
     pub fn name(self) -> &'static str {
-        match self {
-            Self::Print => "print", Self::Len => "len",
-            Self::Abs => "abs", Self::Str => "str",
-            Self::Int => "int", Self::Float => "float",
-            Self::Bool => "bool", Self::Type => "type",
-            Self::Chr => "chr", Self::Ord => "ord",
-            Self::Range => "range", Self::Round => "round",
-            Self::Min => "min", Self::Max => "max",
-            Self::Sum => "sum", Self::Sorted => "sorted",
-            Self::Enumerate => "enumerate", Self::Zip => "zip",
-            Self::List => "list", Self::Tuple => "tuple",
-            Self::Dict => "dict", Self::Set => "set",
-            Self::IsInstance => "isinstance", Self::Input => "input",
-            Self::All => "all", Self::Any => "any",
-            Self::Bin => "bin", Self::Oct => "oct",
-            Self::Hex => "hex", Self::Divmod => "divmod",
-            Self::Pow => "pow", Self::Repr => "repr",
-            Self::Reversed => "reversed", Self::Callable => "callable",
-            Self::Id => "id", Self::Hash => "hash",
-            Self::Format => "format", Self::Ascii => "ascii",
-            Self::GetAttr => "getattr", Self::HasAttr => "hasattr",
-            Self::Next => "next",
-            Self::Run => "run", Self::Sleep => "sleep", Self::Receive => "receive",
-        }
+        const NAMES: &[&str] = &[
+            "print", "len", "abs", "str", "int", "float", "bool", "type", "chr", "ord",
+            "range", "round", "min", "max", "sum", "sorted", "enumerate", "zip",
+            "list", "tuple", "dict", "set", "isinstance", "input", "all", "any",
+            "bin", "oct", "hex", "divmod", "pow", "repr", "reversed", "callable", "id",
+            "hash", "format", "ascii", "getattr", "hasattr", "next", "run", "sleep",
+            "receive",
+        ];
+        NAMES[self as usize]
     }
 }
 
-/* Insertion-ordered dict backed by Vec with HashMap index for O(1) lookup. */
-
+/* Insertion-ordered dict: Vec for ordering, HashMap as index for O(1) get. */
 #[derive(Clone, Debug)]
 pub struct DictMap {
     pub entries: Vec<(Val, Val)>,
@@ -587,8 +560,7 @@ impl DictMap {
     }
 }
 
-/* Arena allocator with mark-sweep GC, string interning, and per-type tagging for inline cache. */
-
+/* Arena allocator with mark-sweep GC and string interning (≤128 bytes). */
 struct HeapSlot {
     obj: Option<HeapObj>,
     marked: bool,
@@ -738,34 +710,36 @@ impl HeapPool {
     }
     
 
+    /* Stable per-type tag used by the inline cache to specialise binops.
+       Returns 0 for unknown / freed values. */
     #[inline(always)]
-        pub fn val_tag(&self, v: Val) -> u8 {
-            if v.is_int() { 1 } else if v.is_float() { 2 } else if v.is_bool() { 3 }
-            else if v.is_none() { 4 } else if v.is_heap() {
-                match self.slots[v.as_heap() as usize].obj.as_ref() {
-                    Some(HeapObj::Str(_)) => 5,
-                    Some(HeapObj::List(_)) => 6,
-                    Some(HeapObj::Dict(_)) => 7,
-                    Some(HeapObj::Set(_)) => 8,
-                    Some(HeapObj::Tuple(_)) => 9,
-                    Some(HeapObj::Func(_, _, _)) => 10,
-                    Some(HeapObj::Range(..)) => 11,
-                    Some(HeapObj::Slice(..)) => 12,
-                    Some(HeapObj::Type(_)) => 13,
-                    Some(HeapObj::BigInt(_)) => 14,
-                    Some(HeapObj::BoundMethod(_, _)) => 15,
-                    Some(HeapObj::NativeFn(_)) => 16,
-                    Some(HeapObj::BoundUserMethod(..)) => 17,
-                    Some(HeapObj::Class(..)) => 18,
-                    Some(HeapObj::Instance(..)) => 18,
-                    Some(HeapObj::Coroutine(..)) => 19,
-                    None => 0,
-                }
-            } else { 0 }
-        }
+    pub fn val_tag(&self, v: Val) -> u8 {
+        if v.is_int() { 1 } else if v.is_float() { 2 } else if v.is_bool() { 3 }
+        else if v.is_none() { 4 } else if v.is_heap() {
+            match self.slots[v.as_heap() as usize].obj.as_ref() {
+                Some(HeapObj::Str(_)) => 5,
+                Some(HeapObj::List(_)) => 6,
+                Some(HeapObj::Dict(_)) => 7,
+                Some(HeapObj::Set(_)) => 8,
+                Some(HeapObj::Tuple(_)) => 9,
+                Some(HeapObj::Func(_, _, _)) => 10,
+                Some(HeapObj::Range(..)) => 11,
+                Some(HeapObj::Slice(..)) => 12,
+                Some(HeapObj::Type(_)) => 13,
+                Some(HeapObj::BigInt(_)) => 14,
+                Some(HeapObj::BoundMethod(_, _)) => 15,
+                Some(HeapObj::NativeFn(_)) => 16,
+                Some(HeapObj::BoundUserMethod(..)) => 17,
+                Some(HeapObj::Class(..)) => 18,
+                Some(HeapObj::Instance(..)) => 18,
+                Some(HeapObj::Coroutine(..)) => 19,
+                None => 0,
+            }
+        } else { 0 }
     }
+}
 
-/* Content-based equality over the heap; canonical implementation used by both. */
+// Equality on Val/heap objects.
 
 pub(super) fn eq_seq(a: &[Val], b: &[Val], eq: impl Fn(Val,Val)->bool) -> bool {
     a.len() == b.len() && a.iter().zip(b).all(|(x,y)| eq(*x,*y))
@@ -803,8 +777,8 @@ fn bigint_of(v: Val, heap: &HeapPool) -> Option<&BigInt> {
     None
 }
 
-/* CallDepth, Heap, Budget, Name, Type, Value, ZeroDiv and Runtime variants. */
-
+/* Runtime errors. Static-string variants avoid alloc on the hot error path;
+   Name/Raised carry the offending text. */
 pub enum VmErr {
     CallDepth, Heap, Budget, ZeroDiv,
     Name(String),
@@ -849,8 +823,7 @@ impl core::fmt::Display for VmErr {
     }
 }
 
-/* Seq or Range state consumed one item at a time by ForIter dispatch. */
-
+/* Iterator state for ForIter. Consumed one item at a time. */
 #[derive(Clone, Debug)]
 pub enum IterFrame {
     Seq { items: Vec<Val>, idx: usize },
@@ -873,7 +846,7 @@ impl IterFrame {
     }
 }
 
-/* Pure f64 implementations of powi, round, powf for no_std and WASM builds. */
+// Pure-Rust f64 math (no libm, works under no_std / WASM).
 
 #[inline]
 pub fn fpowi(mut base: f64, exp: i32) -> f64 {
@@ -925,15 +898,16 @@ pub fn fpowf(base: f64, exp: f64) -> f64 {
     fexp(exp * fln(base))
 }
 
-/* Out-of-line error paths keep hot dispatch loop linear for instruction cache. */
-
+/* Out-of-line error constructors keep the hot dispatch loop linear in
+   the icache; #[cold] + #[inline(never)] push them off the fast path. */
 #[cold] #[inline(never)] pub fn cold_heap() -> VmErr { VmErr::Heap }
 #[cold] #[inline(never)] pub fn cold_budget() -> VmErr { VmErr::Budget }
 #[cold] #[inline(never)] pub fn cold_depth() -> VmErr { VmErr::CallDepth }
 #[cold] #[inline(never)] pub fn cold_type(m: &'static str) -> VmErr { VmErr::Type(m) }
 #[cold] #[inline(never)] pub fn cold_value(m: &'static str) -> VmErr { VmErr::Value(m) }
 #[cold] #[inline(never)] pub fn cold_runtime(m: &'static str) -> VmErr { VmErr::Runtime(m) }
-/// SSA store — single write after register coalescing.
+
+/* Single-write SSA store after register coalescing. */
 #[inline(always)]
 pub fn p_store_ssa(slots: &mut [Val], slot: usize, v: Val) {
     slots[slot] = v;

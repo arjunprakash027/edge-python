@@ -1,5 +1,3 @@
-// vm/builtins.rs
-
 use crate::s;
 
 use super::VM;
@@ -76,8 +74,7 @@ impl<'a> VM<'a> {
         }
     }
 
-    /* Pops N args, joins with space, appends to output buffer. */
-
+    /* Pops N args, joins with single spaces, appends one line to `output`. */
     pub fn call_print(&mut self, op: u16) -> Result<(), VmErr> {
         let args = self.pop_n(op as usize)?;
         let mut out = String::new();
@@ -88,8 +85,6 @@ impl<'a> VM<'a> {
         self.output.push(out);
         Ok(())
     }
-
-    /* Returns element count for strings, lists, tuples, dicts, sets, ranges. */
 
     pub fn call_len(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
@@ -105,8 +100,6 @@ impl<'a> VM<'a> {
         self.push(Val::int(n)); Ok(())
     }
 
-    /* Returns absolute value for int and float operands. */
-    
     pub fn call_abs(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         if o.is_int() {
@@ -129,15 +122,18 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Converts any value to its string representation via display. */
-    
     pub fn call_str(&mut self) -> Result<(), VmErr> {
-        let o = self.pop()?; let s = self.display(o);
-        let v = self.heap.alloc(HeapObj::Str(s))?; self.push(v); Ok(())
+        let o = self.pop()?;
+        self.alloc_and_push_str(self.display(o))
     }
 
-    /* Converts float, bool, or parseable string to integer. */
-    
+    /* Heap-alloc `s` and push the resulting Val. Used by ~10 builtins
+       (str / repr / chr / format / ...) that produce string results. */
+    fn alloc_and_push_str(&mut self, s: String) -> Result<(), VmErr> {
+        let v = self.heap.alloc(HeapObj::Str(s))?;
+        self.push(v); Ok(())
+    }
+
     pub fn call_int(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         if o.is_heap()
@@ -182,19 +178,16 @@ impl<'a> VM<'a> {
     pub fn call_type(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         let s = self.type_name(o);
-        let full = s!("<class '", str s, "'>");
-        let v = self.heap.alloc(HeapObj::Str(full))?;
-        self.push(v);
-        Ok(())
+        self.alloc_and_push_str(s!("<class '", str s, "'>"))
     }
 
     pub fn call_chr(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         if !o.is_int() { return Err(cold_type("chr() requires an integer")); }
         let c = char::from_u32(o.as_int() as u32).ok_or(cold_value("chr() arg out of range"))?;
-        let mut s = String::with_capacity(4); // max UTF-8 char size
+        let mut s = String::with_capacity(4);
         s.push(c);
-        let v = self.heap.alloc(HeapObj::Str(s))?; self.push(v); Ok(())
+        self.alloc_and_push_str(s)
     }
 
     pub fn call_ord(&mut self) -> Result<(), VmErr> {
@@ -209,8 +202,6 @@ impl<'a> VM<'a> {
         Err(cold_type("ord() requires string of length 1"))
     }
 
-    /* Creates lazy Range(start, end, step) with 1-3 int arguments. */
-    
     pub fn call_range(&mut self, op: u16) -> Result<(), VmErr> {
         let args = self.pop_n(op as usize)?;
         let gi = |v: Val| -> Result<i64, VmErr> {
@@ -227,8 +218,6 @@ impl<'a> VM<'a> {
         self.push(val); Ok(())
     }
 
-    /* Rounds float to nearest int or to N decimal places. */
-    
     pub fn call_round(&mut self, op: u16) -> Result<(), VmErr> {
         let args = self.pop_n(op as usize)?;
         let v = match (args.first(), args.get(1)) {
@@ -244,30 +233,21 @@ impl<'a> VM<'a> {
         self.push(v); Ok(())
     }
 
-    /* Returns smallest or largest item from args or single iterable. */
-    
-    pub fn call_min(&mut self, op: u16) -> Result<(), VmErr> {
-        let args: Vec<Val> = self.pop_n(op as usize)?;
-        let items = self.unwrap_single_iterable(args)?;
-        if items.is_empty() { return Err(cold_value("min() arg is an empty sequence")); }
-        let m = items[1..].iter().try_fold(items[0], |m, &x| {
-            self.lt_vals(x, m).map(|lt| if lt { x } else { m })
-        })?;
-        self.push(m); Ok(())
-    }
+    pub fn call_min(&mut self, op: u16) -> Result<(), VmErr> { self.call_minmax(op, true) }
+    pub fn call_max(&mut self, op: u16) -> Result<(), VmErr> { self.call_minmax(op, false) }
 
-    pub fn call_max(&mut self, op: u16) -> Result<(), VmErr> {
+    fn call_minmax(&mut self, op: u16, is_min: bool) -> Result<(), VmErr> {
         let args = self.pop_n(op as usize)?;
         let items = self.unwrap_single_iterable(args)?;
-        if items.is_empty() { return Err(cold_value("max() arg is an empty sequence")); }
+        let label = if is_min { "min() arg is an empty sequence" } else { "max() arg is an empty sequence" };
+        if items.is_empty() { return Err(cold_value(label)); }
         let m = items[1..].iter().try_fold(items[0], |m, &x| {
-            self.lt_vals(m, x).map(|lt| if lt { x } else { m })
+            let (l, r) = if is_min { (x, m) } else { (m, x) };
+            self.lt_vals(l, r).map(|lt| if lt { x } else { m })
         })?;
         self.push(m); Ok(())
     }
 
-    /* Sums iterable elements with optional start value. */
-    
     pub fn call_sum(&mut self, op: u16) -> Result<(), VmErr> {
         let args = self.pop_n(op as usize)?;
         if args.is_empty() { return Err(cold_type("sum() requires at least 1 argument")); }
@@ -278,11 +258,18 @@ impl<'a> VM<'a> {
         self.push(acc); Ok(())
     }
 
-    /* Returns new sorted list from iterable via comparison. */
-
     pub fn call_sorted(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         let mut items = self.extract_iter(o, false)?;
+        self.sort_by_lt(&mut items)?;
+        let val = self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(items))))?;
+        self.push(val); Ok(())
+    }
+
+    /* In-place sort using lt_vals for ordering. Captures the first error
+       and surfaces it after the sort completes — sort_by closures can't
+       return Result directly. */
+    pub(crate) fn sort_by_lt(&self, items: &mut [Val]) -> Result<(), VmErr> {
         let mut sort_err: Option<VmErr> = None;
         items.sort_by(|&a, &b| {
             if sort_err.is_some() { return core::cmp::Ordering::Equal; }
@@ -296,13 +283,11 @@ impl<'a> VM<'a> {
                 Err(e) => { sort_err = Some(e); core::cmp::Ordering::Equal }
             }
         });
-        if let Some(e) = sort_err { return Err(e); }
-        let val = self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(items))))?;
-        self.push(val); Ok(())
+        sort_err.map_or(Ok(()), Err)
     }
 
-    /* Converts iterable to list or tuple, materializing lazy ranges. */
-
+    /* Materialises an iterable to a list/tuple. Strings expand to chars;
+       ranges materialise eagerly. */
     pub fn call_list(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         if o.is_heap()
@@ -329,8 +314,6 @@ impl<'a> VM<'a> {
         self.push(val); Ok(())
     }
 
-    /* Wraps iterable items as (index, value) tuple pairs. */
-
     pub fn call_enumerate(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         let src = self.extract_iter(o, false)?;
@@ -343,8 +326,7 @@ impl<'a> VM<'a> {
         self.push(val); Ok(())
     }
 
-    /* Pairs elements from N iterables into tuple list, truncating to shortest. */
-
+    /* Pairs elements from N iterables into tuples, truncating to the shortest. */
     pub fn call_zip(&mut self, op: u16) -> Result<(), VmErr> {
         let mut iters: Vec<Vec<Val>> = Vec::with_capacity(op as usize);
         let mut vals = Vec::with_capacity(op as usize);
@@ -362,13 +344,13 @@ impl<'a> VM<'a> {
         self.push(val); Ok(())
     }
 
-    /* Compares type_name string for sandbox-level type checking. */
-
+    /* Type-name based isinstance check. Accepts Type or NativeFn (for the
+       builtins-as-types case) on the right; allows int↔bool aliasing. */
     pub fn call_isinstance(&mut self) -> Result<(), VmErr> {
         let (arg2, obj) = (self.pop()?, self.pop()?);
         let obj_ty = self.type_name(obj);
 
-        // For exception matching: if obj is a Type, extract its name for comparison.
+        // For exception matching: when `obj` is a Type itself, compare names.
         let obj_type_name: Option<String> = if obj.is_heap() {
             if let HeapObj::Type(n) = self.heap.get(obj) { Some(n.clone()) } else { None }
         } else { None };
@@ -434,10 +416,10 @@ impl<'a> VM<'a> {
         self.push(val); Ok(())
     }
 
-    // Shared helpers
+    // Shared helpers.
 
-    /* If single-arg is list/tuple/set, returns its items; otherwise returns args as-is. */
-    
+    /* If a single arg is a list/tuple/set, return its items; otherwise pass
+       args through unchanged. Used by min/max / etc. for varargs vs iterable. */
     fn unwrap_single_iterable(&self, args: Vec<Val>) -> Result<Vec<Val>, VmErr> {
         if args.len() == 1 && args[0].is_heap() {
             match self.heap.get(args[0]) {
@@ -450,8 +432,8 @@ impl<'a> VM<'a> {
         Ok(args)
     }
 
-    /// Extracts Vec<Val> from list/tuple/set; optionally materializes Range.
-    /// Str is handled at callsite (it needs heap-allocated chars, not ints).
+    /* Extract a Vec<Val> from list/tuple/set; optionally materialise Range.
+       Str is handled at the call site (it needs heap-allocated chars, not ints). */
     fn extract_iter(&self, o: Val, include_range: bool) -> Result<Vec<Val>, VmErr> {
         if !o.is_heap() { return Err(cold_type("object is not iterable")); }
         Ok(match self.heap.get(o) {
@@ -670,7 +652,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    // ─── Logical reductions ──────────────────────────────────────────
+    // Logical reductions.
 
     pub fn call_all(&mut self, op: u16) -> Result<(), VmErr> {
         if op != 1 { return Err(cold_type("all() takes exactly 1 argument")); }
@@ -700,28 +682,19 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    // ─── Number formatting ───────────────────────────────────────────
+    // Number formatting.
 
-    pub fn call_bin(&mut self) -> Result<(), VmErr> {
+    pub fn call_bin(&mut self) -> Result<(), VmErr> { self.call_radix(2,  "0b") }
+    pub fn call_oct(&mut self) -> Result<(), VmErr> { self.call_radix(8,  "0o") }
+    pub fn call_hex(&mut self) -> Result<(), VmErr> { self.call_radix(16, "0x") }
+
+    fn call_radix(&mut self, radix: u32, prefix: &str) -> Result<(), VmErr> {
         let o = self.pop()?;
-        let s = self.int_to_radix_string(o, 2, "0b")?;
-        let v = self.heap.alloc(HeapObj::Str(s))?;
-        self.push(v); Ok(())
-    }
-    pub fn call_oct(&mut self) -> Result<(), VmErr> {
-        let o = self.pop()?;
-        let s = self.int_to_radix_string(o, 8, "0o")?;
-        let v = self.heap.alloc(HeapObj::Str(s))?;
-        self.push(v); Ok(())
-    }
-    pub fn call_hex(&mut self) -> Result<(), VmErr> {
-        let o = self.pop()?;
-        let s = self.int_to_radix_string(o, 16, "0x")?;
-        let v = self.heap.alloc(HeapObj::Str(s))?;
-        self.push(v); Ok(())
+        let s = self.int_to_radix_string(o, radix, prefix)?;
+        self.alloc_and_push_str(s)
     }
 
-    /// Converts int/BigInt to "<prefix><digits>" with optional sign.
+    /* Converts int/BigInt to "<prefix><digits>" with optional sign. */
     fn int_to_radix_string(&self, v: Val, radix: u32, prefix: &str) -> Result<String, VmErr> {
         if v.is_int() {
             return Ok(i64_to_radix(v.as_int(), radix, prefix));
@@ -733,7 +706,7 @@ impl<'a> VM<'a> {
         Err(cold_type("integer required"))
     }
 
-    // ─── Arithmetic ──────────────────────────────────────────────────
+    // Arithmetic.
 
     pub fn call_divmod(&mut self) -> Result<(), VmErr> {
         let b = self.pop()?;
@@ -787,12 +760,17 @@ impl<'a> VM<'a> {
     }
 
     fn pow_2arg(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
+        self.pow_vals(a, b, "pow() requires numeric operands")
+    }
+
+    /* Two-arg power, shared between the pow() builtin and the `**` operator
+       handler. Caller picks the error message so each surface keeps its own
+       diagnostic. */
+    pub(crate) fn pow_vals(&mut self, a: Val, b: Val, err_msg: &'static str) -> Result<Val, VmErr> {
         if let Some(ba) = self.to_bigint(a) && b.is_int() {
             let exp = b.as_int();
             if exp >= 0 {
-                if exp > u32::MAX as i64 {
-                    return Err(cold_value("pow() exponent too large"));
-                }
+                if exp > u32::MAX as i64 { return Err(cold_value("pow() exponent too large")); }
                 return self.bigint_to_val(ba.pow_u32(exp as u32));
             }
             return Ok(Val::float(fpowi(ba.to_f64(), exp as i32)));
@@ -800,18 +778,16 @@ impl<'a> VM<'a> {
         let to_f = |v: Val| -> Result<f64, VmErr> {
             if v.is_int() { Ok(v.as_int() as f64) }
             else if v.is_float() { Ok(v.as_float()) }
-            else { Err(cold_type("pow() requires numeric operands")) }
+            else { Err(cold_type(err_msg)) }
         };
         Ok(Val::float(fpowf(to_f(a)?, to_f(b)?)))
     }
 
-    // ─── Introspection ───────────────────────────────────────────────
+    // Introspection.
 
     pub fn call_repr(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
-        let s = self.repr(o);
-        let v = self.heap.alloc(HeapObj::Str(s))?;
-        self.push(v); Ok(())
+        self.alloc_and_push_str(self.repr(o))
     }
 
     pub fn call_callable(&mut self) -> Result<(), VmErr> {
@@ -858,7 +834,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    // ─── Sequence ops ────────────────────────────────────────────────
+    // Sequence ops.
 
     pub fn call_reversed(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
@@ -874,60 +850,45 @@ impl<'a> VM<'a> {
         self.push(v); Ok(())
     }
 
-    // ─── format(value [, spec]) ─────────────────────────────────────
+    // format(value [, spec]).
 
     pub fn call_format(&mut self, op: u16) -> Result<(), VmErr> {
         if op != 1 && op != 2 {
             return Err(cold_type("format() takes 1 or 2 arguments"));
         }
         let _spec = if op == 2 { Some(self.pop()?) } else { None };
+        // Spec is parsed but ignored for now; real format spec is a small
+        // extension on top of this. Falls through to display() for the value.
         let val = self.pop()?;
-        // Edge Python ignores spec details for now — uses display.
-        // (Real format spec is just a small extension on top of this.)
-        let s = self.display(val);
-        let v = self.heap.alloc(HeapObj::Str(s))?;
-        self.push(v); Ok(())
+        self.alloc_and_push_str(self.display(val))
     }
 
-    // ─── ascii(obj) — repr but with non-ASCII escaped ───────────────
+    // ascii(obj) — repr but with non-ASCII escaped.
 
     pub fn call_ascii(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         let r = self.repr(o);
         let mut out = String::with_capacity(r.len());
         for c in r.chars() {
-            if (c as u32) < 0x80 {
-                out.push(c);
-            } else if (c as u32) < 0x10000 {
-                out.push_str("\\u");
-                let hex = i64_to_radix(c as i64, 16, "");
-                for _ in 0..(4 - hex.len()) { out.push('0'); }
-                out.push_str(&hex);
-            } else {
-                out.push_str("\\U");
-                let hex = i64_to_radix(c as i64, 16, "");
-                for _ in 0..(8 - hex.len()) { out.push('0'); }
-                out.push_str(&hex);
-            }
+            if (c as u32) < 0x80 { out.push(c); continue; }
+            let (escape, pad) = if (c as u32) < 0x10000 { ("\\u", 4) } else { ("\\U", 8) };
+            out.push_str(escape);
+            let hex = i64_to_radix(c as i64, 16, "");
+            for _ in 0..(pad - hex.len()) { out.push('0'); }
+            out.push_str(&hex);
         }
-        let v = self.heap.alloc(HeapObj::Str(out))?;
-        self.push(v); Ok(())
+        self.alloc_and_push_str(out)
     }
 
-    // ─── getattr(obj, name [, default]) ─────────────────────────────
+    // getattr(obj, name [, default]).
 
     pub fn call_getattr(&mut self, op: u16) -> Result<(), VmErr> {
         if op != 2 && op != 3 {
             return Err(cold_type("getattr() takes 2 or 3 arguments"));
         }
         let default = if op == 3 { Some(self.pop()?) } else { None };
-        let name_val = self.pop()?;
+        let name = self.expect_str_arg("getattr() name must be a string")?;
         let obj = self.pop()?;
-
-        let name = match (name_val.is_heap(), name_val.is_heap().then(|| self.heap.get(name_val))) {
-            (true, Some(HeapObj::Str(s))) => s.clone(),
-            _ => return Err(cold_type("getattr() name must be a string")),
-        };
 
         let ty = self.type_name(obj);
         if let Some(method_id) = super::handlers::methods::lookup_method(ty, &name) {
@@ -942,70 +903,44 @@ impl<'a> VM<'a> {
         Err(cold_type("attribute not found"))
     }
 
-    // ─── hasattr(obj, name) ─────────────────────────────────────────
+    // hasattr(obj, name).
 
     pub fn call_hasattr(&mut self) -> Result<(), VmErr> {
-        let name_val = self.pop()?;
+        let name = self.expect_str_arg("hasattr() name must be a string")?;
         let obj = self.pop()?;
-        let name = match (name_val.is_heap(), name_val.is_heap().then(|| self.heap.get(name_val))) {
-            (true, Some(HeapObj::Str(s))) => s.clone(),
-            _ => return Err(cold_type("hasattr() name must be a string")),
-        };
         let ty = self.type_name(obj);
         let exists = super::handlers::methods::lookup_method(ty, &name).is_some();
         self.push(Val::bool(exists));
         Ok(())
     }
 
-    pub fn call_next(&mut self) -> Result<(), VmErr> {
-        let o = self.pop()?;
-        if o.is_heap() 
-            && let HeapObj::Coroutine(..) = self.heap.get(o) {
-                self.push(o);
-                // Call the coroutine with 0 args via the resume path
-                // We need chunk/slots but next() is called from dispatch_native
-                // which doesn't have them. Use exec_call workaround:
-                // Push callee, then manually invoke the Coroutine resume.
-                let callee = o;
-                if let HeapObj::Coroutine(ip, saved_slots, saved_stack, fi, saved_iters) = self.heap.get(callee) {
-                    let (ip, fi) = (*ip, *fi);
-                    let mut fn_slots = saved_slots.clone();
-                    let saved_stack_len = self.stack.len();
-                    let saved_iter_len = self.iter_stack.len();
-                    self.stack.extend_from_slice(&saved_stack.clone());
-                    self.iter_stack.extend(saved_iters.clone());
-                    let saved_yielded = self.yielded;
-                    self.yielded = false;
-                    self.depth += 1;
-                    let (_, body, _, _) = self.functions[fi];
-                    let result = self.exec_from(body, &mut fn_slots, ip);
-                    self.depth -= 1;
-                    let result = result?;
-                    if self.yielded {
-                        self.yielded = false;
-                        let resume_ip = self.resume_ip;
-                        let remaining = self.stack.split_off(saved_stack_len);
-                        let coro_iters: Vec<super::types::IterFrame> = self.iter_stack.drain(saved_iter_len..).collect();
-                        if let HeapObj::Coroutine(sip, ss, sst, _, si) = self.heap.get_mut(callee) {
-                            *sip = resume_ip;
-                            *ss = fn_slots;
-                            *sst = remaining;
-                            *si = coro_iters;
-                        }
-                        self.push(result);
-                    } else {
-                        self.stack.truncate(saved_stack_len);
-                        self.iter_stack.truncate(saved_iter_len);
-                        self.yielded = saved_yielded;
-                        return Err(VmErr::Runtime("StopIteration"));
-                    }
-                    return Ok(());
-                }
-            }
-        Err(cold_type("next() requires an iterator"))
+    /* Pops the top of stack and returns its String contents, or errors with
+       `msg` if it is not a heap string. */
+    fn expect_str_arg(&mut self, msg: &'static str) -> Result<String, VmErr> {
+        let v = self.pop()?;
+        if v.is_heap() && let HeapObj::Str(s) = self.heap.get(v) { return Ok(s.clone()); }
+        Err(cold_type(msg))
     }
 
-    /// Resume a coroutine, returning the yielded/returned value.
+    pub fn call_next(&mut self) -> Result<(), VmErr> {
+        let o = self.pop()?;
+        if !o.is_heap() || !matches!(self.heap.get(o), HeapObj::Coroutine(..)) {
+            return Err(cold_type("next() requires an iterator"));
+        }
+        self.push(o);
+        let result = self.resume_coroutine(o)?;
+        if self.yielded {
+            self.yielded = false;
+            self.push(result);
+            Ok(())
+        } else {
+            Err(VmErr::Runtime("StopIteration"))
+        }
+    }
+
+    /* Resume a suspended coroutine. On yield: persists ip/slots/stack/iters
+       back into the Coroutine object and leaves self.yielded = true. On
+       return: restores caller stack/iter state and self.yielded. */
     pub fn resume_coroutine(&mut self, callee: Val) -> Result<Val, VmErr> {
         if let HeapObj::Coroutine(ip, saved_slots, saved_stack, fi, saved_iters) = self.heap.get(callee) {
             let (ip, fi) = (*ip, *fi);
@@ -1043,11 +978,11 @@ impl<'a> VM<'a> {
         }
     }
 
-    /// Event loop: round-robin scheduler for coroutines.
+    /* Round-robin coroutine scheduler. Queue items are (coro, sleep_left);
+       each tick decrements sleep, otherwise resumes one step. A negative
+       yielded int is interpreted as a sleep request in cycles (see call_sleep). */
     pub fn call_run(&mut self, argc: u16) -> Result<(), VmErr> {
         let tasks = self.pop_n(argc as usize)?;
-
-        // Each task: (coroutine_val, sleep_counter)
         let mut queue: Vec<(Val, i64)> = tasks.into_iter()
             .filter(|v| v.is_heap() && matches!(self.heap.get(*v), HeapObj::Coroutine(..)))
             .map(|v| (v, 0))
@@ -1063,26 +998,18 @@ impl<'a> VM<'a> {
                     next_queue.push((coro, sleep - 1));
                     continue;
                 }
-
-                // Resume the coroutine directly
                 let result = self.resume_coroutine(coro)?;
                 let was_yielded = self.yielded;
-                self.yielded = false; // don't leak to outer exec
+                self.yielded = false;
 
                 if was_yielded {
-                    // Check if it yielded a sleep request (negative int = sleep cycles)
                     let new_sleep = if result.is_int() && result.as_int() < 0 {
                         -result.as_int()
                     } else { 0 };
                     next_queue.push((coro, new_sleep));
-                } else if result.is_none() {
-                    // Coroutine finished
-                } else {
-                    // Coroutine returned a value (finished)
                 }
+                // Otherwise the coroutine finished; drop it from the queue.
             }
-
-            // Check for receive waiters: if a task yielded a special marker
             queue = next_queue;
         }
 
@@ -1090,23 +1017,21 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /// Yield control for N scheduler cycles.
+    /* Yield a negative int as a sleep marker for the scheduler. */
     pub fn call_sleep(&mut self) -> Result<(), VmErr> {
         let n = self.pop()?;
         let cycles = if n.is_int() { n.as_int().max(0) } else { 0 };
-        // Yield a negative int as signal to the scheduler
         self.push(Val::int(-cycles));
         self.yielded = true;
         Ok(())
     }
 
-    /// Wait for a message from event_queue.
+    /* Pop the oldest queued message, or yield None to signal "still waiting". */
     pub fn call_receive(&mut self) -> Result<(), VmErr> {
         if !self.event_queue.is_empty() {
             let val = self.event_queue.remove(0);
             self.push(val);
         } else {
-            // Yield None to signal "waiting for message"
             self.push(Val::none());
             self.yielded = true;
         }

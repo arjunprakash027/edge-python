@@ -1,22 +1,20 @@
-// vm/optimizer.rs
-//
-// Bytecode-level optimization passes run after parsing/SSA finalization.
-//
-// Pass 1 — Constant folding.  Folds:
-//   LoadConst a, LoadConst b, BinOp     -> LoadConst (a OP b)
-//   LoadConst v, Not                    -> LoadTrue / LoadFalse
-//   LoadConst v, Minus                  -> LoadConst (-v)
-//
-// Pass 2 — Phi-noop elimination.  After register coalescing in
-// finalize_prev_slots, a Phi whose two source slots and dest slot all canonicalize
-// to the same index is `slots[X] = slots[X]`. Such Phis are pure overhead inside
-// hot loops, so we mark them dead and compact.
-//
-// LoadName is NOT folded even when the value is statically known. SSA name
-// loads carry information used by tier-1 IC, super-op detection, and the
-// memoization layer; replacing them with constants pessimises those paths.
-//
-// After any pass, dead instructions are removed and jump operands remapped.
+/* Bytecode optimisation passes, run after parsing and SSA finalisation.
+
+   Constant folding:
+     LoadConst a, LoadConst b, BinOp -> LoadConst (a OP b)
+     LoadConst v, Not                -> LoadTrue / LoadFalse
+     LoadConst v, Minus              -> LoadConst (-v)
+   Phi-noop elimination: after coalescing, a Phi whose source and dest
+   slots collapse to the same canonical index is slots[X] = slots[X] —
+   pure overhead in hot loops, so we drop it.
+
+   LoadName is intentionally NOT folded even when the value is statically
+   known: SSA name loads are visible to tier-1 IC, super-op detection, and
+   template memoisation; replacing them with constants would pessimise
+   those paths.
+
+   After any pass, dead instructions are removed and jump operands remapped.
+*/
 
 use crate::modules::parser::{OpCode, SSAChunk, Instruction, Value};
 use super::types::Val;
@@ -51,7 +49,7 @@ pub fn constant_fold(chunk: &mut SSAChunk) {
         }
     }
 
-    // Pass 2: phi-noop elimination.  Capture each Phi's source pair *before*
+    // Pass 2: Phi-noop elimination. Capture each Phi's source pair *before*
     // marking it dead so we can rebuild phi_sources in pre-compaction order.
     let mut surviving_pairs: Vec<(u16, u16)> = Vec::new();
     if !chunk.phi_map.is_empty() && !chunk.phi_sources.is_empty() {
@@ -59,9 +57,8 @@ pub fn constant_fold(chunk: &mut SSAChunk) {
             if dead[ip] || ins.opcode != OpCode::Phi { continue; }
             let phi_idx = chunk.phi_map[ip];
             let Some(&(a, b)) = chunk.phi_sources.get(phi_idx) else { continue };
-            // After SSA register coalescing all three operands collapse to
-            // the same canonical slot id, making the Phi `slots[X] = slots[X]`.
-            // Pure dispatch overhead, safely removable.
+            // Both sources and dest collapsed to the same canonical slot →
+            // `slots[X] = slots[X]`, safely removable.
             if a == b && a == ins.operand {
                 dead[ip] = true;
             } else {
@@ -113,9 +110,9 @@ fn is_jump_op(op: OpCode) -> bool {
     )
 }
 
-// Build remap[i] = new index of instruction i after compaction. Dead targets
-// forward to the next live instruction; one-past-end (i == n) maps to the
-// new chunk length so jumps that fall through to the end stay valid.
+/* Build remap[i] = new index of instruction i after compaction. Dead
+   targets forward to the next live instruction; one-past-end (i == n)
+   maps to the new chunk length so fall-through jumps stay valid. */
 fn compact_with_jump_remap(chunk: &mut SSAChunk, dead: &[bool]) {
     let n = chunk.instructions.len();
     let alive_count: usize = dead.iter().filter(|&&d| !d).count();
@@ -128,8 +125,8 @@ fn compact_with_jump_remap(chunk: &mut SSAChunk, dead: &[bool]) {
     }
     remap.push(alive_count);
 
-    // Forward dead targets to their next live successor (walk back-to-front
-    // so each dead entry inherits the already-corrected next entry).
+    // Walk back-to-front so each dead entry forwards to the already-corrected
+    // next entry — yielding the next live successor in one pass.
     for i in (0..n).rev() {
         if dead[i] {
             remap[i] = remap[i + 1];
@@ -198,9 +195,9 @@ fn const_to_val(constants: &[Value], idx: u16) -> Option<Val> {
     }
 }
 
-// The most recent live instruction strictly before `from`. Required because
-// constant folding leaves gaps (the operands of an inner fold are dead), so
-// a naive `from - 1` would read instructions that no longer exist.
+/* Most recent live instruction strictly before `from`. Constant folding
+   leaves gaps (the operands of an inner fold are dead), so a naive
+   `from - 1` would read instructions that no longer exist. */
 fn prev_live(dead: &[bool], from: usize) -> Option<usize> {
     let mut i = from;
     while i > 0 {

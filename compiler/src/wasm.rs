@@ -52,7 +52,6 @@ mod runtime {
             crate::modules::vm::optimizer::constant_fold(&mut chunk);
             let mut vm = VM::with_limits(&chunk, Limits::sandbox());
             vm.strict_input = true;
-            // Feed input buffer from host
             let inp_len = unsafe { INP_LEN };
             if inp_len > 0 {
                 let inp = unsafe { core::str::from_utf8_unchecked(

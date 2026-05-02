@@ -66,6 +66,7 @@ fn run(path: &str, sandbox: bool, verbosity: usize, quiet: bool) -> Result<(), S
     }
     compiler_lib::modules::vm::optimizer::constant_fold(&mut chunk);
 
+
     if !quiet {
         print_msg("info", &s!(
             "emit: snapshot created [ops=", int chunk.instructions.len(), " consts=", int chunk.constants.len(), "]"));

@@ -1,5 +1,3 @@
-// vm/handlers/arith.rs
-
 use super::*;
 
 use cache::OpcodeCache;
@@ -7,15 +5,17 @@ use ops::cached_binop;
 
 impl<'a> VM<'a> {
 
-    /* Add/Sub/Mul/Div con cache, Mod/Pow/FloorDiv con BigInt, Minus unario. */
-
+    /* Add/Sub/Mul/Div with IC; Mod/Pow/FloorDiv via BigInt; Minus is unary. */
     pub(crate) fn handle_arith(&mut self, op: OpCode, rip: usize, cache: &mut OpcodeCache) -> Result<(), VmErr> {
         if op == OpCode::Minus {
             return self.exec_neg();
         }
 
         let (a, b) = self.pop2()?;
-        if matches!(op, OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Mod | OpCode::FloorDiv) { cached_binop!(self.heap, rip, &op, a, b, cache); } // Register-based FastOps (add/sub/mul) are cached; the rest not.
+        // Register-based FastOps (Add/Sub/Mul/Mod/FloorDiv) are cached; Div/Pow are not.
+        if matches!(op, OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Mod | OpCode::FloorDiv) {
+            cached_binop!(self.heap, rip, &op, a, b, cache);
+        }
 
         let result = match op {
             OpCode::Add => self.add_vals(a, b)?,
@@ -54,7 +54,7 @@ impl<'a> VM<'a> {
             let af = self.to_f64_coerce(a).map_err(|_| cold_type("% requires numeric operands"))?;
             let bf = self.to_f64_coerce(b).map_err(|_| cold_type("% requires numeric operands"))?;
             if bf == 0.0 { return Err(VmErr::ZeroDiv); }
-            // Use floor division semantics: result has the same sign as the divisor.
+            // Floor-division semantics: result takes the divisor's sign.
             let r = af - ffloor(af / bf) * bf;
             return Ok(Val::float(r));
         }
@@ -69,7 +69,7 @@ impl<'a> VM<'a> {
             let af = self.to_f64_coerce(a).map_err(|_| cold_type("// requires numeric operands"))?;
             let bf = self.to_f64_coerce(b).map_err(|_| cold_type("// requires numeric operands"))?;
             if bf == 0.0 { return Err(VmErr::ZeroDiv); }
-            // floor() is correct for all magnitudes, including large floats where as-i64 would overflow.
+            // ffloor() handles all magnitudes; `as i64` would overflow for large floats.
             return Ok(Val::float(ffloor(af / bf)));
         }
         let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b))
@@ -79,26 +79,10 @@ impl<'a> VM<'a> {
     }
 
     fn exec_pow(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
-        if let Some(ba) = self.to_bigint(a) && b.is_int() {
-            let exp = b.as_int();
-            if exp >= 0 {
-                if exp > u32::MAX as i64 {
-                    return Err(cold_value("pow() exponent too large"));
-                }
-                return self.bigint_to_val(ba.pow_u32(exp as u32));
-            }
-            return Ok(Val::float(fpowi(ba.to_f64(), exp as i32)));
-        }
-        let to_f = |v: Val| -> Result<f64, VmErr> {
-            if v.is_int() { Ok(v.as_int() as f64) }
-            else if v.is_float() { Ok(v.as_float()) }
-            else { Err(cold_type("** requires numeric operands")) }
-        };
-        Ok(Val::float(fpowf(to_f(a)?, to_f(b)?)))
+        self.pow_vals(a, b, "** requires numeric operands")
     }
 
-    /* AND/OR/XOR vía closure, NOT unario, SHL/SHR con BigInt. */
-
+    /* BitAnd/Or/Xor via closure; BitNot is unary; Shl/Shr through BigInt. */
     pub(crate) fn handle_bitwise(&mut self, op: OpCode) -> Result<(), VmErr> {
         if op == OpCode::BitNot {
             let v = self.pop()?;
@@ -144,12 +128,10 @@ impl<'a> VM<'a> {
         self.bigint_to_val(ba.shr_u32(shift.min(1024) as u32))
     }
 
-    /* Solo Eq y Lt registran en cache (las únicas con FastOp). */
-
     pub(crate) fn handle_compare(&mut self, op: OpCode, rip: usize, cache: &mut OpcodeCache) -> Result<(), VmErr> {
         let (a, b) = self.pop2()?;
-        // Record type-key for every comparison op; cache::specialize() decides
-        // which ones have a FastOp variant. Eq/Lt/NotEq/Gt/LtEq/GtEq all do.
+        // Record type-key for every compare op; cache::specialize() decides
+        // which ones have a FastOp variant (all of them currently).
         cached_binop!(self.heap, rip, &op, a, b, cache);
         let result = match op {
             OpCode::Eq => eq_vals_with_heap(a, b, &self.heap),
@@ -164,8 +146,8 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Short-circuit a nivel de valores ya evaluados: el parser garantiza la semántica. */
-
+    /* Short-circuiting is done by the parser via Jump-If-Or-Pop opcodes; this
+       only handles plain `not`. And/Or never reach here. */
     pub(crate) fn handle_logic(&mut self, op: OpCode) -> Result<(), VmErr> {
         match op {
             OpCode::Not => {
@@ -177,8 +159,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* `is`/`is not` comparan tag inline; `in`/`not in` delegan en contains(). */
-
+    /* `is` / `is not` compare tag bits inline; `in` / `not in` delegate to contains(). */
     pub(crate) fn handle_identity(&mut self, op: OpCode) -> Result<(), VmErr> {
         let (a, b) = self.pop2()?;
         let result = match op {

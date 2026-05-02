@@ -1,5 +1,3 @@
-// parser/types.rs
-
 use crate::s;
 use crate::modules::fx::FxHashMap as HashMap;
 
@@ -8,10 +6,8 @@ use alloc::{string::{String, ToString}, vec, vec::Vec};
 pub(crate) const MAX_EXPR_DEPTH: usize = 200;
 pub(crate) const MAX_INSTRUCTIONS: usize = 65_535;
 
-/* Enumeration of all bytecode instructions supported by the virtual machine. */
-
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum OpCode { 
+pub enum OpCode {
     LoadConst, LoadName, StoreName, Call, PopTop, ReturnValue, BuildString, CallPrint, CallLen, 
     FormatValue, CallAbs, Minus, CallStr, CallInt, CallRange, Phi, CallChr, CallType, MakeFunction, 
     Add, Sub, Mul, Div, Eq, CallFloat, CallBool, CallRound, CallMin, CallMax, CallSum, CallSorted, 
@@ -26,8 +22,7 @@ pub enum OpCode {
     CallOct, CallHex, CallDivmod, CallPow, CallRepr, CallReversed, CallCallable, CallId, CallHash,
 }
 
-/* O(1) lookup table mapping Python builtin names to their corresponding OpCodes. */
-
+// Python builtin name → (specialised OpCode, leaves_value_on_stack).
 pub(super) fn builtin(name: &str) -> Option<(OpCode, bool)> {
     match name {
         "len" => Some((OpCode::CallLen, true)),
@@ -68,8 +63,7 @@ pub(super) fn builtin(name: &str) -> Option<(OpCode, bool)> {
     }
 }
 
-/* Represents constant literals stored in the bytecode constants pool. */
-
+// Constant literals stored in the bytecode constants pool.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Str(String),
@@ -80,16 +74,15 @@ pub enum Value {
     None,
 }
 
-/* Single bytecode instruction containing an opcode and 16-bit operand. */
-
+// One bytecode instruction: opcode + 16-bit operand.
 #[derive(Debug, Clone, Copy)]
 pub struct Instruction {
     pub opcode: OpCode,
     pub operand: u16,
 }
 
-/* Container for generated instructions, constants, names, PHI sources and metadata. */
-
+// Compiled SSA chunk: instructions + pools + Phi metadata + nested
+// functions/classes. One per module / function body / class body.
 #[derive(Default, Clone)]
 pub struct SSAChunk {
     pub instructions: Vec<Instruction>,
@@ -111,7 +104,7 @@ pub struct SSAChunk {
 
 impl SSAChunk {
     pub(super) fn emit(&mut self, op: OpCode, operand: u16) {
-        // Sets overflow flag for post parse diagnostic instead of panicking
+        // Set overflow flag for post-parse diagnostic instead of panicking.
         if self.instructions.len() >= MAX_INSTRUCTIONS {
             self.overflow = true;
             return;
@@ -138,10 +131,13 @@ impl SSAChunk {
         i
     }
 
+    /* Build SSA prev_slots chain, coalesce versions to a canonical root,
+       rewrite LoadName/StoreName/Del/Phi operands and Phi sources, and
+       build phi_map. Recurses into nested functions and classes. */
     pub fn finalize_prev_slots(&mut self) {
         let n = self.names.len();
 
-        // Build prev_slots chain (SSA version N -> version N-1)
+        // prev_slots[i] = name `i` with version-1, if any.
         let mut ps: Vec<Option<u16>> = vec![None; n];
         for (i, name) in self.names.iter().enumerate() {
             if let Some(pos) = name.rfind('_')
@@ -154,7 +150,7 @@ impl SSAChunk {
             }
         }
 
-        // Register coalescing: follow each chain to its root.
+        // Register coalescing: walk each chain to its root.
         let mut canonical: Vec<u16> = (0..n as u16).collect();
         for (i, item) in canonical.iter_mut().enumerate().take(n) {
             let mut root = i;
@@ -166,7 +162,6 @@ impl SSAChunk {
             *item = root as u16;
         }
 
-        // Rewrite LoadName/StoreName/Phi/Del operands to canonical slots.
         for ins in &mut self.instructions {
             match ins.opcode {
                 OpCode::LoadName | OpCode::StoreName | OpCode::Del | OpCode::Phi => {
@@ -175,8 +170,6 @@ impl SSAChunk {
                 _ => {}
             }
         }
-
-        // Rewrite PHI sources to canonical slots.
         for (a, b) in &mut self.phi_sources {
             *a = canonical[*a as usize];
             *b = canonical[*b as usize];
@@ -188,7 +181,6 @@ impl SSAChunk {
         for (_, body, _, _) in &mut self.functions {
             body.finalize_prev_slots();
         }
-        
         for body in &mut self.classes {
             body.finalize_prev_slots();
         }
@@ -207,14 +199,12 @@ impl SSAChunk {
     }
 }
 
-/* Tracks SSA versions before/after branches to insert correct PHI nodes later. */
-
+// SSA version snapshots taken before/after branches to insert Phi nodes
+// at the join. `then` is None until mid_block runs.
 pub(crate) struct JoinNode {
     pub(super) backup: HashMap<String, u32>,
     pub(super) then: Option<HashMap<String, u32>>,
 }
-
-/* Stores parsing error details including line, column range and message. */
 
 pub struct Diagnostic {
     pub line: usize,
@@ -234,8 +224,7 @@ impl Diagnostic {
     }
 }
 
-/* Parses and unescapes Python string literals from lexer tokens. */
-
+// Strip prefix + quotes and unescape (skipped for raw strings).
 pub(super) fn parse_string(s: &str) -> String {
     let is_raw = s.contains('r') || s.contains('R');
     let s = s.trim_start_matches(|c: char| "bBrRuU".contains(c));
@@ -276,7 +265,8 @@ fn unescape(s: &str) -> String {
     out
 }
 
-// Array containing the default data types for the language.
+// Built-in types pre-registered as `Type` heap objects in the global
+// scope at VM init.
 pub const BUILTIN_TYPES: &[&str] = &[
     "int", "float", "str", "bool", "list",
     "tuple", "dict", "set", "range", "type", "NoneType",
@@ -289,8 +279,8 @@ pub const BUILTIN_TYPES: &[&str] = &[
     "AssertionError", "ArithmeticError", "LookupError",
 ];
 
-/* Map each opcode to its functional group for streamlined execution logic. */
-
+// Functional grouping of opcodes for analysis tooling. Not used by the
+// runtime dispatch (which switches on OpCode directly).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OpCategory {
     Load, Store,

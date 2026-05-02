@@ -1,5 +1,3 @@
-// lexer/scan.rs
-
 use super::TokenType;
 use super::tables::*;
 
@@ -9,18 +7,18 @@ use core::cmp::Ordering;
 const MAX_INDENT_DEPTH: usize = 100;
 const MAX_FSTRING_DEPTH: usize = 200;
 
-// Scanner state; source bytes, position, pending queue, indent stack, f-string context.
 pub(super) struct Scanner<'a> {
     pub src: &'a [u8],
     pub pos: usize,
-    pub pending: Vec<(TokenType,usize,usize,usize)>, // Pending stack; Tokens to emit in LIFO order.
+    // LIFO queue: tokens emitted by complex states (newline/dedent, f-string)
+    // that produce more than one token per source position.
+    pub pending: Vec<(TokenType,usize,usize,usize)>,
     pub indent_stack: Vec<usize>,
     pub nesting: u32,
     pub line: usize,
     pub fstring_stack: Vec<(u8, bool, usize, u32)>,
 }
 
-// Scanner implementation.
 impl<'a> Scanner<'a> {
     pub fn new(src: &'a [u8]) -> Self {
         Self {
@@ -32,8 +30,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    /* All inner loops use BYTE_CLASS indexed loads, zero branches per byte. */
-
+    /* All inner scan loops use BYTE_CLASS indexed loads — zero branches per byte. */
     #[inline]
     fn scan_while(&mut self, pred: impl Fn(u8) -> bool) {
         while self.pos < self.src.len() && pred(self.src[self.pos]) {
@@ -65,7 +62,7 @@ impl<'a> Scanner<'a> {
         self.src.get(self.pos + offset).copied()
     }
 
-    /* Handles decimal, hex, octal, binary, float and complex number literals. */
+    // Numbers: decimal, hex, octal, binary, float, complex.
 
     #[inline]
     fn scan_exponent(&mut self) -> bool {
@@ -114,7 +111,7 @@ impl<'a> Scanner<'a> {
         } else { base }
     }
 
-    /* Handles single-quote, double-quote and triple quoted strings with escape awareness. */
+    // Strings: single, double, triple-quoted (escape-aware).
 
     fn scan_string(&mut self, quote: u8) {
         if self.at(0) == Some(quote) && self.at(1) == Some(quote) {
@@ -147,7 +144,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    /* Emits FstringStart/Middle/End tokens and suspends at `{` for expression lexing. */
+    // F-strings: emits Start/Middle/End and suspends at `{`.
 
     fn start_fstring(&mut self, start: usize, prefix_end: usize) {
         let quote = self.src[prefix_end];
@@ -160,7 +157,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn scan_fstring_body(&mut self, quote: u8, triple: bool, body_start: usize) {
-        let ql: usize = if triple { 3 } else { 1 };  // <- hoisted
+        let ql: usize = if triple { 3 } else { 1 };
         let mut pos = self.pos;
         while pos < self.src.len() {
             let closes = if triple {
@@ -173,8 +170,9 @@ impl<'a> Scanner<'a> {
             };
             if closes {
                 self.pending.push((TokenType::FstringEnd, self.line, pos, pos + ql));
+                // Pushed after End so LIFO pop yields Middle first.
                 if pos > self.pos {
-                    self.pending.push((TokenType::FstringMiddle, self.line, body_start, pos)); // Pushed after End; Popped first (LIFO).
+                    self.pending.push((TokenType::FstringMiddle, self.line, body_start, pos));
                 }
                 self.pos = pos + ql;
                 return;
@@ -188,7 +186,7 @@ impl<'a> Scanner<'a> {
                     pos += 2;
                 }
                 b'{' => {
-                    if self.fstring_stack.len() >= MAX_FSTRING_DEPTH { /* ... */ }
+                    if self.fstring_stack.len() >= MAX_FSTRING_DEPTH { /* depth guard */ }
                     self.pending.push((TokenType::Lbrace, self.line, pos, pos + 1));
                     if pos > self.pos {
                         self.pending.push((TokenType::FstringMiddle, self.line, body_start, pos));
@@ -204,7 +202,7 @@ impl<'a> Scanner<'a> {
         self.pos = pos;
     }
 
-    /* Emits Newline/Indent/Dedent or suppresses them inside bracketed expressions. */
+    // Newlines: emit Newline/Indent/Dedent, or NL inside brackets.
 
     fn handle_newline(&mut self, start: usize) {
         let current_line = self.line;
@@ -264,7 +262,6 @@ impl<'a> Scanner<'a> {
     }
 
     /* Routes `}` to f-string body resume or plain Rbrace based on nesting depth. */
-
     fn close_brace(&mut self, start: usize) {
         let end = start + 1;
         if let Some(&(_, _, _, saved_nesting)) = self.fstring_stack.last() {
@@ -275,7 +272,8 @@ impl<'a> Scanner<'a> {
                 self.pos = end;
                 self.scan_fstring_body(quote, triple, end);
                 self.pending.push((TokenType::Rbrace, self.line, start, end));
-                return; // Pos already advanced by scan_fstring_body.
+                // pos already advanced by scan_fstring_body.
+                return;
             }
         } else {
             self.nesting = self.nesting.saturating_sub(1);
@@ -284,8 +282,8 @@ impl<'a> Scanner<'a> {
         self.pos = end;
     }
 
-    /* Routes each byte via BYTE_CLASS and SINGLE_TOK, drains pending queue first. */
-
+    /* Main dispatch: drains pending queue, then routes each byte via
+       BYTE_CLASS / SINGLE_TOK lookups. */
     pub fn next_token(&mut self) -> Option<(TokenType, usize, usize, usize)> {
         if let Some(tok) = self.pending.pop() {
             return Some(tok);

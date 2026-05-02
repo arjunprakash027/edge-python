@@ -1,5 +1,3 @@
-// parser/mod.rs
-
 pub(super) mod types;
 
 mod stmt;
@@ -16,8 +14,6 @@ use crate::modules::fx::FxHashMap as HashMap;
 use alloc::{string::{String, ToString}, vec::Vec};
 use core::iter::Peekable;
 
-/* Main parser state holding source, tokens, SSA chunk, versions and control stacks. */
-
 pub struct Parser<'src, I: Iterator<Item = Token>> {
     pub(super) source: &'src str,
     pub(super) tokens: Peekable<I>,
@@ -32,7 +28,7 @@ pub struct Parser<'src, I: Iterator<Item = Token>> {
     pub errors: Vec<Diagnostic>,
 }
 
-/* Tracks and updates SSA versions for variables to enable static single assignment. */
+// SSA versioning: track and emit version-suffixed names.
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     pub(super) fn current_version(&self, name: &str) -> u32 {
@@ -69,9 +65,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     }
 
     pub(super) fn emit_load_ssa(&mut self, name: String) {
-        let v = self.current_version(&name);
-        let mut buf = [0u8; 128];
-        let i = self.chunk.push_name(Self::ssa_name(&name, v, &mut buf));
+        let i = self.push_ssa_name(&name, self.current_version(&name));
         self.chunk.emit(OpCode::LoadName, i);
     }
 
@@ -82,8 +76,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
     pub(super) fn store_name(&mut self, name: String) {
         let ver = self.increment_version(&name);
-        let mut buf = [0u8; 128];
-        let i = self.chunk.push_name(Self::ssa_name(&name, ver, &mut buf));
+        let i = self.push_ssa_name(&name, ver);
         self.chunk.emit(OpCode::StoreName, i);
     }
 
@@ -98,7 +91,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     }
 }
 
-/* Handles SSA merging for if/else blocks and creates PHI nodes at control-flow joins. */
+// SSA join points: enter/mid/commit emit Phi at control-flow merges.
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     pub(super) fn enter_block(&mut self) {
@@ -110,7 +103,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
     pub(super) fn mid_block(&mut self) {
         let Some(j) = self.join_stack.last_mut() else { return };
-        j.then = Some(self.ssa_versions.clone()); // snapshot then-branch before overwriting with else baseline
+        // Snapshot then-branch before overwriting with else baseline.
+        j.then = Some(self.ssa_versions.clone());
         let mut restored = j.backup.clone();
         for (name, &v) in &self.ssa_versions {
             let e = restored.entry(name.clone()).or_insert(0);
@@ -133,8 +127,10 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             .chain(b.keys())
             .filter(|name| a.get(*name).unwrap_or(&0) != b.get(*name).unwrap_or(&0))
             .collect();
-        divergent.sort(); // deterministic Phi order regardless of HashMap iteration
-        divergent.dedup(); // chain() can produce duplicates when both branches define the same var
+        // sort: deterministic Phi order regardless of HashMap iteration.
+        // dedup: chain() may yield duplicates if both branches define the same var.
+        divergent.sort();
+        divergent.dedup();
 
         for name in divergent {
             let va = *a.get(name).unwrap_or(&0);
@@ -153,7 +149,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     }
 }
 
-/* Utility methods to advance, peek, eat tokens and report parser errors cleanly. */
+// Token-stream utilities: advance/peek/eat + diagnostics.
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     pub(super) fn advance(&mut self) -> Token {
@@ -172,7 +168,6 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             .map(|t| (t.line, t.start, t.end))
             .unwrap_or((self.last_line, 0, 0));
 
-        // Look for the last '\n' before the token.
         let col = self.source[..byte_offset]
             .rfind('\n')
             .map(|line_start| byte_offset - line_start - 1)
@@ -190,6 +185,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     pub(super) fn at_end(&mut self) -> bool { self.peek().is_none() }
 
     pub(super) fn lexeme(&self, t: &Token) -> &'src str { &self.source[t.start..t.end] }
+
+    /* Consume the next token and return its source text as a String. */
+    pub(super) fn advance_text(&mut self) -> String {
+        let t = self.advance();
+        self.lexeme(&t).to_string()
+    }
 
     pub(super) fn peek(&mut self) -> Option<TokenType> {
         loop {
@@ -217,11 +218,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 Some(t) => &self.source[t.start..t.end],
                 None => "EOF",
             };
-
-            // Query the lexer's static lookup table for the expected token's name.
-            let label = kind.as_str();
-
-            self.error(&s!("expected ", str label, ", got '", str token_text, "'"));
+            self.error(&s!("expected ", str kind.as_str(), ", got '", str token_text, "'"));
         }
     }
 
@@ -235,7 +232,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     }
 }
 
-/* Parser constructor and main parse method that drives full compilation to SSA. */
+// Constructor and entry point.
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     pub fn new(source: &'src str, iter: I) -> Self {
