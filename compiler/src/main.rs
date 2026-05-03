@@ -25,23 +25,37 @@ fn eprint_msg(msg: &str) {
     let _ = e.write_all(b"\n");
 }
 
+// Diagnostics go to stderr so `edge file.py > out.txt` captures only program output.
 #[inline]
 fn print_msg(level: &str, msg: &str) {
     use std::io::Write;
+    let mut e = std::io::stderr().lock();
+    let _ = e.write_all(b"[");
+    let _ = e.write_all(level.as_bytes());
+    let _ = e.write_all(b"] ");
+    let _ = e.write_all(msg.as_bytes());
+    let _ = e.write_all(b"\n");
+}
+
+// VM print() sink: streams each line to stdout as it executes (mirrors wasm.rs's js_print).
+fn stream_print(s: &str) {
+    use std::io::Write;
     let mut o = std::io::stdout().lock();
-    let _ = o.write_all(b"[");
-    let _ = o.write_all(level.as_bytes());
-    let _ = o.write_all(b"] ");
-    let _ = o.write_all(msg.as_bytes());
+    let _ = o.write_all(s.as_bytes());
     let _ = o.write_all(b"\n");
 }
 
 fn parse_args() -> (String, usize, bool, bool) {
     let args: Vec<_> = env::args().skip(1).collect();
-    if args.is_empty() || args.iter().any(|a| a == "-h") {
+    // GNU convention: explicit -h is requested output (stdout, exit 0); missing args is a usage error (stderr, exit 1).
+    if args.iter().any(|a| a == "-h") {
         use std::io::Write;
         let _ = std::io::stdout().lock().write_all(HELP.as_bytes());
         exit(0);
+    }
+    if args.is_empty() {
+        eprint_msg("usage: edge [options] <file>  (try `edge -h`)");
+        exit(1);
     }
     let q = args.iter().any(|a| a == "-q");
     let sandbox = args.iter().any(|a| a == "--sandbox");
@@ -89,16 +103,8 @@ fn run(path: &str, sandbox: bool, verbosity: usize, quiet: bool) -> Result<(), S
 
     let limits = if sandbox { Limits::sandbox() } else { Limits::none() };
     let mut vm = VM::with_limits(&chunk, limits);
+    vm.print_hook = Some(stream_print);
     let exec_result = vm.run();
-
-    {
-        use std::io::Write;
-        let mut out = std::io::stdout().lock();
-        for l in &vm.output {
-            let _ = out.write_all(l.as_bytes());
-            let _ = out.write_all(b"\n");
-        }
-    }
 
     if let Err(e) = exec_result {
         return Err(e.render_at(&src, vm.error_pos(), diag_path));
