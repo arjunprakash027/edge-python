@@ -207,6 +207,21 @@ pub(crate) struct JoinNode {
     pub(super) then: Option<HashMap<String, u32>>,
 }
 
+/* Strip a trailing `_<digits>` SSA version suffix from a parser-emitted
+   name. Names like `model_0`, `x_3` come from Parser::ssa_name and are an
+   SSA-internal artifact — user-facing diagnostics must show the original
+   `model`/`x`. Returns the input unchanged if no version suffix is present. */
+pub fn ssa_strip(name: &str) -> &str {
+    if let Some(pos) = name.rfind('_')
+        && pos + 1 < name.len()
+        && name[pos + 1..].bytes().all(|b| b.is_ascii_digit())
+    {
+        &name[..pos]
+    } else {
+        name
+    }
+}
+
 /* Production-style diagnostic. `start`/`end` are byte offsets into the
    original source. Line/column are computed at render time so the parser
    never has to track them, and they're always char-accurate (UTF-8 safe). */

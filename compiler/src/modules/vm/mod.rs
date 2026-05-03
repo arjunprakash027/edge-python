@@ -6,7 +6,7 @@ mod handlers;
 pub mod optimizer;
 
 use crate::s;
-use crate::modules::parser::{OpCode, SSAChunk, Instruction, BUILTIN_TYPES};
+use crate::modules::parser::{OpCode, SSAChunk, Instruction, BUILTIN_TYPES, ssa_strip};
 use crate::modules::fx::FxHashMap as HashMap;
 
 pub use types::{Val, HeapObj, HeapPool, VmErr, Limits};
@@ -657,7 +657,7 @@ impl<'a> VM<'a> {
                 // Single u64 compare for unbound-slot detection — no Option.
                 let v = slots[op as usize];
                 if v.is_undef() {
-                    return Err(VmErr::Name(chunk.names[op as usize].clone()));
+                    return Err(VmErr::Name(ssa_strip(&chunk.names[op as usize]).into()));
                 }
                 self.push(v);
             }
