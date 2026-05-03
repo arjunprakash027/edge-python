@@ -32,20 +32,32 @@ const handlers = {
             self.postMessage({ type: 'line', line });
         }}};
 
-        ({ exports } = await WebAssembly.instantiate(wasmModule, imports));
+        // A WASM trap (Rust panic, stack overflow, OOM) leaves the instance
+        // unusable but `wasmModule` stays valid — next run gets a fresh one.
+        // Surface the trap as a result so main thread clears `busy` and the UI
+        // recovers instead of hanging on "Running..." forever.
+        try {
+            ({ exports } = await WebAssembly.instantiate(wasmModule, imports));
 
-        new Uint8Array(exports.memory.buffer).set(srcBytes, exports.src_ptr());
+            new Uint8Array(exports.memory.buffer).set(srcBytes, exports.src_ptr());
 
-        const t0 = performance.now();
-        const len = exports.run(srcBytes.length);
-        const ms = performance.now() - t0;
+            const t0 = performance.now();
+            const len = exports.run(srcBytes.length);
+            const ms = performance.now() - t0;
 
-        // `out` is empty on success (streamed); non-empty only for errors.
-        const out = new TextDecoder().decode(
-            new Uint8Array(exports.memory.buffer, exports.out_ptr(), len)
-        );
+            // `out` is empty on success (streamed); non-empty only for errors.
+            const out = new TextDecoder().decode(
+                new Uint8Array(exports.memory.buffer, exports.out_ptr(), len)
+            );
 
-        self.postMessage({ type: 'result', out, ms });
+            self.postMessage({ type: 'result', out, ms });
+        } catch (err) {
+            self.postMessage({
+                type: 'result',
+                out: `Runtime trap: ${err?.message ?? err}`,
+                ms: 0,
+            });
+        }
     },
 };
 
