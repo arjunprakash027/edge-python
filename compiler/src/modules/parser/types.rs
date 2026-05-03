@@ -101,9 +101,23 @@ pub struct SSAChunk {
     pub phi_map: Vec<usize>,
     pub nonlocals: Vec<String>,
     pub(super) name_index: HashMap<String, u16>,
+    /* Statement-level source map: (ip_at_stmt_entry, byte_offset) sorted by ip.
+       Populated once per statement at parse time — granularity is enough for
+       runtime diagnostics (the renderer needs only a byte offset; the source
+       line and caret are derived from it). Lookup is binary search on the
+       cold error path; hot dispatch never touches this. */
+    pub stmt_pos: Vec<(u32, u32)>,
 }
 
 impl SSAChunk {
+    /* Map a runtime ip back to a source byte offset via binary search on the
+       per-statement table. Returns the offset of the enclosing statement —
+       sub-statement precision isn't needed for runtime diagnostics. */
+    pub fn resolve(&self, ip: u32) -> Option<u32> {
+        let i = self.stmt_pos.partition_point(|&(s, _)| s <= ip).checked_sub(1)?;
+        Some(self.stmt_pos[i].1)
+    }
+
     pub(super) fn emit(&mut self, op: OpCode, operand: u16) {
         // Set overflow flag for post-parse diagnostic instead of panicking.
         if self.instructions.len() >= MAX_INSTRUCTIONS {

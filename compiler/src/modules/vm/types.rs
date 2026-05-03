@@ -822,6 +822,16 @@ impl VmErr {
             other => alloc::string::String::from(other.as_str()),
         }
     }
+
+    /* Same message as render(), but anchored at a source byte offset so the
+       parser's Diagnostic renderer adds the rustc-style line/caret preview.
+       Falls back to plain render() when no position is known (pre-parse env
+       errors or VM-setup faults before the first instruction). */
+    pub fn render_at(&self, src: &str, byte_pos: Option<usize>, path: Option<&str>) -> alloc::string::String {
+        let Some(pos) = byte_pos else { return self.render(); };
+        crate::modules::parser::Diagnostic { start: pos, end: pos, msg: self.render() }
+            .render(src, path)
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

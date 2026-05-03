@@ -144,6 +144,14 @@ fn compact_with_jump_remap(chunk: &mut SSAChunk, dead: &[bool]) {
         }
     }
 
+    // Remap stmt_pos ips: every entry's ip refers to the position of a live
+    // statement opener. Compaction may shift it forward; remap[] gives the
+    // new index in one lookup.
+    for (ip_at, _) in chunk.stmt_pos.iter_mut() {
+        let old = *ip_at as usize;
+        if old < remap.len() { *ip_at = remap[old] as u32; }
+    }
+
     let mut idx = 0usize;
     chunk.instructions.retain(|_| {
         let keep = !dead[idx];

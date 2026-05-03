@@ -122,6 +122,18 @@ value
 type
 ```
 
+### Environmental errors
+
+A small set of failures are surfaced **before** the source reaches the compiler, so they carry no line/column preview — there is no parsed code to anchor to. They are emitted as plain text and cannot be caught from Python.
+
+| Error                                       | When                                          | Resolution                            |
+|---------------------------------------------|-----------------------------------------------|---------------------------------------|
+| `io: cannot access 'X'`                     | Native CLI: file missing or unreadable        | Verify the path and permissions       |
+| `input rejected: invalid utf-8 at byte N`   | WASM: input bytes are not valid UTF-8         | Re-encode the source as UTF-8         |
+| `source file exceeds maximum size (10 MiB)` | Source larger than the 10 MiB lex-time cap    | Split or trim the input               |
+
+These describe a problem with the runtime input, not with your code. Handle them at the embedder layer (file path validation, encoding, size check) before invoking the compiler.
+
 ## Unsupported features at runtime
 
 These parse but raise `RuntimeError` when executed.

@@ -81,7 +81,7 @@ mod runtime {
             }
             match vm.run() {
                 Ok(_) => String::new(),
-                Err(e) => e.render(),
+                Err(e) => e.render_at(src, vm.error_pos(), None),
             }
         };
 

@@ -12,6 +12,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     /* Top-level statement dispatch. Returns whether the statement leaves a
        value on the stack (callers Pop it before the next statement). */
     pub(super) fn stmt(&mut self) -> bool {
+        // Snapshot the byte offset of the upcoming statement before any
+        // emit() runs. Recorded once per statement (every chunk — module,
+        // function body, class body — funnels through here) so SSAChunk::
+        // resolve() can map a runtime ip back to source for diagnostics.
+        let ip = self.chunk.instructions.len() as u32;
+        let pos = self.tokens.peek().map(|t| t.start as u32).unwrap_or(self.last_end as u32);
+        self.chunk.stmt_pos.push((ip, pos));
+
         match self.peek() {
             Some(TokenType::If) => {
                 self.if_stmt();

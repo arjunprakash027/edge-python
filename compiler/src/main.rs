@@ -101,7 +101,7 @@ fn run(path: &str, sandbox: bool, verbosity: usize, quiet: bool) -> Result<(), S
     }
 
     if let Err(e) = exec_result {
-        return Err(e.render());
+        return Err(e.render_at(&src, vm.error_pos(), diag_path));
     }
 
     if verbosity >= 1 {

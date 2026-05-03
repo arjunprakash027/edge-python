@@ -70,6 +70,11 @@ pub struct VM<'a> {
     pub input_buffer: Vec<String>,
     pub event_queue: Vec<Val>,
     pub strict_input: bool,
+    /* Source byte offset of the deepest frame that raised a propagating
+       error in the most recent run(). Set by the dispatch error catch and
+       cleared on swallow / at run() entry; readable via error_pos() so the
+       outer renderer can attach a Diagnostic-style caret. */
+    pub(crate) error_byte_pos: Option<u32>,
 }
 
 impl<'a> VM<'a> {
@@ -247,6 +252,7 @@ impl<'a> VM<'a> {
             event_queue: Vec::new(),
             observed_impure: Vec::new(),
             exception_stack: Vec::new(),
+            error_byte_pos: None,
             functions: Vec::new(),
             fn_index: Vec::new(),
             body_maps: Vec::new(),
@@ -362,9 +368,15 @@ impl<'a> VM<'a> {
     }
 
     pub fn run(&mut self) -> Result<Val, VmErr> {
+        self.error_byte_pos = None;
         let mut slots = self.fill_builtins(&self.chunk.names);
         self.exec(self.chunk, &mut slots)
     }
+
+    /* Source byte offset of the last propagating runtime error, or None if
+       run() succeeded / hasn't been called. Renderers turn this into the
+       fancy `--> path:line:col` form via parser::Diagnostic. */
+    pub fn error_pos(&self) -> Option<usize> { self.error_byte_pos.map(|p| p as usize) }
 
     /* Mark all reachable roots and sweep. mark() is a no-op on non-heap
        values, so undef/None/int/float/bool slots are free to scan. */
@@ -514,6 +526,7 @@ impl<'a> VM<'a> {
                     return Ok(Val::none());
                 }
 
+                let rip = ip;
                 match self.dispatch(chunk, slots, &mut cache, insns, consts, &mut ip) {
                     Ok(None) => {
                         if self.yielded {
@@ -532,6 +545,14 @@ impl<'a> VM<'a> {
                         return Ok(v);
                     }
                     Err(e) => {
+                        // Record the deepest frame's source position. The first
+                        // dispatch loop to catch an error (the innermost) wins;
+                        // outer dispatches that re-catch the propagating Err see
+                        // Some(_) and skip. Reset on swallow below so a later
+                        // unhandled error in the same run anchors correctly.
+                        if self.error_byte_pos.is_none() {
+                            self.error_byte_pos = chunk.resolve(rip as u32);
+                        }
                         if self.exception_stack.len() > exc_base {
                             let frame = self.exception_stack.pop().unwrap();
                             self.stack.truncate(frame.stack_depth);
@@ -539,6 +560,7 @@ impl<'a> VM<'a> {
                             self.with_stack.truncate(frame.with_depth);
                             self.pending_pos_delta = 0;
                             self.pending_kw_delta  = 0;
+                            self.error_byte_pos    = None;
                             // Cold path: allocate-once String for the lookup
                             // key. `Raised` carries the user-supplied class
                             // name so `except <Type>` can match it.

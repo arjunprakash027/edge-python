@@ -496,6 +496,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             self.chunk.name_index.clear();
             self.chunk.nonlocals.clear();
             self.chunk.annotations.clear();
+            self.chunk.stmt_pos.clear();
             self.loop_kinds.clear();
         }
 
