@@ -100,6 +100,13 @@ const Highlighter = (() => {
 const PythonWorker = (() => {
     const worker = new Worker('./worker.js');
 
+    /* Single source of truth for "runtime busy". Gates BOTH the button click
+       and Ctrl+Enter; without it, holding Ctrl+Enter queues parallel runs
+       in the worker (handlers.run is async, onmessage doesn't await it) and
+       their `line` messages interleave on the terminal. */
+    let busy = true;
+    const setBusy = (b) => { busy = b; el.btn.disabled = b; };
+
     const resolveUrl = async () => {
         const ver = await fetch('./version.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : {}).catch(() => ({}));
         const bust = ver.v ? `?v=${ver.v}` : '';
@@ -107,15 +114,15 @@ const PythonWorker = (() => {
     };
 
     const onMsg = {
-        ready:  ({ ms }) => { el.btn.disabled = false; ok(`Ready${DEV ? ' - Dev' : ''} (Loaded in ${fmt(ms)})`); },
+        ready:  ({ ms }) => { setBusy(false); ok(`Ready${DEV ? ' - Dev' : ''} (Loaded in ${fmt(ms)})`); },
         line:   ({ line }) => { el.term.textContent += (el.term.textContent ? '\n' : '') + line; },
         result: ({ out, ms }) => {
             // `out` is empty on success (already streamed); non-empty only for errors.
             if (out) el.term.textContent = out;
             ok(`Ran in ${fmt(ms)}`);
-            el.btn.disabled = false;
+            setBusy(false);
         },
-        error:  ({ message }) => { err('Load failed'); el.term.textContent = `Could not load WASM.\n\n${message}`; },
+        error:  ({ message }) => { setBusy(false); err('Load failed'); el.term.textContent = `Could not load WASM.\n\n${message}`; },
     };
     worker.onmessage = ({ data }) => onMsg[data.type]?.(data);
 
@@ -125,9 +132,10 @@ const PythonWorker = (() => {
             worker.postMessage({ type: 'load', url: await resolveUrl(), opts: FETCH_OPTS ?? {} });
         },
         run: (src) => {
+            if (busy) return;
+            setBusy(true);
             ok('Running...');
             el.term.textContent = '';
-            el.btn.disabled = true;
             worker.postMessage({ type: 'run', src });
         },
     };
