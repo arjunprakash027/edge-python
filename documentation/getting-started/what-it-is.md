@@ -21,6 +21,7 @@ The language reads like Python because it parses Python's syntax. It runs differ
 - **f-strings**: with format specs, embedded expressions, and `!r` / `!s` flags.
 - **Walrus operator**: `:=` in expressions.
 - **Type annotations**: parsed and ignored, like CPython for non-strict tools.
+- **Module identity**: `__name__` is bound to `"__main__"` in the entry script, so the canonical `if __name__ == "__main__":` guard works.
 
 ## What it doesn't support
 

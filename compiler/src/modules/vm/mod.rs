@@ -337,6 +337,14 @@ impl<'a> VM<'a> {
                 vm.globals.insert(s!(str name, "_0"), type_obj);
             }
         }
+        // Module identity. The entry chunk always runs as "__main__", matching
+        // CPython's convention so the `if __name__ == "__main__":` guard works
+        // without special-casing in the parser. Inserted before slot_templates
+        // is built below so name references get pre-resolved into slots.
+        if let Ok(main_name) = vm.heap.alloc(HeapObj::Str("__main__".to_string())) {
+            vm.globals.insert("__name__".to_string(), main_name);
+            vm.globals.insert("__name___0".to_string(), main_name);
+        }
         // Register builtins as first-class NativeFn values so `print = print`,
         // `f = len; f([1,2])`, etc. work without a separate dispatch path.
         let builtin_fns: &[NativeFnId] = &[

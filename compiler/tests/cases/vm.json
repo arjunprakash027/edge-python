@@ -1273,5 +1273,8 @@
 
   {"src": "def gen():\n    yield 1\n    yield 2\ndef outer():\n    yield from gen()\n    yield 3\nfor v in outer(): print(v)", "output": ["1", "2", "3"]},
   {"src": "def g():\n    yield from [10, 20, 30]\nfor v in g(): print(v)", "output": ["10", "20", "30"]},
-  {"src": "def inner():\n    yield 'a'\n    yield 'b'\ndef top():\n    yield from inner()\n    yield 'c'\nfor v in top(): print(v)", "output": ["a", "b", "c"]}
+  {"src": "def inner():\n    yield 'a'\n    yield 'b'\ndef top():\n    yield from inner()\n    yield 'c'\nfor v in top(): print(v)", "output": ["a", "b", "c"]},
+  {"src": "print(__name__)", "output": ["__main__"]},
+  {"src": "if __name__ == '__main__':\n    print('entry')", "output": ["entry"]},
+  {"src": "if __name__ != '__main__':\n    print('no')\nelse:\n    print('yes')", "output": ["yes"]}
 ]
