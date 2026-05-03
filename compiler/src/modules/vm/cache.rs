@@ -88,6 +88,10 @@ impl OpcodeCache {
         self.const_vals.as_ref().expect("const pool not materialized")
     }
 
+    pub fn const_vals_opt(&self) -> Option<&[Val]> {
+        self.const_vals.as_deref()
+    }
+
     pub fn record(&mut self, ip: usize, opcode: &OpCode, ta: u8, tb: u8) {
         let Some(s) = self.slots.get_mut(ip) else { return };
         let key = (ta << 4) | (tb & 0xF);
@@ -175,6 +179,15 @@ impl Templates {
 
     pub fn count(&self) -> usize {
         self.slots.iter().flat_map(|v| v.iter()).filter(|e| e.hits >= TPL_THRESH).count()
+    }
+
+    pub fn mark_all(&self, heap: &mut super::types::HeapPool) {
+        for slot in &self.slots {
+            for e in slot {
+                for &v in &e.args { heap.mark(v); }
+                heap.mark(e.result);
+            }
+        }
     }
 }
 

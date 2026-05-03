@@ -1276,5 +1276,17 @@
   {"src": "def inner():\n    yield 'a'\n    yield 'b'\ndef top():\n    yield from inner()\n    yield 'c'\nfor v in top(): print(v)", "output": ["a", "b", "c"]},
   {"src": "print(__name__)", "output": ["__main__"]},
   {"src": "if __name__ == '__main__':\n    print('entry')", "output": ["entry"]},
-  {"src": "if __name__ != '__main__':\n    print('no')\nelse:\n    print('yes')", "output": ["yes"]}
+  {"src": "if __name__ != '__main__':\n    print('no')\nelse:\n    print('yes')", "output": ["yes"]},
+  {"src": "for e in range(2000):\n    s = f\"prefix{e}\"\nprint(s)", "output": ["prefix1999"]},
+  {"src": "for e in range(2000):\n    x = 99999999999999999999\nprint(x)", "output": ["99999999999999999999"]},
+  {"src": "def gen():\n    for i in range(50):\n        yield i\ntotal = 0\nfor _ in range(200):\n    total = 0\n    for v in gen():\n        total = total + v\nprint(total)", "output": ["1225"]},
+  {"src": "def greet(msg=\"hello-world\"):\n    return msg\nlast = \"\"\nfor _ in range(2000):\n    last = greet()\nprint(last)", "output": ["hello-world"]},
+  {"src": "def make():\n    secret = \"captured-value\"\n    def inner():\n        return secret\n    return inner\nf = make()\nlast = \"\"\nfor _ in range(2000):\n    last = f()\nprint(last)", "output": ["captured-value"]},
+  {"src": "def gen():\n    items = [\"a\", \"b\", \"c\", \"d\", \"e\"]\n    for x in items:\n        yield x\njoined = \"\"\nfor _ in range(200):\n    joined = \"\"\n    for v in gen():\n        joined = joined + v\nprint(joined)", "output": ["abcde"]},
+  {"src": "def fmt(n):\n    return f\"key-{n}\"\nlast = \"\"\nfor _ in range(2000):\n    last = fmt(7)\nprint(last)", "output": ["key-7"]},
+  {"src": "def total(xs):\n    return len(xs) + sum(xs)\nacc = 0\nfor _ in range(2000):\n    acc = total([1, 2, 3])\nprint(acc)", "output": ["9"]},
+  {"src": "def inner(n):\n    last = \"\"\n    for i in range(n):\n        last = f\"in-{i}\"\n    return last\ndef outer():\n    last = \"\"\n    for i in range(50):\n        last = f\"out-{i}-\" + inner(50)\n    return last\nprint(outer())", "output": ["out-49-in-49"]},
+  {"src": "weights = [0.5, 0.5]\nlast = 0.0\nfor _ in range(500):\n    last = sum(w * 2 for w in weights)\nprint(last)", "output": ["2.0"]},
+  {"src": "a = [1, 2, 3]\na.append(a)\nfor k in range(2000):\n    s = f\"junk-{k}\"\nprint(len(a))\nprint(len(a[3]))", "output": ["4", "4"]},
+  {"src": "prefix = \"shared\"\ndef make():\n    return prefix + \"-key\"\ns1 = make()\ns1 = None\nfor k in range(2000):\n    x = f\"j-{k}\"\ns2 = make()\nprint(s2)", "output": ["shared-key"]}
 ]

@@ -652,9 +652,24 @@ impl HeapPool {
                         if v.is_heap() { worklist.push(v.as_heap()); }
                     }
                 }
-                Some(HeapObj::Coroutine(_, slots, stack, _, _)) => {
+                Some(HeapObj::Coroutine(_, slots, stack, _, iters)) => {
                     for v in slots.iter() { if v.is_heap() { worklist.push(v.as_heap()); } }
                     for v in stack { if v.is_heap() { worklist.push(v.as_heap()); } }
+                    for f in iters {
+                        match f {
+                            IterFrame::Seq { items, .. } => {
+                                for v in items { if v.is_heap() { worklist.push(v.as_heap()); } }
+                            }
+                            IterFrame::Coroutine(v) => {
+                                if v.is_heap() { worklist.push(v.as_heap()); }
+                            }
+                            IterFrame::Range { .. } => {}
+                        }
+                    }
+                }
+                Some(HeapObj::Func(_, defaults, captures)) => {
+                    for v in defaults { if v.is_heap() { worklist.push(v.as_heap()); } }
+                    for (_, v) in captures { if v.is_heap() { worklist.push(v.as_heap()); } }
                 }
                 _ => {}
             }

@@ -57,6 +57,9 @@ pub struct VM<'a> {
     pub(crate) is_async: Vec<bool>,
     pub(crate) default_slots: Vec<Vec<(usize, Val)>>,
     pub(crate) opcode_caches: HashMap<*const SSAChunk, OpcodeCache>,
+    /* Const pool slice ptrs for caches currently owned by a live exec()
+       frame (removed from `opcode_caches` for the duration of the call). */
+    pub(crate) active_const_pools: Vec<*const [Val]>,
     /* Cached `Limits::ops == usize::MAX` so the hot dispatch path skips
        the budget decrement on every backward jump. */
     pub(crate) sandbox_off: bool,
@@ -264,6 +267,7 @@ impl<'a> VM<'a> {
             is_async: Vec::new(),
             default_slots: Vec::new(),
             opcode_caches: HashMap::default(),
+            active_const_pools: Vec::new(),
             sandbox_off,
         };
         vm.build_function_table(chunk);
@@ -391,14 +395,36 @@ impl<'a> VM<'a> {
     fn collect(&mut self, current_slots: &[Val]) {
         for &v in &self.stack { self.heap.mark(v); }
         for &v in &self.with_stack { self.heap.mark(v); }
-        for &v in self.globals.values() { self.heap.mark(v); }
-        for frame in &self.iter_stack {
-            if let IterFrame::Seq { items, .. } = frame {
-                for &v in items { self.heap.mark(v); }
-            }
-        }
+        for &v in &self.yields { self.heap.mark(v); }
+        for &v in &self.event_queue { self.heap.mark(v); }
         for &v in current_slots { self.heap.mark(v); }
         for &v in &self.live_slots { self.heap.mark(v); }
+        for tpl in &self.slot_templates {
+            for &v in tpl { self.heap.mark(v); }
+        }
+        for &v in self.globals.values() { self.heap.mark(v); }
+        for frame in &self.iter_stack {
+            match frame {
+                IterFrame::Seq { items, .. } => {
+                    for &v in items { self.heap.mark(v); }
+                }
+                IterFrame::Coroutine(v) => self.heap.mark(*v),
+                IterFrame::Range { .. } => {}
+            }
+        }
+        for cache in self.opcode_caches.values() {
+            if let Some(consts) = cache.const_vals_opt() {
+                for &v in consts { self.heap.mark(v); }
+            }
+        }
+        // SAFETY: each ptr is pushed at exec() entry and popped before the
+        // owning OpcodeCache is moved back into `opcode_caches`. The Vec's
+        // heap allocation is stable across that move.
+        for i in 0..self.active_const_pools.len() {
+            let consts: &[Val] = unsafe { &*self.active_const_pools[i] };
+            for &v in consts { self.heap.mark(v); }
+        }
+        self.templates.mark_all(&mut self.heap);
         self.heap.sweep();
     }
 
@@ -520,6 +546,7 @@ impl<'a> VM<'a> {
         // lives for the entire exec() call; no other path mutates the cache.
         let insns_ptr: *const [Instruction] = cache.fused_ref();
         let consts_ptr: *const [Val] = cache.const_vals_ref();
+        self.active_const_pools.push(consts_ptr);
         let result: Result<Val, VmErr> = (|| {
             // SAFETY: see comment above.
             let insns: &[Instruction] = unsafe { &*insns_ptr };
@@ -600,6 +627,7 @@ impl<'a> VM<'a> {
             }
         })();
 
+        self.active_const_pools.pop();
         self.opcode_caches.insert(key, cache);
         result
     }
