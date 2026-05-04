@@ -39,7 +39,7 @@ What the compiler intentionally does *not* do:
 * No CSE, no GVN, no LICM, no inlining, no closed-form loop folding.
 * No dead-store elimination beyond what falls out of constant folding.
 * No IR — bytecode is the only representation.
-* No module system: `import` and `from ... import` parse but raise at runtime.
+* No bundled stdlib: `import` and `from ... import` resolve at compile time through a host-injected `Resolver` (see `modules/packages/`). The VM never learns about modules — `.py` imports inline as user functions, native imports register in `chunk.extern_table` and dispatch via `CallExtern`.
 
 ---
 
@@ -90,9 +90,12 @@ Mark-and-sweep with roots: stack, globals, iterator frames, current slot window,
 │   │   │   ├── mod.rs
 │   │   │   ├── scan.rs
 │   │   │   └── tables.rs
+│   │   ├── packages
+│   │   │   └── mod.rs
 │   │   ├── parser
 │   │   │   ├── control.rs
 │   │   │   ├── expr.rs
+│   │   │   ├── imports.rs
 │   │   │   ├── literals.rs
 │   │   │   ├── mod.rs
 │   │   │   ├── stmt.rs
@@ -114,10 +117,13 @@ Mark-and-sweep with roots: stack, globals, iterator frames, current slot window,
 └── tests
     ├── cases
     │   ├── lexer.json
+    │   ├── packages.json
     │   ├── parser.json
     │   └── vm.json
+    ├── common.rs
     ├── lexer.rs
     ├── main.rs
+    ├── packages.rs
     ├── parser.rs
     └── vm.rs
 ```

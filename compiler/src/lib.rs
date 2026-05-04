@@ -8,7 +8,8 @@ pub mod wasm;
 pub mod modules {
     pub mod fx;
     pub mod lexer;
-    pub mod parser;
     pub mod vm;
+    pub mod parser;
+    pub mod packages;
     pub mod fstr;
 }

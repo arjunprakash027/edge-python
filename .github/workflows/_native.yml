@@ -46,6 +46,12 @@ jobs:
         run: rustup target add ${{ matrix.target }}
         working-directory: compiler
 
+      # The packages integration test builds edge-sdk's reference example to
+      # wasm32 on first run (single source of truth between docs and tests).
+      - name: Install wasm32 target (for fixture build)
+        run: rustup target add wasm32-unknown-unknown
+        working-directory: compiler
+
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
         working-directory: compiler

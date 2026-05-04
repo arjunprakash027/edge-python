@@ -1,5 +1,6 @@
 use crate::s;
 use crate::modules::fx::FxHashMap as HashMap;
+use crate::modules::vm::types::ExternFn;
 
 use alloc::{string::{String, ToString}, vec, vec::Vec};
 
@@ -14,13 +15,13 @@ pub enum OpCode {
     CallEnumerate, CallZip, CallList, CallTuple, CallDict, CallIsInstance, CallSet, CallInput, 
     CallOrd, BuildDict, BuildList, NotEq, Lt, Gt, LtEq, GtEq, And, Or, Not, JumpIfFalse, Jump, 
     GetIter, ForIter, GetItem, Mod, Pow, FloorDiv, LoadTrue, LoadFalse, LoadNone, LoadAttr, StoreAttr, 
-    BuildSlice, MakeClass, SetupExcept, PopExcept, Raise, Import, ImportFrom, BitAnd, BitOr, BitXor, 
-    BitNot, Shl, Shr, In, NotIn, Is, IsNot, UnpackSequence, BuildTuple, SetupWith, ExitWith, Yield, 
-    Del, Assert, Global, Nonlocal, UnpackArgs, ListAppend, SetAdd, MapAdd, BuildSet, RaiseFrom, 
-    UnpackEx, LoadEllipsis, Await, MakeCoroutine, YieldFrom, TypeAlias, StoreItem, Dup2, 
+    BuildSlice, MakeClass, SetupExcept, PopExcept, Raise, BitAnd, BitOr, BitXor,
+    BitNot, Shl, Shr, In, NotIn, Is, IsNot, UnpackSequence, BuildTuple, SetupWith, ExitWith, Yield,
+    Del, Assert, Global, Nonlocal, UnpackArgs, ListAppend, SetAdd, MapAdd, BuildSet, RaiseFrom,
+    UnpackEx, LoadEllipsis, Await, MakeCoroutine, YieldFrom, TypeAlias, StoreItem, Dup2,
     JumpIfFalseOrPop, JumpIfTrueOrPop, Dup, CallMethod, CallMethodArgs, CallAll, CallAny, CallBin,
     CallOct, CallHex, CallDivmod, CallPow, CallRepr, CallReversed, CallCallable, CallId, CallHash,
-    PopIter, DelItem,
+    PopIter, DelItem, CallExtern,
 }
 
 // Python builtin name → (specialised OpCode, leaves_value_on_stack).
@@ -107,6 +108,13 @@ pub struct SSAChunk {
        line and caret are derived from it). Lookup is binary search on the
        cold error path; hot dispatch never touches this. */
     pub stmt_pos: Vec<(u32, u32)>,
+    /* External (native) functions resolved at parse time from `from <pkg> import <name>`.
+       `extern_table[i]` is the function for `CallExtern` operand `i << 8`; the lower
+       8 bits of the operand carry the argc. `extern_index` maps the local binding name
+       to its slot so the parser's call site can dispatch to `CallExtern` instead of
+       the generic `Call`. Per-chunk: each function body / class body has its own. */
+    pub extern_table: Vec<ExternFn>,
+    pub(super) extern_index: HashMap<String, u16>,
 }
 
 impl SSAChunk {

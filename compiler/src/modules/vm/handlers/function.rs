@@ -46,6 +46,7 @@ impl<'a> VM<'a> {
             OpCode::CallCallable => self.call_callable(),
             OpCode::CallId       => self.call_id(),
             OpCode::CallHash     => self.call_hash(),
+            OpCode::CallExtern   => self.call_extern(operand, chunk),
             _ => Err(cold_runtime("non-function opcode in handle_function")),
         }
     }
@@ -254,17 +255,42 @@ impl<'a> VM<'a> {
             }
         }
 
-        // Propagate caller slots into matching body slots (closures over the
-        // enclosing scope). is_param_slot is the precomputed bitmap of slots
-        // bound to formal parameters, which must NOT be overwritten.
+        // Propagate caller slots into matching body slots. Two regimes,
+        // selected by whether the caller is the callee's lexical parent:
+        //
+        //   same scope (caller_fi == callee.parent_fi)
+        //     Late-binding: overwrite freely so a lambda inside `def f`
+        //     reading an outer-scope var sees the current value, not the
+        //     snapshot taken at MakeFunction time.
+        //
+        //   different scope
+        //     Closure semantics: skip slots filled by captures so a closure
+        //     created elsewhere keeps its captured values when invoked. Fixes
+        //     stacked decorators where each layer's `w` captures its own
+        //     `f` — without the guard the outer caller's `f` overwrote the
+        //     inner's captured `f` and the closure recursed forever.
+        //
+        // is_param_slot remains the hard guard for formal parameters bound
+        // by the call.
         if self.needs_caller_slots[fi] {
             let body_map = &self.body_maps[fi];
             let param_bm = &self.is_param_slot[fi];
+            let caller_fi = self.body_to_fi.get(&(chunk as *const _)).copied();
+            let callee_parent_fi = self.function_parents.get(fi).and_then(|x| *x);
+            let same_scope = caller_fi == callee_parent_fi;
+            let captured_set: crate::modules::fx::FxHashSet<usize> = if same_scope {
+                crate::modules::fx::FxHashSet::default()
+            } else if let HeapObj::Func(_, _, captures) = self.heap.get(callee) {
+                captures.iter().map(|(s, _)| *s).collect()
+            } else {
+                crate::modules::fx::FxHashSet::default()
+            };
             for (si, &v) in slots.iter().enumerate() {
                 if !v.is_undef()
                     && let Some(name) = chunk.names.get(si)
                     && let Some(&bs) = body_map.get(name.as_str())
                     && !param_bm.get(bs).copied().unwrap_or(false)
+                    && !captured_set.contains(&bs)
                 {
                     fn_slots[bs] = v;
                 }
@@ -355,6 +381,31 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
+
+    /* Dispatch a `CallExtern` opcode: pop `argc` positional args, look up the
+       extern function pointer in the chunk's extern_table, invoke it with
+       direct heap access, and push the result. Operand encoding mirrors the
+       parser's emit at literals.rs::call: high 8 bits = extern_idx, low 8
+       bits = argc.
+
+       Purity: impure externs taint the enclosing user function via
+       `mark_impure`, mirroring the runtime tracking that enables template
+       memoization to skip non-cacheable bodies. Pure externs leave the
+       impurity flag untouched, so a user `def` whose only side-effects are
+       calls to pure externs remains memoizable. */
+    pub(crate) fn call_extern(&mut self, operand: u16, chunk: &SSAChunk) -> Result<(), VmErr> {
+        let extern_idx = (operand >> 8) as usize;
+        let argc       = (operand & 0xFF) as usize;
+        let extern_fn  = chunk.extern_table.get(extern_idx)
+            .ok_or(cold_runtime("CallExtern: extern index out of bounds"))?;
+        let func = extern_fn.func.clone();   // Arc clone — refcount bump only
+        let pure = extern_fn.pure;
+        let args = self.pop_n(argc)?;
+        if !pure { self.mark_impure(); }
+        let result = func(&mut self.heap, &args)?;
+        self.push(result);
+        Ok(())
+    }
 
     pub(crate) fn dispatch_native(
         &mut self, id: super::super::types::NativeFnId,

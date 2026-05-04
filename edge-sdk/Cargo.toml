@@ -1,0 +1,23 @@
+[package]
+name = "edge-sdk"
+version = "0.1.0"
+edition = "2024"
+description = "SDK for writing Edge Python native modules. Provides the edge_export! macro that wraps a Rust function in the WASM ABI Edge Python's loader expects."
+repository = "https://github.com/dylan-sutton-chavez/edge-python/"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "edge_sdk"
+path = "src/lib.rs"
+
+[[example]]
+name = "reference"
+path = "examples/reference.rs"
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

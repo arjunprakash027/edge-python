@@ -10,6 +10,41 @@ impl Limits {
     pub fn sandbox() -> Self { Self { calls: 256, ops: 100_000_000, heap: 100_000 } }
 }
 
+/* Native function callable from EdgePython via `from <pkg> import <name>`.
+   Resolved at compile time by the host's Resolver, stored in SSAChunk's
+   extern_table, and dispatched by `CallExtern`.
+
+   `func` is `Arc<dyn Fn>` rather than a plain `fn` pointer so loaders that
+   wrap external binaries (.wasm via wasmtime, .so via libloading) can capture
+   a stateful instance handle in the closure — a `fn` pointer alone can't
+   carry context. Pure-Rust hosts that just want to register existing `fn`
+   pointers use `from_fn`, which adds a single Arc allocation at registration
+   time and zero runtime overhead per call.
+
+   `pure = true` lets the VM memoize the result and skip impurity propagation
+   that would taint enclosing functions. */
+pub type ExternCallable =
+    alloc::sync::Arc<dyn Fn(&mut HeapPool, &[Val]) -> Result<Val, VmErr> + Send + Sync>;
+
+#[derive(Clone)]
+pub struct ExternFn {
+    pub name: String,
+    pub func: ExternCallable,
+    pub pure: bool,
+}
+
+impl ExternFn {
+    /* Build an ExternFn from a plain `fn` pointer — common case for hand-written
+       Rust natives that don't need to capture state. */
+    pub fn from_fn(
+        name: impl Into<String>,
+        func: fn(&mut HeapPool, &[Val]) -> Result<Val, VmErr>,
+        pure: bool,
+    ) -> Self {
+        Self { name: name.into(), func: alloc::sync::Arc::new(func), pure }
+    }
+}
+
 /* NaN-boxed 8-byte value: int (47-bit), float, bool, None, undef, or heap idx.
    Tags live in the QNAN bit pattern; payload bits decide the variant. */
 const QNAN: u64 = 0x7FFC_0000_0000_0000;

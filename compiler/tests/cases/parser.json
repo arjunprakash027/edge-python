@@ -533,53 +533,60 @@
     "annotations": {}
   },
   {
-    "src": "import os", 
-    "constants": [], 
-    "names": ["os", "os_1"], 
-    "instructions": [["Import",0], ["StoreName",1], ["ReturnValue",0]], 
-    "annotations": {}
+    "src": "import os",
+    "constants": [],
+    "names": [],
+    "instructions": [["ReturnValue",0]],
+    "annotations": {},
+    "errors": ["module 'os' not found (no resolver configured)"]
   },
   {
-    "src": "from os import path", 
-    "constants": [], 
-    "names": ["os", "path", "path_1"], 
-    "instructions": [["Import",0], ["ImportFrom",1], ["StoreName",2], ["PopTop",0], ["ReturnValue",0]], 
-    "annotations": {}
+    "src": "from os import path",
+    "constants": [],
+    "names": [],
+    "instructions": [["ReturnValue",0]],
+    "annotations": {},
+    "errors": ["module 'os' not found (no resolver configured)"]
   },
   {
-    "src": "from os import path, getcwd", 
-    "constants": [], 
-    "names": ["os", "path", "path_1", "getcwd", "getcwd_1"], 
-    "instructions": [["Import",0], ["ImportFrom",1], ["StoreName",2], ["ImportFrom",3], ["StoreName",4], ["PopTop",0], ["ReturnValue",0]], 
-    "annotations": {}
+    "src": "from os import path, getcwd",
+    "constants": [],
+    "names": [],
+    "instructions": [["ReturnValue",0]],
+    "annotations": {},
+    "errors": ["module 'os' not found (no resolver configured)"]
   },
   {
-    "src": "import os, sys", 
-    "constants": [], 
-    "names": ["os", "os_1", "sys", "sys_1"], 
-    "instructions": [["Import",0], ["StoreName",1], ["Import",2], ["StoreName",3], ["ReturnValue",0]], 
-    "annotations": {}
+    "src": "import os, sys",
+    "constants": [],
+    "names": [],
+    "instructions": [["ReturnValue",0]],
+    "annotations": {},
+    "errors": ["module 'os' not found (no resolver configured)"]
   },
   {
-    "src": "import os.path", 
-    "constants": [], 
-    "names": ["os.path", "os_1"], 
-    "instructions": [["Import",0], ["StoreName",1], ["ReturnValue",0]], 
-    "annotations": {}
+    "src": "import os.path",
+    "constants": [],
+    "names": [],
+    "instructions": [["ReturnValue",0]],
+    "annotations": {},
+    "errors": ["module 'os.path' not found (no resolver configured)"]
   },
   {
-    "src": "import numpy as np", 
-    "constants": [], 
-    "names": ["numpy", "np_1"], 
-    "instructions": [["Import",0], ["StoreName",1], ["ReturnValue",0]], 
-    "annotations": {}
+    "src": "import numpy as np",
+    "constants": [],
+    "names": [],
+    "instructions": [["ReturnValue",0]],
+    "annotations": {},
+    "errors": ["module 'numpy' not found (no resolver configured)"]
   },
   {
-    "src": "from os import path as p", 
-    "constants": [], 
-    "names": ["os", "path", "p_1"], 
-    "instructions": [["Import",0], ["ImportFrom",1], ["StoreName",2], ["PopTop",0], ["ReturnValue",0]], 
-    "annotations": {}
+    "src": "from os import path as p",
+    "constants": [],
+    "names": [],
+    "instructions": [["ReturnValue",0]],
+    "annotations": {},
+    "errors": ["module 'os' not found (no resolver configured)"]
   },
   {
     "src": "x = a & b", 
@@ -813,11 +820,35 @@
     "functions": 1
   },
   {
-    "src": "@a\n@b\ndef f():\n    pass", 
-    "constants": [], 
-    "names": ["a_0", "b_0", "f_1"], 
-    "instructions": [["LoadName",0], ["LoadName",1], ["MakeFunction",0], ["Call",1], ["Call",1], ["StoreName",2], ["ReturnValue",0]], 
-    "annotations": {}, 
+    "src": "@a\n@b\ndef f():\n    pass",
+    "constants": [],
+    "names": ["a_0", "b_0", "f_1"],
+    "instructions": [["LoadName",0], ["LoadName",1], ["MakeFunction",0], ["Call",1], ["Call",1], ["StoreName",2], ["ReturnValue",0]],
+    "annotations": {},
+    "functions": 1
+  },
+  {
+    "src": "@a\n@b\n@c\ndef f():\n    pass",
+    "constants": [],
+    "names": ["a_0", "b_0", "c_0", "f_1"],
+    "instructions": [["LoadName",0], ["LoadName",1], ["LoadName",2], ["MakeFunction",0], ["Call",1], ["Call",1], ["Call",1], ["StoreName",3], ["ReturnValue",0]],
+    "annotations": {},
+    "functions": 1
+  },
+  {
+    "src": "@deco(7)\ndef f():\n    pass",
+    "constants": ["7"],
+    "names": ["deco_0", "f_1"],
+    "instructions": [["LoadName",0], ["LoadConst",0], ["Call",1], ["MakeFunction",0], ["Call",1], ["StoreName",1], ["ReturnValue",0]],
+    "annotations": {},
+    "functions": 1
+  },
+  {
+    "src": "@a(1)\n@b(2)\ndef f():\n    pass",
+    "constants": ["1", "2"],
+    "names": ["a_0", "b_0", "f_1"],
+    "instructions": [["LoadName",0], ["LoadConst",0], ["Call",1], ["LoadName",1], ["LoadConst",1], ["Call",1], ["MakeFunction",0], ["Call",1], ["Call",1], ["StoreName",2], ["ReturnValue",0]],
+    "annotations": {},
     "functions": 1
   },
   {

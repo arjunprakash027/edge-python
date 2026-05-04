@@ -248,7 +248,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     }
 
     /* Dispatches `name(args)`: print/range get dedicated opcodes; other
-       builtins map via the `builtin()` table; rest fall through to Call. */
+       builtins map via the `builtin()` table; imported native bindings emit
+       `CallExtern` (operand = (extern_idx << 8) | argc); rest fall through to
+       the generic `LoadName + Call`. */
     pub(super) fn call(&mut self, name: String) -> bool {
         if name == "print" {
             let (pos, kw) = self.parse_args();
@@ -265,6 +267,17 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             let (pos, kw) = self.parse_args();
             self.chunk.emit(op, pos + kw);
             return leaves_value;
+        }
+
+        // Imported native binding: skip the heap allocation that LoadName/Call
+        // would do and emit a direct CallExtern. The 16-bit operand packs
+        // (extern_idx << 8) | argc — 256 externs per chunk and 256 positional
+        // args, both well above realistic ceilings.
+        if let Some(&extern_idx) = self.chunk.extern_index.get(&name) {
+            let (pos, _kw) = self.parse_args();
+            let encoded = (extern_idx << 8) | (pos & 0xFF);
+            self.chunk.emit(OpCode::CallExtern, encoded);
+            return true;
         }
 
         let i = self.push_ssa_name(&name, self.current_version(&name));
@@ -492,7 +505,6 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             | OpCode::Global
             | OpCode::Nonlocal
             | OpCode::LoadAttr
-            | OpCode::Import
             | OpCode::Raise
             | OpCode::RaiseFrom
             | OpCode::Yield

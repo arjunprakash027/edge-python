@@ -26,9 +26,19 @@ hashbrown = { version = "0.17", default-features = false }
 itoa = "1"
 lol_alloc = { version = "0.4", optional = true }
 
-[dev-dependencies]
+# Native-target-only deps. Pulled in for the `edge` CLI binary and for tests
+# (both run on the host, where std + a real WASM runtime are available).
+# Excluded from wasm32 builds so the demo's compiler_lib.wasm stays small and
+# avoids depending on crates that don't compile to WebAssembly.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+wasmtime = { version = "27", default-features = false, features = ["cranelift", "runtime"] }
+# HTTPS fetcher for URL-form imports. ureq 3.x uses rustls by default — no
+# OpenSSL system dep needed, builds cleanly across platforms.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+
+[dev-dependencies]
 hashbrown = { version = "0.17", default-features = false, features = ["serde"] }
 
 [features]

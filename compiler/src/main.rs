@@ -1,6 +1,9 @@
 extern crate alloc;
 
 use compiler_lib::modules::{lexer::lex, parser::{Parser, Diagnostic}, vm::{VM, Limits}};
+use compiler_lib::modules::packages::{Resolver, Resolved, NativeBinding, load_wasm_bindings};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::{env, fs, process::exit};
 use compiler_lib::s;
 
@@ -15,6 +18,27 @@ options:
   -q           suppress info logs
   --sandbox    enable limits
   -h           show this help
+
+modules:
+  Imports resolve via three forms. Bare names (`from json import x`) lookup
+  in `packages.json` next to the script:
+
+    {
+      \"imports\": {
+        \"json\":  \"./vendor/json.wasm\",
+        \"utils\": \"./lib/utils.py\",
+        \"web\":   \"https://example.com/lib.wasm\"
+      }
+    }
+
+  Spec resolution:
+    ./ ../  /         local file relative to script (or absolute)
+    http(s)://...     fetched at compile time (no cache yet)
+
+  Recognized module formats:
+    *.py    EdgePython source, inlined as functions
+    *.wasm  Native WASM module, dispatched via the i64 ABI
+            (build modules with the `edge-sdk` crate)
 ";
 
 #[inline]
@@ -43,6 +67,107 @@ fn stream_print(s: &str) {
     let mut o = std::io::stdout().lock();
     let _ = o.write_all(s.as_bytes());
     let _ = o.write_all(b"\n");
+}
+
+/* Default Resolver for the `edge` CLI.
+
+   Resolves three import shapes:
+     * Quoted relative path  `from "./utils.py" import x`
+     * Quoted absolute path  `from "/srv/lib/x.wasm" import x`
+     * Bare name             `from json import x`
+       — looked up in packages.json's `imports` map, then re-resolved as a path.
+
+   Path-form imports infer module type from extension:
+     *.py    →  Resolved::Code (the file's source)
+     *.wasm  →  Resolved::Native (load_wasm_bindings, via wasmtime)
+
+   URL-form (`http://`, `https://`) imports are not supported by the CLI yet
+   — those need a fetcher + cache layer that's planned but not implemented.
+
+   `base_dir` is the directory of the entry script so relative paths resolve
+   against the script's location, not the user's CWD. For `-c <code>`, it
+   defaults to the CWD. */
+struct CliResolver {
+    base_dir: PathBuf,
+    imports:  HashMap<String, String>,
+}
+
+impl Resolver for CliResolver {
+    fn resolve(&mut self, spec: &str) -> Result<Resolved, String> {
+        // 1. Alias lookup: bare names (no leading ./, /, http) hit packages.json.
+        let resolved_spec = if spec.starts_with("./") || spec.starts_with("../")
+            || spec.starts_with('/')
+            || spec.starts_with("http://") || spec.starts_with("https://")
+        {
+            spec.to_string()
+        } else {
+            self.imports.get(spec).cloned().ok_or_else(||
+                format!("module '{}' has no entry in packages.json's 'imports'", spec)
+            )?
+        };
+
+        // 2. Read bytes — either fetched over HTTP(S) or read from local FS.
+        //    URL fetches are blocking (matches the sync Resolver contract).
+        //    No cache layer yet — every compile re-fetches; intended for
+        //    development. For deploys, mirror to local files.
+        let bytes: Vec<u8> = if resolved_spec.starts_with("http://")
+            || resolved_spec.starts_with("https://")
+        {
+            fetch_url(&resolved_spec)
+                .map_err(|e| format!("fetching module '{}': {}", spec, e))?
+        } else {
+            let path = if resolved_spec.starts_with('/') {
+                PathBuf::from(&resolved_spec)
+            } else {
+                self.base_dir.join(&resolved_spec)
+            };
+            fs::read(&path).map_err(|e|
+                format!("cannot read module '{}' at {}: {}", spec, path.display(), e))?
+        };
+
+        // 3. Dispatch on URL/path extension. Strip query strings for the
+        //    extension check so `?v=1` doesn't break the match.
+        let path_part = resolved_spec.split('?').next().unwrap_or(&resolved_spec);
+        if path_part.ends_with(".py") {
+            let src = String::from_utf8(bytes).map_err(|_|
+                format!("module '{}' is not valid UTF-8", spec))?;
+            Ok(Resolved::Code(src))
+        } else if path_part.ends_with(".wasm") {
+            let bindings: Vec<NativeBinding> = load_wasm_bindings(&bytes).map_err(|e|
+                format!("loading WASM module '{}': {}", spec, e))?;
+            Ok(Resolved::Native(bindings))
+        } else {
+            Err(format!(
+                "module '{}' has unrecognized extension; expected .py or .wasm", spec))
+        }
+    }
+}
+
+/* Synchronous HTTP/HTTPS fetch via ureq. Returns the response body bytes,
+   or an error string suitable for surfacing in a parser Diagnostic. Rejects
+   non-2xx responses with the status code so the user can see what went wrong. */
+fn fetch_url(url: &str) -> Result<Vec<u8>, String> {
+    let response = ureq::get(url).call()
+        .map_err(|e| format!("{}", e))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("HTTP {}", status.as_u16()));
+    }
+    let mut body = response.into_body();
+    body.read_to_vec().map_err(|e| format!("read body: {}", e))
+}
+
+/* Read packages.json from the script's directory if present. Missing file
+   or parse errors yield an empty import map (the user can use full paths). */
+fn read_packages_json(dir: &Path) -> HashMap<String, String> {
+    #[derive(serde::Deserialize, Default)]
+    struct Pkg {
+        #[serde(default)]
+        imports: HashMap<String, String>,
+    }
+    let path = dir.join("packages.json");
+    let Ok(text) = fs::read_to_string(&path) else { return HashMap::new(); };
+    serde_json::from_str::<Pkg>(&text).map(|p| p.imports).unwrap_or_default()
 }
 
 fn parse_args() -> (String, usize, bool, bool) {
@@ -81,8 +206,17 @@ fn run(path: &str, sandbox: bool, verbosity: usize, quiet: bool) -> Result<(), S
     };
     let diag_path = if is_file { Some(path) } else { None };
 
+    // Module resolution base = script's directory (or CWD for `-c <code>`).
+    let base_dir = if is_file {
+        Path::new(path).parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."))
+    } else {
+        env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    };
+    let imports = read_packages_json(&base_dir);
+    let resolver = Box::new(CliResolver { base_dir, imports });
+
     let (tokens, lex_errs) = lex(&src);
-    let mut p = Parser::new(&src, tokens.into_iter());
+    let mut p = Parser::with_resolver(&src, tokens.into_iter(), resolver);
     for e in lex_errs {
         p.errors.push(Diagnostic { start: e.start, end: e.end, msg: e.msg.to_string() });
     }

@@ -45,6 +45,11 @@ pub struct VM<'a> {
     // entry per chunk (typically <20). Avoids HashMap monomorphization for
     // a tiny pointer-keyed map.
     pub(crate) fn_index: Vec<(*const SSAChunk, Vec<u32>)>,
+    // function_parents[fi] = the fi of the def that lexically encloses `fi`,
+    // or None for module-level. body_to_fi resolves a body chunk pointer to
+    // its owning fi (for caller identification). See build_function_table.
+    pub(crate) function_parents: Vec<Option<usize>>,
+    pub(crate) body_to_fi: HashMap<*const SSAChunk, usize>,
     pub(crate) body_maps: Vec<HashMap<alloc::string::String, usize>>,
     pub(crate) param_slots: Vec<Vec<(ParamKind, usize)>>,
     pub(crate) slot_templates: Vec<Vec<Val>>,
@@ -85,18 +90,35 @@ impl<'a> VM<'a> {
 
     /* Recursively flatten nested `def`s into a single global function table,
        depth-first so closures defined inside nested functions still resolve.
-       Class bodies are walked too, since they may host method `def`s. */
-    fn build_function_table(&mut self, chunk: &'a SSAChunk) {
+       Class bodies are walked too, since they may host method `def`s.
+
+       Also populates two reverse maps used by the call-site propagation to
+       distinguish "calling our own lexical-parent's def" (late-binding —
+       captures may be overwritten) from "calling a closure created elsewhere"
+       (closure semantics — captures must stick):
+
+         function_parents[fi]      → fi of the def that emitted MakeFunction
+                                     for `fi`, None for module-level defs
+         body_to_fi[body_chunk_ptr]→ fi whose body that chunk is, used to
+                                     resolve the caller's own fi at call time
+
+       Together they let `exec_call` answer: "is the caller the lexical
+       parent of the callee?". When yes, propagation overwrites freely
+       (Python late-binding); when no, captured slots are protected
+       (fixes stacked decorators where each `w` captures its own `f`). */
+    fn build_function_table(&mut self, chunk: &'a SSAChunk, parent_fi: Option<usize>) {
         let mut indices = Vec::with_capacity(chunk.functions.len());
         for desc in chunk.functions.iter() {
             let global = self.functions.len() as u32;
             self.functions.push(desc);
+            self.function_parents.push(parent_fi);
+            self.body_to_fi.insert(&desc.1 as *const _, global as usize);
             indices.push(global);
-            self.build_function_table(&desc.1);
+            self.build_function_table(&desc.1, Some(global as usize));
         }
         self.fn_index.push((chunk as *const _, indices));
         for class_body in chunk.classes.iter() {
-            self.build_function_table(class_body);
+            self.build_function_table(class_body, parent_fi);
         }
     }
 
@@ -258,6 +280,8 @@ impl<'a> VM<'a> {
             error_byte_pos: None,
             functions: Vec::new(),
             fn_index: Vec::new(),
+            function_parents: Vec::new(),
+            body_to_fi: HashMap::default(),
             body_maps: Vec::new(),
             param_slots: Vec::new(),
             slot_templates: Vec::new(),
@@ -270,7 +294,7 @@ impl<'a> VM<'a> {
             active_const_pools: Vec::new(),
             sandbox_off,
         };
-        vm.build_function_table(chunk);
+        vm.build_function_table(chunk, None);
         vm.body_maps = vm.functions.iter().map(|(_, body, _, _)| {
             body.names.iter().enumerate().map(|(i, n)| (n.clone(), i)).collect()
         }).collect();
@@ -806,7 +830,8 @@ impl<'a> VM<'a> {
             | OpCode::CallInput | OpCode::MakeFunction | OpCode::MakeCoroutine
             | OpCode::CallAll | OpCode::CallAny | OpCode::CallBin | OpCode::CallOct
             | OpCode::CallHex | OpCode::CallDivmod | OpCode::CallPow | OpCode::CallRepr
-            | OpCode::CallReversed | OpCode::CallCallable | OpCode::CallId | OpCode::CallHash => {
+            | OpCode::CallReversed | OpCode::CallCallable | OpCode::CallId | OpCode::CallHash
+            | OpCode::CallExtern => {
                 self.handle_function(ins.opcode, op, chunk, slots)?;
             }
 
@@ -920,7 +945,7 @@ impl<'a> VM<'a> {
                 self.push(a); self.push(b); self.push(a); self.push(b);
             }
             OpCode::Assert | OpCode::Del | OpCode::Global | OpCode::Nonlocal
-            | OpCode::TypeAlias | OpCode::Import | OpCode::ImportFrom
+            | OpCode::TypeAlias
             | OpCode::Raise | OpCode::RaiseFrom | OpCode::Await | OpCode::YieldFrom => {
                 self.handle_side(opcode, operand, slots)?;
             }

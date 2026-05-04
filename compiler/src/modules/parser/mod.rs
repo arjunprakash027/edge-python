@@ -4,14 +4,16 @@ mod stmt;
 mod control;
 mod expr;
 mod literals;
+mod imports;
 
 pub use types::*;
 
 use crate::s;
 use crate::modules::lexer::{Token, TokenType};
 use crate::modules::fx::FxHashMap as HashMap;
+use crate::modules::packages::{Resolver, NoopResolver};
 
-use alloc::{string::{String, ToString}, vec::Vec};
+use alloc::{boxed::Box, string::{String, ToString}, vec::Vec};
 use core::iter::Peekable;
 
 // Bracket diagnostic helpers — keep human-readable strings out of the hot path.
@@ -70,6 +72,11 @@ pub struct Parser<'src, I: Iterator<Item = Token>> {
        in-bracket cascade since those errors are downstream consequences. */
     pub(super) bracket_stack: Vec<(TokenType, usize, usize, usize)>,
     pub errors: Vec<Diagnostic>,
+    /* Host-injected module resolver. Defaults to `NoopResolver`, which rejects
+       every spec — keeps existing call sites that don't pass a resolver
+       working unchanged (any `from X import ...` they encounter becomes a
+       parse-time diagnostic). Construct with `with_resolver` to opt in. */
+    pub(super) resolver: Box<dyn Resolver>,
 }
 
 // SSA versioning: track and emit version-suffixed names.
@@ -127,6 +134,13 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     pub(super) fn with_fresh_chunk(&mut self, f: impl FnOnce(&mut Self)) -> SSAChunk {
         let saved_chunk = core::mem::take(&mut self.chunk);
         let saved_ver = self.ssa_versions.clone();
+        // Inherit imported externs into the nested chunk so a `def` body can
+        // call natives that the enclosing scope imported. Indices stay stable
+        // (1:1 copy) so the body's CallExtern operand resolves correctly into
+        // its OWN extern_table at runtime. The body may add more externs
+        // afterwards (its own `from X import ...`); those don't leak back up.
+        self.chunk.extern_table = saved_chunk.extern_table.clone();
+        self.chunk.extern_index = saved_chunk.extern_index.clone();
         f(self);
         let body = core::mem::take(&mut self.chunk);
         self.chunk = saved_chunk;
@@ -446,6 +460,13 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     pub fn new(source: &'src str, iter: I) -> Self {
+        Self::with_resolver(source, iter, Box::new(NoopResolver))
+    }
+
+    /* Construct a parser with an explicit module resolver. Hosts that want to
+       support `from X import names` pass their own `Resolver` here. The trait
+       lives in `crate::modules::packages`. */
+    pub fn with_resolver(source: &'src str, iter: I, resolver: Box<dyn Resolver>) -> Self {
         Self {
             source,
             tokens: iter.peekable(),
@@ -461,6 +482,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             last_end: 0,
             bracket_stack: Vec::new(),
             errors: Vec::new(),
+            resolver,
         }
     }
 

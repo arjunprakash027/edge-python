@@ -370,9 +370,15 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let mut defaults = 0u16;
         if !matches!(self.peek(), Some(TokenType::Colon)) {
             loop {
-                let p = self.advance();
-                params.push(self.lexeme(&p).to_string());
-                if self.eat_if(TokenType::Equal) {
+                // Mirror parse_params' prefix-detect so `lambda *args, **kw: ...`
+                // produces the same param names ("*args", "**kw") that the VM's
+                // ParamKind dispatcher recognizes.
+                let prefix = if self.eat_if(TokenType::DoubleStar) { "**" }
+                             else if self.eat_if(TokenType::Star)   { "*"  }
+                             else { "" };
+                let nm = self.advance_text();
+                params.push(if prefix.is_empty() { nm } else { s!(str prefix, str &nm) });
+                if prefix.is_empty() && self.eat_if(TokenType::Equal) {
                     self.expr();
                     defaults += 1;
                 }

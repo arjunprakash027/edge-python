@@ -5,7 +5,7 @@ use super::types::OpCode;
 
 use crate::modules::lexer::{Token, TokenType};
 
-use alloc::{string::{String, ToString}, vec, vec::Vec};
+use alloc::{vec, vec::Vec};
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
@@ -303,54 +303,19 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* import / from-import with aliases and star imports. */
+    /* `import name` and `from <spec> import names` — both delegate to
+       `imports.rs`, which calls the injected Resolver and either inlines code
+       module functions or registers natives in the chunk's extern_table.
+       Module resolution is compile-time only: no Import/ImportFrom opcodes
+       reach the VM. See `imports.rs` for the resolution logic and
+       `crate::modules::packages` for the public Resolver API. */
 
     pub(super) fn import_stmt(&mut self) {
-        self.advance();
-        loop {
-            let module = self.dotted_name();
-            let mod_idx = self.chunk.push_name(&module);
-            self.chunk.emit(OpCode::Import, mod_idx);
-            let alias = if self.eat_if(TokenType::As) {
-                self.advance_text()
-            } else {
-                module.split('.').next().unwrap().to_string()
-            };
-            self.store_name(alias);
-            if !self.eat_if(TokenType::Comma) { break; }
-        }
+        self.do_import_stmt();
     }
 
     pub(super) fn parse_from_stmt(&mut self) {
-        self.advance();
-        let module = self.dotted_name();
-        let mod_idx = self.chunk.push_name(&module);
-        self.chunk.emit(OpCode::Import, mod_idx);
-        self.eat(TokenType::Import);
-        if self.eat_if(TokenType::Star) {
-            let star = self.chunk.push_name("*");
-            self.chunk.emit(OpCode::ImportFrom, star);
-        } else {
-            loop {
-                let name = self.advance_text();
-                let name_idx = self.chunk.push_name(&name);
-                self.chunk.emit(OpCode::ImportFrom, name_idx);
-                let alias = if self.eat_if(TokenType::As) { self.advance_text() } else { name };
-                self.store_name(alias);
-                if !self.eat_if(TokenType::Comma) { break; }
-            }
-        }
-        self.chunk.emit(OpCode::PopTop, 0);
-    }
-
-    pub(super) fn dotted_name(&mut self) -> String {
-        let mut name = self.advance_text();
-        while self.eat_if(TokenType::Dot) {
-            name.push('.');
-            let t = self.advance();
-            name.push_str(self.lexeme(&t));
-        }
-        name
+        self.do_from_stmt();
     }
 
 }

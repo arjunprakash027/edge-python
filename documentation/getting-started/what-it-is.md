@@ -22,14 +22,15 @@ The language reads like Python because it parses Python's syntax. It runs differ
 - **Walrus operator**: `:=` in expressions.
 - **Type annotations**: parsed and ignored, like CPython for non-strict tools.
 - **Module identity**: `__name__` is bound to `"__main__"` in the entry script, so the canonical `if __name__ == "__main__":` guard works.
+- **Modules**: `import` and `from <spec> import names` resolve at compile time through a host-injected `Resolver`. Two flavors: `.py` source modules (inlined as functions) and native modules (`.wasm`/dyn-libs, dispatched via the `CallExtern` opcode). See [Imports](/reference/imports) and [Writing modules](/reference/writing-modules).
 
 ## What it doesn't support
 
 These parse for syntactic compatibility but raise at runtime, or simply don't exist:
 
 - **Inheritance / MRO**: classes work with `__init__`, attributes, and methods, but there is no base-class chain, no `super`, no method resolution order.
-- **Modules**: `import` and `from ... import` parse but raise. There is no module system, no standard library beyond the built-ins documented here, no third-party packages.
-- **I/O**: `input()` reads from a host-provided buffer (native: stdin, WASM: FFI). There is no file system, no network, no `os`, no `sys`.
+- **Standard library**: there is no bundled stdlib. `json`, `regex`, `math`, etc. are external modules distributed as `.wasm` artifacts via URL — fetched at compile time, sealed into the artifact at deploy time. See [Imports](/reference/imports).
+- **I/O**: `input()` reads from a host-provided buffer (native: stdin, WASM: FFI). There is no file system, no network, no `os`, no `sys` — *unless* the host registers a native module that provides those capabilities.
 - **Async**: `async def` creates real coroutines. `run()` provides cooperative scheduling with `sleep()` and `receive()`.
 - **Metaclasses, descriptors, decorators-on-classes, properties**: not modeled.
 - **Dynamic code**: no `exec`, no `eval`, no `compile`, no `__import__`.

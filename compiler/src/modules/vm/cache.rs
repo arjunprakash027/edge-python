@@ -193,7 +193,14 @@ impl Templates {
 
 /* Fuse adjacent LoadAttr+Call into CallMethod+CallMethodArgs in-place.
    The two opcodes change but operands and instruction count stay, so
-   jump targets remain valid. Compiled once per chunk and then cached. */
+   jump targets remain valid. Compiled once per chunk and then cached.
+
+   Only fires when Call's operand is zero (no args, no kwargs). When the
+   call has args, the parser interleaves them between LoadAttr and Call
+   (e.g. `x.foo(a)` → LoadAttr foo, LoadName a, Call(1)) and adjacent
+   LoadAttr+Call signals an attribute access in the LAST argument
+   position (e.g. `f(self.n)` → LoadName self, LoadAttr n, Call(1)) —
+   fusing that mis-treats the arg expression as the call target. */
 fn fuse_method_calls(chunk: &SSAChunk) -> Vec<Instruction> {
     let src = &chunk.instructions;
     let n = src.len();
@@ -201,7 +208,10 @@ fn fuse_method_calls(chunk: &SSAChunk) -> Vec<Instruction> {
 
     let mut i = 0;
     while i + 1 < n {
-        if src[i].opcode == OpCode::LoadAttr && src[i + 1].opcode == OpCode::Call {
+        if src[i].opcode == OpCode::LoadAttr
+            && src[i + 1].opcode == OpCode::Call
+            && src[i + 1].operand == 0
+        {
             out[i].opcode = OpCode::CallMethod;
             out[i + 1].opcode = OpCode::CallMethodArgs;
             i += 2;
