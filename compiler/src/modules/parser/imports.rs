@@ -162,7 +162,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 }
                 /* Splice + drop `bound` (each name is already in scope under
                    its bare form, which is what star-import wants). */
+                self.enter_imported_scope(spec);
                 let _ = self.splice_top_level(&sub);
+                self.leave_imported_scope();
             }
         }
     }
@@ -201,7 +203,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 &s!("module '", str spec, "' parse error: ", str &errs[0].msg));
             return;
         }
+        self.enter_imported_scope(spec);
         let bound = self.splice_top_level(&sub);
+        self.leave_imported_scope();
         let mut entries: Vec<(String, u16)> = bound.into_iter().collect();
         entries.sort_by(|a, b| a.0.cmp(&b.0));
         for (name, slot) in &entries {
@@ -244,7 +248,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             return;
         }
 
+        self.enter_imported_scope(spec);
         let bound = self.splice_top_level(&sub_chunk);
+        self.leave_imported_scope();
 
         for (name, alias) in names {
             let Some(&src_slot) = bound.get(name.as_str()) else {
@@ -259,6 +265,32 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.chunk.emit(OpCode::StoreName, alias_slot);
             }
         }
+    }
+
+    /* Rebind `__name__` to the module spec for the duration of a code-module
+       splice. CPython convention: a module's top-level body sees its own
+       name in `__name__`, not "__main__"; that's what makes the
+       `if __name__ == "__main__":` guard skip when the module is imported.
+       Pushes the parent's current `__name__` value first so `leave_imported_scope`
+       can restore it without hard-coding "__main__" — preserves any earlier
+       user reassignment. */
+    fn enter_imported_scope(&mut self, spec: &str) {
+        let save_slot = self.push_ssa_name("__name__", self.current_version("__name__"));
+        self.chunk.emit(OpCode::LoadName, save_slot);
+        let spec_const = self.chunk.push_const(Value::Str(spec.to_string()));
+        self.chunk.emit(OpCode::LoadConst, spec_const);
+        let new_ver = self.increment_version("__name__");
+        let new_slot = self.push_ssa_name("__name__", new_ver);
+        self.chunk.emit(OpCode::StoreName, new_slot);
+    }
+
+    /* Pop the saved `__name__` (pushed by `enter_imported_scope`) into a fresh
+       SSA version, so post-import code reads the parent's original value
+       again. */
+    fn leave_imported_scope(&mut self) {
+        let new_ver = self.increment_version("__name__");
+        let new_slot = self.push_ssa_name("__name__", new_ver);
+        self.chunk.emit(OpCode::StoreName, new_slot);
     }
 
     /* Walk a sub-chunk's top-level instructions and re-emit them into the

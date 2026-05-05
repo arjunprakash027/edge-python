@@ -298,6 +298,20 @@
   },
 
   {
+    "_section": "Module identity — `__name__` rebinds across imports",
+    "_comment": "imported module's `if __name__ == '__main__':` guard skips, parent's __name__ is still '__main__' afterward",
+    "src": "from m import label\nprint(__name__)\nprint(label(1))",
+    "output": ["__main__", "yes"],
+    "modules": { "m": { "code": "def label(p):\n    return 'yes' if p == 1 else 'no'\n\nif __name__ == '__main__':\n    print('ran as main')" } }
+  },
+  {
+    "_comment": "module body reads __name__ during splice — sees the spec, not '__main__'",
+    "src": "from m import got_name\nprint(got_name)",
+    "output": ["m"],
+    "modules": { "m": { "code": "got_name = __name__" } }
+  },
+
+  {
     "_section": "Documented language limitations (regression pins, expected to fail until fixed)",
     "_comment": "mutual recursion: inliner pulls both fns in but the parser can't bind forward refs",
     "src": "from m import is_even\nprint(is_even(4))",
