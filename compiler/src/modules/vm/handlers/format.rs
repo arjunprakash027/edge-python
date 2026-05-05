@@ -23,7 +23,7 @@
    Returns Ok(formatted) or Err(message) so the caller can raise ValueError. */
 
 use alloc::string::{String, ToString};
-use crate::modules::vm::types::{Val, HeapObj, HeapPool, BigInt};
+use crate::modules::vm::types::{Val, HeapObj, HeapPool, BigInt, fabs, ffloor, flog10, fsignum, ftrunc};
 
 pub fn format_value(v: Val, spec: &str, heap: &HeapPool) -> Result<String, &'static str> {
     if spec.is_empty() {
@@ -265,7 +265,7 @@ fn add_thousands(digits: &str) -> String {
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
     let chars: alloc::vec::Vec<char> = digits.chars().collect();
     for (i, &c) in chars.iter().enumerate() {
-        if i > 0 && (chars.len() - i) % 3 == 0 { out.push(','); }
+        if i > 0 && (chars.len() - i).is_multiple_of(3) { out.push(','); }
         out.push(c);
     }
     out
@@ -273,7 +273,7 @@ fn add_thousands(digits: &str) -> String {
 
 fn add_thousands_float(s: &str) -> String {
     /* Insert separators only in the integer portion (before `.` / `e`). */
-    let split = s.find(|c: char| c == '.' || c == 'e' || c == 'E');
+    let split = s.find(['.', 'e', 'E']);
     let (int_part, rest) = match split {
         Some(i) => (&s[..i], &s[i..]),
         None => (s, ""),
@@ -352,13 +352,13 @@ fn fixed(mag: f64, prec: usize) -> String {
        integer-part '.' fractional-part. Avoids alloc::format!'s %f. */
     let scale = pow10(prec);
     let scaled = mag * scale;
-    let rounded = if scaled.fract().abs() == 0.5 {
-        let f = scaled.trunc();
+    let rounded = if fabs(scaled - ftrunc(scaled)) == 0.5 {
+        let f = ftrunc(scaled);
         if (f as i64) % 2 == 0 { f } else if scaled > 0.0 { f + 1.0 } else { f - 1.0 }
     } else {
-        (scaled + 0.5 * scaled.signum()).trunc()
+        ftrunc(scaled + 0.5 * fsignum(scaled))
     };
-    let bi = BigInt::from_decimal(&u128_to_dec(rounded.abs() as u128));
+    let bi = BigInt::from_decimal(&u128_to_dec(fabs(rounded) as u128));
     let dec = bi.to_decimal();
     if prec == 0 { return dec; }
     /* Pad on the left so we can insert a `.` exactly `prec` chars from the end. */
@@ -386,7 +386,7 @@ fn exp(mag: f64, prec: usize, _upper: bool) -> String {
         o.push_str("e+00");
         return o;
     }
-    let exponent = mag.log10().floor() as i32;
+    let exponent = ffloor(flog10(mag)) as i32;
     let mantissa = mag / pow10_i(exponent);
     let mant_str = fixed(mantissa, prec);
     let mut o = mant_str;
@@ -406,7 +406,7 @@ fn general(mag: f64, prec: usize) -> String {
     if mag == 0.0 {
         return String::from("0");
     }
-    let exponent = mag.log10().floor() as i32;
+    let exponent = ffloor(flog10(mag)) as i32;
     let body = if exponent < -4 || exponent >= p as i32 {
         exp(mag, p - 1, false)
     } else {

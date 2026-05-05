@@ -173,12 +173,12 @@ There's no formal SDK for C, Zig, or AssemblyScript yet — but a `.wasm` produc
 
 When you're ready to publish:
 
-- ✅ HTTPS (HTTP triggers warnings in browser hosts)
-- ✅ `Cache-Control: immutable` for hashed/versioned URLs
-- ✅ CORS headers if the module will be loaded by browser scripts
-- ✅ Source repo public (auditors will read your code before approving)
-- ✅ Semver in the URL path (`@1.2.3`) for version pinning
-- ✅ SHA256 hash on the import URL: `from "https://...wasm#sha256-..." import x`
+- HTTPS (HTTP triggers warnings in browser hosts)
+- `Cache-Control: immutable` for hashed/versioned URLs
+- CORS headers if the module will be loaded by browser scripts
+- Source repo public (auditors will read your code before approving)
+- Semver in the URL path (`@1.2.3`) for version pinning
+- SHA256 hash on the import URL: `from "https://...wasm#sha256-..." import x`
 
 ## See also
 

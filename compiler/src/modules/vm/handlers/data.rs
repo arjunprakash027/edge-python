@@ -66,7 +66,7 @@ impl<'a> VM<'a> {
                 let converted = match conv {
                     1 => self.heap.alloc(HeapObj::Str(self.repr(v)))?,
                     2 => self.heap.alloc(HeapObj::Str(self.display(v)))?,
-                    3 => self.heap.alloc(HeapObj::Str(super::format::display_inline(v, &self.heap).escape_default().to_string()))?,
+                    3 => self.heap.alloc(HeapObj::Str(super::format::display_inline(v, &self.heap).escape_default().collect::<String>()))?,
                     _ => v,
                 };
 

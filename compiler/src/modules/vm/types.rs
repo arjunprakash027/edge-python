@@ -1013,3 +1013,23 @@ pub fn ffloor(x: f64) -> f64 {
     let i = x as i64 as f64;
     if x < i { i - 1.0 } else { i }
 }
+
+#[inline]
+pub fn fabs(x: f64) -> f64 {
+    f64::from_bits(f64::to_bits(x) & 0x7FFF_FFFF_FFFF_FFFF)
+}
+
+#[inline]
+pub fn ftrunc(x: f64) -> f64 {
+    if x >= 0.0 { ffloor(x) } else { -ffloor(-x) }
+}
+
+#[inline]
+pub fn fsignum(x: f64) -> f64 {
+    if x > 0.0 { 1.0 } else if x < 0.0 { -1.0 } else { 0.0 }
+}
+
+#[inline]
+pub fn flog10(x: f64) -> f64 {
+    fln(x) / core::f64::consts::LN_10
+}

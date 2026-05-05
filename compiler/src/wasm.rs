@@ -271,7 +271,21 @@ mod tests {
             let (tokens, lex_errs) = lex(&case.src);
             assert!(lex_errs.is_empty(), "lex error on {:?}: {:?}", case.src, lex_errs.iter().map(|e| e.msg).collect::<Vec<_>>());
             let (chunk, errs) = Parser::new(&case.src, tokens.into_iter()).parse();
-            assert!(errs.is_empty(), "parse error on {:?}: {:?}", case.src, errs.iter().map(|e| &e.msg).collect::<Vec<_>>());
+            if !errs.is_empty() {
+                match &case.error {
+                    Some(expected) => {
+                        assert!(
+                            errs.iter().any(|e| e.msg.contains(expected.as_str())),
+                            "wrong parse error on {:?}: got {:?}, expected '{}'",
+                            case.src,
+                            errs.iter().map(|e| &e.msg).collect::<Vec<_>>(),
+                            expected
+                        );
+                        continue;
+                    }
+                    None => panic!("parse error on {:?}: {:?}", case.src, errs.iter().map(|e| &e.msg).collect::<Vec<_>>()),
+                }
+            }
 
             let mut vm = VM::new(&chunk);
             vm.strict_input = true;

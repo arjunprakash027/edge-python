@@ -293,17 +293,15 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         for ins in &sub.instructions[..body_end] {
             let new_op = match ins.opcode {
                 OpCode::LoadConst => {
-                    let cidx = *const_map.entry(ins.operand).or_insert_with(|| {
+                    *const_map.entry(ins.operand).or_insert_with(|| {
                         self.chunk.push_const(sub.constants[ins.operand as usize].clone())
-                    });
-                    cidx
+                    })
                 }
                 OpCode::LoadName => {
                     self.remap_load_slot(sub, ins.operand, &slot_map)
                 }
                 OpCode::StoreName => {
-                    let slot = self.remap_store_slot(sub, ins.operand, &mut slot_map, &mut bound);
-                    slot
+                    self.remap_store_slot(sub, ins.operand, &mut slot_map, &mut bound)
                 }
                 OpCode::Del => {
                     self.remap_load_slot(sub, ins.operand, &slot_map)
