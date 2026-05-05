@@ -39,7 +39,7 @@ What the compiler intentionally does *not* do:
 * No CSE, no GVN, no LICM, no inlining, no closed-form loop folding.
 * No dead-store elimination beyond what falls out of constant folding.
 * No IR — bytecode is the only representation.
-* No bundled stdlib: `import` and `from ... import` resolve at compile time through a host-injected `Resolver` (see `modules/packages/`). The VM never learns about modules — `.py` imports inline as user functions, native imports register in `chunk.extern_table` and dispatch via `CallExtern`.
+* No bundled stdlib: `import`, `from ... import`, and `from ... import *` resolve at compile time through a host-injected `Resolver` (see `modules/packages/`). The VM never learns about modules at runtime — `.py` imports splice their entire top level into the parent chunk (constants, classes, defs, branches), native imports register in `chunk.extern_table` and dispatch via `CallExtern`. `import X` materialises a `HeapObj::Module` so `X.attr` resolves at runtime.
 
 ---
 

@@ -910,11 +910,20 @@ impl<'a> VM<'a> {
         if op != 1 && op != 2 {
             return Err(cold_type("format() takes 1 or 2 arguments"));
         }
-        let _spec = if op == 2 { Some(self.pop()?) } else { None };
-        // Spec is parsed but ignored for now; real format spec is a small
-        // extension on top of this. Falls through to display() for the value.
+        let spec_val = if op == 2 { Some(self.pop()?) } else { None };
         let val = self.pop()?;
-        self.alloc_and_push_str(self.display(val))
+        let result = match spec_val {
+            Some(sv) => {
+                let spec = match self.heap.get(sv) {
+                    HeapObj::Str(s) => s.clone(),
+                    _ => return Err(cold_type("format() spec must be a string")),
+                };
+                super::handlers::format::format_value(val, &spec, &self.heap)
+                    .map_err(cold_value)?
+            }
+            None => self.display(val),
+        };
+        self.alloc_and_push_str(result)
     }
 
     // ascii(obj) — repr but with non-ASCII escaped.

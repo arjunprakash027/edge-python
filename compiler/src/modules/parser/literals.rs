@@ -209,6 +209,27 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 Some(TokenType::Lbrace) => {
                     self.advance();
                     self.expr();
+                    /* Encoding for FormatValue operand:
+                         bit 0       — has format-spec on stack
+                         bits 1..=2  — conversion: 0 none, 1 !r, 2 !s, 3 !a
+                       Mirrors CPython's `flags` byte in `FORMAT_VALUE`. Zero
+                       operand still means "plain str()" — backwards-compatible. */
+                    let mut flags = 0u16;
+                    if matches!(self.peek(), Some(TokenType::Exclamation)) {
+                        let bang = self.advance();
+                        let conv_tok = self.advance();
+                        let conv = self.lexeme(&conv_tok);
+                        flags |= match conv {
+                            "r" => 1 << 1,
+                            "s" => 2 << 1,
+                            "a" => 3 << 1,
+                            _ => {
+                                self.error_at(bang.start, conv_tok.end,
+                                    "invalid f-string conversion (expected !r, !s, or !a)");
+                                0
+                            }
+                        };
+                    }
                     if matches!(self.peek(), Some(TokenType::Colon)) {
                         let colon = self.advance();
                         let spec_start = colon.end;
@@ -222,10 +243,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                         let spec = self.source[spec_start..spec_end].to_string();
                         let idx = self.chunk.push_const(Value::Str(spec));
                         self.chunk.emit(OpCode::LoadConst, idx);
-                        self.chunk.emit(OpCode::FormatValue, 1);
-                    } else {
-                        self.chunk.emit(OpCode::FormatValue, 0);
+                        flags |= 1;
                     }
+                    self.chunk.emit(OpCode::FormatValue, flags);
                     parts += 1;
                     if matches!(self.peek(), Some(TokenType::Rbrace)) {
                         self.advance();

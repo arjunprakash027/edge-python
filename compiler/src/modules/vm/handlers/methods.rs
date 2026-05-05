@@ -75,6 +75,20 @@ impl<'a> VM<'a> {
             .ok_or(VmErr::Runtime("LoadAttr: bad name index"))?;
         let obj = self.pop()?;
 
+        // Module attribute lookup: linear scan over the attr table. Sized
+        // for ~30 entries; any module larger than that is unusual.
+        if obj.is_heap()
+            && let HeapObj::Module(mod_name, attrs) = self.heap.get(obj) {
+                let bare = crate::modules::parser::ssa_strip(name);
+                if let Some((_, v)) = attrs.iter().find(|(n, _)| n == bare) {
+                    let v = *v;
+                    self.push(v);
+                    return Ok(());
+                }
+                return Err(VmErr::Attribute(s!(
+                    "module '", str mod_name, "' has no attribute '", str bare, "'")));
+            }
+
         // Instance attribute lookup: check `__dict__` first, then class methods.
         if obj.is_heap()
             && let HeapObj::Instance(cls_val, attrs) = self.heap.get(obj) {

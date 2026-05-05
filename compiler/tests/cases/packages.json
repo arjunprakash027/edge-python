@@ -172,10 +172,129 @@
     "error": "module 'u' parse error"
   },
   {
-    "_comment": "code module has the name but it's a constant, not a def",
+    "_comment": "code module exporting a top-level constant — splicer runs the whole module so K is in scope",
     "src": "from m import K\nprint(K)",
-    "modules": { "m": { "code": "K = 42\ndef ignored():\n    pass" } },
-    "error": "has no function 'K'"
+    "output": ["42"],
+    "modules": { "m": { "code": "K = 42\ndef ignored():\n    pass" } }
+  },
+  {
+    "_comment": "module-level effect: pre-built dict bound by name",
+    "src": "from m import TABLE\nprint(TABLE['two'])",
+    "output": ["2"],
+    "modules": { "m": { "code": "TABLE = {'one': 1, 'two': 2, 'three': 3}" } }
+  },
+  {
+    "_comment": "constant computed from earlier top-level: requires splicer to walk in order",
+    "src": "from m import DOUBLED\nprint(DOUBLED)",
+    "output": ["20"],
+    "modules": { "m": { "code": "BASE = 10\nDOUBLED = BASE * 2" } }
+  },
+  {
+    "_comment": "def referencing a top-level constant works at call time",
+    "src": "from m import area\nprint(area(3))",
+    "output": ["28"],
+    "modules": { "m": { "code": "PI = 3.14\ndef area(r):\n    return int(PI * r * r)" } }
+  },
+  {
+    "_comment": "missing export — same diagnostic shape as before",
+    "src": "from m import nope\nprint(nope)",
+    "modules": { "m": { "code": "K = 1" } },
+    "error": "has no export 'nope'"
+  },
+  {
+    "_comment": "alias on an exported constant",
+    "src": "from m import MAX as N\nprint(N)",
+    "output": ["100"],
+    "modules": { "m": { "code": "MAX = 100" } }
+  },
+  {
+    "_comment": "top-level if/else writing a constant — splicer remaps Phi sources",
+    "src": "from m import LIM\nprint(LIM)",
+    "output": ["10"],
+    "modules": { "m": { "code": "x = 1\nif x > 0:\n    LIM = 10\nelse:\n    LIM = -1" } }
+  },
+
+  {
+    "_section": "Native typed marshalling — non-i64 wire types round-trip cleanly",
+    "_comment": "f64 → f64 across the extern dispatch; no coercion to int",
+    "src": "from m import double_f\nprint(double_f(2.5))",
+    "output": ["5.0"],
+    "modules": { "m": { "native": ["double_f"] } }
+  },
+  {
+    "_comment": "bool → bool",
+    "src": "from m import negate\nprint(negate(True))\nprint(negate(False))",
+    "output": ["False", "True"],
+    "modules": { "m": { "native": ["negate"] } }
+  },
+  {
+    "_comment": "mixed bool + int args",
+    "src": "from m import pick\nprint(pick(True, 1, 2))\nprint(pick(False, 1, 2))",
+    "output": ["2", "1"],
+    "modules": { "m": { "native": ["pick"] } }
+  },
+  {
+    "_comment": "wrong-type arg surfaces the extern's own diagnostic",
+    "src": "from m import double_f\nprint(double_f(2))",
+    "modules": { "m": { "native": ["double_f"] } },
+    "error": "double_f: expected one float arg"
+  },
+
+  {
+    "_section": "Namespace import — `import X` materialises a module value",
+    "_comment": "native module: m.add(...) dispatches via the module's attr table",
+    "src": "import m\nprint(m.add(2, 3))",
+    "output": ["5"],
+    "modules": { "m": { "native": ["add"] } }
+  },
+  {
+    "_comment": "native module: bare attribute (no call) returns the extern callable",
+    "src": "import m\nf = m.add\nprint(f(4, 5))",
+    "output": ["9"],
+    "modules": { "m": { "native": ["add"] } }
+  },
+  {
+    "_comment": "code module: m.k reaches a top-level constant",
+    "src": "import m\nprint(m.k)",
+    "output": ["7"],
+    "modules": { "m": { "code": "k = 7" } }
+  },
+  {
+    "_comment": "code module: m.fn(...) calls a top-level def",
+    "src": "import m\nprint(m.double(21))",
+    "output": ["42"],
+    "modules": { "m": { "code": "def double(x):\n    return x * 2" } }
+  },
+  {
+    "_comment": "import alias",
+    "src": "import m as math\nprint(math.add(10, 20))",
+    "output": ["30"],
+    "modules": { "m": { "native": ["add"] } }
+  },
+  {
+    "_comment": "missing attr surfaces module name in the error",
+    "src": "import m\nprint(m.nope)",
+    "modules": { "m": { "native": ["add"] } },
+    "error": "module 'm' has no attribute 'nope'"
+  },
+  {
+    "_comment": "type(m) is module",
+    "src": "import m\nprint(type(m))",
+    "output": ["<class 'module'>"],
+    "modules": { "m": { "code": "x = 1" } }
+  },
+  {
+    "_section": "Star imports — `from X import *`",
+    "_comment": "every native binding becomes a flat name in scope",
+    "src": "from m import *\nprint(add(1, 2))",
+    "output": ["3"],
+    "modules": { "m": { "native": ["add"] } }
+  },
+  {
+    "_comment": "code-module star: top-level constants and defs land in scope",
+    "src": "from m import *\nprint(K)\nprint(double(5))",
+    "output": ["7", "10"],
+    "modules": { "m": { "code": "K = 7\ndef double(x):\n    return x * 2" } }
   },
 
   {

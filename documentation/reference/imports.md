@@ -3,14 +3,14 @@ title: "Imports"
 description: "Importing modules in Edge Python: syntax, resolution, and the two module flavors."
 ---
 
-Edge Python supports `import` and `from <spec> import <names>` with a key difference from CPython: **module resolution happens at compile time, not at runtime**. The VM never learns what a module is — by the time bytecode runs, every import has been flattened into either an inlined function or a direct native call.
+Edge Python supports `import`, `from <spec> import <names>`, and `from <spec> import *` with a key difference from CPython: **module resolution happens at compile time, not at runtime**. The VM never learns what a module is — by the time bytecode runs, every import has been flattened into a sequence of bytecode that materialises the module's exports.
 
 ## The two flavors
 
 | Flavor | What it is | How it dispatches |
 |---|---|---|
-| **Code module** | A `.py` file written in Edge Python | Inlined into the importing chunk as a regular function (existing `Call` opcode) |
-| **Native module** | Pre-compiled binary (`.wasm`, `.so`, `.dylib`, `.dll`) written in any low-level language | Dispatched through the `CallExtern` opcode to a function pointer |
+| **Code module** | A `.py` file written in Edge Python | The module's top level is spliced into the importing chunk; requested names are bound (or wrapped in a `HeapObj::Module` for `import X`). |
+| **Native module** | Pre-compiled binary (`.wasm`, `.so`, `.dylib`, `.dll`) written in any low-level language | Dispatched through the `CallExtern` opcode (named import) or via a `HeapObj::Module` carrying `HeapObj::Extern` callables (`import X`). |
 
 The same `import` syntax covers both. The host's resolver decides which flavor a given spec maps to.
 
@@ -30,9 +30,13 @@ from "https://github.com/foo/lib@v1.0/" import handler
 from math import sqrt as root
 from utils import normalize as n
 
-# Plain `import X` — natives only (binds every export at top level)
+# Plain `import X` — binds the module under its name; access exports via `.`
 import math
-print(math_pi)   # if `math` exposes pi as a top-level binding
+print(math.sqrt(2.0))
+
+# Star imports — every export becomes a flat name in scope
+from utils import *
+print(slugify("Hello world"))
 ```
 
 ## How resolution works
@@ -41,8 +45,8 @@ print(math_pi)   # if `math` exposes pi as a top-level binding
 2. For each spec, it asks the **host's `Resolver`** to materialise the module:
    - `Resolved::Native(bindings)` — list of `(name, function pointer, pure flag)` tuples.
    - `Resolved::Code(source)` — raw `.py` source string for sub-parsing.
-3. For natives, the bindings are appended to the chunk's `extern_table` and the alias is registered. Calling the imported name emits `CallExtern idx, argc` instead of the generic `LoadName + Call`.
-4. For code modules, the source is parsed into a sub-chunk; each requested function definition is copied into the parent chunk's function table; `MakeFunction + StoreName` make the binding available.
+3. For natives, the bindings are appended to the chunk's `extern_table`. Named imports register the alias so the call site can emit a direct `CallExtern idx, argc`; `import X` additionally emits `LoadExtern + LoadConst + BuildModule` to wrap the bindings in a `HeapObj::Module` value.
+4. For code modules, the source is parsed into a sub-chunk and the **entire top level** is spliced into the parent chunk (constants, defs, classes, branches, with operand indices remapped). Named imports then either expose the bound parent slot directly or rebind it under an alias. `import X` reads each top-level binding via `LoadName` and folds them into a `HeapObj::Module`.
 
 The runtime never fetches anything. The host (browser JS, CLI binary, embedded Rust app) is responsible for bringing the bytes; the compiler accepts them through the `Resolver` trait.
 
@@ -133,10 +137,9 @@ By default, only `.py` and `.wasm` modules load. Hosts that need native FFI (CUD
 
 ## What doesn't work
 
-- **`from X import *`** — star imports require enumerating module exports, which conflicts with compile-time resolution. Use named imports.
-- **Transitive imports inside code modules (v1)** — a `.py` module imported by your script can't itself `import` further modules. v2 will lift this limit.
+- **Transitive imports inside code modules** — a `.py` module imported by your script can't itself `import` further modules. The sub-parser uses a `NoopResolver`, so module-of-module is intentionally rejected. A future revision will lift this.
 - **Dynamic imports** — no `__import__`, no `importlib`. The module set is fixed per compilation.
-- **Module-level state in code modules** — only top-level `def` definitions are inlined; module-level constants and side effects don't transfer. Helper functions must be self-contained.
+- **Mutual recursion across top-level defs in code modules** — `def is_even` referencing `is_odd` (defined after it in the same module) still fails: the body chunk records `is_odd_0` while the splicer ends up storing `is_odd_1`, and propagation matches by exact SSA name. Forward references inside the same code module remain a regression pin.
 
 ## Errors
 

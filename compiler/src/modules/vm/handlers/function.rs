@@ -135,6 +135,18 @@ impl<'a> VM<'a> {
             return self.dispatch_native(id, positional, kw_flat);
         }
 
+        if let HeapObj::Extern(extern_fn) = self.heap.get(callee) {
+            if !kw_flat.is_empty() {
+                return Err(cold_type("extern function takes no keyword arguments"));
+            }
+            let func = extern_fn.func.clone();
+            let pure = extern_fn.pure;
+            if !pure { self.mark_impure(); }
+            let result = func(&mut self.heap, &positional)?;
+            self.push(result);
+            return Ok(());
+        }
+
         // Calling a class: create an instance and run __init__ if defined.
         if let HeapObj::Class(_, methods) = self.heap.get(callee) {
             let methods = methods.clone();

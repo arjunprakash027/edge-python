@@ -229,7 +229,11 @@ FormatValue 0
 BuildString 5
 ```
 
-`FormatValue` with operand `0` is the default conversion; operand `1` means a format spec is on the stack just below the value. The format spec is collected as a raw string between `:` and `}` and emitted as a constant.
+`FormatValue`'s 16-bit operand is a small flags field:
+- bit 0 — set when a format spec string is on the stack just below the value (collected as the raw text between `:` and `}` and emitted as a constant).
+- bits 1–2 — conversion: `0` none, `1` `!r`, `2` `!s`, `3` `!a`.
+
+The VM applies the conversion first (if any), then runs the format-spec mini-language (alignment, width, fill, sign, `,` thousands separator, `.precision`, type chars `b/o/x/X/d/c/f/e/g/%/s`). Spec parsing failures surface as a `ValueError` at runtime.
 
 ## Limits
 

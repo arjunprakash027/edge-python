@@ -86,11 +86,23 @@ edge_export! {
 }
 ```
 
-## Supported types (v1)
+## Supported types
 
-Arguments and return: `i64` only. The encoding mirrors Edge Python's NaN-boxed `Val::int`. Floats, strings, and heap types are coming.
+| Rust type | EdgePython type | Encoding                           |
+|-----------|-----------------|------------------------------------|
+| `i64`     | `int`           | NaN-boxed sign-extended 47-bit     |
+| `f64`     | `float`         | raw `f64::to_bits()`               |
+| `bool`    | `bool`          | NaN-boxed True/False tag           |
 
-For values outside `i64`, drop down to manual marshalling using `pack_int` and `unpack_int` from this crate, plus your own bit work for other Val variants.
+The macro infers the right encode/decode per type via the `FromWire` / `IntoWire` traits — mix and match freely:
+
+```rust
+edge_export! { pub fn area(r: f64) -> f64 { 3.14159 * r * r } }
+edge_export! { pub fn even(n: i64) -> bool { n % 2 == 0 } }
+edge_export! { pub fn pick(flag: bool, lo: i64, hi: i64) -> i64 { if flag { hi } else { lo } } }
+```
+
+Strings, lists, and other heap types require a buffer protocol with linear-memory cooperation and aren't in v1. For those, fall back to manual marshalling using the `pack_*` / `unpack_*` helpers exported from this crate.
 
 ## Reference module
 
@@ -105,7 +117,7 @@ cargo build --release --target wasm32-unknown-unknown --example reference
 
 ## ABI contract
 
-The compiled `.wasm` module exports each `edge_export!`-decorated function with a `(i64, i64, ...) -> i64` signature. Edge Python's loader walks every i64-typed export and registers it as a native binding callable from scripts.
+The compiled `.wasm` module exports each `edge_export!`-decorated function with a `(i64, i64, ...) -> i64` signature regardless of the Rust types — the i64 carries the NaN-boxed wire `Val`, and the macro decodes it back into the requested type at the call boundary. Edge Python's loader walks every i64-typed export and registers it as a native binding callable from scripts.
 
 For full details on the loader side, see [`compiler/src/modules/packages/wasm_loader.rs`](../compiler/src/modules/packages/wasm_loader.rs).
 

@@ -56,10 +56,38 @@ impl<'a> VM<'a> {
             OpCode::UnpackSequence => self.exec_unpack_seq(operand as usize)?,
             OpCode::UnpackEx => self.unpack_ex(operand)?,
             OpCode::FormatValue => {
-                if operand == 1 { self.pop()?; }
+                /* Operand layout: bit 0 has_spec, bits 1..=2 conversion
+                   (0 none, 1 !r, 2 !s, 3 !a). See parser/literals.rs. */
+                let has_spec = (operand & 1) != 0;
+                let conv = (operand >> 1) & 0b11;
+                let spec_val = if has_spec { Some(self.pop()?) } else { None };
                 let v = self.pop()?;
-                let s = self.display(v);
-                let val = self.heap.alloc(HeapObj::Str(s))?;
+
+                let converted = match conv {
+                    1 => self.heap.alloc(HeapObj::Str(self.repr(v)))?,
+                    2 => self.heap.alloc(HeapObj::Str(self.display(v)))?,
+                    3 => self.heap.alloc(HeapObj::Str(super::format::display_inline(v, &self.heap).escape_default().to_string()))?,
+                    _ => v,
+                };
+
+                let result = match spec_val {
+                    Some(sv) => {
+                        let spec = match self.heap.get(sv) {
+                            HeapObj::Str(s) => s.clone(),
+                            _ => return Err(cold_type("format spec must be a string")),
+                        };
+                        super::format::format_value(converted, &spec, &self.heap)
+                            .map_err(cold_value)?
+                    }
+                    None => {
+                        if conv != 0 && let HeapObj::Str(s) = self.heap.get(converted) {
+                            s.clone()
+                        } else {
+                            self.display(converted)
+                        }
+                    }
+                };
+                let val = self.heap.alloc(HeapObj::Str(result))?;
                 self.push(val);
             }
             _ => return Err(cold_runtime("non-container opcode in handle_container")),

@@ -1,5 +1,6 @@
 pub(crate) mod arith;
 pub(crate) mod data;
+pub(crate) mod format;
 pub(crate) mod function;
 pub(crate) mod methods;
 

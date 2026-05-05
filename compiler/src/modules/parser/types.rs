@@ -22,6 +22,14 @@ pub enum OpCode {
     JumpIfFalseOrPop, JumpIfTrueOrPop, Dup, CallMethod, CallMethodArgs, CallAll, CallAny, CallBin,
     CallOct, CallHex, CallDivmod, CallPow, CallRepr, CallReversed, CallCallable, CallId, CallHash,
     PopIter, DelItem, CallExtern,
+    /* Push a heap-wrapped extern callable (`HeapObj::Extern`) onto the stack.
+       Operand is the index into the chunk's extern_table. Used by `import X`
+       (native) when building the module's attr table. */
+    LoadExtern,
+    /* Build a `HeapObj::Module` from the top of the stack and push it. The
+       stack on entry has, top-down: module-name string, then `operand`
+       (attr_name_str, attr_value) pairs. */
+    BuildModule,
 }
 
 // Python builtin name → (specialised OpCode, leaves_value_on_stack).

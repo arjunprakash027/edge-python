@@ -94,7 +94,12 @@ mod test {
        uses the resulting `NativeBinding`s from an EdgePython script. The
        only test that can't live in JSON: it shells out to `cargo` to
        produce the artifact. Single source of truth: same `reference.rs`
-       referenced from `documentation/reference/writing-modules.md`. */
+       referenced from `documentation/reference/writing-modules.md`.
+
+       Covers every wire type the SDK supports today: i64 (`add`, `square`),
+       f64 (`area`), bool input + i64 return (`pick`), and i64 input + bool
+       return (`even`). A regression here means the macro / loader / NaN-box
+       round-trip is broken end to end. */
     #[test]
     fn loads_wasm() {
         let bytes = wasm_example_bytes("reference");
@@ -102,11 +107,20 @@ mod test {
             .expect("loading the SDK's reference.wasm should succeed");
 
         let names: Vec<&str> = bindings.iter().map(|b| b.name.as_str()).collect();
-        assert!(names.contains(&"add"),    "expected 'add' export in {:?}", names);
-        assert!(names.contains(&"square"), "expected 'square' export in {:?}", names);
+        for export in ["add", "square", "area", "even", "pick"] {
+            assert!(names.contains(&export), "expected '{}' export in {:?}", export, names);
+        }
 
         let resolver = TestResolver::new().with_native("math", bindings);
-        let src = "from math import add, square\nprint(add(2, square(3)))";
+        let src = "\
+from math import add, square, area, even, pick
+print(add(2, square(3)))
+print(area(2.0))
+print(even(4))
+print(even(5))
+print(pick(True, 10, 99))
+print(pick(False, 10, 99))
+";
         let (tokens, _) = lex(src);
         let parser = Parser::with_resolver(src, tokens.into_iter(), Box::new(resolver));
         let (chunk, errs) = parser.parse();
@@ -116,7 +130,11 @@ mod test {
         if let Err(e) = vm.run() {
             panic!("vm should run cleanly, got: {}", e);
         }
-        assert_eq!(vm.output, vec!["11"], "add(2, square(3)) should be 11");
+        assert_eq!(
+            vm.output,
+            vec!["11", "12.566370614359172", "True", "False", "99", "10"],
+            "wasm round-trip mismatch",
+        );
     }
 
     #[test]

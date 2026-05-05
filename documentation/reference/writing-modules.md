@@ -66,6 +66,18 @@ edge_export! {
         x * x
     }
 }
+
+edge_export! {
+    pub fn area(r: f64) -> f64 {
+        3.141592653589793 * r * r
+    }
+}
+
+edge_export! {
+    pub fn even(n: i64) -> bool {
+        n % 2 == 0
+    }
+}
 ```
 
 The `edge_export!` macro wraps your function in the C ABI Edge Python's loader expects: arguments come in as `u64`-encoded `Val`s, the result is returned the same way. You write idiomatic Rust; the macro handles the marshalling.
@@ -137,9 +149,15 @@ The host's loader is responsible for the inverse marshalling: it reads `Val`s of
 
 ### Supported types
 
-v1: **`i64` only**. That covers integer arithmetic, handle patterns (returning a small int that the host reinterprets), and boolean encodings (0/1).
+| Rust type | EdgePython type | Encoding                           |
+|-----------|-----------------|------------------------------------|
+| `i64`     | `int`           | NaN-boxed sign-extended 47-bit     |
+| `f64`     | `float`         | raw `f64::to_bits()`               |
+| `bool`    | `bool`          | NaN-boxed True/False tag           |
 
-Coming: `f64`, `bool`, strings (via shared linear memory), heap types (lists, dicts).
+The macro picks the right encode/decode per parameter and return via the `FromWire` / `IntoWire` traits — mix types freely. The wasm signature stays `(i64, ..., i64) -> i64` regardless of Rust types: the i64 always carries the NaN-boxed wire `Val`, and the macro decodes it back to the requested type at the call boundary.
+
+Coming: strings (via shared linear memory), heap types (lists, dicts). For now, encode strings as host-side handles (an `i64` that the host reinterprets through a side channel) if you need them.
 
 ## What other languages need
 

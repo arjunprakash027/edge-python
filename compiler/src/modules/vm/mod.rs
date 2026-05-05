@@ -683,6 +683,25 @@ impl<'a> VM<'a> {
         let name = chunk.names.get(attr_idx as usize)
             .ok_or(VmErr::Runtime("CallMethod: bad name index"))?;
 
+        // Module attribute call: look up the attr on the module and call it
+        // directly. No `self` is prepended (modules aren't classes).
+        if obj.is_heap()
+            && let HeapObj::Module(mod_name, attrs) = self.heap.get(obj) {
+                let bare = ssa_strip(name);
+                if let Some((_, attr)) = attrs.iter().find(|(n, _)| n == bare) {
+                    let callee = *attr;
+                    self.push(callee);
+                    for a in &positional { self.push(*a); }
+                    for a in &kw_flat   { self.push(*a); }
+                    let argc = positional.len() as u16;
+                    let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
+                    return self.exec_call(encoded, chunk, slots);
+                }
+                let mod_name = mod_name.clone();
+                return Err(VmErr::Attribute(s!(
+                    "module '", str &mod_name, "' has no attribute '", str bare, "'")));
+            }
+
         // User-defined method on Instance: call with self prepended.
         if obj.is_heap()
             && let HeapObj::Instance(cls_val, _) = self.heap.get(obj) {
@@ -906,6 +925,39 @@ impl<'a> VM<'a> {
                     }
                     _ => return Err(cold_type("cannot set attribute on this type")),
                 }
+            }
+
+            OpCode::LoadExtern => {
+                let f = chunk.extern_table.get(op as usize)
+                    .ok_or(cold_runtime("LoadExtern: extern index out of bounds"))?
+                    .clone();
+                let v = self.heap.alloc(HeapObj::Extern(f))?;
+                self.push(v);
+            }
+
+            OpCode::BuildModule => {
+                /* Stack on entry, top→bottom: module-name, then `op` pairs of
+                   (attr_name_str, attr_value). Build the attr vec preserving
+                   declaration order (innermost-first when popped). */
+                let total = (op as usize) * 2 + 1;
+                let mut frame = self.pop_n(total)?;
+                let module_name_val = frame.pop().ok_or(cold_runtime("BuildModule: empty stack"))?;
+                let module_name = match self.heap.get(module_name_val) {
+                    HeapObj::Str(s) => s.clone(),
+                    _ => return Err(cold_runtime("BuildModule: module name not a string")),
+                };
+                let mut attrs: Vec<(alloc::string::String, Val)> = Vec::with_capacity(op as usize);
+                let mut it = frame.into_iter();
+                while let Some(name_v) = it.next() {
+                    let val = it.next().ok_or(cold_runtime("BuildModule: malformed attr stack"))?;
+                    let n = match self.heap.get(name_v) {
+                        HeapObj::Str(s) => s.clone(),
+                        _ => return Err(cold_runtime("BuildModule: attr name not a string")),
+                    };
+                    attrs.push((n, val));
+                }
+                let m = self.heap.alloc(HeapObj::Module(module_name, attrs))?;
+                self.push(m);
             }
 
             other => self.dispatch_generic(other, op, slots)?,

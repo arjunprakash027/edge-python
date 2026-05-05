@@ -588,7 +588,7 @@ False
 | `id`         | 1          | unique identifier                          |
 | `hash`       | 1          | hash for hashable values                   |
 | `repr`       | 1          | developer-readable form                    |
-| `format`     | 1 or 2     | format spec currently ignored              |
+| `format`     | 1 or 2     | applies the same format-spec mini-language as f-strings |
 | `ascii`      | 1          | repr with non-ASCII escapes                |
 | `getattr`    | 2 or 3     | bound method or default                    |
 | `hasattr`    | 2          | True if method exists                      |

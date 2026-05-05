@@ -51,6 +51,8 @@ impl<'a> VM<'a> {
             HeapObj::BoundUserMethod(..) => true,
             HeapObj::Instance(..) => true,
             HeapObj::Coroutine(..) => true,
+            HeapObj::Module(..) => true,
+            HeapObj::Extern(_) => true,
         }
     }
 
@@ -89,6 +91,8 @@ impl<'a> VM<'a> {
             HeapObj::BoundUserMethod(_, _) => "<bound method>",
             HeapObj::Instance(..) => "object",
             HeapObj::Coroutine(..) => "coroutine",
+            HeapObj::Module(..) => "module",
+            HeapObj::Extern(_) => "builtin_function_or_method",
         }}
     }
 
@@ -137,6 +141,8 @@ impl<'a> VM<'a> {
             }
             HeapObj::BoundUserMethod(_, _) => "<bound method>".into(),
             HeapObj::Coroutine(..) => "<coroutine>".into(),
+            HeapObj::Module(name, _) => s!("<module '", str name, "'>"),
+            HeapObj::Extern(f) => s!("<extern function ", str &f.name, ">"),
             HeapObj::Set(s) => {
                 let mut items: Vec<Val> = s.borrow().iter().cloned().collect();
                 if items.is_empty() { return "set()".into(); }

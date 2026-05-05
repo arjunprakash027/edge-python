@@ -134,9 +134,13 @@ print('\u00e9 unicode')
 ```python
 name = "world"
 n = 42
+pi = 3.14159
 print(f"hello {name}")
 print(f"answer is {n + 1}")
-print(f"{n:04d}")     # format spec
+print(f"{n:04d}")        # zero-padded width
+print(f"{pi:.3f}")       # float precision
+print(f"{255:#x}")       # hex with prefix
+print(f"{name!r}")       # !r conversion
 print(f"{{literal braces}}")
 ```
 
@@ -144,8 +148,13 @@ print(f"{{literal braces}}")
 hello world
 answer is 43
 0042
+3.142
+0xff
+'world'
 {literal braces}
 ```
+
+The full f-string format mini-language is supported: `[[fill]align][sign][#][0][width][,][.precision][type]`, with `!r` / `!s` / `!a` conversions before the spec. Type chars: `b o c d e E f F g G n s x X %`.
 
 ## Booleans and None
 

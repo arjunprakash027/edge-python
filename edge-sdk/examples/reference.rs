@@ -34,6 +34,24 @@ mod m {
             x * x
         }
     }
+
+    edge_export! {
+        pub fn area(r: f64) -> f64 {
+            3.141592653589793 * r * r
+        }
+    }
+
+    edge_export! {
+        pub fn even(n: i64) -> bool {
+            n % 2 == 0
+        }
+    }
+
+    edge_export! {
+        pub fn pick(flag: bool, lo: i64, hi: i64) -> i64 {
+            if flag { hi } else { lo }
+        }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

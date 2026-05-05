@@ -33,6 +33,12 @@ pub struct ExternFn {
     pub pure: bool,
 }
 
+impl core::fmt::Debug for ExternFn {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ExternFn").field("name", &self.name).field("pure", &self.pure).finish()
+    }
+}
+
 impl ExternFn {
     /* Build an ExternFn from a plain `fn` pointer — common case for hand-written
        Rust natives that don't need to capture state. */
@@ -110,6 +116,12 @@ impl Val {
     }
 
     #[inline(always)] pub fn as_float(&self) -> f64  { f64::from_bits(self.0) }
+    /* Public accessors for wire-format marshalling (FFI / WASM loader / SDK).
+       The 64-bit payload is the canonical NaN-boxed representation; treating
+       it as an opaque transport word lets non-host code round-trip values
+       without depending on the private field. */
+    #[inline(always)] pub fn raw(&self) -> u64 { self.0 }
+    #[inline(always)] pub fn from_raw(u: u64) -> Self { Self(u) }
     #[inline(always)] pub fn as_int(&self) -> i64  {
         let raw = (self.0 & 0x0000_FFFF_FFFF_FFFF) as i64;
         (raw << 16) >> 16
@@ -491,6 +503,16 @@ pub enum HeapObj {
     Instance(Val, Rc<RefCell<DictMap>>),
     BoundUserMethod(Val, Val),
     Coroutine(usize, Vec<Val>, Vec<Val>, usize, Vec<IterFrame>),
+    /* `import m` materialises this. Attribute access (`m.x`) goes through
+       LoadAttr; calls (`m.x(...)`) fuse via CallMethod. The attrs vector
+       carries one entry per exported name, in declaration order. */
+    Module(String, Vec<(String, Val)>),
+    /* A native binding lifted to a first-class callable. Created by
+       LoadExtern when a Module needs to expose an extern as an attr; also
+       returned directly when LoadAttr resolves to an extern. The dispatch
+       path mirrors CallExtern but reads the function pointer from the heap
+       object instead of the chunk's extern_table. */
+    Extern(ExternFn),
 }
 
 pub use crate::modules::vm::handlers::methods::BuiltinMethodId;
@@ -706,6 +728,9 @@ impl HeapPool {
                     for v in defaults { if v.is_heap() { worklist.push(v.as_heap()); } }
                     for (_, v) in captures { if v.is_heap() { worklist.push(v.as_heap()); } }
                 }
+                Some(HeapObj::Module(_, attrs)) => {
+                    for (_, v) in attrs { if v.is_heap() { worklist.push(v.as_heap()); } }
+                }
                 _ => {}
             }
         }
@@ -783,6 +808,8 @@ impl HeapPool {
                 Some(HeapObj::Class(..)) => 18,
                 Some(HeapObj::Instance(..)) => 18,
                 Some(HeapObj::Coroutine(..)) => 19,
+                Some(HeapObj::Module(..)) => 20,
+                Some(HeapObj::Extern(_)) => 21,
                 None => 0,
             }
         } else { 0 }
