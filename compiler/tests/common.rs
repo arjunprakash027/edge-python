@@ -20,7 +20,9 @@
 
 #![allow(dead_code)]
 
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use compiler_lib::modules::packages::{NativeBinding, Resolved, Resolver};
 use compiler_lib::modules::vm::types::{HeapObj, HeapPool, Val, VmErr};
@@ -30,44 +32,94 @@ pub use compiler_lib::modules::packages::load_wasm_bindings;
 
 // ─── TestResolver ────────────────────────────────────────────────────────────
 
-pub struct TestResolver {
+/* Shared state for a `TestResolver` and any of its `child()` sub-resolvers.
+   Mirrors the production CLI: one root packages.json (here, `aliases`) and
+   module map shared across all transitive resolutions, plus an in-flight
+   set for cycle detection. */
+#[derive(Default)]
+struct TestResolverState {
     modules: HashMap<String, Resolved>,
+    aliases: HashMap<String, String>,
+    in_flight: HashSet<String>,
+}
+
+pub struct TestResolver {
+    state: Rc<RefCell<TestResolverState>>,
+    in_flight_marker: Option<String>,
+}
+
+impl Drop for TestResolver {
+    fn drop(&mut self) {
+        if let Some(canon) = self.in_flight_marker.take() {
+            self.state.borrow_mut().in_flight.remove(&canon);
+        }
+    }
 }
 
 impl TestResolver {
-    pub fn new() -> Self { Self { modules: HashMap::new() } }
+    pub fn new() -> Self {
+        Self {
+            state: Rc::new(RefCell::new(TestResolverState::default())),
+            in_flight_marker: None,
+        }
+    }
 
-    pub fn with_native(mut self, spec: &str, bindings: Vec<NativeBinding>) -> Self {
-        self.modules.insert(spec.to_string(), Resolved::Native(bindings));
+    pub fn with_native(self, spec: &str, bindings: Vec<NativeBinding>) -> Self {
+        self.state.borrow_mut().modules.insert(spec.to_string(), Resolved::Native(bindings));
         self
     }
 
-    pub fn with_code(mut self, spec: &str, src: &str) -> Self {
-        self.modules.insert(spec.to_string(), Resolved::Code(src.to_string()));
+    pub fn with_code(self, spec: &str, src: &str) -> Self {
+        self.state.borrow_mut().modules.insert(spec.to_string(), Resolved::Code(src.to_string()));
         self
+    }
+
+    /* Add a packages.json-style alias: bare-name imports map to a target spec
+       declared only in the root resolver. Subordinate (child) resolvers see
+       the same alias map, so a transitively-imported module can resolve a
+       bare name through the entry script's packages.json without declaring
+       its own. */
+    pub fn with_alias(self, name: &str, target: &str) -> Self {
+        self.state.borrow_mut().aliases.insert(name.to_string(), target.to_string());
+        self
+    }
+
+    /* Resolve a spec to its canonical key (alias-applied) used for both the
+       module map lookup and cycle detection. */
+    fn canonical(&self, spec: &str) -> String {
+        let s = self.state.borrow();
+        s.aliases.get(spec).cloned().unwrap_or_else(|| spec.to_string())
     }
 }
 
 impl Resolver for TestResolver {
     fn resolve(&mut self, spec: &str) -> Result<Resolved, String> {
-        match self.modules.get(spec) {
+        let key = self.canonical(spec);
+        if self.state.borrow().in_flight.contains(&key) {
+            return Err(format!("circular import: '{}'", spec));
+        }
+        match self.state.borrow().modules.get(&key) {
             // Clone so the same module can be re-imported (e.g.,
             // `from m import f; from m import f as g`). Test fixtures are
             // small; cloning is cheap.
-            Some(r) => Ok(clone_resolved(r)),
+            Some(r) => Ok(r.clone()),
             None => Err(format!("module '{}' not found in TestResolver", spec)),
         }
     }
-}
 
-fn clone_resolved(r: &Resolved) -> Resolved {
-    match r {
-        Resolved::Code(s) => Resolved::Code(s.clone()),
-        Resolved::Native(bs) => Resolved::Native(bs.iter().map(|b| NativeBinding {
-            name: b.name.clone(),
-            func: b.func.clone(),
-            pure: b.pure,
-        }).collect()),
+    /* Sub-resolver for transitive imports: shares the entry resolver's full
+       state (modules + aliases + in_flight), so a deeper module can resolve
+       a bare name declared only in the root configuration. The returned
+       resolver records its spec in in_flight; Drop removes it when the
+       splicer's parse step finishes. Mirrors the entry-point packages.json
+       semantics described in `documentation/reference/imports.md`. */
+    fn child(&self, spec: &str) -> Box<dyn Resolver> {
+        let canon = self.canonical(spec);
+        self.state.borrow_mut().in_flight.insert(canon.clone());
+        Box::new(TestResolver {
+            state: Rc::clone(&self.state),
+            in_flight_marker: Some(canon),
+        })
     }
 }
 

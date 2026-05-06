@@ -59,6 +59,14 @@ pub struct VM<'a> {
        parameter and must NOT be overwritten by caller-slot propagation.
        Replaces a per-call BTreeSet<usize> allocation in exec_call. */
     pub(crate) is_param_slot: Vec<Vec<bool>>,
+    /* Body slots holding free-variable references (canonical, version-0,
+       not a parameter). Each entry is `(bare_name, body_slot)`. exec_call
+       falls back to base-name lookup against the caller's chunk for these
+       slots so that names whose SSA version differs between body and caller
+       still late-bind correctly — e.g. a code-module splice where each body
+       records `is_odd_0` but the parent stores `is_odd_1+`, so exact-name
+       propagation can't match. */
+    pub(crate) body_free_loads: Vec<Vec<(String, usize)>>,
     pub(crate) is_async: Vec<bool>,
     pub(crate) default_slots: Vec<Vec<(usize, Val)>>,
     pub(crate) opcode_caches: HashMap<*const SSAChunk, OpcodeCache>,
@@ -288,6 +296,7 @@ impl<'a> VM<'a> {
             nonlocal_tables: Vec::new(),
             needs_caller_slots: Vec::new(),
             is_param_slot: Vec::new(),
+            body_free_loads: Vec::new(),
             is_async: Vec::new(),
             default_slots: Vec::new(),
             opcode_caches: HashMap::default(),
@@ -345,6 +354,35 @@ impl<'a> VM<'a> {
                 if slot < n_slots { bm[slot] = true; }
             }
             bm
+        }).collect();
+
+        // Body free-load slots: canonical, non-parameter names that the body
+        // never writes to. exec_call resolves these at call time by base-name
+        // fallback against the caller's chunk so a body reference whose SSA
+        // version differs from the caller's still binds — e.g. mutual
+        // recursion across spliced top-level defs, where each body records
+        // the version current at body-compile time but the splicer ends up
+        // storing under a higher version. Built once at VM init.
+        vm.body_free_loads = (0..vm.functions.len()).map(|fi| {
+            let (_, body, _, _) = vm.functions[fi];
+            let param_bm = &vm.is_param_slot[fi];
+            let mut written: crate::modules::fx::FxHashSet<usize> = crate::modules::fx::FxHashSet::default();
+            for ins in &body.instructions {
+                if matches!(ins.opcode, OpCode::StoreName | OpCode::Phi) {
+                    written.insert(ins.operand as usize);
+                }
+            }
+            body.names.iter().enumerate().filter_map(|(slot, name)| {
+                let canon = body.alias_groups.get(slot)
+                    .and_then(|g| g.first().copied())
+                    .unwrap_or(slot as u16) as usize;
+                if canon != slot { return None; }
+                if param_bm.get(slot).copied().unwrap_or(false) { return None; }
+                if written.contains(&slot) { return None; }
+                let p = name.rfind('_')?;
+                name[p+1..].parse::<u32>().ok()?;
+                Some((name[..p].to_string(), slot))
+            }).collect()
         }).collect();
 
         // Default-slot table: (slot, placeholder) entries the call path overwrites.

@@ -1328,6 +1328,6 @@
   {"src": "def add_n(n):\n    def adder(x):\n        return x + n\n    return adder\nadd5 = add_n(5)\nadd10 = add_n(10)\nprint(add5(3))\nprint(add10(3))\nprint(add5(0))", "output": ["8", "13", "5"]},
   {"src": "def make():\n    x = 10\n    f = lambda: x\n    x = 20\n    return f()\nprint(make())", "output": ["20"]},
   {"src": "def outer():\n    n = 1\n    def inc():\n        return n\n    n = 100\n    return inc()\nprint(outer())", "output": ["100"]},
-  {"src": "def is_even(n):\n    return True if n == 0 else is_odd(n - 1)\ndef is_odd(n):\n    return False if n == 0 else is_even(n - 1)\nprint(is_even(4))", "output": [], "error": "is_odd"},
-  {"src": "def shout(n):\n    return n * 10\ndef outer():\n    def inner(x):\n        return shout(x)\n    return inner(3)\nprint(outer())", "output": [], "error": "shout"}
+  {"src": "def is_even(n):\n    return True if n == 0 else is_odd(n - 1)\ndef is_odd(n):\n    return False if n == 0 else is_even(n - 1)\nprint(is_even(4))", "output": ["True"]},
+  {"src": "def shout(n):\n    return n * 10\ndef outer():\n    def inner(x):\n        return shout(x)\n    return inner(3)\nprint(outer())", "output": ["30"]}
 ]

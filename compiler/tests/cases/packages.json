@@ -312,10 +312,47 @@
   },
 
   {
-    "_section": "Documented language limitations (regression pins, expected to fail until fixed)",
-    "_comment": "mutual recursion: inliner pulls both fns in but the parser can't bind forward refs",
-    "src": "from m import is_even\nprint(is_even(4))",
-    "modules": { "m": { "code": "def is_even(n):\n    return True if n == 0 else is_odd(n - 1)\n\ndef is_odd(n):\n    return False if n == 0 else is_even(n - 1)" } },
-    "error": "is_odd"
+    "_section": "Mutual recursion across spliced top-level defs",
+    "_comment": "is_even references is_odd defined later in the same code module; splicer stores siblings under higher SSA versions but each body records the version current at body-compile time. Late-binding via base-name fallback + module-level globals registration bridges the gap.",
+    "src": "from m import is_even\nprint(is_even(4))\nprint(is_even(7))",
+    "output": ["True", "False"],
+    "modules": { "m": { "code": "def is_even(n):\n    return True if n == 0 else is_odd(n - 1)\n\ndef is_odd(n):\n    return False if n == 0 else is_even(n - 1)" } }
+  },
+  {
+    "_comment": "calling the forward-defined sibling directly: same fix path",
+    "src": "from m import is_odd\nprint(is_odd(3))",
+    "output": ["True"],
+    "modules": { "m": { "code": "def is_even(n):\n    return True if n == 0 else is_odd(n - 1)\n\ndef is_odd(n):\n    return False if n == 0 else is_even(n - 1)" } }
+  },
+
+  {
+    "_section": "Transitive imports — root-only packages.json",
+    "_comment": "main → lib/a.py → lib/b.py via an alias declared only in root aliases. Sub-resolver shares state, so b_alias resolves correctly when lib/a.py asks for it.",
+    "src": "from a_mod import handler\nprint(handler(3))",
+    "output": ["b:6"],
+    "modules": {
+      "a_mod": { "code": "from b_alias import compute\n\ndef handler(n):\n    return 'b:' + str(compute(n))" },
+      "b_mod": { "code": "def compute(n):\n    return n * 2" }
+    },
+    "aliases": { "a_mod": "a_mod", "b_alias": "b_mod" }
+  },
+  {
+    "_comment": "diamond import: main → a → c, main → b → c. c's source must parse only once (the cache dedups), so its top-level side effect runs once and both paths see identical bindings.",
+    "src": "from a import f\nfrom b import g\nprint(f())\nprint(g())",
+    "output": ["a:42", "b:42"],
+    "modules": {
+      "a": { "code": "from c import K\n\ndef f():\n    return 'a:' + str(K)" },
+      "b": { "code": "from c import K\n\ndef g():\n    return 'b:' + str(K)" },
+      "c": { "code": "K = 42" }
+    }
+  },
+  {
+    "_comment": "cycle detection: a imports b, b imports a — surfaces a parse-time diagnostic instead of infinite recursion.",
+    "src": "from a import x\nprint(x)",
+    "modules": {
+      "a": { "code": "from b import y\nx = y" },
+      "b": { "code": "from a import x\ny = x" }
+    },
+    "error": "circular import"
   }
 ]

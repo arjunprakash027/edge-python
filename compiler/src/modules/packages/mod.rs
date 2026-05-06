@@ -41,6 +41,7 @@ pub type ExternFnPtr = Arc<dyn Fn(&mut HeapPool, &[Val]) -> Result<Val, VmErr> +
    result (template cache) and avoids tainting enclosing user functions with
    impurity. Set `pure = false` for anything that performs I/O, mutates
    external state, or reads non-deterministic input. */
+#[derive(Clone)]
 pub struct NativeBinding {
     pub name: String,
     pub func: ExternFnPtr,
@@ -63,7 +64,11 @@ impl NativeBinding {
    * Code: a `.py` source string — the parser will lex/parse it and splice its
      `def` definitions into the importing chunk.
    * Native: a list of pre-built bindings — the parser will register them in
-     the importing chunk's extern_table. */
+     the importing chunk's extern_table.
+
+   Cloneable so resolvers can cache results across diamond imports without
+   re-fetching. NativeBinding's `func` is an Arc, so the clone is shallow. */
+#[derive(Clone)]
 pub enum Resolved {
     Code(String),
     Native(Vec<NativeBinding>),
@@ -75,6 +80,23 @@ pub enum Resolved {
    implementations should ignore it. */
 pub trait Resolver {
     fn resolve(&mut self, spec: &str) -> Result<Resolved, String>;
+
+    /* Sub-resolver for the imported file's transitive imports. Called by the
+       splicer after `resolve(spec)` returned `Resolved::Code` so the inner
+       parser can resolve the imported file's own `from ...` statements.
+
+       The returned resolver should share import-map and module-cache state
+       with `self` (so a single root `packages.json` controls every transitive
+       resolution and diamond imports dedupe), and rescope its current
+       directory to the imported file's location so the file's own quoted
+       relative paths (`./helpers.py`) resolve correctly.
+
+       The default impl returns `NoopResolver`, which preserves the original
+       behavior of rejecting transitive imports. CLI / WASM hosts override
+       this to thread their resolver through. */
+    fn child(&self, _spec: &str) -> Box<dyn Resolver> {
+        Box::new(NoopResolver)
+    }
 }
 
 /* Default resolver: rejects every spec with a clear message. Used when the

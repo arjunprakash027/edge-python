@@ -1,6 +1,8 @@
 use crate::s;
 use super::*;
 
+use crate::alloc::string::ToString;
+
 impl<'a> VM<'a> {
     /* Dispatch every function-shaped opcode (Call, MakeFunction, builtins). */
     pub(crate) fn handle_function(
@@ -95,6 +97,22 @@ impl<'a> VM<'a> {
         }
 
         let val = self.heap.alloc(HeapObj::Func(global, defaults, captures))?;
+
+        // Module-level (entry-chunk) defs go into `globals` under their bare
+        // name so other top-level defs can resolve forward references at call
+        // time. Captures snapshot at MakeFunction time, so `def is_even`
+        // can't capture `is_odd` defined later in the same module — the
+        // call-site free-load fallback in exec_call reads globals to bridge
+        // that. Restricted to entry-chunk MakeFunction so nested defs
+        // (closures) don't pollute the global namespace.
+        if core::ptr::eq(chunk, self.chunk) {
+            let name_idx = self.functions[global].3 as usize;
+            if name_idx < chunk.names.len() {
+                let bare = ssa_strip(&chunk.names[name_idx]).to_string();
+                self.globals.insert(bare, val);
+            }
+        }
+
         self.push(val);
         Ok(())
     }
@@ -305,6 +323,45 @@ impl<'a> VM<'a> {
                     && !captured_set.contains(&bs)
                 {
                     fn_slots[bs] = v;
+                }
+            }
+
+            // Bare-name fallback for free-load slots: when the body's reference
+            // records `<base>_0` (the version current at body-compile time) but
+            // the caller now stores `<base>` under a higher SSA version, exact-
+            // name match misses. Find the caller's most-recent slot for the
+            // bare name and propagate. Required for mutual recursion across
+            // top-level defs in a code module — the splicer ends up storing
+            // sibling defs as `_1+` while each body still records `_0`. Skips
+            // capture-protected slots so closures keep their captured values.
+            let free_loads = &self.body_free_loads[fi];
+            for (bare, bs) in free_loads {
+                if captured_set.contains(bs) { continue; }
+                let mut latest_ver: i64 = -1;
+                let mut latest_v: Val = Val::undef();
+                for (si, sname) in chunk.names.iter().enumerate() {
+                    if let Some(p) = sname.rfind('_')
+                        && &sname[..p] == bare.as_str()
+                        && let Ok(v) = sname[p+1..].parse::<i64>()
+                        && si < slots.len()
+                        && !slots[si].is_undef()
+                        && v > latest_ver
+                    {
+                        latest_ver = v;
+                        latest_v = slots[si];
+                    }
+                }
+                if !latest_v.is_undef() {
+                    fn_slots[*bs] = latest_v;
+                    continue;
+                }
+                // Globals fallback: catches forward-ref module-level mutual
+                // recursion when the call re-enters through a sibling def
+                // (so the immediate caller's chunk isn't the entry chunk that
+                // stores the sibling). Top-level defs register themselves in
+                // globals at MakeFunction time for this lookup.
+                if let Some(&v) = self.globals.get(bare.as_str()) {
+                    fn_slots[*bs] = v;
                 }
             }
         }

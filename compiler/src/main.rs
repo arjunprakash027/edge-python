@@ -2,8 +2,10 @@ extern crate alloc;
 
 use compiler_lib::modules::{lexer::lex, parser::{Parser, Diagnostic}, vm::{VM, Limits}};
 use compiler_lib::modules::packages::{Resolver, Resolved, NativeBinding, load_wasm_bindings};
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::{env, fs, process::exit};
 use compiler_lib::s;
 
@@ -72,62 +74,111 @@ fn stream_print(s: &str) {
 /* Default Resolver for the `edge` CLI.
 
    Resolves three import shapes:
-     * Quoted relative path  `from "./utils.py" import x`
+     * Quoted relative path  `from "./utils.py" import x`  (against `current_dir`)
      * Quoted absolute path  `from "/srv/lib/x.wasm" import x`
      * Bare name             `from json import x`
-       — looked up in packages.json's `imports` map, then re-resolved as a path.
+       — looked up in the root packages.json's `imports` map, then re-resolved.
 
    Path-form imports infer module type from extension:
      *.py    →  Resolved::Code (the file's source)
      *.wasm  →  Resolved::Native (load_wasm_bindings, via wasmtime)
 
-   URL-form (`http://`, `https://`) imports are not supported by the CLI yet
-   — those need a fetcher + cache layer that's planned but not implemented.
+   URL-form (`http://`, `https://`) imports are fetched synchronously via
+   `ureq` + `rustls`. There is no on-disk cache yet; each compile re-fetches.
 
-   `base_dir` is the directory of the entry script so relative paths resolve
-   against the script's location, not the user's CWD. For `-c <code>`, it
-   defaults to the CWD. */
-struct CliResolver {
-    base_dir: PathBuf,
-    imports:  HashMap<String, String>,
+   Entry-point semantics: `root_dir` is the directory containing the entry
+   script's packages.json (or the script's own directory if no packages.json
+   exists). It is fixed for the whole compilation. `current_dir` is the
+   directory of the file currently being resolved — updated when the parser
+   descends into transitive imports so a deeper file's `./helper.py`
+   resolves against ITS directory. Any packages.json sitting next to a
+   sub-module is silently ignored: only the entry's import map is read,
+   matching how Cargo.toml at the workspace root drives all dependencies. */
+struct CliResolverState {
+    root_dir: PathBuf,
+    imports: HashMap<String, String>,
+    /* canonical spec → already-resolved module. Hits skip both the fetch
+       and the WASM loader on diamond imports (main → a → c, main → b → c
+       loads c once). Canonical = absolute path or full URL. */
+    cache: HashMap<String, Resolved>,
+    /* canonical specs whose parse is in flight. Adding via `child()`,
+       removing via the child resolver's `Drop`. Lets us catch a → b → a
+       cycles that would otherwise infinite-loop the splicer. */
+    in_flight: HashSet<String>,
 }
 
-impl Resolver for CliResolver {
-    fn resolve(&mut self, spec: &str) -> Result<Resolved, String> {
-        // 1. Alias lookup: bare names (no leading ./, /, http) hit packages.json.
-        let resolved_spec = if spec.starts_with("./") || spec.starts_with("../")
-            || spec.starts_with('/')
-            || spec.starts_with("http://") || spec.starts_with("https://")
-        {
-            spec.to_string()
-        } else {
-            self.imports.get(spec).cloned().ok_or_else(||
-                format!("module '{}' has no entry in packages.json's 'imports'", spec)
-            )?
-        };
+struct CliResolver {
+    state: Rc<RefCell<CliResolverState>>,
+    current_dir: PathBuf,
+    /* Set when this resolver was minted by `child()` for an in-flight
+       import: on Drop, the canonical spec is removed from `in_flight`. The
+       root resolver leaves this `None` (it's never the "current" parse
+       target — main script isn't routed through resolve()). */
+    in_flight_marker: Option<String>,
+}
 
-        // 2. Read bytes — either fetched over HTTP(S) or read from local FS.
-        //    URL fetches are blocking (matches the sync Resolver contract).
-        //    No cache layer yet — every compile re-fetches; intended for
-        //    development. For deploys, mirror to local files.
-        let bytes: Vec<u8> = if resolved_spec.starts_with("http://")
-            || resolved_spec.starts_with("https://")
-        {
-            fetch_url(&resolved_spec)
+impl Drop for CliResolver {
+    fn drop(&mut self) {
+        if let Some(canon) = self.in_flight_marker.take() {
+            self.state.borrow_mut().in_flight.remove(&canon);
+        }
+    }
+}
+
+impl CliResolver {
+    fn new(root_dir: PathBuf, imports: HashMap<String, String>) -> Self {
+        let current_dir = root_dir.clone();
+        Self {
+            state: Rc::new(RefCell::new(CliResolverState {
+                root_dir,
+                imports,
+                cache: HashMap::new(),
+                in_flight: HashSet::new(),
+            })),
+            current_dir,
+            in_flight_marker: None,
+        }
+    }
+
+    /* Canonicalize a user-facing spec to a stable key for cache / cycle
+       detection. URLs are kept verbatim. Paths become absolute, joining
+       relative paths against `current_dir` and bare names through the
+       root's `imports` map (which yields a path relative to `root_dir`). */
+    fn canonicalize(&self, spec: &str) -> Result<String, String> {
+        if spec.starts_with("http://") || spec.starts_with("https://") {
+            return Ok(spec.to_string());
+        }
+        let st = self.state.borrow();
+        if spec.starts_with("./") || spec.starts_with("../") {
+            let joined = self.current_dir.join(spec);
+            return Ok(absolute(&joined).to_string_lossy().into_owned());
+        }
+        if spec.starts_with('/') {
+            return Ok(spec.to_string());
+        }
+        // Bare name: look up in the root's import map. The mapped target may
+        // be a URL, an absolute path, or a path relative to root_dir.
+        let target = st.imports.get(spec).cloned().ok_or_else(|| format!(
+            "module '{}' has no entry in packages.json's 'imports'", spec))?;
+        if target.starts_with("http://") || target.starts_with("https://")
+            || target.starts_with('/') {
+            Ok(target)
+        } else {
+            let joined = st.root_dir.join(&target);
+            Ok(absolute(&joined).to_string_lossy().into_owned())
+        }
+    }
+
+    fn fetch_and_dispatch(&self, canonical: &str, spec: &str) -> Result<Resolved, String> {
+        let bytes: Vec<u8> = if canonical.starts_with("http://") || canonical.starts_with("https://") {
+            fetch_url(canonical)
                 .map_err(|e| format!("fetching module '{}': {}", spec, e))?
         } else {
-            let path = if resolved_spec.starts_with('/') {
-                PathBuf::from(&resolved_spec)
-            } else {
-                self.base_dir.join(&resolved_spec)
-            };
-            fs::read(&path).map_err(|e|
-                format!("cannot read module '{}' at {}: {}", spec, path.display(), e))?
+            fs::read(canonical).map_err(|e|
+                format!("cannot read module '{}' at {}: {}", spec, canonical, e))?
         };
 
-        // 3. Dispatch on URL/path extension. Strip query strings for the
-        //    extension check so `?v=1` doesn't break the match.
-        let path_part = resolved_spec.split('?').next().unwrap_or(&resolved_spec);
+        let path_part = canonical.split('?').next().unwrap_or(canonical);
         if path_part.ends_with(".py") {
             let src = String::from_utf8(bytes).map_err(|_|
                 format!("module '{}' is not valid UTF-8", spec))?;
@@ -141,6 +192,70 @@ impl Resolver for CliResolver {
                 "module '{}' has unrecognized extension; expected .py or .wasm", spec))
         }
     }
+}
+
+impl Resolver for CliResolver {
+    fn resolve(&mut self, spec: &str) -> Result<Resolved, String> {
+        let canonical = self.canonicalize(spec)?;
+
+        if self.state.borrow().in_flight.contains(&canonical) {
+            return Err(format!("circular import: '{}'", spec));
+        }
+        if let Some(r) = self.state.borrow().cache.get(&canonical) {
+            return Ok(r.clone());
+        }
+
+        let resolved = self.fetch_and_dispatch(&canonical, spec)?;
+        self.state.borrow_mut().cache.insert(canonical, resolved.clone());
+        Ok(resolved)
+    }
+
+    fn child(&self, spec: &str) -> Box<dyn Resolver> {
+        // Best-effort canonicalization. If it fails, the parent's `resolve`
+        // already surfaced the diagnostic; we still need to hand back a
+        // usable resolver so the splicer's parse step can run cleanly.
+        let canonical = self.canonicalize(spec).unwrap_or_default();
+        if !canonical.is_empty() {
+            self.state.borrow_mut().in_flight.insert(canonical.clone());
+        }
+        let new_dir = if canonical.starts_with("http://") || canonical.starts_with("https://") {
+            // URLs have no FS directory: keep current_dir so any local
+            // ./helpers.py inside the fetched module still resolves against
+            // the importer's directory (best we can do without a virtual FS).
+            self.current_dir.clone()
+        } else if canonical.is_empty() {
+            self.current_dir.clone()
+        } else {
+            Path::new(&canonical).parent().map(PathBuf::from).unwrap_or_else(||
+                self.current_dir.clone())
+        };
+        Box::new(CliResolver {
+            state: Rc::clone(&self.state),
+            current_dir: new_dir,
+            in_flight_marker: if canonical.is_empty() { None } else { Some(canonical) },
+        })
+    }
+}
+
+/* `std::path::absolute` is unstable on stable Rust; this is a minimal
+   replacement that joins with CWD when needed and resolves `.`/`..` segments
+   without touching the filesystem. Used only for canonicalization keys
+   (cache + cycle detection); the eventual file read uses the same string. */
+fn absolute(p: &Path) -> PathBuf {
+    let base = if p.is_absolute() {
+        PathBuf::new()
+    } else {
+        env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    };
+    let mut out = base;
+    for c in p.components() {
+        match c {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => { out.pop(); }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 /* Synchronous HTTP/HTTPS fetch via ureq. Returns the response body bytes,
@@ -206,14 +321,17 @@ fn run(path: &str, sandbox: bool, verbosity: usize, quiet: bool) -> Result<(), S
     };
     let diag_path = if is_file { Some(path) } else { None };
 
-    // Module resolution base = script's directory (or CWD for `-c <code>`).
-    let base_dir = if is_file {
+    // Root directory for resolution = entry script's directory (or CWD for
+    // `-c <code>`). This is where the only packages.json is read; sub-modules'
+    // packages.json files are silently ignored, mirroring how Cargo.toml at
+    // the workspace root drives all dependencies.
+    let root_dir = if is_file {
         Path::new(path).parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."))
     } else {
         env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
     };
-    let imports = read_packages_json(&base_dir);
-    let resolver = Box::new(CliResolver { base_dir, imports });
+    let imports = read_packages_json(&root_dir);
+    let resolver = Box::new(CliResolver::new(root_dir, imports));
 
     let (tokens, lex_errs) = lex(&src);
     let mut p = Parser::with_resolver(&src, tokens.into_iter(), resolver);

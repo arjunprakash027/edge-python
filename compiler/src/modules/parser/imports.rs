@@ -10,10 +10,10 @@ use crate::s;
 use super::Parser;
 use super::types::{OpCode, SSAChunk, Value, parse_string, ssa_strip};
 use crate::modules::lexer::{Token, TokenType, lex};
-use crate::modules::packages::{Resolved, NoopResolver, binding_to_extern};
+use crate::modules::packages::{Resolved, binding_to_extern};
 use crate::modules::fx::FxHashMap;
 
-use alloc::{boxed::Box, string::{String, ToString}, vec::Vec};
+use alloc::{string::{String, ToString}, vec::Vec};
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
@@ -153,7 +153,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 let (tokens, _) = lex(&src);
                 let owned = src.clone();
                 let (sub, errs) = Parser::with_resolver(
-                    &owned, tokens.into_iter(), Box::new(NoopResolver)
+                    &owned, tokens.into_iter(), self.resolver.child(spec)
                 ).parse();
                 if !errs.is_empty() {
                     self.error_at(span.0, span.1,
@@ -196,7 +196,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let (tokens, _) = lex(src);
         let owned = src.to_string();
         let (sub, errs) = Parser::with_resolver(
-            &owned, tokens.into_iter(), Box::new(NoopResolver)
+            &owned, tokens.into_iter(), self.resolver.child(spec)
         ).parse();
         if !errs.is_empty() {
             self.error_at(span.0, span.1,
@@ -228,8 +228,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
        supplied an alias, add a LoadName/StoreName pair under the alias.
 
        Operand remapping is opcode-driven (see `splice_top_level`). The sub
-       chunk is parsed with a `NoopResolver` so its own imports are rejected —
-       module-of-module is intentionally out of scope here. */
+       chunk is parsed with a child resolver derived from `self.resolver`, so
+       its transitive imports resolve through the same root `packages.json`
+       and module cache as the entry script. */
     fn inline_code_module(
         &mut self,
         spec: &str,
@@ -240,7 +241,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let (tokens, _lex_errs) = lex(src);
         let owned_src = src.to_string();
         let (sub_chunk, errs) = Parser::with_resolver(
-            &owned_src, tokens.into_iter(), Box::new(NoopResolver)
+            &owned_src, tokens.into_iter(), self.resolver.child(spec)
         ).parse();
         if !errs.is_empty() {
             self.error_at(span.0, span.1,

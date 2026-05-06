@@ -9,6 +9,6 @@ pub(super) use crate::modules::vm::{
     types::{BigInt, cold_depth, cold_type, cold_value, cold_runtime, eq_vals_with_heap, ffloor}
 };
 
-pub(super) use crate::modules::parser::{OpCode, SSAChunk};
+pub(super) use crate::modules::parser::{OpCode, SSAChunk, ssa_strip};
 pub(super) use alloc::{rc::Rc, string::String, vec, vec::Vec};
 pub(super) use core::cell::RefCell;

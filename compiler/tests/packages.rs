@@ -49,6 +49,11 @@ mod test {
         input: Vec<String>,
         #[serde(default)]
         modules: HashMap<String, ModuleDef>,
+        /* Stand-in for the entry script's `packages.json`. Bare-name imports
+           in any module (entry or transitively imported) resolve through this
+           map, mirroring the CLI's root-only packages.json semantics. */
+        #[serde(default)]
+        aliases: HashMap<String, String>,
         #[serde(default)]
         expect_externs: Option<usize>,
         #[serde(default)]
@@ -57,7 +62,10 @@ mod test {
         error_span_covers: Option<String>,
     }
 
-    fn build_resolver(modules: &HashMap<String, ModuleDef>) -> TestResolver {
+    fn build_resolver(
+        modules: &HashMap<String, ModuleDef>,
+        aliases: &HashMap<String, String>,
+    ) -> TestResolver {
         let mut r = TestResolver::new();
         for (spec, def) in modules {
             match def {
@@ -70,6 +78,9 @@ mod test {
                 }
                 ModuleDef::Code { code } => { r = r.with_code(spec, code); }
             }
+        }
+        for (name, target) in aliases {
+            r = r.with_alias(name, target);
         }
         r
     }
@@ -144,7 +155,7 @@ print(pick(False, 10, 99))
         ).expect("invalid JSON");
 
         for case in cases {
-            let resolver = Box::new(build_resolver(&case.modules));
+            let resolver = Box::new(build_resolver(&case.modules, &case.aliases));
             let (tokens, _lex_errs) = lex(&case.src);
             let parser = Parser::with_resolver(&case.src, tokens.into_iter(), resolver);
             let (chunk, parse_errs) = parser.parse();
