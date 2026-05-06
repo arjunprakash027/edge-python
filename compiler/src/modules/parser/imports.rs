@@ -11,9 +11,99 @@ use super::Parser;
 use super::types::{OpCode, SSAChunk, Value, parse_string, ssa_strip};
 use crate::modules::lexer::{Token, TokenType, lex};
 use crate::modules::packages::{Resolved, binding_to_extern};
-use crate::modules::fx::FxHashMap;
+use crate::modules::fx::{FxHashMap, FxHashSet};
 
 use alloc::{string::{String, ToString}, vec::Vec};
+use core::sync::atomic::{AtomicU32, Ordering};
+
+/* Process-wide unique splice ID. Each code-module splice grabs a fresh ID
+   and uses it to build a name prefix `__edge_mod_N__`. The prefix isolates
+   that module's top-level names in the parent chunk so two modules with
+   identically-named private helpers don't clobber each other (the `bound`
+   map and runtime `body_free_loads` resolution both key by bare name).
+   Atomic so cross-thread compilation in test harnesses stays consistent. */
+static SPLICE_ID: AtomicU32 = AtomicU32::new(0);
+
+#[inline]
+fn alloc_splice_prefix() -> String {
+    let id = SPLICE_ID.fetch_add(1, Ordering::Relaxed);
+    s!("__edge_mod_", int id, "__")
+}
+
+/* Bare names that must NOT be mangled even when stored at module top level.
+   `__name__` is owned by the parser via `enter_imported_scope`/`leave_imported_scope`
+   and by the VM init; mangling it would desync the parent's namespace.
+   Other dunders (`__doc__`, `__all__`, `__file__`, ...) follow Python's
+   reserved-attribute convention — leave them alone for the same reason
+   nothing inside the inliner should reinterpret host-reserved names. */
+#[inline]
+fn is_reserved_bare(bare: &str) -> bool {
+    bare.starts_with("__edge_mod_")
+        || (bare.starts_with("__") && bare.ends_with("__") && bare.len() >= 4)
+}
+
+/* Walk a sub-chunk's top-level instructions to collect every bare name it
+   stores (StoreName, Phi destinations, MakeFunction/MakeCoroutine name slots).
+   These are exactly the names that need a module-private prefix to avoid
+   colliding with same-named stores from sibling imports in the parent chunk.
+   Reserved names (see `is_reserved_bare`) and names already prefixed by a
+   nested splice are filtered out so mangling is idempotent across transitive
+   imports. */
+fn collect_module_stores(sub: &SSAChunk) -> FxHashSet<String> {
+    let mut stores: FxHashSet<String> = FxHashSet::default();
+    for ins in &sub.instructions {
+        let slot_idx = match ins.opcode {
+            OpCode::StoreName | OpCode::Phi => Some(ins.operand as usize),
+            OpCode::MakeFunction | OpCode::MakeCoroutine => sub.functions
+                .get(ins.operand as usize)
+                .map(|f| f.3 as usize),
+            _ => None,
+        };
+        let Some(s) = slot_idx else { continue };
+        let Some(name) = sub.names.get(s) else { continue };
+        let bare = ssa_strip(name);
+        if is_reserved_bare(bare) { continue; }
+        if !stores.contains(bare) { stores.insert(bare.to_string()); }
+    }
+    stores
+}
+
+/* Recursively rewrite SSA names in `chunk` and every nested function/class
+   body, prepending `prefix` to any name whose bare form is in `stores`.
+   The rewrite is purely string-level — slot indices, instruction operands,
+   `prev_slots`, `alias_groups`, and `phi_sources` all reference slots by
+   index and stay valid. `name_index` is rebuilt to keep deduping correct
+   if the chunk is later mutated (the splicer never re-pushes onto a sub
+   chunk, but rebuilding is cheap and prevents stale entries leaking out). */
+fn rewrite_chunk_names(chunk: &mut SSAChunk, stores: &FxHashSet<String>, prefix: &str) {
+    for n in chunk.names.iter_mut() {
+        let bare = ssa_strip(n);
+        if !stores.contains(bare) { continue; }
+        let suffix_start = bare.len();
+        let suffix = if suffix_start < n.len() { &n[suffix_start..] } else { "" };
+        *n = s!(str prefix, str bare, str suffix);
+    }
+    chunk.name_index.clear();
+    for (i, n) in chunk.names.iter().enumerate() {
+        chunk.name_index.insert(n.clone(), i as u16);
+    }
+    for (_, body, _, _) in chunk.functions.iter_mut() {
+        rewrite_chunk_names(body, stores, prefix);
+    }
+    for body in chunk.classes.iter_mut() {
+        rewrite_chunk_names(body, stores, prefix);
+    }
+}
+
+/* Mangle a parsed sub-chunk so its top-level names get a module-private
+   prefix. Returns the set of un-prefixed bare names that were mangled —
+   the call site uses this to know which user-requested imports correspond
+   to a mangled key in the splicer's `bound` map. */
+fn mangle_module(sub: &mut SSAChunk, prefix: &str) -> FxHashSet<String> {
+    let stores = collect_module_stores(sub);
+    rewrite_chunk_names(sub, &stores, prefix);
+    stores
+}
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
@@ -152,7 +242,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             Resolved::Code(src) => {
                 let (tokens, _) = lex(&src);
                 let owned = src.clone();
-                let (sub, errs) = Parser::with_resolver(
+                let (mut sub, errs) = Parser::with_resolver(
                     &owned, tokens.into_iter(), self.resolver.child(spec)
                 ).parse();
                 if !errs.is_empty() {
@@ -160,11 +250,24 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                         &s!("module '", str spec, "' parse error: ", str &errs[0].msg));
                     return;
                 }
-                /* Splice + drop `bound` (each name is already in scope under
-                   its bare form, which is what star-import wants). */
+                let prefix = alloc_splice_prefix();
+                let _exports = mangle_module(&mut sub, &prefix);
                 self.enter_imported_scope(spec);
-                let _ = self.splice_top_level(&sub);
+                let bound = self.splice_top_level(&sub);
                 self.leave_imported_scope();
+                /* Star-import: bind every export under its public bare name
+                   in the importer's scope. Mangling moved the splicer's stores
+                   under prefixed keys, so without this rebind the bare names
+                   would be invisible — defeating the point of `import *`. */
+                let mut entries: Vec<(String, u16)> = bound.into_iter().collect();
+                entries.sort_by(|a, b| a.0.cmp(&b.0));
+                for (k, slot) in &entries {
+                    let public = k.strip_prefix(prefix.as_str()).unwrap_or(k.as_str());
+                    self.chunk.emit(OpCode::LoadName, *slot);
+                    let v = self.increment_version(public);
+                    let s = self.push_ssa_name(public, v);
+                    self.chunk.emit(OpCode::StoreName, s);
+                }
             }
         }
     }
@@ -195,7 +298,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     fn emit_code_module(&mut self, spec: &str, span: (usize, usize), src: &str) {
         let (tokens, _) = lex(src);
         let owned = src.to_string();
-        let (sub, errs) = Parser::with_resolver(
+        let (mut sub, errs) = Parser::with_resolver(
             &owned, tokens.into_iter(), self.resolver.child(spec)
         ).parse();
         if !errs.is_empty() {
@@ -203,10 +306,20 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 &s!("module '", str spec, "' parse error: ", str &errs[0].msg));
             return;
         }
+        let prefix = alloc_splice_prefix();
+        let _exports = mangle_module(&mut sub, &prefix);
         self.enter_imported_scope(spec);
         let bound = self.splice_top_level(&sub);
         self.leave_imported_scope();
-        let mut entries: Vec<(String, u16)> = bound.into_iter().collect();
+        // Strip the splice prefix off each bound key to recover the public
+        // attribute name the module should expose. Reserved names (dunders)
+        // were never prefixed and pass through unchanged.
+        let mut entries: Vec<(String, u16)> = bound.into_iter().map(|(k, v)| {
+            let public = k.strip_prefix(prefix.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or(k);
+            (public, v)
+        }).collect();
         entries.sort_by(|a, b| a.0.cmp(&b.0));
         for (name, slot) in &entries {
             let name_const = self.chunk.push_const(Value::Str(name.clone()));
@@ -240,7 +353,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     ) {
         let (tokens, _lex_errs) = lex(src);
         let owned_src = src.to_string();
-        let (sub_chunk, errs) = Parser::with_resolver(
+        let (mut sub_chunk, errs) = Parser::with_resolver(
             &owned_src, tokens.into_iter(), self.resolver.child(spec)
         ).parse();
         if !errs.is_empty() {
@@ -249,22 +362,37 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             return;
         }
 
+        // Mangle the sub-chunk's top-level names with a unique prefix so its
+        // private helpers can't collide with sibling modules' helpers in the
+        // parent chunk's namespace. The exports set tells us which requested
+        // names need the prefix when looking up `bound`.
+        let prefix = alloc_splice_prefix();
+        let exports = mangle_module(&mut sub_chunk, &prefix);
+
         self.enter_imported_scope(spec);
         let bound = self.splice_top_level(&sub_chunk);
         self.leave_imported_scope();
 
         for (name, alias) in names {
-            let Some(&src_slot) = bound.get(name.as_str()) else {
+            // Reserved names (dunders) skip mangling and live under their bare
+            // form in `bound`; everything else lives under the mangled key.
+            let key: String = if exports.contains(name.as_str()) {
+                s!(str &prefix, str name)
+            } else {
+                name.clone()
+            };
+            let Some(&src_slot) = bound.get(key.as_str()) else {
                 self.error_at(span.0, span.1,
                     &s!("module '", str spec, "' has no export '", str name, "'"));
                 continue;
             };
-            if alias != name {
-                self.chunk.emit(OpCode::LoadName, src_slot);
-                let alias_ver = self.increment_version(alias);
-                let alias_slot = self.push_ssa_name(alias, alias_ver);
-                self.chunk.emit(OpCode::StoreName, alias_slot);
-            }
+            // Always rebind under the importer-visible name (bare or alias).
+            // Without mangling the splicer left bare names directly in scope;
+            // with mangling the bare name only exists if we emit this pair.
+            self.chunk.emit(OpCode::LoadName, src_slot);
+            let alias_ver = self.increment_version(alias);
+            let alias_slot = self.push_ssa_name(alias, alias_ver);
+            self.chunk.emit(OpCode::StoreName, alias_slot);
         }
     }
 

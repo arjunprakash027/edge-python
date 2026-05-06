@@ -354,5 +354,52 @@
       "b": { "code": "from a import x\ny = x" }
     },
     "error": "circular import"
+  },
+
+  {
+    "_section": "Module-private name isolation — same-named helpers across modules",
+    "_comment": "two modules each define a private `helper` of the same name. Pre-fix, the second splice's bare `helper` overwrote the first in the parent chunk, so f(2) returned 202 instead of 102. Per-module mangling gives each helper a unique parent slot.",
+    "src": "from a import f\nfrom b import g\nprint(f(2))\nprint(g(3))",
+    "output": ["102", "203"],
+    "modules": {
+      "a": { "code": "def helper(n):\n    return n + 100\n\ndef f(n):\n    return helper(n)" },
+      "b": { "code": "def helper(n):\n    return n + 200\n\ndef g(n):\n    return helper(n)" }
+    }
+  },
+  {
+    "_comment": "transitive: a depends on b; both define a same-named constant K used inside their respective helpers. Each module's helper must see its own K, not the sibling's.",
+    "src": "from a import describe\nfrom b import describe as describe_b\nprint(describe())\nprint(describe_b())",
+    "output": ["a:1", "b:2"],
+    "modules": {
+      "a": { "code": "K = 1\ndef describe():\n    return 'a:' + str(K)" },
+      "b": { "code": "K = 2\ndef describe():\n    return 'b:' + str(K)" }
+    }
+  },
+  {
+    "_comment": "same-name helper lives inside a class method body — recursion through `chunk.classes[*].body.names` must rewrite the free-load too.",
+    "src": "from a import Wrap\nfrom b import other\nprint(Wrap().run(5))\nprint(other(5))",
+    "output": ["a:7", "b:25"],
+    "modules": {
+      "a": { "code": "def helper(n):\n    return n + 2\n\nclass Wrap:\n    def run(self, n):\n        return 'a:' + str(helper(n))" },
+      "b": { "code": "def helper(n):\n    return n * 5\n\ndef other(n):\n    return 'b:' + str(helper(n))" }
+    }
+  },
+  {
+    "_comment": "import * from two modules that share a private helper name; the public exports rebind under bare names, helpers stay isolated.",
+    "src": "from a import *\nfrom b import *\nprint(f(2))\nprint(g(3))",
+    "output": ["102", "203"],
+    "modules": {
+      "a": { "code": "def helper(n):\n    return n + 100\n\ndef f(n):\n    return helper(n)" },
+      "b": { "code": "def helper(n):\n    return n + 200\n\ndef g(n):\n    return helper(n)" }
+    }
+  },
+  {
+    "_comment": "module-namespace import: `import a` builds a HeapObj::Module whose attrs use bare names (prefix is stripped at BuildModule time).",
+    "src": "import a\nimport b\nprint(a.f(2))\nprint(b.g(3))",
+    "output": ["102", "203"],
+    "modules": {
+      "a": { "code": "def helper(n):\n    return n + 100\n\ndef f(n):\n    return helper(n)" },
+      "b": { "code": "def helper(n):\n    return n + 200\n\ndef g(n):\n    return helper(n)" }
+    }
   }
 ]
