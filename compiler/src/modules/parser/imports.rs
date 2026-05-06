@@ -96,13 +96,11 @@ fn rewrite_chunk_names(chunk: &mut SSAChunk, stores: &FxHashSet<String>, prefix:
 }
 
 /* Mangle a parsed sub-chunk so its top-level names get a module-private
-   prefix. Returns the set of un-prefixed bare names that were mangled —
-   the call site uses this to know which user-requested imports correspond
-   to a mangled key in the splicer's `bound` map. */
-fn mangle_module(sub: &mut SSAChunk, prefix: &str) -> FxHashSet<String> {
+   prefix. Call sites recover the public name from a mangled key by
+   `strip_prefix(prefix)`, so no separate exports set is needed. */
+fn mangle_module(sub: &mut SSAChunk, prefix: &str) {
     let stores = collect_module_stores(sub);
     rewrite_chunk_names(sub, &stores, prefix);
-    stores
 }
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
@@ -257,7 +255,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     return;
                 }
                 let prefix = alloc_splice_prefix();
-                let _exports = mangle_module(&mut sub, &prefix);
+                mangle_module(&mut sub, &prefix);
                 self.enter_imported_scope(spec);
                 let bound = self.splice_top_level(&sub);
                 self.leave_imported_scope();
@@ -319,7 +317,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             return;
         }
         let prefix = alloc_splice_prefix();
-        let _exports = mangle_module(&mut sub, &prefix);
+        mangle_module(&mut sub, &prefix);
         self.enter_imported_scope(spec);
         let bound = self.splice_top_level(&sub);
         self.leave_imported_scope();
@@ -382,24 +380,24 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
         // Mangle the sub-chunk's top-level names with a unique prefix so its
         // private helpers can't collide with sibling modules' helpers in the
-        // parent chunk's namespace. The exports set tells us which requested
-        // names need the prefix when looking up `bound`.
+        // parent chunk's namespace.
         let prefix = alloc_splice_prefix();
-        let exports = mangle_module(&mut sub_chunk, &prefix);
+        mangle_module(&mut sub_chunk, &prefix);
 
         self.enter_imported_scope(spec);
         let bound = self.splice_top_level(&sub_chunk);
         self.leave_imported_scope();
 
+        // Re-key bound by the public (un-prefixed) name so user-requested
+        // imports can be looked up directly. Reserved names (dunders) were
+        // never prefixed and pass through unchanged.
+        let lookup: FxHashMap<String, u16> = bound.into_iter().map(|(k, slot)| {
+            let public = k.strip_prefix(prefix.as_str()).map(String::from).unwrap_or(k);
+            (public, slot)
+        }).collect();
+
         for (name, alias) in names {
-            // Reserved names (dunders) skip mangling and live under their bare
-            // form in `bound`; everything else lives under the mangled key.
-            let key: String = if exports.contains(name.as_str()) {
-                s!(str &prefix, str name)
-            } else {
-                name.clone()
-            };
-            let Some(&src_slot) = bound.get(key.as_str()) else {
+            let Some(&src_slot) = lookup.get(name.as_str()) else {
                 self.error_at(span.0, span.1,
                     &s!("module '", str spec, "' has no export '", str name, "'"));
                 continue;

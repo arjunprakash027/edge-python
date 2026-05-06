@@ -385,12 +385,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     self.chunk.emit(OpCode::StoreItem, 0);
                     false
                 } else if let Some(op) = self.peek().and_then(|t| Self::augmented_op(&t)) {
-                    self.advance();
-                    self.chunk.emit(OpCode::Dup2, 0);
-                    self.chunk.emit(OpCode::GetItem, 0);
-                    self.expr();
-                    self.chunk.emit(op, 0);
-                    self.chunk.emit(OpCode::StoreItem, 0);
+                    self.emit_augmented_subscript(op);
                     false
                 } else {
                     self.chunk.emit(OpCode::GetItem, 0);
@@ -448,12 +443,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                             self.chunk.emit(OpCode::StoreItem, 0);
                             return false;
                         } else if let Some(op) = self.peek().and_then(|t| Self::augmented_op(&t)) {
-                            self.advance();
-                            self.chunk.emit(OpCode::Dup2, 0);
-                            self.chunk.emit(OpCode::GetItem, 0);
-                            self.expr();
-                            self.chunk.emit(op, 0);
-                            self.chunk.emit(OpCode::StoreItem, 0);
+                            self.emit_augmented_subscript(op);
                             return false;
                         } else {
                             self.chunk.emit(OpCode::GetItem, 0);
@@ -529,6 +519,18 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 true
             }
         }
+    }
+
+    /* `x[i] op= rhs` lowering: container and index are already on the stack;
+       Dup2 keeps them for the StoreItem after we compute `<x[i]> op rhs`.
+       Used by both `name[i] op= ...` and `name.attr[i] op= ...`. */
+    fn emit_augmented_subscript(&mut self, op: OpCode) {
+        self.advance();
+        self.chunk.emit(OpCode::Dup2, 0);
+        self.chunk.emit(OpCode::GetItem, 0);
+        self.expr();
+        self.chunk.emit(op, 0);
+        self.chunk.emit(OpCode::StoreItem, 0);
     }
 
     pub(super) fn augmented_op(tok: &TokenType) -> Option<OpCode> {

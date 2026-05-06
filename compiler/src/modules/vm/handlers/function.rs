@@ -371,10 +371,7 @@ impl<'a> VM<'a> {
         if name_idx != u16::MAX
             && let Some(raw_name) = chunk.names.get(name_idx as usize)
         {
-            let base = raw_name.rfind('_')
-                .filter(|&p| raw_name[p+1..].parse::<u32>().is_ok())
-                .map(|p| &raw_name[..p])
-                .unwrap_or(raw_name.as_str());
+            let base = ssa_strip(raw_name);
             let versioned = s!(str base, "_0");
             let body_map = &self.body_maps[fi];
             if let Some(&slot) = body_map.get(versioned.as_str())

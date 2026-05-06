@@ -326,6 +326,11 @@ impl<'a> VM<'a> {
         // Pre-compute nonlocal resolution: (canonical_body_slot, canonical_body_slot).
         vm.nonlocal_tables = vm.functions.iter().map(|(_, body, _, _)| {
             body.nonlocals.iter().filter_map(|base| {
+                // Must skip names that lack a `_<digits>` SSA suffix entirely:
+                // body.names also holds the bare `Nonlocal` opcode operand,
+                // and that slot isn't the variable's canonical SSA root. So
+                // we explicitly require the suffix-bearing form here, not
+                // ssa_strip's "fall through to bare on missing suffix" shape.
                 let canon = body.names.iter().enumerate()
                     .find(|(_, n)| n.rfind('_').map(|p| &n[..p]) == Some(base.as_str()))
                     .map(|(i, _)| body.alias_groups.get(i).and_then(|g| g.first().copied()).unwrap_or(i as u16) as usize)?;
@@ -339,7 +344,7 @@ impl<'a> VM<'a> {
             let param_names: crate::modules::fx::FxHashSet<&str> = params.iter()
                 .map(|p| p.trim_start_matches('*')).collect();
             body.names.iter().any(|n| {
-                let base = n.rfind('_').map(|p| &n[..p]).unwrap_or(n.as_str());
+                let base = ssa_strip(n);
                 !param_names.contains(base) && !vm.globals.contains_key(n)
             })
         }).collect();
@@ -938,7 +943,7 @@ impl<'a> VM<'a> {
                     if let Some(&v) = class_slots.get(i)
                         && !v.is_undef() && v.is_heap()
                         && matches!(self.heap.get(v), HeapObj::Func(..)) {
-                            let base = name.rfind('_').map(|p| &name[..p]).unwrap_or(name);
+                            let base = ssa_strip(name);
                             if !methods.iter().any(|(n, _)| n == base) {
                                 methods.push((base.to_string(), v));
                             }
@@ -946,7 +951,7 @@ impl<'a> VM<'a> {
                 }
                 let next_op = cache.fused_ref().get(*ip).map(|i| i.operand).unwrap_or(0);
                 let name_str = chunk.names.get(next_op as usize)
-                    .map(|n| n.rfind('_').map(|p| &n[..p]).unwrap_or(n))
+                    .map(|n| ssa_strip(n))
                     .unwrap_or("?").to_string();
                 let cls = self.heap.alloc(HeapObj::Class(name_str, methods))?;
                 self.push(cls);

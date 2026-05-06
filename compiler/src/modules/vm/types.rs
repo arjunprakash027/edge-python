@@ -617,6 +617,44 @@ impl DictMap {
     }
 }
 
+/* Visit every `Val` field reachable from `obj` exactly once. Single source
+   of truth for the GC's traversal schema — adding a new HeapObj variant only
+   requires adding an arm here, not editing 6+ scattered match cascades. */
+pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
+    match obj {
+        HeapObj::Tuple(items)         => for &v in items { f(v); },
+        HeapObj::Slice(a, b, c)       => { f(*a); f(*b); f(*c); }
+        HeapObj::List(rc)             => for &v in rc.borrow().iter() { f(v); },
+        HeapObj::Dict(rc)             => for (k, v) in rc.borrow().iter() { f(k); f(v); },
+        HeapObj::Set(rc)              => for &v in rc.borrow().iter() { f(v); },
+        HeapObj::BoundMethod(recv, _) => f(*recv),
+        HeapObj::Class(_, methods)    => for (_, v) in methods { f(*v); },
+        HeapObj::BoundUserMethod(r, fu) => { f(*r); f(*fu); }
+        HeapObj::Instance(cls, attrs) => {
+            f(*cls);
+            for (k, v) in attrs.borrow().iter() { f(k); f(v); }
+        }
+        HeapObj::Coroutine(_, slots, stack, _, iters) => {
+            for &v in slots { f(v); }
+            for &v in stack { f(v); }
+            for fr in iters { match fr {
+                IterFrame::Seq { items, .. } => for &v in items { f(v); },
+                IterFrame::Coroutine(v) => f(*v),
+                IterFrame::Range { .. } => {}
+            }}
+        }
+        HeapObj::Func(_, defaults, captures) => {
+            for &v in defaults { f(v); }
+            for &(_, v) in captures { f(v); }
+        }
+        HeapObj::Module(_, attrs) => for (_, v) in attrs { f(*v); },
+        // Variants without Val payloads (Str, BigInt, Type, NativeFn, Range,
+        // Extern) — terminal, nothing to trace.
+        HeapObj::Str(_) | HeapObj::BigInt(_) | HeapObj::Type(_)
+        | HeapObj::NativeFn(_) | HeapObj::Range(..) | HeapObj::Extern(_) => {}
+    }
+}
+
 /* Arena allocator with mark-sweep GC and string interning (≤128 bytes). */
 struct HeapSlot {
     obj: Option<HeapObj>,
@@ -679,59 +717,10 @@ impl HeapPool {
             let idx = idx as usize;
             if self.slots[idx].marked { continue; }
             self.slots[idx].marked = true;
-            match &self.slots[idx].obj {
-                Some(HeapObj::Tuple(items)) => {
-                    for v in items { if v.is_heap() { worklist.push(v.as_heap()); } }
-                }
-                Some(HeapObj::Slice(a,b,c)) => { for v in [*a,*b,*c] { if v.is_heap() { worklist.push(v.as_heap()); } } }
-                Some(HeapObj::List(rc)) => worklist.extend(rc.borrow().iter().filter(|v| v.is_heap()).map(|v| v.as_heap())),
-                Some(HeapObj::Dict(rc)) => worklist.extend(rc.borrow().entries.iter().flat_map(|(k,v)| [*k,*v]).filter(|v| v.is_heap()).map(|v| v.as_heap())),
-                Some(HeapObj::Set(rc)) => {
-                    for v in rc.borrow().iter() {
-                        if v.is_heap() {
-                            worklist.push(v.as_heap());
-                        }
-                    }
-                }
-                Some(HeapObj::BoundMethod(recv, _))
-                    if recv.is_heap() => { worklist.push(recv.as_heap()); }
-                Some(HeapObj::Class(_, methods)) => {
-                    for (_, v) in methods { if v.is_heap() { worklist.push(v.as_heap()); } }
-                }
-                Some(HeapObj::BoundUserMethod(recv, func)) => {
-                    if recv.is_heap() { worklist.push(recv.as_heap()); }
-                    if func.is_heap() { worklist.push(func.as_heap()); }
-                }
-                Some(HeapObj::Instance(cls, attrs)) => {
-                    if cls.is_heap() { worklist.push(cls.as_heap()); }
-                    for (k, v) in attrs.borrow().iter() {
-                        if k.is_heap() { worklist.push(k.as_heap()); }
-                        if v.is_heap() { worklist.push(v.as_heap()); }
-                    }
-                }
-                Some(HeapObj::Coroutine(_, slots, stack, _, iters)) => {
-                    for v in slots.iter() { if v.is_heap() { worklist.push(v.as_heap()); } }
-                    for v in stack { if v.is_heap() { worklist.push(v.as_heap()); } }
-                    for f in iters {
-                        match f {
-                            IterFrame::Seq { items, .. } => {
-                                for v in items { if v.is_heap() { worklist.push(v.as_heap()); } }
-                            }
-                            IterFrame::Coroutine(v) => {
-                                if v.is_heap() { worklist.push(v.as_heap()); }
-                            }
-                            IterFrame::Range { .. } => {}
-                        }
-                    }
-                }
-                Some(HeapObj::Func(_, defaults, captures)) => {
-                    for v in defaults { if v.is_heap() { worklist.push(v.as_heap()); } }
-                    for (_, v) in captures { if v.is_heap() { worklist.push(v.as_heap()); } }
-                }
-                Some(HeapObj::Module(_, attrs)) => {
-                    for (_, v) in attrs { if v.is_heap() { worklist.push(v.as_heap()); } }
-                }
-                _ => {}
+            if let Some(obj) = &self.slots[idx].obj {
+                for_each_val(obj, |val| {
+                    if val.is_heap() { worklist.push(val.as_heap()); }
+                });
             }
         }
     }

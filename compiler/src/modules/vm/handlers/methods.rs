@@ -47,6 +47,33 @@ fn dict_entries(vm: &VM, recv: Val) -> Result<Vec<(Val, Val)>, VmErr> {
     }
 }
 
+/* Borrow the list inside `recv` mutably for the duration of `f`. The closure
+   can't touch `vm` (it's borrowed by `heap.get_mut`), so any subsequent push
+   has to happen after the helper returns. Replaces an 8× repeated
+   `match heap.get_mut { HeapObj::List(rc) => ..., _ => err }` cascade in the
+   list-mutating method bodies. */
+#[inline]
+fn list_mut<F, R>(vm: &mut VM, recv: Val, err: &'static str, f: F) -> Result<R, VmErr>
+where F: FnOnce(&mut Vec<Val>) -> Result<R, VmErr>
+{
+    match vm.heap.get_mut(recv) {
+        HeapObj::List(rc) => f(&mut rc.borrow_mut()),
+        _ => Err(cold_type(err)),
+    }
+}
+
+/* Same shape as `list_mut` for dict receivers. Used by the three mutating
+   dict methods (update, pop, setdefault). */
+#[inline]
+fn dict_mut<F, R>(vm: &mut VM, recv: Val, err: &'static str, f: F) -> Result<R, VmErr>
+where F: FnOnce(&mut DictMap) -> Result<R, VmErr>
+{
+    match vm.heap.get_mut(recv) {
+        HeapObj::Dict(rc) => f(&mut rc.borrow_mut()),
+        _ => Err(cold_type(err)),
+    }
+}
+
 #[inline]
 fn capitalize_first(s: &str) -> String {
     let mut cs = s.chars();
@@ -122,9 +149,13 @@ impl<'a> VM<'a> {
     }
 }
 
-/* Generates the BuiltinMethodId enum, name lookup, and dispatcher in
-   one go. Each row: (Variant, "name", category, |vm, recv, pos| body).
-   Category `mutating` auto-emits mark_impure() on success. */
+/* Generates the BuiltinMethodId enum, name lookup, dispatcher, AND the
+   (type, attr) → BuiltinMethodId resolver in one go. Each row:
+   (Variant, "name", category, |vm, recv, pos| body).
+   Category `mutating` auto-emits mark_impure() on success.
+   Receiver type is derived from the variant prefix: Str* → "str",
+   List* → "list", Dict* → "dict". Add new prefixes to `lookup_method` if
+   you introduce methods on a new receiver type. */
 macro_rules! define_methods {
     ( $( ($variant:ident, $name:literal, $cat:ident, |$vm:ident, $recv:ident, $pos:ident| $body:block) ),* $(,)? ) => {
 
@@ -158,6 +189,23 @@ macro_rules! define_methods {
                 ),*
             }
         }
+
+        /* Single source of truth — derived from the entries above. Off the
+           hot path: CallMethod fusion bypasses LoadAttr+Call entirely. */
+        pub fn lookup_method(ty: &str, attr: &str) -> Option<BuiltinMethodId> {
+            let prefix = match ty {
+                "str"  => "Str",
+                "list" => "List",
+                "dict" => "Dict",
+                _ => return None,
+            };
+            $(
+                if attr == $name && stringify!($variant).starts_with(prefix) {
+                    return Some(BuiltinMethodId::$variant);
+                }
+            )*
+            None
+        }
     };
 
     (@maybe_impure mutating, $vm:ident, $r:ident) => {{
@@ -165,52 +213,6 @@ macro_rules! define_methods {
         $r
     }};
     (@maybe_impure pure, $vm:ident, $r:ident) => { $r };
-}
-
-/* (type, attr) → BuiltinMethodId. Linear scan over ~37 entries.
-   Off the hot path: CallMethod fusion bypasses LoadAttr+Call entirely. */
-pub fn lookup_method(ty: &str, attr: &str) -> Option<BuiltinMethodId> {
-    use BuiltinMethodId::*;
-    Some(match (ty, attr) {
-        ("dict", "get")        => DictGet,
-        ("dict", "items")      => DictItems,
-        ("dict", "keys")       => DictKeys,
-        ("dict", "pop")        => DictPop,
-        ("dict", "setdefault") => DictSetDefault,
-        ("dict", "update")     => DictUpdate,
-        ("dict", "values")     => DictValues,
-        ("list", "append")     => ListAppend,
-        ("list", "clear")      => ListClear,
-        ("list", "copy")       => ListCopy,
-        ("list", "count")      => ListCount,
-        ("list", "extend")     => ListExtend,
-        ("list", "index")      => ListIndex,
-        ("list", "insert")     => ListInsert,
-        ("list", "pop")        => ListPop,
-        ("list", "remove")     => ListRemove,
-        ("list", "reverse")    => ListReverse,
-        ("list", "sort")       => ListSort,
-        ("str", "capitalize")  => StrCapitalize,
-        ("str", "center")      => StrCenter,
-        ("str", "count")       => StrCount,
-        ("str", "endswith")    => StrEndswith,
-        ("str", "find")        => StrFind,
-        ("str", "isalnum")     => StrIsAlnum,
-        ("str", "isalpha")     => StrIsAlpha,
-        ("str", "isdigit")     => StrIsDigit,
-        ("str", "join")        => StrJoin,
-        ("str", "lower")       => StrLower,
-        ("str", "lstrip")      => StrLstrip,
-        ("str", "replace")     => StrReplace,
-        ("str", "rstrip")      => StrRstrip,
-        ("str", "split")       => StrSplit,
-        ("str", "startswith")  => StrStartswith,
-        ("str", "strip")       => StrStrip,
-        ("str", "title")       => StrTitle,
-        ("str", "upper")       => StrUpper,
-        ("str", "zfill")       => StrZfill,
-        _ => return None,
-    })
 }
 
 define_methods! {
@@ -425,26 +427,23 @@ define_methods! {
     // list: mutating.
     (ListAppend, "append", mutating, |vm, recv, pos| {
         check_arity(&pos, 1, 1, "append takes 1 argument")?;
-        match vm.heap.get_mut(recv) {
-            HeapObj::List(rc) => rc.borrow_mut().push(pos[0]),
-            _ => return Err(cold_type("append: receiver is not a list")),
-        }
+        list_mut(vm, recv, "append: receiver is not a list", |list| {
+            list.push(pos[0]); Ok(())
+        })?;
         vm.push(Val::none()); Ok(())
     }),
     (ListClear, "clear", mutating, |vm, recv, pos| {
         check_arity(&pos, 0, 0, "clear takes no arguments")?;
-        match vm.heap.get_mut(recv) {
-            HeapObj::List(rc) => rc.borrow_mut().clear(),
-            _ => return Err(cold_type("clear: receiver is not a list")),
-        }
+        list_mut(vm, recv, "clear: receiver is not a list", |list| {
+            list.clear(); Ok(())
+        })?;
         vm.push(Val::none()); Ok(())
     }),
     (ListReverse, "reverse", mutating, |vm, recv, pos| {
         check_arity(&pos, 0, 0, "reverse takes no arguments")?;
-        match vm.heap.get_mut(recv) {
-            HeapObj::List(rc) => rc.borrow_mut().reverse(),
-            _ => return Err(cold_type("reverse: receiver is not a list")),
-        }
+        list_mut(vm, recv, "reverse: receiver is not a list", |list| {
+            list.reverse(); Ok(())
+        })?;
         vm.push(Val::none()); Ok(())
     }),
     (ListExtend, "extend", mutating, |vm, recv, pos| {
@@ -458,28 +457,24 @@ define_methods! {
         } else {
             return Err(cold_type("extend() argument must be iterable"));
         };
-        match vm.heap.get_mut(recv) {
-            HeapObj::List(rc) => rc.borrow_mut().extend_from_slice(&items),
-            _ => return Err(cold_type("extend: receiver is not a list")),
-        }
+        list_mut(vm, recv, "extend: receiver is not a list", |list| {
+            list.extend_from_slice(&items); Ok(())
+        })?;
         vm.push(Val::none()); Ok(())
     }),
     (ListInsert, "insert", mutating, |vm, recv, pos| {
         check_arity(&pos, 2, 2, "insert takes 2 arguments")?;
         if !pos[0].is_int() { return Err(cold_type("list indices must be integers")); }
-        match vm.heap.get_mut(recv) {
-            HeapObj::List(rc) => {
-                let mut b = rc.borrow_mut();
-                let i = pos[0].as_int();
-                let ui = if i < 0 {
-                    (b.len() as i64 + i).max(0) as usize
-                } else {
-                    (i as usize).min(b.len())
-                };
-                b.insert(ui, pos[1]);
-            }
-            _ => return Err(cold_type("insert: receiver is not a list")),
-        }
+        list_mut(vm, recv, "insert: receiver is not a list", |list| {
+            let i = pos[0].as_int();
+            let ui = if i < 0 {
+                (list.len() as i64 + i).max(0) as usize
+            } else {
+                (i as usize).min(list.len())
+            };
+            list.insert(ui, pos[1]);
+            Ok(())
+        })?;
         vm.push(Val::none()); Ok(())
     }),
     (ListRemove, "remove", mutating, |vm, recv, pos| {
@@ -488,40 +483,31 @@ define_methods! {
         let idx = items.iter()
             .position(|&v| eq_vals_with_heap(v, pos[0], &vm.heap))
             .ok_or(cold_value("list.remove: value not found"))?;
-        match vm.heap.get_mut(recv) {
-            HeapObj::List(rc) => { rc.borrow_mut().remove(idx); }
-            _ => return Err(cold_type("remove: receiver is not a list")),
-        }
+        list_mut(vm, recv, "remove: receiver is not a list", |list| {
+            list.remove(idx); Ok(())
+        })?;
         vm.push(Val::none()); Ok(())
     }),
     (ListPop, "pop", mutating, |vm, recv, pos| {
         check_arity(&pos, 0, 1, "pop takes 0 or 1 arguments")?;
-        let popped = match vm.heap.get_mut(recv) {
-            HeapObj::List(rc) => {
-                let mut b = rc.borrow_mut();
-                if b.is_empty() { return Err(cold_value("pop from empty list")); }
-                if pos.is_empty() {
-                    b.pop().unwrap()
-                } else {
-                    if !pos[0].is_int() { return Err(cold_type("list indices must be integers")); }
-                    let i = pos[0].as_int();
-                    let ui = if i < 0 { (b.len() as i64 + i) as usize } else { i as usize };
-                    if ui >= b.len() { return Err(cold_value("pop index out of range")); }
-                    b.remove(ui)
-                }
-            }
-            _ => return Err(cold_type("pop: receiver is not a list")),
-        };
+        let popped = list_mut(vm, recv, "pop: receiver is not a list", |list| {
+            if list.is_empty() { return Err(cold_value("pop from empty list")); }
+            if pos.is_empty() { return Ok(list.pop().unwrap()); }
+            if !pos[0].is_int() { return Err(cold_type("list indices must be integers")); }
+            let i = pos[0].as_int();
+            let ui = if i < 0 { (list.len() as i64 + i) as usize } else { i as usize };
+            if ui >= list.len() { return Err(cold_value("pop index out of range")); }
+            Ok(list.remove(ui))
+        })?;
         vm.push(popped); Ok(())
     }),
     (ListSort, "sort", mutating, |vm, recv, pos| {
         check_arity(&pos, 0, 0, "sort takes no arguments")?;
         let mut sorted = list_clone(vm, recv)?;
         vm.sort_by_lt(&mut sorted)?;
-        match vm.heap.get_mut(recv) {
-            HeapObj::List(rc) => *rc.borrow_mut() = sorted,
-            _ => return Err(cold_type("sort: receiver is not a list")),
-        }
+        list_mut(vm, recv, "sort: receiver is not a list", |list| {
+            *list = sorted; Ok(())
+        })?;
         vm.push(Val::none()); Ok(())
     }),
 
@@ -563,49 +549,30 @@ define_methods! {
             HeapObj::Dict(rc) => rc.borrow().entries.clone(),
             _ => return Err(cold_type("update() argument must be a dict")),
         };
-        match vm.heap.get_mut(recv) {
-            HeapObj::Dict(rc) => {
-                let mut b = rc.borrow_mut();
-                for (k, v) in pairs { b.insert(k, v); }
-            }
-            _ => return Err(cold_type("update: receiver is not a dict")),
-        }
+        dict_mut(vm, recv, "update: receiver is not a dict", |dict| {
+            for (k, v) in pairs { dict.insert(k, v); }
+            Ok(())
+        })?;
         vm.push(Val::none()); Ok(())
     }),
     (DictPop, "pop", mutating, |vm, recv, pos| {
         check_arity(&pos, 1, 2, "pop takes 1 or 2 arguments")?;
         let default = if pos.len() == 2 { Some(pos[1]) } else { None };
-        let result = match vm.heap.get_mut(recv) {
-            HeapObj::Dict(rc) => {
-                let mut b = rc.borrow_mut();
-                if let Some(val) = b.remove(&pos[0]) {
-                    val
-                } else {
-                    match default {
-                        Some(d) => d,
-                        None => return Err(cold_value("key not found")),
-                    }
-                }
+        let result = dict_mut(vm, recv, "pop: receiver is not a dict", |dict| {
+            match dict.remove(&pos[0]) {
+                Some(val) => Ok(val),
+                None => default.ok_or(cold_value("key not found")),
             }
-            _ => return Err(cold_type("pop: receiver is not a dict")),
-        };
+        })?;
         vm.push(result); Ok(())
     }),
     (DictSetDefault, "setdefault", mutating, |vm, recv, pos| {
         check_arity(&pos, 1, 2, "setdefault takes 1 or 2 arguments")?;
         let default = if pos.len() > 1 { pos[1] } else { Val::none() };
-        let result = match vm.heap.get_mut(recv) {
-            HeapObj::Dict(rc) => {
-                let already = rc.borrow().get(&pos[0]).copied();
-                if let Some(v) = already {
-                    v
-                } else {
-                    rc.borrow_mut().insert(pos[0], default);
-                    default
-                }
-            }
-            _ => return Err(cold_type("setdefault: receiver is not a dict")),
-        };
+        let result = dict_mut(vm, recv, "setdefault: receiver is not a dict", |dict| {
+            if let Some(v) = dict.get(&pos[0]).copied() { Ok(v) }
+            else { dict.insert(pos[0], default); Ok(default) }
+        })?;
         vm.push(result); Ok(())
     }),
 }
