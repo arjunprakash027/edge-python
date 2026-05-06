@@ -401,5 +401,13 @@
       "a": { "code": "def helper(n):\n    return n + 100\n\ndef f(n):\n    return helper(n)" },
       "b": { "code": "def helper(n):\n    return n + 200\n\ndef g(n):\n    return helper(n)" }
     }
+  },
+
+  {
+    "_section": "Lex errors from imported modules surface to the user",
+    "_comment": "Pre-fix, lex errors in imported source were silently dropped (`let (tokens, _lex_errs) = lex(src)`), so an unterminated string in a module produced confusing downstream parse errors instead of the actual diagnostic.",
+    "src": "from m import f\nprint(f())",
+    "modules": { "m": { "code": "def f():\n    return 'oops" } },
+    "error": "unterminated string literal"
   }
 ]

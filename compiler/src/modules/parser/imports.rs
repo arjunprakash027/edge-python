@@ -8,7 +8,7 @@
 use crate::s;
 
 use super::Parser;
-use super::types::{OpCode, SSAChunk, Value, parse_string, ssa_strip};
+use super::types::{Diagnostic, OpCode, SSAChunk, Value, parse_string, ssa_strip};
 use crate::modules::lexer::{Token, TokenType, lex};
 use crate::modules::packages::{Resolved, binding_to_extern};
 use crate::modules::fx::{FxHashMap, FxHashSet};
@@ -240,11 +240,17 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 }
             }
             Resolved::Code(src) => {
-                let (tokens, _) = lex(&src);
+                let (tokens, lex_errs) = lex(&src);
                 let owned = src.clone();
-                let (mut sub, errs) = Parser::with_resolver(
+                let mut sub_parser = Parser::with_resolver(
                     &owned, tokens.into_iter(), self.resolver.child(spec)
-                ).parse();
+                );
+                for e in lex_errs {
+                    sub_parser.errors.push(Diagnostic {
+                        start: e.start, end: e.end, msg: e.msg.to_string(),
+                    });
+                }
+                let (mut sub, errs) = sub_parser.parse();
                 if !errs.is_empty() {
                     self.error_at(span.0, span.1,
                         &s!("module '", str spec, "' parse error: ", str &errs[0].msg));
@@ -296,11 +302,17 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
        names become available locally), then read each top-level binding
        back via LoadName and weave them into a `HeapObj::Module`. */
     fn emit_code_module(&mut self, spec: &str, span: (usize, usize), src: &str) {
-        let (tokens, _) = lex(src);
+        let (tokens, lex_errs) = lex(src);
         let owned = src.to_string();
-        let (mut sub, errs) = Parser::with_resolver(
+        let mut sub_parser = Parser::with_resolver(
             &owned, tokens.into_iter(), self.resolver.child(spec)
-        ).parse();
+        );
+        for e in lex_errs {
+            sub_parser.errors.push(Diagnostic {
+                start: e.start, end: e.end, msg: e.msg.to_string(),
+            });
+        }
+        let (mut sub, errs) = sub_parser.parse();
         if !errs.is_empty() {
             self.error_at(span.0, span.1,
                 &s!("module '", str spec, "' parse error: ", str &errs[0].msg));
@@ -351,11 +363,17 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         src: &str,
         names: &[(String, String)],
     ) {
-        let (tokens, _lex_errs) = lex(src);
+        let (tokens, lex_errs) = lex(src);
         let owned_src = src.to_string();
-        let (mut sub_chunk, errs) = Parser::with_resolver(
+        let mut sub_parser = Parser::with_resolver(
             &owned_src, tokens.into_iter(), self.resolver.child(spec)
-        ).parse();
+        );
+        for e in lex_errs {
+            sub_parser.errors.push(Diagnostic {
+                start: e.start, end: e.end, msg: e.msg.to_string(),
+            });
+        }
+        let (mut sub_chunk, errs) = sub_parser.parse();
         if !errs.is_empty() {
             self.error_at(span.0, span.1,
                 &s!("module '", str spec, "' parse error: ", str &errs[0].msg));

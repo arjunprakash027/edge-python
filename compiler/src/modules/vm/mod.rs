@@ -432,12 +432,13 @@ impl<'a> VM<'a> {
                 vm.globals.insert(name.to_string(), v);
                 vm.globals.insert(s!(str name, "_0"), v);
             }
-            // Slot templates depend on globals being populated, so build them
-            // here on every iteration — only the last one is actually used.
-            vm.slot_templates = vm.functions.iter().map(|(_, body, _, _)| {
-                vm.fill_builtins(&body.names)
-            }).collect();
         }
+        // Slot templates need every global already populated — built once
+        // after the loop, not per builtin (the previous per-iteration build
+        // was 44× wasted work in cold init).
+        vm.slot_templates = vm.functions.iter().map(|(_, body, _, _)| {
+            vm.fill_builtins(&body.names)
+        }).collect();
         vm
     }
 
