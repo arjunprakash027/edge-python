@@ -61,12 +61,13 @@ The heap is an arena of `Option<HeapObj>` slots with a free list. Strings of 64 
 - No dead-store elimination beyond what falls out of constant folding.
 - No IR — there is exactly one representation between source and dispatch.
 - No JIT. Edge Python stays single-tier and pure Rust. Method JITs need per-architecture stencils; trace JITs duplicate the execution model and complicate the GC contract.
-- No module system. `import` and `from ... import` parse but raise at runtime.
+- No runtime module system. `import` and `from ... import` resolve at parse time through a host-injected `Resolver`; the VM never learns what a module is. See [Imports](/reference/imports).
 
 ## Architecture
 
 ```text
 src/
+ ├── lib.rs
  ├── main.rs
  ├── modules
  │   ├── fstr.rs
@@ -75,9 +76,13 @@ src/
  │   │   ├── mod.rs
  │   │   ├── scan.rs
  │   │   └── tables.rs
+ │   ├── packages
+ │   │   ├── mod.rs
+ │   │   └── wasm_loader.rs
  │   ├── parser
  │   │   ├── control.rs
  │   │   ├── expr.rs
+ │   │   ├── imports.rs
  │   │   ├── literals.rs
  │   │   ├── mod.rs
  │   │   ├── stmt.rs
@@ -88,6 +93,7 @@ src/
  │       ├── handlers
  │       │   ├── arith.rs
  │       │   ├── data.rs
+ │       │   ├── format.rs
  │       │   ├── function.rs
  │       │   ├── methods.rs
  │       │   └── mod.rs

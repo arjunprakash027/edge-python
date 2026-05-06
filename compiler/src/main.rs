@@ -219,9 +219,13 @@ impl Resolver for CliResolver {
             self.state.borrow_mut().in_flight.insert(canonical.clone());
         }
         let new_dir = if canonical.starts_with("http://") || canonical.starts_with("https://") {
-            // URLs have no FS directory: keep current_dir so any local
-            // ./helpers.py inside the fetched module still resolves against
-            // the importer's directory (best we can do without a virtual FS).
+            // BUG: relative imports inside remote modules resolve here. We
+            // keep current_dir (entry script's local dir) instead of rescoping
+            // to the URL's parent path, so a remote `from "./b.py" import y`
+            // looks up `./b.py` on the local FS — silently picks up an
+            // unrelated local file if one exists, errors out otherwise. Fix
+            // requires a URL-aware base (parse canonical, swap last segment)
+            // and a fetch path that keeps using HTTP.
             self.current_dir.clone()
         } else if canonical.is_empty() {
             self.current_dir.clone()

@@ -21,7 +21,7 @@ The language reads like Python because it parses Python's syntax. It runs differ
 - **f-strings**: with format specs, embedded expressions, and `!r` / `!s` flags.
 - **Walrus operator**: `:=` in expressions.
 - **Type annotations**: parsed and ignored, like CPython for non-strict tools.
-- **Module identity**: `__name__` is bound to `"__main__"` in the entry script, so the canonical `if __name__ == "__main__":` guard works.
+- **Module identity**: `__name__` is bound to `"__main__"` in the entry script and to the module's spec inside imported modules, so the canonical `if __name__ == "__main__":` guard works as expected.
 - **Modules**: `import`, `from <spec> import names`, and `from <spec> import *` resolve at compile time through a host-injected `Resolver`. Two flavors: `.py` source modules (top level spliced into the importer; named exports bound directly) and native modules (`.wasm`/dyn-libs, dispatched via the `CallExtern` opcode or wrapped in a `HeapObj::Module` for `import X`). See [Imports](/reference/imports) and [Writing modules](/reference/writing-modules).
 
 ## What it doesn't support

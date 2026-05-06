@@ -9,7 +9,7 @@ A compact, single-pass SSA-style bytecode compiler and stack VM for a functional
 
 ## 1. Paradigm
 
-Edge Python targets functional edge computing. The language treats functions as first-class values: lambdas, higher-order functions, currying, closures, comprehensions, and pure-function memoization are all central. Classes are supported with `__init__`, instance attributes, and methods. There is no inheritance and no method resolution order. Imports parse for compatibility but raise at runtime; the VM has no module system.
+Edge Python targets functional edge computing. The language treats functions as first-class values: lambdas, higher-order functions, currying, closures, comprehensions, and pure-function memoization are all central. Classes are supported with `__init__`, instance attributes, and methods. There is no inheritance and no method resolution order. `import` and `from <spec> import names` resolve at compile time through a host-injected `Resolver` — code modules are spliced inline, native modules dispatch via `CallExtern`. The VM itself has no module concept; modules are a parser-time construct.
 
 What this leaves is a small, fast, deterministic core: arithmetic with arbitrary-precision integers, sequences (lists, tuples, dicts, sets, strings, ranges), control flow, lambdas with closures, generators, exceptions, and a curated set of built-in functions exposed as first-class values.
 
@@ -91,7 +91,8 @@ Mark-and-sweep with roots: stack, globals, iterator frames, current slot window,
 │   │   │   ├── scan.rs
 │   │   │   └── tables.rs
 │   │   ├── packages
-│   │   │   └── mod.rs
+│   │   │   ├── mod.rs
+│   │   │   └── wasm_loader.rs
 │   │   ├── parser
 │   │   │   ├── control.rs
 │   │   │   ├── expr.rs
@@ -106,6 +107,7 @@ Mark-and-sweep with roots: stack, globals, iterator frames, current slot window,
 │   │       ├── handlers
 │   │       │   ├── arith.rs
 │   │       │   ├── data.rs
+│   │       │   ├── format.rs
 │   │       │   ├── function.rs
 │   │       │   ├── methods.rs
 │   │       │   └── mod.rs

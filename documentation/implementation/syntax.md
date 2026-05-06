@@ -166,8 +166,8 @@ def         -> func_def_inner
 class       -> class_def        (__init__, attributes, methods)
 with        -> with_stmt_inner  (multi-target, async variant)
 try         -> try_stmt         (except, else, finally, raise)
-import      -> import_stmt      (parses; runtime raises)
-from        -> parse_from_stmt
+import      -> import_stmt      (compile-time resolver lookup)
+from        -> parse_from_stmt  (named / star imports, same path)
 type        -> type-alias declaration
 yield       -> yield expr / yield from
 async       -> async def / for / with

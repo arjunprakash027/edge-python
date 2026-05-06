@@ -48,11 +48,13 @@ print(slugify("Hello world"))
 3. For natives, the bindings are appended to the chunk's `extern_table`. Named imports register the alias so the call site can emit a direct `CallExtern idx, argc`; `import X` additionally emits `LoadExtern + LoadConst + BuildModule` to wrap the bindings in a `HeapObj::Module` value.
 4. For code modules, the source is parsed into a sub-chunk and the **entire top level** is spliced into the parent chunk (constants, defs, classes, branches, with operand indices remapped). Named imports then either expose the bound parent slot directly or rebind it under an alias. `import X` reads each top-level binding via `LoadName` and folds them into a `HeapObj::Module`.
 
+Each module's top-level names live in their own namespace; only the exports you explicitly request become visible in the importer's scope. Helpers and constants stay private to their defining module, even when two modules use the same internal name. Inside an imported module, `__name__` is rebound to the module's spec for the duration of the splice, so the canonical `if __name__ == "__main__":` guard skips when the module is imported.
+
 The runtime never fetches anything. The host (browser JS, CLI binary, embedded Rust app) is responsible for bringing the bytes; the compiler accepts them through the `Resolver` trait.
 
 ## packages.json
 
-Bare-name imports resolve through an import map declared in your project's `packages.json` (sitting next to the script):
+Bare-name imports resolve through an import map declared in your project's `packages.json` (sitting next to the entry script):
 
 ```json
 {
@@ -63,9 +65,22 @@ Bare-name imports resolve through an import map declared in your project's `pack
 }
 ```
 
-After this, `from math import add` resolves to `./vendor/math.wasm` relative to the script's directory.
+After this, `from math import add` resolves to `./vendor/math.wasm` relative to the entry script's directory.
 
 The `packages.json` file is **optional**. Scripts can use string-form paths directly without any project config — useful for one-off scripts and playground demos.
+
+### Entry-point semantics
+
+Only the **entry script's** `packages.json` is read. Every transitively-imported module — even a module sitting in a deeper directory with its own `packages.json` — resolves through the entry's import map. This mirrors how `Cargo.toml` at the workspace root drives every dependency, or how the root `package.json` is the only one consulted in a Node script.
+
+Concretely:
+- **Bare-name imports** (`from utils import x`) anywhere in the dependency graph hit the entry's `packages.json`.
+- **Quoted relative paths** (`from "./helpers.py" import f`) resolve against the directory of the importing file — so a transitively-imported `lib/a.py` doing `from "./b.py" import g` correctly finds `lib/b.py`.
+- A `packages.json` next to a sub-module is silently ignored. Configuration is centralized.
+
+### Diamond imports and cycles
+
+When multiple paths import the same module, it's fetched and parsed once: the resolver caches each canonical spec. Direct or indirect cycles (`a.py` imports `b.py`, `b.py` imports `a.py`) surface as parse-time `circular import` diagnostics instead of looping the splicer.
 
 ## Running with the CLI
 
@@ -124,6 +139,7 @@ Caveats today:
 - **No cache layer** — every compile re-fetches. Mirror to local files for production.
 - **No integrity verification** — `#sha256-...` URL fragments are documented but not yet enforced.
 - **No lockfile** — planned alongside `edge compile`.
+- **Relative paths inside remote modules resolve against the entry script's directory, not the URL.** Use absolute URLs for transitive imports in remote modules until this is fixed.
 
 ## Sandbox
 
@@ -137,9 +153,7 @@ By default, only `.py` and `.wasm` modules load. Hosts that need native FFI (CUD
 
 ## What doesn't work
 
-- **Transitive imports inside code modules** — a `.py` module imported by your script can't itself `import` further modules. The sub-parser uses a `NoopResolver`, so module-of-module is intentionally rejected. A future revision will lift this.
 - **Dynamic imports** — no `__import__`, no `importlib`. The module set is fixed per compilation.
-- **Mutual recursion across top-level defs in code modules** — `def is_even` referencing `is_odd` (defined after it in the same module) still fails: the body chunk records `is_odd_0` while the splicer ends up storing `is_odd_1`, and propagation matches by exact SSA name. Forward references inside the same code module remain a regression pin.
 
 ## Errors
 
