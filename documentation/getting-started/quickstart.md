@@ -21,7 +21,7 @@ Build the WASM yourself:
 ```bash
 git clone https://github.com/dylan-sutton-chavez/edge-python
 cd edge-python/compiler
-cargo build --release --target wasm32-unknown-unknown --lib --features wasm
+cargo wasm
 # → target/wasm32-unknown-unknown/release/compiler_lib.wasm
 ```
 

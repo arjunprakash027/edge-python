@@ -1,4 +1,6 @@
-/* Output streaming: each print() calls the host-imported `js_print` instead of
+/* Browser host bridge.
+
+   Output streaming: each print() calls the host-imported `js_print` instead of
    buffering, so the Worker fires a postMessage per line as WASM executes.
    Future DOM pool: same import pattern — WASM writes commands to linear memory,
    host reads them on each signal; no serialization, one transferable per frame.
@@ -247,74 +249,3 @@ mod runtime {
     }
 }
 
-#[cfg(all(test, feature = "wasm-tests"))]
-mod tests {
-    use crate::modules::{lexer::lex, parser::Parser, vm::VM};
-
-    #[derive(serde::Deserialize)]
-    struct Case {
-        src: String,
-        output: Vec<String>,
-        #[serde(default)]
-        error: Option<String>,
-        #[serde(default)]
-        input: Vec<String>,
-    }
-
-    #[test]
-    fn vm_cases() {
-        let cases: Vec<Case> = serde_json::from_str(
-            include_str!("../tests/cases/vm.json")
-        ).expect("invalid JSON");
-
-        for case in cases {
-            let (tokens, lex_errs) = lex(&case.src);
-            assert!(lex_errs.is_empty(), "lex error on {:?}: {:?}", case.src, lex_errs.iter().map(|e| e.msg).collect::<Vec<_>>());
-            let (chunk, errs) = Parser::new(&case.src, tokens.into_iter()).parse();
-            if !errs.is_empty() {
-                match &case.error {
-                    Some(expected) => {
-                        assert!(
-                            errs.iter().any(|e| e.msg.contains(expected.as_str())),
-                            "wrong parse error on {:?}: got {:?}, expected '{}'",
-                            case.src,
-                            errs.iter().map(|e| &e.msg).collect::<Vec<_>>(),
-                            expected
-                        );
-                        continue;
-                    }
-                    None => panic!("parse error on {:?}: {:?}", case.src, errs.iter().map(|e| &e.msg).collect::<Vec<_>>()),
-                }
-            }
-
-            let mut vm = VM::new(&chunk);
-            vm.strict_input = true;
-
-            vm.input_buffer = case.input.clone();
-            let expects_input_error = case.input.is_empty()
-                && (case.src.contains("input(") || case.src.contains("input ("));
-
-            match vm.run() {
-                Ok(_) => {
-                    assert!(
-                        !expects_input_error,
-                        "expected input() to error under WASM strict mode for: {:?}", case.src
-                    );
-                    assert_eq!(vm.output, case.output, "output mismatch on: {:?}", case.src);
-                }
-                Err(e) => match &case.error {
-                    Some(expected) => assert!(
-                        e.to_string().contains(expected.as_str()),
-                        "wrong error on {:?}: got '{}', expected '{}'", case.src, e, expected
-                    ),
-                    None if expects_input_error => assert!(
-                        e.to_string().contains("input"),
-                        "expected input RuntimeError under WASM strict mode for: {:?}, got: {}",
-                        case.src, e
-                    ),
-                    None => panic!("VM error on {:?}: {}", case.src, e),
-                }
-            }
-        }
-    }
-}

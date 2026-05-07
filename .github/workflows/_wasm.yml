@@ -15,8 +15,6 @@ jobs:
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: compiler
 
       - uses: dtolnay/rust-toolchain@nightly
         with:
@@ -24,7 +22,6 @@ jobs:
 
       - name: Install wasm target
         run: rustup target add wasm32-unknown-unknown
-        working-directory: compiler
 
       - name: Install wasm-opt
         run: |
@@ -37,18 +34,15 @@ jobs:
           RUSTFLAGS="-Z location-detail=none -Z fmt-debug=none -Z unstable-options -C panic=immediate-abort" \
           cargo +nightly build \
             --target wasm32-unknown-unknown \
-            --features wasm \
             --lib \
             --release \
+            -p edge-python \
             -Z build-std=std,panic_abort
-        working-directory: compiler
 
       - name: Size (unoptimized)
         run: ls -lh target/wasm32-unknown-unknown/release/compiler_lib.wasm
-        working-directory: compiler
 
       - name: Optimize
-        working-directory: compiler
         run: |
           INPUT=target/wasm32-unknown-unknown/release/compiler_lib.wasm
 
@@ -71,22 +65,20 @@ jobs:
 
       - name: Size (optimized)
         run: ls -lh target/wasm32-unknown-unknown/release/compiler_lib.wasm
-        working-directory: compiler
 
       - name: Test
-        run: cargo test --features wasm-tests
-        working-directory: compiler
+        run: cargo test -p edge-python
 
       - name: Upload wasm artifact
         uses: actions/upload-artifact@v6
         with:
           name: compiler_lib_wasm
-          path: compiler/target/wasm32-unknown-unknown/release/compiler_lib.wasm
+          path: target/wasm32-unknown-unknown/release/compiler_lib.wasm
           retention-days: 1
 
       - name: Upload WASM Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: compiler/target/wasm32-unknown-unknown/release/compiler_lib.wasm
+          files: target/wasm32-unknown-unknown/release/compiler_lib.wasm
           fail_on_unmatched_files: true

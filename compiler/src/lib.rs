@@ -2,8 +2,8 @@
 
 extern crate alloc;
 
-#[cfg(any(target_arch = "wasm32", test))]
-pub mod wasm;
+#[cfg(target_arch = "wasm32")]
+pub mod bridge;
 
 pub mod modules {
     pub mod fx;

@@ -40,4 +40,62 @@ mod test {
             }
         }
     }
+
+    /* Re-runs every vm.json case under `vm.strict_input = true` — the mode
+       browser/WASI hosts use, where reading past the end of the host-supplied
+       input buffer is a hard `RuntimeError` instead of returning empty.
+       Lex/parse errors are also asserted (`test_cases` ignores them). */
+    #[test]
+    fn strict_cases() {
+        let cases: Vec<Case> = serde_json::from_str(include_str!("cases/vm.json")).expect("invalid JSON");
+
+        for case in cases {
+            let (tokens, lex_errs) = lex(&case.src);
+            assert!(lex_errs.is_empty(), "lex error on {:?}: {:?}", case.src, lex_errs.iter().map(|e| e.msg).collect::<Vec<_>>());
+            let (chunk, errs) = Parser::new(&case.src, tokens.into_iter()).parse();
+            if !errs.is_empty() {
+                match &case.error {
+                    Some(expected) => {
+                        assert!(
+                            errs.iter().any(|e| e.msg.contains(expected.as_str())),
+                            "wrong parse error on {:?}: got {:?}, expected '{}'",
+                            case.src,
+                            errs.iter().map(|e| &e.msg).collect::<Vec<_>>(),
+                            expected
+                        );
+                        continue;
+                    }
+                    None => panic!("parse error on {:?}: {:?}", case.src, errs.iter().map(|e| &e.msg).collect::<Vec<_>>()),
+                }
+            }
+
+            let mut vm = VM::new(&chunk);
+            vm.strict_input = true;
+            vm.input_buffer = case.input.clone();
+            let expects_input_error = case.input.is_empty()
+                && (case.src.contains("input(") || case.src.contains("input ("));
+
+            match vm.run() {
+                Ok(_) => {
+                    assert!(
+                        !expects_input_error,
+                        "expected input() to error under strict mode for: {:?}", case.src
+                    );
+                    assert_eq!(vm.output, case.output, "output mismatch on: {:?}", case.src);
+                }
+                Err(e) => match &case.error {
+                    Some(expected) => assert!(
+                        e.to_string().contains(expected.as_str()),
+                        "wrong error on {:?}: got '{}', expected '{}'", case.src, e, expected
+                    ),
+                    None if expects_input_error => assert!(
+                        e.to_string().contains("input"),
+                        "expected input RuntimeError under strict mode for: {:?}, got: {}",
+                        case.src, e
+                    ),
+                    None => panic!("VM error on {:?}: {}", case.src, e),
+                }
+            }
+        }
+    }
 }

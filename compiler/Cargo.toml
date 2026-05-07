@@ -1,17 +1,18 @@
 [package]
 name = "edge-python"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 description = "Single-pass SSA compiler based on CPython 3.13: hand-written lexer, token-to-bytecode parser, threaded-code virtual machine with NaN-boxed values, inline caching, template memoization, and a mark-sweep garbage collector. Ships as a WebAssembly module."
-repository = "https://github.com/dylan-sutton-chavez/edge-python/"
-license = "MIT OR Apache-2.0"
 readme = "README.md"
 autotests = false
 
 [lib]
 name = "compiler_lib"
-path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
+test = false
+doctest = false
 
 [[test]]
 name = "tests"
@@ -20,7 +21,12 @@ path = "tests/main.rs"
 [dependencies]
 hashbrown = { version = "0.17", default-features = false }
 itoa = "1"
-lol_alloc = { version = "0.4", optional = true }
+
+# WASM-only global allocator. Pulled into wasm32 builds automatically; absent
+# on host builds (where std's allocator is fine and `compiler.wasm` is just a
+# library artifact, not the runtime target).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+lol_alloc = "0.4"
 
 # Test-only deps. None of these are pulled into the release `compiler.wasm`;
 # they exist so CI can validate the SDK's WASM ABI end-to-end (wasmtime loads
@@ -31,14 +37,3 @@ hashbrown = { version = "0.17", default-features = false, features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 wasmtime = { version = "27", default-features = false, features = ["cranelift", "runtime"] }
-
-[features]
-wasm = ["dep:lol_alloc"]
-wasm-tests = []
-
-[profile.release]
-opt-level = "z"
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = true

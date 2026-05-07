@@ -99,7 +99,7 @@ src/
  │       ├── ops.rs
  │       ├── optimizer.rs
  │       └── types.rs
- └── wasm.rs
+ └── bridge.rs
 ```
 
 ## Capabilities

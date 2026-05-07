@@ -13,8 +13,6 @@ jobs:
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: compiler
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -22,25 +20,20 @@ jobs:
 
       - name: Install cargo-shear
         run: cargo install cargo-shear
-        working-directory: compiler
 
-      # Detects declared but unused dependencies.
+      # Detects declared but unused dependencies across the whole workspace.
       - name: Shear (unused deps)
         run: cargo shear
-        working-directory: compiler
 
-      # Lint the lib + tests on the host target. The release artifact is
-      # the wasm32 build below; this catches issues in test-only code that
-      # uses wasmtime as a dev-dep to validate the WASM ABI end-to-end.
+      # Lint the lib + tests on the host target. The release artifact is the
+      # wasm32 build below; this catches issues in test-only code that uses
+      # wasmtime as a dev-dep to validate the WASM ABI end-to-end.
       - name: Clippy (host / tests)
         run: cargo clippy --all-targets -- -D warnings
-        working-directory: compiler
 
       # Lint for wasm target.
       - name: Install wasm target
         run: rustup target add wasm32-unknown-unknown
-        working-directory: compiler
 
       - name: Clippy (wasm)
-        run: cargo clippy --lib --target wasm32-unknown-unknown --features wasm -- -D warnings
-        working-directory: compiler
+        run: cargo clippy --lib --target wasm32-unknown-unknown -p edge-python -- -D warnings

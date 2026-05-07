@@ -56,13 +56,14 @@ The shim handles all the WASM ↔ JS plumbing: pre-fetching imports, registering
 Build the WASM yourself:
 
 ```bash
-cd compiler
-cargo build --release --target wasm32-unknown-unknown --lib --features wasm
+cargo wasm
 # → target/wasm32-unknown-unknown/release/compiler_lib.wasm  (~390 KB unstripped)
 
 # Optional: optimize with wasm-opt
 wasm-opt -Oz target/.../compiler_lib.wasm -o compiler_lib.opt.wasm
 ```
+
+(`cargo wasm` is an alias defined in `compiler/.cargo/config.toml` for `cargo build --release --target wasm32-unknown-unknown`.)
 
 ### Server / edge runtimes (Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute, Spin)
 

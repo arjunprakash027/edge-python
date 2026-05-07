@@ -113,7 +113,7 @@ Mark-and-sweep with roots: stack, globals, iterator frames, current slot window,
 │   │       ├── ops.rs
 │   │       ├── optimizer.rs
 │   │       └── types.rs
-│   └── wasm.rs
+│   └── bridge.rs
 └── tests
     ├── cases
     │   ├── lexer.json
@@ -135,13 +135,18 @@ Mark-and-sweep with roots: stack, globals, iterator frames, current slot window,
 
 ```bash
 # Build the release WebAssembly module — the only artifact this crate ships.
-cargo build --release --target wasm32-unknown-unknown --lib --features wasm
+cargo wasm
 # → target/wasm32-unknown-unknown/release/compiler_lib.wasm
 
 # Run the test suite (host-side; uses wasmtime as a dev-dep to validate the
 # WASM ABI end-to-end).
 cargo test --release
 ```
+
+`cargo wasm` is an alias defined in `compiler/.cargo/config.toml` for
+`cargo build --release --target wasm32-unknown-unknown`. Plain
+`cargo build --release` produces host-side library artifacts (`.rlib` +
+host cdylib) for embedders linking `compiler_lib` directly.
 
 Edge Python is loaded by a host runtime — browser via `demo/edge.js`, server / edge via wasmtime / wasmer / Cloudflare Workers / Fastly Compute / Spin. There is no native CLI binary; the host owns I/O, network, and module fetching.
 
