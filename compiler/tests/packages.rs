@@ -31,11 +31,25 @@ mod test {
 
     use crate::common::{TestResolver, test_native, load_wasm_bindings, wasm_example_bytes};
 
+    /* `native` / `code` declares what the resolver returns from `resolve()`.
+       The optional `bytes` field declares what `fetch_bytes()` returns —
+       used by integrity-verification cases (`#sha256-...`) so the parser
+       can hash the same content the host would have fetched. Cases without
+       `bytes` get the default Resolver behaviour (Err on fetch_bytes), which
+       is the right shape for "host doesn't support integrity" tests. */
     #[derive(serde::Deserialize)]
     #[serde(untagged)]
     enum ModuleDef {
-        Native { native: Vec<String> },
-        Code { code: String },
+        Native {
+            native: Vec<String>,
+            #[serde(default)]
+            bytes: Option<String>,
+        },
+        Code {
+            code: String,
+            #[serde(default)]
+            bytes: Option<String>,
+        },
     }
 
     #[derive(serde::Deserialize)]
@@ -70,14 +84,22 @@ mod test {
         let mut r = TestResolver::new();
         for (spec, def) in modules {
             match def {
-                ModuleDef::Native { native } => {
+                ModuleDef::Native { native, bytes } => {
                     let bindings: Vec<NativeBinding> = native.iter()
                         .map(|n| test_native(n)
                             .unwrap_or_else(|| panic!("unknown test native: {}", n)))
                         .collect();
                     r = r.with_native(spec, bindings);
+                    if let Some(b) = bytes {
+                        r = r.with_bytes(spec, b.clone().into_bytes());
+                    }
                 }
-                ModuleDef::Code { code } => { r = r.with_code(spec, code); }
+                ModuleDef::Code { code, bytes } => {
+                    r = r.with_code(spec, code);
+                    if let Some(b) = bytes {
+                        r = r.with_bytes(spec, b.clone().into_bytes());
+                    }
+                }
             }
         }
         for (name, target) in aliases {

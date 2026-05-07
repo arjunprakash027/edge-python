@@ -231,8 +231,12 @@ fn pick(_: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
    `edge-sdk/examples/` the same artifact the tests load — single source of
    truth: if the SDK or the example breaks, the test fails. */
 pub fn wasm_example_bytes(name: &str) -> Vec<u8> {
+    /* Workspace target dir is shared at the repo root, so from `compiler/`
+       (where `cargo test` runs) the artifact lands at `../target/...`. We
+       build with `-p edge-sdk` instead of `cd`-ing into the SDK so cargo
+       resolves the right member without depending on cwd. */
     let path = format!(
-        "../edge-sdk/target/wasm32-unknown-unknown/release/examples/{}.wasm",
+        "../target/wasm32-unknown-unknown/release/examples/{}.wasm",
         name,
     );
     if !std::path::Path::new(&path).exists() {
@@ -241,8 +245,8 @@ pub fn wasm_example_bytes(name: &str) -> Vec<u8> {
                 "build", "--release",
                 "--target", "wasm32-unknown-unknown",
                 "--example", name,
+                "-p", "edge-sdk",
             ])
-            .current_dir("../edge-sdk")
             .status()
             .expect("failed to spawn cargo to build wasm fixture");
         assert!(status.success(), "wasm fixture build failed for example '{}'", name);

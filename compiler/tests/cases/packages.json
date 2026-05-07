@@ -409,5 +409,66 @@
     "src": "from m import f\nprint(f())",
     "modules": { "m": { "code": "def f():\n    return 'oops" } },
     "error": "unterminated string literal"
+  },
+
+  {
+    "_section": "Integrity verification — `#sha256-<hex>` URL fragments. The parser hashes the bytes the resolver returns from fetch_bytes() and refuses to compile on mismatch. The three NIST vectors below double as a correctness check for the in-tree SHA-256: if our hash agrees with FIPS 180-2's published digest, the case loads cleanly; otherwise integrity_check_failed.",
+    "_comment": "NIST vector 'abc' (FIPS 180-2 §A.1) — single-block input.",
+    "src": "from \"m#sha256-ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\" import const_42\nprint(const_42())",
+    "modules": { "m": { "native": ["const_42"], "bytes": "abc" } },
+    "output": ["42"]
+  },
+  {
+    "_comment": "NIST vector empty string — exercises the padding-only path.",
+    "src": "from \"m#sha256-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\" import const_42\nprint(const_42())",
+    "modules": { "m": { "native": ["const_42"], "bytes": "" } },
+    "output": ["42"]
+  },
+  {
+    "_comment": "NIST vector 56 bytes — padding spills into a second block (block-boundary case).",
+    "src": "from \"m#sha256-248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1\" import const_42\nprint(const_42())",
+    "modules": { "m": { "native": ["const_42"], "bytes": "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq" } },
+    "output": ["42"]
+  },
+
+  {
+    "_section": "Integrity — mismatch refuses to compile",
+    "_comment": "Hash on the URL is well-formed but doesn't match SHA-256(bytes); the diagnostic surfaces both expected and actual digests so the user can see which side drifted.",
+    "src": "from \"m#sha256-0000000000000000000000000000000000000000000000000000000000000000\" import const_42",
+    "modules": { "m": { "native": ["const_42"], "bytes": "abc" } },
+    "error": "integrity check failed"
+  },
+
+  {
+    "_section": "Integrity — malformed fragments rejected at parse time, before any fetch",
+    "_comment": "Non-hex chars in the digest.",
+    "src": "from \"m#sha256-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\" import f",
+    "error": "invalid hex"
+  },
+  {
+    "_comment": "Wrong digest length — 64 hex chars required.",
+    "src": "from \"m#sha256-deadbeef\" import f",
+    "error": "64 hex chars"
+  },
+  {
+    "_comment": "Unknown algorithm prefix. Only sha256 is honored today; other prefixes fail loud so future syntax extensions can't slip through silently unverified.",
+    "src": "from \"m#md5-deadbeef\" import f",
+    "error": "unrecognized integrity fragment"
+  },
+
+  {
+    "_section": "Integrity — host without fetch_bytes support fails clean",
+    "_comment": "Well-formed digest but resolver has no bytes seeded for the spec; default Resolver impl returns Err so the script fails loud instead of running unverified.",
+    "src": "from \"m#sha256-0000000000000000000000000000000000000000000000000000000000000000\" import f",
+    "modules": { "m": { "native": ["const_42"] } },
+    "error": "integrity verification not supported"
+  },
+
+  {
+    "_section": "Integrity — imports without fragments are unaffected (backwards compat)",
+    "_comment": "Resolver has no bytes seeded; the parser never calls fetch_bytes because there's no fragment, so this still loads cleanly.",
+    "src": "from m import const_42\nprint(const_42())",
+    "modules": { "m": { "native": ["const_42"] } },
+    "output": ["42"]
   }
 ]
