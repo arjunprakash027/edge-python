@@ -119,7 +119,7 @@ cargo build --release --target wasm32-unknown-unknown --example reference
 
 The compiled `.wasm` module exports each `edge_export!`-decorated function with a `(i64, i64, ...) -> i64` signature regardless of the Rust types — the i64 carries the NaN-boxed wire `Val`, and the macro decodes it back into the requested type at the call boundary. Edge Python's loader walks every i64-typed export and registers it as a native binding callable from scripts.
 
-For full details on the loader side, see [`compiler/src/modules/packages/wasm_loader.rs`](../compiler/src/modules/packages/wasm_loader.rs).
+For full details on the loader side, see [`compiler/tests/loaders.rs`](../compiler/tests/loaders.rs) — a reference implementation used by the test suite. Production hosts (browser shim, WASI runtimes) implement the same shape against their own WebAssembly engine.
 
 ## License
 

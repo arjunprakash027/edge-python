@@ -68,7 +68,6 @@ The heap is an arena of `Option<HeapObj>` slots with a free list. Strings of 64 
 ```text
 src/
  ├── lib.rs
- ├── main.rs
  ├── modules
  │   ├── fstr.rs
  │   ├── fx.rs
@@ -77,8 +76,7 @@ src/
  │   │   ├── scan.rs
  │   │   └── tables.rs
  │   ├── packages
- │   │   ├── mod.rs
- │   │   └── wasm_loader.rs
+ │   │   └── mod.rs
  │   ├── parser
  │   │   ├── control.rs
  │   │   ├── expr.rs

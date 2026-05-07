@@ -28,8 +28,8 @@
 //! ```
 //!
 //! The resulting `.wasm` is loadable by any Edge Python host that implements
-//! the WASM loader pattern (see `compiler::modules::packages::wasm_loader`
-//! for the reference implementation).
+//! the WASM loader pattern (see `compiler/tests/loaders.rs` for the reference
+//! implementation used by the integration test suite).
 //!
 //! # Supported types
 //!
