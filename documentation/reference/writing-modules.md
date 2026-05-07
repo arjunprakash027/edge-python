@@ -1,9 +1,9 @@
 ---
 title: "Writing modules"
-description: "How to write a native module for Edge Python in Rust today, plus the planned cross-language ABI."
+description: "How to write a native module for Edge Python in Rust."
 ---
 
-Edge Python has no bundled stdlib. Modules are external artifacts — you write one, host it on a URL, and any script can `from "<url>" import <names>`. This page covers what's actually shipping today and the planned shape for other languages.
+Edge Python has no bundled stdlib. Modules are external artifacts — you write one in Rust, ship the `.wasm`, and any script can `from "<url>" import <names>`.
 
 ## What works today
 
@@ -12,7 +12,6 @@ Edge Python has no bundled stdlib. Modules are external artifacts — you write 
 | `.py` source modules (multi-file projects) | ✅ implemented |
 | Rust → `.wasm` modules via `edge-sdk` | ✅ implemented |
 | `http(s)://` URL imports (host-fetched) | ✅ implemented (no cache yet) |
-| C / Zig / AS → `.wasm` modules | 🟡 same ABI works in theory; no SDK published yet, no test fixtures |
 | Integrity verification (`#sha256-...`) | ❌ planned |
 
 Edge Python ships as a WebAssembly module — there's no native dyn-lib path, by design. Modules are `.py` source or `.wasm` binaries.
@@ -156,16 +155,6 @@ The host's loader is responsible for the inverse marshalling: it reads `Val`s of
 The macro picks the right encode/decode per parameter and return via the `FromWire` / `IntoWire` traits — mix types freely. The wasm signature stays `(i64, ..., i64) -> i64` regardless of Rust types: the i64 always carries the NaN-boxed wire `Val`, and the macro decodes it back to the requested type at the call boundary.
 
 Coming: strings (via shared linear memory), heap types (lists, dicts). For now, encode strings as host-side handles (an `i64` that the host reinterprets through a side channel) if you need them.
-
-## What other languages need
-
-The ABI is language-agnostic. To add support for a new source language, a contributor needs to:
-
-1. Write the equivalent of `edge_export!` for that language (a macro, a code generator, or just a documented manual pattern).
-2. Make sure the compiled output exports functions with the i64 wire format.
-3. Compile to `.wasm`.
-
-There's no formal SDK for C, Zig, or AssemblyScript yet — but a `.wasm` produced by any of them with the right exports will load with any host that follows the reference loader's pattern. We accept SDK contributions for any language that targets `wasm32-unknown-unknown` cleanly.
 
 ## Hosting checklist
 

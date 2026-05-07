@@ -1,7 +1,7 @@
 //! Canonical reference module for the Edge Python SDK. The integration test
 //! in `compiler/tests/packages.rs` builds this exact file to wasm32 and loads
-//! it via the production loader — single source of truth between the docs and
-//! the code that actually runs.
+//! it via the test loader — single source of truth between the docs and the
+//! code that actually runs.
 //!
 //! Build:
 //!     cargo build --release --target wasm32-unknown-unknown --example reference
@@ -10,8 +10,9 @@
 //!     from "./reference.wasm" import add, square
 //!     print(add(2, square(3)))   # 11
 //!
-//! Compiles to a `cdylib` only on wasm32. On the host architecture it becomes
-//! an empty crate so `cargo check` passes without a `#[panic_handler]`.
+//! `crate-type = ["cdylib"]`, so on the host triple this builds an empty
+//! cdylib (no host entry point). Edge Python's loaders only consume the
+//! wasm32 build.
 
 #![cfg_attr(target_arch = "wasm32", no_std, no_main)]
 
@@ -37,7 +38,7 @@ mod m {
 
     edge_export! {
         pub fn area(r: f64) -> f64 {
-            3.141592653589793 * r * r
+            core::f64::consts::PI * r * r
         }
     }
 
@@ -52,9 +53,4 @@ mod m {
             if flag { hi } else { lo }
         }
     }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn main() {
-    eprintln!("Build for wasm32: cargo build --release --target wasm32-unknown-unknown --example reference");
 }
