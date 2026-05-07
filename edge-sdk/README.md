@@ -106,7 +106,7 @@ Strings, lists, and other heap types require a buffer protocol with linear-memor
 
 ## Reference module
 
-[`examples/reference.rs`](examples/reference.rs) is the canonical module the project uses to verify the SDK end-to-end. The compiler's test suite builds it to wasm32 and loads it through the production loader on every test run — if the SDK changes break the reference, CI fails.
+[`examples/reference.rs`](examples/reference.rs) is the canonical module the project uses to verify the SDK end-to-end. The compiler's test suite builds it to wasm32 and loads it through the reference loader on every test run — if the SDK changes break the reference, CI fails.
 
 Build the reference:
 

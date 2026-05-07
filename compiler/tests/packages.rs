@@ -51,7 +51,8 @@ mod test {
         modules: HashMap<String, ModuleDef>,
         /* Stand-in for the entry script's `packages.json`. Bare-name imports
            in any module (entry or transitively imported) resolve through this
-           map, mirroring the CLI's root-only packages.json semantics. */
+           map, mirroring the root-only packages.json semantics any host
+           implementation should follow. */
         #[serde(default)]
         aliases: HashMap<String, String>,
         #[serde(default)]
