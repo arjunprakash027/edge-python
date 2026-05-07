@@ -2,7 +2,18 @@ const source_size = 1 << 20; // 1 MiB limit.
 
 let wasmModule = null;
 
+/* Per-spec source cache. Lives in worker scope so it survives across `run`
+   messages — successive runs of the same script reuse fetched modules
+   instead of re-hitting the network on every click. The bytes also feed
+   `js_fetch_bytes` so the parser can verify `#sha256-...` integrity
+   fragments using the same buffer. */
+const fetchedSources = new Map();
+
 const handlers = {
+    // Invalidate the per-spec module cache. Next run() refetches every
+    // import from the network instead of reusing in-memory bytes.
+    clearCache: () => fetchedSources.clear(),
+
     load: async ({ url, opts }) => {
         try {
             const t0 = performance.now();
@@ -38,14 +49,24 @@ const handlers = {
             js_call_native: () => {
                 throw new Error('demo worker does not register native modules');
             },
-            // The compiler always imports js_fetch_bytes (used to verify
-            // `#sha256-...` integrity fragments). The worker doesn't cache
-            // bytes; returning null pointer + zero length makes the parser
-            // surface "bytes not cached" — clean error if a script asks for
-            // integrity in this minimal host.
-            js_fetch_bytes: (_specPtr, _specLen, outLenPtr) => {
-                new DataView(exports.memory.buffer).setUint32(outLenPtr, 0, true);
-                return 0;
+            // Serve cached source bytes to the parser when it asks for
+            // them to verify a `#sha256-...` integrity fragment. Same
+            // `fetchedSources` map the run loop populates — one cache, two
+            // consumers (registration + integrity).
+            js_fetch_bytes: (specPtr, specLen, outLenPtr) => {
+                const spec = new TextDecoder().decode(
+                    new Uint8Array(exports.memory.buffer, specPtr, specLen)
+                );
+                const text = fetchedSources.get(spec);
+                if (text === undefined) {
+                    new DataView(exports.memory.buffer).setUint32(outLenPtr, 0, true);
+                    return 0;
+                }
+                const bytes = new TextEncoder().encode(text);
+                const ptr = exports.wasm_alloc(bytes.length);
+                new Uint8Array(exports.memory.buffer, ptr, bytes.length).set(bytes);
+                new DataView(exports.memory.buffer).setUint32(outLenPtr, bytes.length, true);
+                return ptr;
             },
         }};
 
@@ -74,11 +95,15 @@ const handlers = {
             const specs = specStr ? specStr.split('\n').filter(Boolean) : [];
 
             for (const spec of specs) {
-                const url = new URL(spec, self.location.href).toString();
-                const text = await fetch(url).then(r => {
-                    if (!r.ok) throw new Error(`HTTP ${r.status} fetching ${spec}`);
-                    return r.text();
-                });
+                let text = fetchedSources.get(spec);
+                if (text === undefined) {
+                    const url = new URL(spec, self.location.href).toString();
+                    text = await fetch(url).then(r => {
+                        if (!r.ok) throw new Error(`HTTP ${r.status} fetching ${spec}`);
+                        return r.text();
+                    });
+                    fetchedSources.set(spec, text);
+                }
                 const specBytes = new TextEncoder().encode(spec);
                 const codeBytes = new TextEncoder().encode(text);
                 const sp = exports.wasm_alloc(specBytes.length);

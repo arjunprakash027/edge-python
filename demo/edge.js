@@ -40,11 +40,12 @@ export class EdgePython {
         // invoked with an array of BigInts, returns a BigInt result. WASM native
         // bindings dispatch through `js_call_native(id, ...)` which routes here.
         this.callbacks = [];
-        // Per-spec raw bytes kept after pre-fetch so the WASM compiler can
-        // verify `#sha256-...` fragments via `js_fetch_bytes`. The fetch is
-        // free (we already pulled the bytes to register the module); we just
-        // hold on to them instead of dropping after registration.
-        this.fetchedBytes = new Map();
+        // Per-spec module cache, persists across `run()` calls so the second
+        // run of the same script reuses fetched bytes instead of re-hitting
+        // the network. Each entry: `{ kind: 'code' | 'native', bytes: Uint8Array }`.
+        // The `bytes` field also feeds `js_fetch_bytes` for `#sha256-...`
+        // integrity verification — same buffer, two consumers.
+        this.cache = new Map();
         this.outputHandler = null;
         this.bufferedOutput = [];
     }
@@ -74,13 +75,18 @@ export class EdgePython {
      * VM executes. If unset, output buffers internally and is returned by run(). */
     onOutput(handler) { this.outputHandler = handler; }
 
+    // Invalidate the per-spec module cache. Next run() refetches every
+    // import from the network instead of reusing in-memory bytes.
+    clearCache() { this.cache.clear(); }
+
     /* Run a script. Pre-fetches and registers every import the script declares,
      * then compiles and executes. Returns the buffered output (joined with \n)
      * or throws on parse / runtime / fetch errors. */
     async run(src) {
         this.exports.reset_modules();
         this.callbacks = [];
-        this.fetchedBytes.clear();
+        // Cache survives across runs — the same script run twice doesn't
+        // re-fetch its imports. To force a refresh, create a new EdgePython.
         this.bufferedOutput = [];
 
         const srcBytes = TEXT_ENCODER.encode(src);
@@ -150,24 +156,41 @@ export class EdgePython {
     }
 
     async _resolveAndRegister(spec) {
+        // Strip the integrity fragment for the registry key — the WASM
+        // compiler strips it internally before looking up, so registering
+        // under the clean spec keeps both sides aligned.
+        const cleanSpec = spec.split('#')[0];
+
+        // Cache hit: re-register from cached bytes without re-hitting the
+        // network. WASM-side `reset_modules()` cleared the registry at
+        // run() start, so we re-issue register_*_module either way; what's
+        // saved is the fetch round-trip.
+        const cached = this.cache.get(cleanSpec);
+        if (cached) {
+            if (cached.kind === 'code') {
+                this._registerCodeModule(cleanSpec, TEXT_DECODER.decode(cached.bytes));
+            } else {
+                await this._registerNativeModule(cleanSpec, cached.bytes.buffer);
+            }
+            return;
+        }
+
         const url = this.importMap[spec] || spec;
         const response = await fetch(url);
         if (!response.ok) {
             throw new Error(`Edge Python: failed to fetch '${url}' (HTTP ${response.status})`);
         }
-        // Strip the integrity fragment for the registry key — the WASM
-        // compiler strips it internally before looking up, so registering
-        // under the clean spec keeps both sides aligned.
-        const cleanSpec = spec.split('#')[0];
         const cleanUrl = url.split('?')[0].split('#')[0];
 
         if (cleanUrl.endsWith('.py')) {
             const text = await response.text();
-            this.fetchedBytes.set(cleanSpec, TEXT_ENCODER.encode(text));
+            const bytes = TEXT_ENCODER.encode(text);
+            this.cache.set(cleanSpec, { kind: 'code', bytes });
             this._registerCodeModule(cleanSpec, text);
         } else if (cleanUrl.endsWith('.wasm')) {
             const buf = await response.arrayBuffer();
-            this.fetchedBytes.set(cleanSpec, new Uint8Array(buf));
+            const bytes = new Uint8Array(buf);
+            this.cache.set(cleanSpec, { kind: 'native', bytes });
             await this._registerNativeModule(cleanSpec, buf);
         } else {
             throw new Error(`Edge Python: unknown module type for '${url}' (expected .py or .wasm)`);
@@ -252,17 +275,17 @@ export class EdgePython {
         const spec = TEXT_DECODER.decode(
             new Uint8Array(this.exports.memory.buffer, specPtr, specLen)
         );
-        const bytes = this.fetchedBytes.get(spec);
-        if (!bytes) {
+        const cached = this.cache.get(spec);
+        if (!cached) {
             new DataView(this.exports.memory.buffer).setUint32(outLenPtr, 0, true);
             return 0;
         }
         // wasm_alloc may grow linear memory, invalidating any view captured
         // before this call — re-acquire DataView/Uint8Array from the current
         // buffer when writing the bytes and out_len.
-        const ptr = this.exports.wasm_alloc(bytes.length);
-        new Uint8Array(this.exports.memory.buffer, ptr, bytes.length).set(bytes);
-        new DataView(this.exports.memory.buffer).setUint32(outLenPtr, bytes.length, true);
+        const ptr = this.exports.wasm_alloc(cached.bytes.length);
+        new Uint8Array(this.exports.memory.buffer, ptr, cached.bytes.length).set(cached.bytes);
+        new DataView(this.exports.memory.buffer).setUint32(outLenPtr, cached.bytes.length, true);
         return ptr;
     }
 }
