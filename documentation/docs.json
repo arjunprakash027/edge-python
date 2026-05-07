@@ -44,6 +44,7 @@
           "reference/methods",
           "reference/imports",
           "reference/writing-modules",
+          "reference/wasm-abi",
           "reference/limits-and-errors"
         ]
       },

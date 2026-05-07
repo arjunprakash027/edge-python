@@ -1,5 +1,5 @@
 [workspace]
-members = ["compiler", "edge-sdk"]
+members = ["compiler"]
 resolver = "2"
 
 [workspace.package]

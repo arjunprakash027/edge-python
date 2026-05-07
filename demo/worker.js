@@ -35,9 +35,10 @@ const handlers = {
 
         // js_print is called by the VM on every print(); each line is fired to
         // the main thread immediately as WASM executes, before run() returns.
-        // js_call_native is required by the WASM ABI even though the demo only
-        // uses code (.py) modules — the host import must be satisfied at
-        // instantiate time. Stub throws if a native is reached unexpectedly.
+        // js_call_native is required by the WASM ABI even though this minimal
+        // worker only loads .py modules — the host import must be satisfied
+        // at instantiate time. The stub throws if a native is reached, which
+        // is correct because nothing here registers one.
         let exports;
         const imports = { env: {
             js_print: (ptr, len) => {

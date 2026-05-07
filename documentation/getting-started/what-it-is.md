@@ -22,14 +22,14 @@ The language reads like Python because it parses Python's syntax. It runs differ
 - **Walrus operator**: `:=` in expressions.
 - **Type annotations**: parsed and ignored, like CPython for non-strict tools.
 - **Module identity**: `__name__` is bound to `"__main__"` in the entry script and to the module's spec inside imported modules, so the canonical `if __name__ == "__main__":` guard works as expected.
-- **Modules**: `import`, `from <spec> import names`, and `from <spec> import *` resolve at compile time through a host-injected `Resolver`. Two flavors: `.py` source modules (top level spliced into the importer; named exports bound directly) and `.wasm` modules (dispatched via the `CallExtern` opcode or wrapped in a `HeapObj::Module` for `import X`). See [Imports](/reference/imports) and [Writing modules](/reference/writing-modules).
+- **Modules**: `import`, `from <spec> import names`, and `from <spec> import *` resolve at compile time through a host-injected `Resolver`. Two flavors: `.py` source modules (top level spliced into the importer; named exports bound directly) and native modules (`.wasm` binaries loaded by URL per the [WASM ABI](/reference/wasm-abi), or in-process Rust closures for embedders linking `compiler_lib`). See [Imports](/reference/imports) and [Writing modules](/reference/writing-modules).
 
 ## What it doesn't support
 
 These parse for syntactic compatibility but raise at runtime, or simply don't exist:
 
 - **Inheritance / MRO**: classes work with `__init__`, attributes, and methods, but there is no base-class chain, no `super`, no method resolution order.
-- **Standard library**: there is no bundled stdlib. `json`, `regex`, `math`, etc. are external modules distributed as `.wasm` artifacts via URL — fetched at compile time, sealed into the artifact at deploy time. See [Imports](/reference/imports).
+- **Standard library**: there is no bundled stdlib. Modules are external — `.py` files distributed via URL or filesystem, `.wasm` binaries published per the public [WASM ABI](/reference/wasm-abi), or in-process Rust bindings provided by the embedder. See [Imports](/reference/imports) and [Writing modules](/reference/writing-modules).
 - **I/O**: `input()` reads from a host-provided buffer. There is no file system, no network, no `os`, no `sys` — *unless* the host registers a native module that provides those capabilities.
 - **Async**: `async def` creates real coroutines. `run()` provides cooperative scheduling with `sleep()` and `receive()`.
 - **Metaclasses, descriptors, decorators-on-classes, properties**: not modeled.

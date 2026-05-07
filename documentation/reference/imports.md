@@ -10,7 +10,7 @@ Edge Python supports `import`, `from <spec> import <names>`, and `from <spec> im
 | Flavor | What it is | How it dispatches |
 |---|---|---|
 | **Code module** | A `.py` file written in Edge Python | The module's top level is spliced into the importing chunk; requested names are bound (or wrapped in a `HeapObj::Module` for `import X`). |
-| **Native module** | Pre-compiled `.wasm` binary written in any language that targets WebAssembly | Dispatched through the `CallExtern` opcode (named import) or via a `HeapObj::Module` carrying `HeapObj::Extern` callables (`import X`). |
+| **Native module** | A `.wasm` binary following the [WASM module ABI](/reference/wasm-abi) (loaded by URL or path) **or** Rust closures provided in-process by an embedder via the `Resolver` trait. See [Writing modules](/reference/writing-modules). | Dispatched through the `CallExtern` opcode (named import) or via a `HeapObj::Module` carrying `HeapObj::Extern` callables (`import X`). |
 
 The same `import` syntax covers both. The host's resolver decides which flavor a given spec maps to.
 
@@ -23,8 +23,8 @@ from utils import normalize
 
 # String-form imports — explicit URLs or local paths, no map needed
 from "./lib/helpers.py" import slugify
-from "https://std.edgepython.com/json@1.0.wasm" import dumps
-from "https://github.com/foo/lib@v1.0/" import handler
+from "https://example.com/utils.py" import normalize
+from "https://example.com/math.wasm" import add
 
 # Aliases work as in CPython
 from math import sqrt as root
@@ -59,13 +59,14 @@ Bare-name imports resolve through an import map declared in your project's `pack
 ```json
 {
   "imports": {
-    "utils": "./lib/utils.py",
-    "math":  "./vendor/math.wasm"
+    "utils":   "./lib/utils.py",
+    "helpers": "https://example.com/helpers.py",
+    "math":    "./vendor/math.wasm"
   }
 }
 ```
 
-After this, `from math import add` resolves to `./vendor/math.wasm` relative to the entry script's directory.
+After this, `from utils import x` resolves to `./lib/utils.py` relative to the entry script's directory; `from math import add` loads the `.wasm` per the [wire format](/reference/wasm-abi).
 
 The `packages.json` file is **optional**. Scripts can use string-form paths directly without any project config — useful for one-off scripts and playground demos.
 
@@ -88,25 +89,26 @@ Edge Python's compiler is a WebAssembly module. Fetching bytes — from disk, fr
 
 | Scenario | Who fetches |
 |---|---|
-| Browser playground | `edge.js` shim — pre-fetches every spec the script imports, hands bytes to `Resolver` |
-| WASI runtime | Host program reads from disk / network using `wasi_snapshot_preview1` |
-| Embedded Rust app | Caller pre-stages a `HashMap<String, Resolved>` and constructs a custom `Resolver` |
-| Production deploy | `edge compile` (planned) will seal all imports into a single `.epy` artifact |
+| Browser playground | `edge.js` shim — pre-fetches every spec the script imports. `.py` files register via `register_code_module`; `.wasm` files instantiate via `WebAssembly.instantiate` and register exports via `register_native_module`. |
+| WASI runtime | Host program reads `.py` files from disk / network using `wasi_snapshot_preview1`. `.wasm` modules can be loaded via the runtime's WebAssembly engine. |
+| Embedded Rust app | Caller links `compiler_lib`, implements `Resolver`, returns either `Resolved::Code(src)` or `Resolved::Native(bindings)`. In-process bindings have full VM heap access (full type coverage); see [Writing modules](/reference/writing-modules). |
+| Production deploy | `edge compile` (planned) will seal all imports into a single `.epy` artifact. |
 
-URL imports work as long as your host supports them:
+URL imports work for both `.py` and `.wasm` modules as long as your host supports them:
 
 ```python
-from "https://example.com/json.wasm" import dumps
+from "https://example.com/utils.py" import normalize
+from "https://example.com/math.wasm" import add
 ```
 
 Or via packages.json alias:
 
 ```json
-{ "imports": { "json": "https://example.com/json.wasm" } }
+{ "imports": { "utils": "https://example.com/utils.py" } }
 ```
 
 ```python
-from json import dumps
+from utils import normalize
 ```
 
 ### Integrity verification
@@ -114,13 +116,13 @@ from json import dumps
 Append `#sha256-<64 hex chars>` to any URL spec to require a content match:
 
 ```python
-from "https://example.com/json.wasm#sha256-deadbeef0123456789abcdef0123456789abcdef0123456789abcdef01234567" import dumps
+from "https://example.com/utils.py#sha256-deadbeef0123456789abcdef0123456789abcdef0123456789abcdef01234567" import normalize
 ```
 
 The compiler asks the host for the raw bytes (via the `Resolver::fetch_bytes` trait method), computes the SHA-256, and refuses to compile if the hash doesn't match — with a diagnostic that surfaces both expected and computed digests:
 
 ```text
-error: integrity check failed for 'https://example.com/json.wasm'
+error: integrity check failed for 'https://example.com/utils.py'
   expected sha256-deadbeef0123456789abcdef0123456789abcdef0123456789abcdef01234567
   got      sha256-feedface9876543210fedcba9876543210fedcba9876543210fedcba98765432
 ```
@@ -131,10 +133,10 @@ Only `sha256` is supported today. A spec with any other prefix (`md5-...`, `sha3
 
 ## Caching
 
-The reference browser shim (`demo/edge.js`) keeps every fetched module's raw bytes in an in-memory `Map<spec, Uint8Array>` for the duration of a single `run()`. Two consequences:
+The reference browser shim (`demo/edge.js`) keeps every fetched module's raw bytes in an in-memory `Map<spec, Uint8Array>` that **persists across `run()` calls**. Two consequences:
 
-- **Same URL twice in one script fetches once.** The shim deduplicates specs (`new Set([...stringSpecs, ...bareSpecs])`) and the per-run map persists fetched bytes through both `register_*_module` and any `#sha256-...` integrity check the compiler triggers — zero extra HTTP round-trips for verification.
-- **The map clears between runs.** Each `run()` starts with `fetchedBytes.clear()`, so the same script run twice re-fetches. Persistent caching across runs is the host's responsibility — wrap `fetch()` with a `Cache` API service worker, an IndexedDB layer, or mirror to local files for production.
+- **Same URL twice in one script fetches once**, and the same script run twice doesn't re-fetch its imports — the per-instance cache survives until the EdgePython instance is dropped or `clearCache()` is called.
+- **The map also feeds `js_fetch_bytes`** for `#sha256-...` integrity checks — one cache, two consumers, zero extra HTTP round-trips for verification.
 
 WASI hosts and Rust embedders make their own caching choices: the `Resolver` trait sees only `(spec → Resolved)` and `(spec → bytes for integrity)`; how those are sourced and how long they're held is the host's contract.
 
@@ -145,9 +147,10 @@ Lockfile-style integrity (record every URL → hash on first build, verify again
 | Module type | Sandbox |
 |---|---|
 | Code modules (`.py`) | Full sandbox — code only calls capabilities it imports |
-| Native modules (`.wasm`) | Full sandbox — WASM isolates by construction |
+| Native modules (`.wasm`) | Full sandbox — WASM isolates by construction; the imported `.wasm` runs in its own linear memory |
+| Native modules (in-process Rust closures) | Trust boundary is the host process — closures run with the embedder's privileges |
 
-Edge Python runs as a WebAssembly module, so the entire execution environment is sandboxed by the WASM runtime. There is no native dyn-lib loader and no `dlopen` path — that would defeat the sandbox guarantee that's the whole point.
+Edge Python runs as a WebAssembly module; scripts execute inside that sandbox unconditionally. `.wasm` native modules add their own WASM sandbox layer. In-process Rust bindings come from code the embedder controls, so trust extends only to whatever the embedder chose to expose.
 
 ## What doesn't work
 
@@ -171,4 +174,4 @@ error: module 'json' has no export 'badname'
     |      ^^^^
 ```
 
-Runtime errors from native bindings (e.g., `add()` with non-int args) propagate normally as `VmErr`.
+Runtime errors from native bindings (e.g., `upper()` with a non-string argument) propagate normally as `VmErr`.

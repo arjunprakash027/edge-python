@@ -122,7 +122,6 @@ Mark-and-sweep with roots: stack, globals, iterator frames, current slot window,
     │   └── vm.json
     ├── common.rs
     ├── lexer.rs
-    ├── loaders.rs
     ├── main.rs
     ├── packages.rs
     ├── parser.rs
@@ -138,15 +137,17 @@ Mark-and-sweep with roots: stack, globals, iterator frames, current slot window,
 cargo wasm
 # → target/wasm32-unknown-unknown/release/compiler_lib.wasm
 
-# Run the test suite (host-side; uses wasmtime as a dev-dep to validate the
-# WASM ABI end-to-end).
+# Run the host-side test suite (lexer, parser, VM, packages JSON cases).
 cargo test --release
 ```
 
-`cargo wasm` is an alias defined in `compiler/.cargo/config.toml` for
-`cargo build --release --target wasm32-unknown-unknown`. Plain
-`cargo build --release` produces host-side library artifacts (`.rlib` +
-host cdylib) for embedders linking `compiler_lib` directly.
+`cargo wasm` is a workspace alias (`.cargo/config.toml` at the repo root)
+for `cargo build --release --target wasm32-unknown-unknown -p edge-python`.
+Plain `cargo build --release` produces host-side library artifacts (`.rlib`
++ host cdylib) for embedders linking `compiler_lib` directly. To extend
+Edge Python with native modules from your own Rust app, depend on
+`compiler_lib` and implement the `Resolver` trait — see
+[Writing modules](../documentation/reference/writing-modules.md).
 
 Edge Python is loaded by a host runtime — browser via `demo/edge.js`, server / edge via wasmtime / wasmer / Cloudflare Workers / Fastly Compute / Spin. There is no native CLI binary; the host owns I/O, network, and module fetching.
 

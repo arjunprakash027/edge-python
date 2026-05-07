@@ -11,8 +11,10 @@
    `WasmHostResolver` for a module, it returns the pre-staged entry. For native
    bindings, each function call routes through the `js_call_native` host import
    so JS can dispatch into the right WebAssembly instance — Edge Python's
-   bytecode never has to know whether a binding is .wasm-backed, JS-implemented,
-   or anything else. */
+   bytecode never has to know whether a binding is .wasm-backed or
+   JS-implemented. The wire format the .wasm side honors is documented at
+   /reference/wasm-abi (every export is `extern "C" fn(u64, ...) -> u64` with
+   each u64 a NaN-boxed Val). */
 #[cfg(target_arch = "wasm32")]
 mod runtime {
     use lol_alloc::LeakingPageAllocator;
@@ -25,6 +27,7 @@ mod runtime {
     #[link(wasm_import_module = "env")]
     unsafe extern "C" {
         fn js_print(ptr: *const u8, len: usize);
+
         /* Dispatches a CallExtern for a native binding registered by JS.
            `id` is the integer assigned at register time; `args_ptr/len`
            describe a packed u64 array (one Val per slot, NaN-boxed wire
@@ -32,11 +35,12 @@ mod runtime {
         fn js_call_native(id: u32, args_ptr: *const u64, args_len: u32) -> i64;
 
         /* Returns the host-cached bytes for `spec` so the parser can verify
-           a `#sha256-...` integrity fragment. The host writes the buffer
-           length to `out_len` and returns a pointer (allocated via
-           `wasm_alloc`) the parser owns and frees as a `Vec<u8>`. A null
-           return signals "host has no bytes" — the parser surfaces a clean
-           "not supported" diagnostic instead of running unverified. */
+           a `#sha256-...` integrity fragment on a URL import. The host
+           writes the buffer length to `out_len` and returns a pointer
+           (allocated via `wasm_alloc`) the parser owns and frees as a
+           `Vec<u8>`. A null return signals "host has no bytes" — the parser
+           surfaces a clean "not supported" diagnostic instead of running
+           unverified. */
         fn js_fetch_bytes(spec_ptr: *const u8, spec_len: u32, out_len: *mut u32) -> *mut u8;
     }
 
@@ -57,8 +61,9 @@ mod runtime {
     static mut INP_LEN: usize = 0;
 
     /* Pre-staged module registry. JS populates this via `register_code_module`
-       and `register_native_module` before calling `run()`. The Resolver consults
-       it during compilation; modules not present yield a parse-time error. */
+       and `register_native_module` before calling `run()`. The Resolver
+       consults it during compilation; modules not present yield a parse-time
+       error. */
     enum ModuleEntry {
         Code(String),
         Native(Vec<(String, u32)>),
@@ -107,11 +112,11 @@ mod runtime {
             }
         }
 
-        /* Defer to the JS side, which already cached the raw bytes during
-           pre-fetch (the same fetch that fed `register_code_module` /
-           `register_native_module`). The shim returns a freshly-allocated
-           buffer the parser consumes; `Vec::from_raw_parts` round-trips
-           cleanly because `wasm_alloc` produces Vec-compatible layout. */
+        /* Defer to the JS side, which cached the raw bytes during pre-fetch
+           (the same fetch that fed `register_code_module`). The shim returns
+           a freshly-allocated buffer the parser consumes; `Vec::from_raw_parts`
+           round-trips cleanly because `wasm_alloc` produces Vec-compatible
+           layout. */
         fn fetch_bytes(&mut self, spec: &str) -> Result<Vec<u8>, String> {
             let mut len: u32 = 0;
             let ptr = unsafe {
@@ -167,11 +172,11 @@ mod runtime {
         unsafe { registry().push((spec, ModuleEntry::Code(src))); }
     }
 
-    /* Register a native (.wasm-backed or JS-backed) module under the given
-       spec. `names` is newline-separated; each name gets a unique callback id
-       starting at `base_id` and incrementing. JS keeps a parallel table that
-       maps id → actual callable, so when EdgePython invokes js_call_native(id),
-       JS routes to the right function. */
+    /* Register a native (.wasm-backed) module under the given spec. `names`
+       is newline-separated; each name gets a unique callback id starting at
+       `base_id` and incrementing. JS keeps a parallel table that maps
+       id → callable, so when EdgePython invokes js_call_native(id), JS
+       routes to the right `.wasm` instance's export. */
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn register_native_module(
         spec_ptr: *const u8, spec_len: u32,

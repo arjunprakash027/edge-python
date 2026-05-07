@@ -7,14 +7,8 @@
      * `test_native(name)` — returns a `NativeBinding` for a fixture function,
        so JSON test cases can declare `{ "native": ["add", "square"] }` and the
        runner wires up the corresponding function pointers.
-     * `wasm_example_bytes(name)` — reads (and lazily builds) a wasm32 example
-       crate from `../edge-sdk/`. Tests reference fixtures by example name.
      * Fixture functions covering the axes worth testing: pure vs impure,
        fixed-arity, allocates on heap, returns handle (int), errors.
-
-   The reference WASM loader (`load_wasm_bindings`) lives in `tests/loaders.rs`
-   — `wasmtime` is a dev-only dep, so the production library never bundles a
-   WASM engine. Re-exported here so test files can pull it through `common`.
 
    This module is `tests/`-only: it never compiles into the production binary. */
 
@@ -26,9 +20,6 @@ use std::rc::Rc;
 
 use compiler_lib::modules::packages::{NativeBinding, Resolved, Resolver};
 use compiler_lib::modules::vm::types::{HeapObj, HeapPool, Val, VmErr};
-
-// Re-export the test loader so tests can `use crate::common::load_wasm_bindings`.
-pub use crate::loaders::load_wasm_bindings;
 
 // ─── TestResolver ────────────────────────────────────────────────────────────
 
@@ -221,38 +212,6 @@ fn pick(_: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
         return Err(VmErr::Type("pick: expected (bool, int, int)"));
     }
     Ok(if args[0].as_bool() { args[2] } else { args[1] })
-}
-
-/* Read (and lazily build) a wasm32 example from `../edge-sdk/`. The first
-   call shells out to `cargo build --target wasm32-unknown-unknown --example
-   <name>`; subsequent calls find the cached `.wasm` and skip the build.
-
-   This is the bridge that makes the docs-canonical example file in
-   `edge-sdk/examples/` the same artifact the tests load — single source of
-   truth: if the SDK or the example breaks, the test fails. */
-pub fn wasm_example_bytes(name: &str) -> Vec<u8> {
-    /* Workspace target dir is shared at the repo root, so from `compiler/`
-       (where `cargo test` runs) the artifact lands at `../target/...`. We
-       build with `-p edge-sdk` instead of `cd`-ing into the SDK so cargo
-       resolves the right member without depending on cwd. */
-    let path = format!(
-        "../target/wasm32-unknown-unknown/release/examples/{}.wasm",
-        name,
-    );
-    if !std::path::Path::new(&path).exists() {
-        let status = std::process::Command::new("cargo")
-            .args([
-                "build", "--release",
-                "--target", "wasm32-unknown-unknown",
-                "--example", name,
-                "-p", "edge-sdk",
-            ])
-            .status()
-            .expect("failed to spawn cargo to build wasm fixture");
-        assert!(status.success(), "wasm fixture build failed for example '{}'", name);
-    }
-    std::fs::read(&path)
-        .unwrap_or_else(|e| panic!("wasm fixture '{}' missing after build: {}", name, e))
 }
 
 /* Map a fixture name to its (function pointer, purity) pair. Test JSON

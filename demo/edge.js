@@ -1,12 +1,20 @@
 /* Edge Python — official browser loader.
  *
  * Single-file JS shim that consumers include alongside compiler_lib.wasm.
- * Wraps the three WASM-side concerns the user shouldn't have to think about:
- *   1. Loading the WASM module and wiring up host imports (js_print, js_call_native)
- *   2. Pre-fetching the script's imports and registering them with the WASM runtime
- *      (since the WASM compiler is sync and the browser's fetch is async)
- *   3. Routing Edge Python's native-binding calls back into JS-side dispatch (which
- *      can in turn call into a separately-instantiated WASM module's exports)
+ * Wraps the WASM-side concerns the user shouldn't have to think about:
+ *   1. Loading the WASM module and wiring up host imports (js_print,
+ *      js_call_native, js_fetch_bytes).
+ *   2. Pre-fetching the script's imports and registering them with the WASM
+ *      runtime (since the WASM compiler is sync and browser fetch is async).
+ *   3. For .wasm modules: instantiating each separately, walking exports,
+ *      and routing `from "url.wasm" import f` calls back into the right
+ *      WebAssembly instance via js_call_native.
+ *   4. Decoding `print()` output and surfacing parse / runtime errors.
+ *
+ * Modules can be `.py` source or `.wasm` binaries that follow the wire format
+ * documented at /reference/wasm-abi (every export is `extern "C" fn(u64, ...)
+ * -> u64`, each u64 a NaN-boxed Val). The shim handles either flavor uniformly
+ * — script authors don't see the difference.
  *
  * Usage (no JS knowledge required from the consumer):
  *
@@ -24,8 +32,6 @@
  *         print(normalize("  hi  "))
  *       `);
  *     </script>
- *
- * No tu-escribes-Rust. No tu-cableas-fetch. Solo el script Edge Python y las URLs.
  */
 
 const TEXT_DECODER = new TextDecoder();
@@ -36,15 +42,16 @@ export class EdgePython {
         this.instance = null;
         this.exports = null;
         this.importMap = importMap || {};
-        // Maps a callback id (assigned monotonically) to a JS function that, when
-        // invoked with an array of BigInts, returns a BigInt result. WASM native
-        // bindings dispatch through `js_call_native(id, ...)` which routes here.
+        // Maps a callback id (assigned monotonically per .wasm-module export)
+        // to a JS function that, when invoked with an array of BigInts,
+        // returns a BigInt result. WASM-side native bindings dispatch through
+        // `js_call_native(id, ...)` which routes here.
         this.callbacks = [];
         // Per-spec module cache, persists across `run()` calls so the second
         // run of the same script reuses fetched bytes instead of re-hitting
         // the network. Each entry: `{ kind: 'code' | 'native', bytes: Uint8Array }`.
-        // The `bytes` field also feeds `js_fetch_bytes` for `#sha256-...`
-        // integrity verification — same buffer, two consumers.
+        // The bytes also feed `js_fetch_bytes` for `#sha256-...` integrity
+        // verification — same buffer, two consumers.
         this.cache = new Map();
         this.outputHandler = null;
         this.bufferedOutput = [];
@@ -56,6 +63,7 @@ export class EdgePython {
      *   wasmUrl   — URL to fetch compiler_lib.wasm. Defaults to './compiler_lib.wasm'.
      *   imports   — { name: url } map for `from <name> import x`. URLs may be
      *               http(s)://, or relative paths resolved against the page URL.
+     *               Both `.py` and `.wasm` files are loaded.
      */
     static async create({ wasmUrl = './compiler_lib.wasm', imports = {} } = {}) {
         const ep = new EdgePython(imports);
@@ -86,7 +94,7 @@ export class EdgePython {
         this.exports.reset_modules();
         this.callbacks = [];
         // Cache survives across runs — the same script run twice doesn't
-        // re-fetch its imports. To force a refresh, create a new EdgePython.
+        // re-fetch its imports. To force a refresh, call clearCache().
         this.bufferedOutput = [];
 
         const srcBytes = TEXT_ENCODER.encode(src);
@@ -205,13 +213,16 @@ export class EdgePython {
         this.exports.register_code_module(specPtr, specBytes.length, srcPtr, srcBytes.length);
     }
 
+    /* Instantiate the .wasm module with the browser's WebAssembly engine,
+     * walk every exported function, and register each as a callable id.
+     * When EdgePython invokes the binding, js_call_native routes back here
+     * via `_handleNativeCall(id)` which calls into the right instance.
+     * The wire format (each export takes/returns u64 NaN-boxed Vals) is
+     * documented at /reference/wasm-abi. */
     async _registerNativeModule(spec, bytes) {
-        // Instantiate the module separately. The browser's native WASM engine
-        // does the heavy lifting — we don't ship a WASM-in-WASM runtime.
         const module = await WebAssembly.compile(bytes);
         const instance = await WebAssembly.instantiate(module, { env: {} });
 
-        // Walk exports, register every callable function.
         const fnNames = WebAssembly.Module.exports(module)
             .filter(e => e.kind === 'function')
             .map(e => e.name);
@@ -219,8 +230,9 @@ export class EdgePython {
         const baseId = this.callbacks.length;
         for (const name of fnNames) {
             const wasmFn = instance.exports[name];
-            // Each callback receives the EdgePython call's args as a BigInt[]
-            // and returns a BigInt (i64 wire format for Val).
+            // Each callback receives args as a BigInt[] (raw u64 wire) and
+            // returns a BigInt (also raw u64). The .wasm itself does the
+            // i64/f64/bool unpacking on its side.
             this.callbacks.push((argsBigInts) => {
                 const result = wasmFn(...argsBigInts);
                 return typeof result === 'bigint' ? result : BigInt(result);
@@ -260,7 +272,7 @@ export class EdgePython {
         }
         // Read args as BigUint64s — that's the wire format the Rust side uses
         // for Val (NaN-boxed u64). Caller treats them as opaque bit patterns;
-        // `edge-sdk` inside the .wasm module unpacks them as needed.
+        // the .wasm module unpacks them per the documented wire format.
         const args = Array.from(
             new BigUint64Array(this.exports.memory.buffer, argsPtr, argsLen)
         );

@@ -29,7 +29,7 @@ mod test {
     use compiler_lib::modules::vm::VM;
     use compiler_lib::modules::packages::NativeBinding;
 
-    use crate::common::{TestResolver, test_native, load_wasm_bindings, wasm_example_bytes};
+    use crate::common::{TestResolver, test_native};
 
     /* `native` / `code` declares what the resolver returns from `resolve()`.
        The optional `bytes` field declares what `fetch_bytes()` returns —
@@ -121,54 +121,6 @@ mod test {
             d.msg.contains("not found") || d.msg.contains("not configured")),
             "expected NoopResolver error, got: {:?}",
             errs.iter().map(|e| &e.msg).collect::<Vec<_>>());
-    }
-
-    /* End-to-end cross-language smoke. Builds the SDK's `reference` example
-       to a real wasm32 binary, loads it through the production loader, and
-       uses the resulting `NativeBinding`s from an EdgePython script. The
-       only test that can't live in JSON: it shells out to `cargo` to
-       produce the artifact. Single source of truth: same `reference.rs`
-       referenced from `documentation/reference/writing-modules.md`.
-
-       Covers every wire type the SDK supports today: i64 (`add`, `square`),
-       f64 (`area`), bool input + i64 return (`pick`), and i64 input + bool
-       return (`even`). A regression here means the macro / loader / NaN-box
-       round-trip is broken end to end. */
-    #[test]
-    fn loads_wasm() {
-        let bytes = wasm_example_bytes("reference");
-        let bindings = load_wasm_bindings(&bytes)
-            .expect("loading the SDK's reference.wasm should succeed");
-
-        let names: Vec<&str> = bindings.iter().map(|b| b.name.as_str()).collect();
-        for export in ["add", "square", "area", "even", "pick"] {
-            assert!(names.contains(&export), "expected '{}' export in {:?}", export, names);
-        }
-
-        let resolver = TestResolver::new().with_native("math", bindings);
-        let src = "\
-from math import add, square, area, even, pick
-print(add(2, square(3)))
-print(area(2.0))
-print(even(4))
-print(even(5))
-print(pick(True, 10, 99))
-print(pick(False, 10, 99))
-";
-        let (tokens, _) = lex(src);
-        let parser = Parser::with_resolver(src, tokens.into_iter(), Box::new(resolver));
-        let (chunk, errs) = parser.parse();
-        assert!(errs.is_empty(), "parse errors: {:?}", errs.iter().map(|d| &d.msg).collect::<Vec<_>>());
-
-        let mut vm = VM::new(&chunk);
-        if let Err(e) = vm.run() {
-            panic!("vm should run cleanly, got: {}", e);
-        }
-        assert_eq!(
-            vm.output,
-            vec!["11", "12.566370614359172", "True", "False", "99", "10"],
-            "wasm round-trip mismatch",
-        );
     }
 
     #[test]

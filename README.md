@@ -9,22 +9,30 @@ Edge Python ships as a WebAssembly module — `compiler.wasm`, ~130 KB. It runs 
 
 ## Repository layout
 
+This is a Cargo workspace. The root `Cargo.toml` declares one crate and shares profile settings; `cargo` commands work from any directory.
+
 ```text
-# Rust crate: lexer, parser, optimizer, VM, packages module. Compiles to .wasm.
-compiler/
+Cargo.toml                  Workspace manifest (members + shared profile)
+.cargo/config.toml          Workspace-wide aliases (`cargo wasm`)
 
-# SDK for writing native modules in Rust (compiled to .wasm)
-edge-sdk/
+compiler/                   Rust crate `edge-python`: lexer, parser, optimizer,
+                            VM, packages module. Compiles to compiler_lib.wasm
+                            (the only artifact the project ships).
 
-# Browser playground (HTML + WASM + Web Worker)
-demo/
-
-# Mintlify documentation source
-documentation/
-
-# CI/CD pipelines (lint, WASM build, demo deploy)
-.github/
+demo/                       Browser playground (HTML + WASM + Web Worker)
+documentation/              Mintlify documentation source
+.github/                    CI/CD pipelines (lint, WASM build, demo deploy)
 ```
+
+Common commands (from anywhere in the repo):
+
+```bash
+cargo wasm                  # release WebAssembly artifact (the shipping product)
+cargo build --release       # host artifacts (.rlib + cdylib) for Rust embedders
+cargo test --release        # full test suite
+```
+
+Native modules come in two flavors: `.wasm` binaries any host can load by URL (per the [WASM ABI](documentation/reference/wasm-abi.md)) and in-process Rust bindings for embedders linking `compiler_lib` (full type coverage). See [Writing modules](documentation/reference/writing-modules.md).
 
 ## Quick start
 
@@ -63,7 +71,7 @@ cargo wasm
 wasm-opt -Oz target/.../compiler_lib.wasm -o compiler_lib.opt.wasm
 ```
 
-(`cargo wasm` is an alias defined in `compiler/.cargo/config.toml` for `cargo build --release --target wasm32-unknown-unknown`.)
+`cargo wasm` is a workspace alias (`.cargo/config.toml`) for `cargo build --release --target wasm32-unknown-unknown -p edge-python`. Plain `cargo build --release` produces host-side library artifacts (`.rlib` + host cdylib) for embedders linking `compiler_lib` directly into a Rust app.
 
 ### Server / edge runtimes (Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute, Spin)
 
@@ -73,7 +81,7 @@ There is no built-in CLI binary. If you need one for local development, embed `c
 
 ## What it is
 
-Edge Python targets functional edge computing: first-class functions, lambdas, closures, generators, comprehensions, and pure-function memoization. Classes are supported with `__init__`, attributes, and methods. Imports resolve at compile time through a host-injected `Resolver`: `.py` modules are inlined as functions; `.wasm` modules dispatch via the `CallExtern` opcode. There is no bundled stdlib — modules are external artifacts the host fetches and feeds to the resolver.
+Edge Python targets functional edge computing: first-class functions, lambdas, closures, generators, comprehensions, and pure-function memoization. Classes are supported with `__init__`, attributes, and methods. Imports resolve at compile time through a host-injected `Resolver`: `.py` modules are inlined as functions; native modules dispatch via the `CallExtern` opcode (either a `.wasm` loaded by URL per the public ABI, or in-process Rust closures from the embedder). There is no bundled stdlib — modules are external artifacts.
 
 For architecture details, see [`compiler/README.md`](compiler/README.md). For language reference and the import system, see the [docs](https://edgepython.com/).
 

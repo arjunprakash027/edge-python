@@ -1,5 +1,0 @@
-# `cargo wasm` is a shorthand for the canonical release-build command.
-# `cargo build --release` (no alias) still produces host artifacts (.rlib +
-# host cdylib) for embedders linking compiler_lib directly.
-[alias]
-wasm = "build --release --target wasm32-unknown-unknown"
