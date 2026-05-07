@@ -30,6 +30,14 @@ mod runtime {
            describe a packed u64 array (one Val per slot, NaN-boxed wire
            format). Returns a u64 that's a Val bit-cast. */
         fn js_call_native(id: u32, args_ptr: *const u64, args_len: u32) -> i64;
+
+        /* Returns the host-cached bytes for `spec` so the parser can verify
+           a `#sha256-...` integrity fragment. The host writes the buffer
+           length to `out_len` and returns a pointer (allocated via
+           `wasm_alloc`) the parser owns and frees as a `Vec<u8>`. A null
+           return signals "host has no bytes" — the parser surfaces a clean
+           "not supported" diagnostic instead of running unverified. */
+        fn js_fetch_bytes(spec_ptr: *const u8, spec_len: u32, out_len: *mut u32) -> *mut u8;
     }
 
     fn stream_print(s: &str) {
@@ -97,6 +105,28 @@ mod runtime {
                     Ok(Resolved::Native(bindings))
                 }
             }
+        }
+
+        /* Defer to the JS side, which already cached the raw bytes during
+           pre-fetch (the same fetch that fed `register_code_module` /
+           `register_native_module`). The shim returns a freshly-allocated
+           buffer the parser consumes; `Vec::from_raw_parts` round-trips
+           cleanly because `wasm_alloc` produces Vec-compatible layout. */
+        fn fetch_bytes(&mut self, spec: &str) -> Result<Vec<u8>, String> {
+            let mut len: u32 = 0;
+            let ptr = unsafe {
+                js_fetch_bytes(
+                    spec.as_ptr(),
+                    spec.len() as u32,
+                    &mut len as *mut u32,
+                )
+            };
+            if ptr.is_null() {
+                return Err(s!(
+                    "module '", str spec,
+                    "' bytes not cached by host (integrity verification needs the host's pre-fetched bytes)"));
+            }
+            Ok(unsafe { Vec::from_raw_parts(ptr, len as usize, len as usize) })
         }
     }
 

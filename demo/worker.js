@@ -38,6 +38,15 @@ const handlers = {
             js_call_native: () => {
                 throw new Error('demo worker does not register native modules');
             },
+            // The compiler always imports js_fetch_bytes (used to verify
+            // `#sha256-...` integrity fragments). The worker doesn't cache
+            // bytes; returning null pointer + zero length makes the parser
+            // surface "bytes not cached" — clean error if a script asks for
+            // integrity in this minimal host.
+            js_fetch_bytes: (_specPtr, _specLen, outLenPtr) => {
+                new DataView(exports.memory.buffer).setUint32(outLenPtr, 0, true);
+                return 0;
+            },
         }};
 
         // A WASM trap (Rust panic, stack overflow, OOM) leaves the instance

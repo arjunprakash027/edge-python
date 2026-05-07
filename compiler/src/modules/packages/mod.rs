@@ -92,6 +92,46 @@ pub trait Resolver {
     fn child(&self, _spec: &str) -> Box<dyn Resolver> {
         Box::new(NoopResolver)
     }
+
+    /* Return the raw bytes that back `spec`. Called by the parser when the
+       import has a `#sha256-...` fragment, so the parser can verify the hash
+       before invoking `resolve`. Hosts that don't support integrity checks
+       return Err — the parser surfaces the error verbatim, so a script that
+       requests integrity against a host that can't honour it fails clean
+       instead of silently bypassing verification.
+
+       The default impl returns Err. The same `spec` (already stripped of any
+       `#sha256-...` fragment by the parser) will be passed to `resolve` next,
+       so the host is free to cache the bytes between the two calls. */
+    fn fetch_bytes(&mut self, _spec: &str) -> Result<alloc::vec::Vec<u8>, String> {
+        Err(s!("module '", str _spec, "' integrity verification not supported by this resolver"))
+    }
+}
+
+/* Split a URL spec into `(canonical_url, optional_sha256_hash)`. Returns an
+   `Err` if the fragment exists but is malformed (anything other than a
+   well-formed `sha256-<64 hex chars>`). A spec with no fragment returns the
+   spec unchanged and `None` for the hash.
+
+   The hash is decoded once here; the parser only sees a raw `[u8; 32]` and
+   compares bytes, so the rest of the codebase never touches hex parsing. */
+pub fn parse_integrity(spec: &str) -> Result<(&str, Option<[u8; 32]>), String> {
+    let Some((url, frag)) = spec.split_once('#') else {
+        return Ok((spec, None));
+    };
+    let Some(hex) = frag.strip_prefix("sha256-") else {
+        return Err(s!(
+            "unrecognized integrity fragment in '", str spec,
+            "'; expected '#sha256-<64 hex chars>'"));
+    };
+    if hex.len() != 64 {
+        return Err(s!(
+            "sha256 fragment must be 64 hex chars in '", str spec,
+            "'; got ", int hex.len() as i64));
+    }
+    let hash = crate::modules::sha256::hex_decode_32(hex).ok_or_else(|| s!(
+        "invalid hex in sha256 fragment of '", str spec, "'"))?;
+    Ok((url, Some(hash)))
 }
 
 /* Default resolver: rejects every spec with a clear message. Used when the

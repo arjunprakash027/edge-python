@@ -41,6 +41,12 @@ struct TestResolverState {
     modules: HashMap<String, Resolved>,
     aliases: HashMap<String, String>,
     in_flight: HashSet<String>,
+    /* Pre-staged raw bytes per spec, consumed by `fetch_bytes`. Lets
+       integrity-verification tests prove that the parser hashes the bytes
+       it would parse, by feeding a known buffer and asserting the resulting
+       diagnostic. Specs that don't appear here surface a plain "not
+       supported" error from the default Resolver impl. */
+    bytes: HashMap<String, Vec<u8>>,
 }
 
 pub struct TestResolver {
@@ -71,6 +77,15 @@ impl TestResolver {
 
     pub fn with_code(self, spec: &str, src: &str) -> Self {
         self.state.borrow_mut().modules.insert(spec.to_string(), Resolved::Code(src.to_string()));
+        self
+    }
+
+    /* Feed the bytes the parser will hash for `spec` when verifying a
+       `#sha256-...` fragment. Tests pair this with `with_native` /
+       `with_code` so the parser's hash check sees exactly the bytes that
+       would have produced the resolved module. */
+    pub fn with_bytes(self, spec: &str, bytes: Vec<u8>) -> Self {
+        self.state.borrow_mut().bytes.insert(spec.to_string(), bytes);
         self
     }
 
@@ -120,6 +135,19 @@ impl Resolver for TestResolver {
             state: Rc::clone(&self.state),
             in_flight_marker: Some(canon),
         })
+    }
+
+    /* Surface pre-staged bytes for integrity verification, or fall through
+       to the default Err if the test didn't seed any. The parser will hash
+       whatever we return, so a test that wants to assert "good hash, loads
+       cleanly" feeds the bytes that produce the matching SHA-256. */
+    fn fetch_bytes(&mut self, spec: &str) -> Result<Vec<u8>, String> {
+        let key = self.canonical(spec);
+        match self.state.borrow().bytes.get(&key) {
+            Some(b) => Ok(b.clone()),
+            None => Err(format!(
+                "module '{}' integrity verification not supported by this resolver", spec)),
+        }
     }
 }
 

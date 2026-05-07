@@ -109,10 +109,36 @@ Or via packages.json alias:
 from json import dumps
 ```
 
-Caveats today:
-- **No cache layer in the reference shims** — every compile re-fetches. Cache at your host layer or mirror to local files.
-- **No integrity verification** — `#sha256-...` URL fragments are documented but not yet enforced.
-- **No lockfile** — planned alongside `edge compile`.
+### Integrity verification
+
+Append `#sha256-<64 hex chars>` to any URL spec to require a content match:
+
+```python
+from "https://example.com/json.wasm#sha256-deadbeef0123456789abcdef0123456789abcdef0123456789abcdef01234567" import dumps
+```
+
+The compiler asks the host for the raw bytes (via the `Resolver::fetch_bytes` trait method), computes the SHA-256, and refuses to compile if the hash doesn't match — with a diagnostic that surfaces both expected and computed digests:
+
+```text
+error: integrity check failed for 'https://example.com/json.wasm'
+  expected sha256-deadbeef0123456789abcdef0123456789abcdef0123456789abcdef01234567
+  got      sha256-feedface9876543210fedcba9876543210fedcba9876543210fedcba98765432
+```
+
+Verification lives in the compiler itself, not the host — so any host (browser shim, WASI runtime, embedder) inherits the guarantee uniformly. Hosts that don't implement `fetch_bytes` surface a clean "not supported" error instead of silently bypassing the check, so a script asking for integrity never runs unverified.
+
+Only `sha256` is supported today. A spec with any other prefix (`md5-...`, `sha384-...`) fails with `unrecognized integrity fragment`.
+
+## Caching
+
+The reference browser shim (`demo/edge.js`) keeps every fetched module's raw bytes in an in-memory `Map<spec, Uint8Array>` for the duration of a single `run()`. Two consequences:
+
+- **Same URL twice in one script fetches once.** The shim deduplicates specs (`new Set([...stringSpecs, ...bareSpecs])`) and the per-run map persists fetched bytes through both `register_*_module` and any `#sha256-...` integrity check the compiler triggers — zero extra HTTP round-trips for verification.
+- **The map clears between runs.** Each `run()` starts with `fetchedBytes.clear()`, so the same script run twice re-fetches. Persistent caching across runs is the host's responsibility — wrap `fetch()` with a `Cache` API service worker, an IndexedDB layer, or mirror to local files for production.
+
+WASI hosts and Rust embedders make their own caching choices: the `Resolver` trait sees only `(spec → Resolved)` and `(spec → bytes for integrity)`; how those are sourced and how long they're held is the host's contract.
+
+Lockfile-style integrity (record every URL → hash on first build, verify against the file on subsequent builds) is planned alongside `edge compile`.
 
 ## Sandbox
 

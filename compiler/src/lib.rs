@@ -12,4 +12,5 @@ pub mod modules {
     pub mod parser;
     pub mod packages;
     pub mod fstr;
+    pub mod sha256;
 }

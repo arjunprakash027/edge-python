@@ -5,16 +5,19 @@ description: "How to write a native module for Edge Python in Rust."
 
 Edge Python has no bundled stdlib. Modules are external artifacts — you write one in Rust, ship the `.wasm`, and any script can `from "<url>" import <names>`.
 
-## What works today
+## What's in scope
 
-| Module type | Status |
-|---|---|
-| `.py` source modules (multi-file projects) | ✅ implemented |
-| Rust → `.wasm` modules via `edge-sdk` | ✅ implemented |
-| `http(s)://` URL imports (host-fetched) | ✅ implemented (no cache yet) |
-| Integrity verification (`#sha256-...`) | ❌ planned |
+Edge Python ships as a WebAssembly module. Imports come in two flavors and both load through the host's `Resolver`:
 
-Edge Python ships as a WebAssembly module — there's no native dyn-lib path, by design. Modules are `.py` source or `.wasm` binaries.
+- **`.py` source modules** — multi-file projects with internal `import` chains. Source is parsed and the module's top level is spliced inline at compile time; the VM never sees a module concept.
+- **Rust → `.wasm` modules via `edge-sdk`** — write a function in Rust, compile to `wasm32-unknown-unknown`, import from any script. The macro emits the C ABI Edge Python's loader expects.
+
+Two transport features apply to both:
+
+- **`http(s)://` URL imports** — the host fetches bytes at compile time. The reference browser shim (`demo/edge.js`) holds fetched bytes in an in-memory map for the duration of one `run()`, so the same URL referenced twice in a script fetches once. There is no persistent cache across runs in the reference shim — embedders that want one (IndexedDB, service worker, on-disk mirror) layer it on top of `fetch()`.
+- **Integrity verification (`#sha256-<hex>`)** — append a digest to any URL spec; the compiler hashes the host's bytes and refuses to compile on mismatch. The check lives in the compiler, not the host, so the guarantee is identical across browser / WASI / embedder. See [Imports — Integrity verification](/reference/imports#integrity-verification).
+
+There is no native dyn-lib path (`.so` / `.dylib` / `.dll`), by design — that would defeat the WASM sandbox's structural guarantees.
 
 ## Quick start: Rust to WASM
 

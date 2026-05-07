@@ -40,6 +40,11 @@ export class EdgePython {
         // invoked with an array of BigInts, returns a BigInt result. WASM native
         // bindings dispatch through `js_call_native(id, ...)` which routes here.
         this.callbacks = [];
+        // Per-spec raw bytes kept after pre-fetch so the WASM compiler can
+        // verify `#sha256-...` fragments via `js_fetch_bytes`. The fetch is
+        // free (we already pulled the bytes to register the module); we just
+        // hold on to them instead of dropping after registration.
+        this.fetchedBytes = new Map();
         this.outputHandler = null;
         this.bufferedOutput = [];
     }
@@ -56,6 +61,8 @@ export class EdgePython {
         const env = {
             js_print: (ptr, len) => ep._handlePrint(ptr, len),
             js_call_native: (id, argsPtr, argsLen) => ep._handleNativeCall(id, argsPtr, argsLen),
+            js_fetch_bytes: (specPtr, specLen, outLenPtr) =>
+                ep._handleFetchBytes(specPtr, specLen, outLenPtr),
         };
         const wasm = await WebAssembly.instantiateStreaming(fetch(wasmUrl), { env });
         ep.instance = wasm.instance;
@@ -73,6 +80,7 @@ export class EdgePython {
     async run(src) {
         this.exports.reset_modules();
         this.callbacks = [];
+        this.fetchedBytes.clear();
         this.bufferedOutput = [];
 
         const srcBytes = TEXT_ENCODER.encode(src);
@@ -147,14 +155,20 @@ export class EdgePython {
         if (!response.ok) {
             throw new Error(`Edge Python: failed to fetch '${url}' (HTTP ${response.status})`);
         }
+        // Strip the integrity fragment for the registry key — the WASM
+        // compiler strips it internally before looking up, so registering
+        // under the clean spec keeps both sides aligned.
+        const cleanSpec = spec.split('#')[0];
         const cleanUrl = url.split('?')[0].split('#')[0];
 
         if (cleanUrl.endsWith('.py')) {
-            const src = await response.text();
-            this._registerCodeModule(spec, src);
+            const text = await response.text();
+            this.fetchedBytes.set(cleanSpec, TEXT_ENCODER.encode(text));
+            this._registerCodeModule(cleanSpec, text);
         } else if (cleanUrl.endsWith('.wasm')) {
-            const bytes = await response.arrayBuffer();
-            await this._registerNativeModule(spec, bytes);
+            const buf = await response.arrayBuffer();
+            this.fetchedBytes.set(cleanSpec, new Uint8Array(buf));
+            await this._registerNativeModule(cleanSpec, buf);
         } else {
             throw new Error(`Edge Python: unknown module type for '${url}' (expected .py or .wasm)`);
         }
@@ -223,11 +237,32 @@ export class EdgePython {
         }
         // Read args as BigUint64s — that's the wire format the Rust side uses
         // for Val (NaN-boxed u64). Caller treats them as opaque bit patterns;
-        // `edge-sdk` (or your C/Zig equivalent) inside the .wasm module unpacks
-        // them as needed.
+        // `edge-sdk` inside the .wasm module unpacks them as needed.
         const args = Array.from(
             new BigUint64Array(this.exports.memory.buffer, argsPtr, argsLen)
         );
         return callback(args);
+    }
+
+    /* Hand the WASM compiler the host-cached bytes for a spec so it can
+     * verify a `#sha256-...` integrity fragment. Returns null (0) if no
+     * bytes are cached — the parser treats that as "host doesn't support
+     * verification" and surfaces a clean diagnostic. */
+    _handleFetchBytes(specPtr, specLen, outLenPtr) {
+        const spec = TEXT_DECODER.decode(
+            new Uint8Array(this.exports.memory.buffer, specPtr, specLen)
+        );
+        const bytes = this.fetchedBytes.get(spec);
+        if (!bytes) {
+            new DataView(this.exports.memory.buffer).setUint32(outLenPtr, 0, true);
+            return 0;
+        }
+        // wasm_alloc may grow linear memory, invalidating any view captured
+        // before this call — re-acquire DataView/Uint8Array from the current
+        // buffer when writing the bytes and out_len.
+        const ptr = this.exports.wasm_alloc(bytes.length);
+        new Uint8Array(this.exports.memory.buffer, ptr, bytes.length).set(bytes);
+        new DataView(this.exports.memory.buffer).setUint32(outLenPtr, bytes.length, true);
+        return ptr;
     }
 }

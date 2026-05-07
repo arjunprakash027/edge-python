@@ -10,7 +10,8 @@ use crate::s;
 use super::Parser;
 use super::types::{Diagnostic, OpCode, SSAChunk, Value, parse_string, ssa_strip};
 use crate::modules::lexer::{Token, TokenType, lex};
-use crate::modules::packages::{Resolved, binding_to_extern};
+use crate::modules::packages::{Resolved, binding_to_extern, parse_integrity};
+use crate::modules::sha256::{sha256, hex_encode};
 use crate::modules::fx::{FxHashMap, FxHashSet};
 
 use alloc::{string::{String, ToString}, vec::Vec};
@@ -171,9 +172,31 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
+    /* Verify the spec's `#sha256-...` fragment (if any) and resolve. The
+       parser is the trust boundary for module bytes: every URL import that
+       declares an integrity hash is checked HERE before the resolver hands
+       back a `Resolved`, so a host that lies about hashes can't sneak past.
+       Returns the URL stripped of the fragment so downstream uses
+       (`child()`, error messages, module names) see clean URLs. */
+    fn resolve_with_integrity(&mut self, spec: &str) -> Result<(String, Resolved), String> {
+        let (url, expected) = parse_integrity(spec)?;
+        if let Some(hash) = expected {
+            let bytes = self.resolver.fetch_bytes(url)?;
+            let computed = sha256(&bytes);
+            if computed != hash {
+                return Err(s!(
+                    "integrity check failed for '", str url,
+                    "'\n  expected sha256-", str &hex_encode(&hash),
+                    "\n  got      sha256-", str &hex_encode(&computed)));
+            }
+        }
+        let resolved = self.resolver.resolve(url)?;
+        Ok((url.to_string(), resolved))
+    }
+
     /* `from X import a, b, c` — resolve X, then bind the named exports. */
     fn resolve_and_bind_named(&mut self, spec: &str, span: (usize, usize), names: Vec<(String, String)>) {
-        let resolved = match self.resolver.resolve(spec) {
+        let (url, resolved) = match self.resolve_with_integrity(spec) {
             Ok(r) => r,
             Err(msg) => { self.error_at(span.0, span.1, &msg); return; }
         };
@@ -182,7 +205,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 for (name, alias) in names {
                     let Some(b) = bindings.iter().find(|b| b.name == name) else {
                         self.error_at(span.0, span.1,
-                            &s!("module '", str spec, "' has no export '", str &name, "'"));
+                            &s!("module '", str &url, "' has no export '", str &name, "'"));
                         continue;
                     };
                     let idx = self.chunk.extern_table.len() as u16;
@@ -191,7 +214,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 }
             }
             Resolved::Code(src) => {
-                self.inline_code_module(spec, span, &src, &names);
+                self.inline_code_module(&url, span, &src, &names);
             }
         }
     }
@@ -203,16 +226,16 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
        Module dispatch is the fallback for "stash a module value as a
        first-class object" cases). */
     fn resolve_and_bind_all(&mut self, spec: &str, span: (usize, usize), alias: &str) {
-        let resolved = match self.resolver.resolve(spec) {
+        let (url, resolved) = match self.resolve_with_integrity(spec) {
             Ok(r) => r,
             Err(msg) => { self.error_at(span.0, span.1, &msg); return; }
         };
         match resolved {
             Resolved::Native(bindings) => {
-                self.emit_native_module(spec, &bindings);
+                self.emit_native_module(&url, &bindings);
             }
             Resolved::Code(src) => {
-                self.emit_code_module(spec, span, &src);
+                self.emit_code_module(&url, span, &src);
             }
         }
         let alias_ver = self.increment_version(alias);
@@ -225,7 +248,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
        module's top level still run, and each public name becomes locally
        visible. */
     fn resolve_and_bind_star(&mut self, spec: &str, span: (usize, usize)) {
-        let resolved = match self.resolver.resolve(spec) {
+        let (url, resolved) = match self.resolve_with_integrity(spec) {
             Ok(r) => r,
             Err(msg) => { self.error_at(span.0, span.1, &msg); return; }
         };
@@ -241,7 +264,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 let (tokens, lex_errs) = lex(&src);
                 let owned = src.clone();
                 let mut sub_parser = Parser::with_resolver(
-                    &owned, tokens.into_iter(), self.resolver.child(spec)
+                    &owned, tokens.into_iter(), self.resolver.child(&url)
                 );
                 for e in lex_errs {
                     sub_parser.errors.push(Diagnostic {
@@ -251,12 +274,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 let (mut sub, errs) = sub_parser.parse();
                 if !errs.is_empty() {
                     self.error_at(span.0, span.1,
-                        &s!("module '", str spec, "' parse error: ", str &errs[0].msg));
+                        &s!("module '", str &url, "' parse error: ", str &errs[0].msg));
                     return;
                 }
                 let prefix = alloc_splice_prefix();
                 mangle_module(&mut sub, &prefix);
-                self.enter_imported_scope(spec);
+                self.enter_imported_scope(&url);
                 let bound = self.splice_top_level(&sub);
                 self.leave_imported_scope();
                 /* Star-import: bind every export under its public bare name
