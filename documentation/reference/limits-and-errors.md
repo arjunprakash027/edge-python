@@ -5,7 +5,7 @@ description: "Sandbox limits, error types, and runtime guarantees."
 
 ## Sandbox limits
 
-Edge Python supports two limit profiles. Pick one when constructing the VM (`VM::with_limits` in Rust, `--sandbox` flag from the CLI).
+Edge Python supports two limit profiles. Pick one when constructing the VM via `VM::with_limits` — the host chooses, so the same `compiler.wasm` runs unsandboxed in trusted contexts and clamped in untrusted ones.
 
 | Limit          | `none()` (default) | `sandbox()`   | What hitting it raises |
 |----------------|--------------------|---------------|------------------------|
@@ -128,8 +128,7 @@ A small set of failures are surfaced **before** the source reaches the compiler,
 
 | Error                                       | When                                          | Resolution                            |
 |---------------------------------------------|-----------------------------------------------|---------------------------------------|
-| `io: cannot access 'X'`                     | Native CLI: file missing or unreadable        | Verify the path and permissions       |
-| `input rejected: invalid utf-8 at byte N`   | WASM: input bytes are not valid UTF-8         | Re-encode the source as UTF-8         |
+| `input rejected: invalid utf-8 at byte N`   | Input bytes from the host are not valid UTF-8 | Re-encode the source as UTF-8         |
 | `source file exceeds maximum size (10 MiB)` | Source larger than the 10 MiB lex-time cap    | Split or trim the input               |
 
 These describe a problem with the runtime input, not with your code. Handle them at the embedder layer (file path validation, encoding, size check) before invoking the compiler.

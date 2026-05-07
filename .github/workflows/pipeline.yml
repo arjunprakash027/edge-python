@@ -14,15 +14,8 @@ jobs:
     uses: ./.github/workflows/_check.yml
     secrets: inherit
 
-  # Build releases for native architectures (windows, linux, macos) and webassembly.
-  native:
-    name: Native Builds
-    needs: check
-    permissions:
-      contents: write
-    uses: ./.github/workflows/_native.yml
-    secrets: inherit
-
+  # Build the release WebAssembly artifact. This is the only product Edge
+  # Python ships — there is no native binary release.
   wasm:
     name: WebAssembly
     needs: check

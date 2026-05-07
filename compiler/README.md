@@ -82,7 +82,6 @@ Mark-and-sweep with roots: stack, globals, iterator frames, current slot window,
 ├── README.md
 ├── src
 │   ├── lib.rs
-│   ├── main.rs
 │   ├── modules
 │   │   ├── fstr.rs
 │   │   ├── fx.rs
@@ -91,8 +90,7 @@ Mark-and-sweep with roots: stack, globals, iterator frames, current slot window,
 │   │   │   ├── scan.rs
 │   │   │   └── tables.rs
 │   │   ├── packages
-│   │   │   ├── mod.rs
-│   │   │   └── wasm_loader.rs
+│   │   │   └── mod.rs
 │   │   ├── parser
 │   │   │   ├── control.rs
 │   │   │   ├── expr.rs
@@ -124,6 +122,7 @@ Mark-and-sweep with roots: stack, globals, iterator frames, current slot window,
     │   └── vm.json
     ├── common.rs
     ├── lexer.rs
+    ├── loaders.rs
     ├── main.rs
     ├── packages.rs
     ├── parser.rs
@@ -135,10 +134,16 @@ Mark-and-sweep with roots: stack, globals, iterator frames, current slot window,
 ## 8. Quick Start
 
 ```bash
-cargo build --release
-./target/release/edge -c 'print((lambda x: x * 2)(21))'
-./target/release/edge --sandbox script.py
+# Build the release WebAssembly module — the only artifact this crate ships.
+cargo build --release --target wasm32-unknown-unknown --lib --features wasm
+# → target/wasm32-unknown-unknown/release/compiler_lib.wasm
+
+# Run the test suite (host-side; uses wasmtime as a dev-dep to validate the
+# WASM ABI end-to-end).
+cargo test --release
 ```
+
+Edge Python is loaded by a host runtime — browser via `demo/edge.js`, server / edge via wasmtime / wasmer / Cloudflare Workers / Fastly Compute / Spin. There is no native CLI binary; the host owns I/O, network, and module fetching.
 
 ---
 

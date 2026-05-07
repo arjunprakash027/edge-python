@@ -2,7 +2,7 @@
 
 A compact, single-pass SSA bytecode compiler and stack VM for a functional subset of CPython 3.13 syntax. Hand-written lexer, Pratt parser that emits bytecode directly, and a threaded-code interpreter with per-instruction inline caching and pure-function memoization.
 
-Built for deterministic execution in sandboxed and embedded environments. The release WASM build is ~130 KB.
+Edge Python ships as a WebAssembly module — `compiler.wasm`, ~130 KB. It runs anywhere WebAssembly runs: browsers, Cloudflare Workers, Fastly Compute, Wasmtime, Wasmer, Spin. Sandboxed by construction; no native release artifact.
 
 - **Demo:** [demo.edgepython.com](https://demo.edgepython.com/)
 - **Docs:** [edgepython.com](https://edgepython.com/)
@@ -10,7 +10,7 @@ Built for deterministic execution in sandboxed and embedded environments. The re
 ## Repository layout
 
 ```text
-# Rust crate: lexer, parser, optimizer, VM, packages module
+# Rust crate: lexer, parser, optimizer, VM, packages module. Compiles to .wasm.
 compiler/
 
 # SDK for writing native modules in Rust (compiled to .wasm)
@@ -22,27 +22,11 @@ demo/
 # Mintlify documentation source
 documentation/
 
-# CI/CD pipelines (lint, native builds, WASM, demo)
+# CI/CD pipelines (lint, WASM build, demo deploy)
 .github/
 ```
 
 ## Quick start
-
-### Native CLI
-
-```bash
-cd compiler
-cargo build --release
-./target/release/edge -c 'print((lambda x: x * 2)(21))'
-
-# Run a file with sandbox limits
-./target/release/edge --sandbox script.py
-
-# Multi-file project with imports (.py + .wasm modules + HTTPS URLs)
-./target/release/edge main.py    # reads packages.json from script's dir
-```
-
-Pre-built binaries for Linux, macOS, and Windows are available on the [releases page](https://github.com/dylan-sutton-chavez/edge-python/releases).
 
 ### Browser
 
@@ -80,35 +64,17 @@ cargo build --release --target wasm32-unknown-unknown --lib --features wasm
 wasm-opt -Oz target/.../compiler_lib.wasm -o compiler_lib.opt.wasm
 ```
 
-### WASI environments (Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute)
+### Server / edge runtimes (Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute, Spin)
 
-The same Rust crate can target [WASI](https://wasi.dev/) — WebAssembly with system-level capabilities (network, FS, env vars). In WASI environments, the JS shim isn't needed because the WASM runtime itself provides standard syscalls. **Edge Python doesn't ship a dedicated WASI build today**; the path to one is:
+Edge Python is a `cdylib` — your host runtime instantiates `compiler_lib.wasm` and calls into its exported entry points. The same `.wasm` you serve to browsers is the artifact you embed server-side. Reading scripts, fetching imports, surfacing output are the host's responsibility, exactly as in the browser case (just with WASI / runtime APIs instead of `fetch` / `postMessage`).
 
-1. Build for `wasm32-wasip1` (or `wasm32-wasip2` for the component model):
-
-   ```bash
-   rustup target add wasm32-wasip1
-   cargo build --release --target wasm32-wasip1 --bin edge
-   ```
-
-2. Run with any WASI host:
-
-   ```bash
-   wasmtime ./target/wasm32-wasip1/release/edge.wasm script.py
-   wasmer ./target/wasm32-wasip1/release/edge.wasm script.py
-   ```
-
-   Or deploy to edge platforms that support WASI (Cloudflare Workers via `workerd`, Fastly Compute, Spin, etc.).
-
-3. The `edge` CLI binary works as-is once you wire its file/network access through WASI's standard interfaces — `std::fs` and `ureq` already do this transparently when targeting `wasm32-wasip1`.
-
-The WASI path is what you want for serverless/edge runtimes where you need EdgePython without a browser. The browser path is what you want for client-side playgrounds and embedded scripts in web apps.
+There is no built-in CLI binary. If you need one for local development, embed `compiler_lib.wasm` in a 50-line wasmtime shell — the same pattern any WASI host uses.
 
 ## What it is
 
-Edge Python targets functional edge computing: first-class functions, lambdas, closures, generators, comprehensions, and pure-function memoization. Classes are supported with `__init__`, attributes, and methods. Imports resolve at compile time through a host-injected `Resolver`: `.py` modules are inlined as functions; native modules (`.wasm`/dyn-libs in any low-level language) dispatch via the `CallExtern` opcode. There is no bundled stdlib — modules are external artifacts distributed by URL.
+Edge Python targets functional edge computing: first-class functions, lambdas, closures, generators, comprehensions, and pure-function memoization. Classes are supported with `__init__`, attributes, and methods. Imports resolve at compile time through a host-injected `Resolver`: `.py` modules are inlined as functions; `.wasm` modules dispatch via the `CallExtern` opcode. There is no bundled stdlib — modules are external artifacts the host fetches and feeds to the resolver.
 
-For architecture details, see [`compiler/README.md`](compiler/README.md). For language reference, the import system, and how to author native modules, see the [docs](https://edgepython.com/).
+For architecture details, see [`compiler/README.md`](compiler/README.md). For language reference and the import system, see the [docs](https://edgepython.com/).
 
 ## License
 

@@ -20,11 +20,6 @@ use alloc::{boxed::Box, string::{String, ToString}, sync::Arc, vec::Vec};
 use crate::s;
 use crate::modules::vm::types::{HeapPool, Val, VmErr};
 
-#[cfg(not(target_arch = "wasm32"))]
-pub mod wasm_loader;
-#[cfg(not(target_arch = "wasm32"))]
-pub use wasm_loader::load_wasm_bindings;
-
 /* Callable signature for a native exposed to EdgePython. Receives the heap
    (so the function can allocate strings, lists, etc.) and a slice of its
    positional arguments; returns a `Val` or a `VmErr`. No kwargs (kwargs are a

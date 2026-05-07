@@ -3,70 +3,39 @@ title: "Quickstart"
 description: "Run your first Edge Python program in under a minute."
 ---
 
-## Install
+## Run it
 
-Three ways to get Edge Python running.
-
-### Browser playground
-
-The fastest path. No install, runs entirely client-side via WebAssembly.
+Edge Python ships as a WebAssembly module. The fastest way to try it is the playground — no install, runs entirely client-side via WebAssembly.
 
 [Open the playground ->](https://demo.edgepython.com)
 
-### Native binary
+## Embed it
 
-Pre-built for Linux, macOS, and Windows on the [releases page](https://github.com/dylan-sutton-chavez/edge-python/releases). Download, make executable, run.
+To run Edge Python in your own host (browser app, server, edge runtime), you need two artifacts:
 
-```bash
-chmod +x edge-linux-x86_64
-./edge-linux-x86_64 -c 'print("hello")'
-```
+1. The compiler module: `compiler_lib.wasm` (~130 KB).
+2. A loader for your platform — the canonical browser loader is [`demo/edge.js`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/demo/edge.js); WASI hosts wire it up via their runtime's import API.
 
-```text Output
-hello
-```
-
-### Build from source
-
-Requires a recent stable Rust toolchain.
+Build the WASM yourself:
 
 ```bash
 git clone https://github.com/dylan-sutton-chavez/edge-python
 cd edge-python/compiler
-cargo build --release
-./target/release/edge -c 'print("hello")'
+cargo build --release --target wasm32-unknown-unknown --lib --features wasm
+# → target/wasm32-unknown-unknown/release/compiler_lib.wasm
 ```
 
-## CLI usage
-
-```bash
-edge [options] <file>
-edge -c <code>
-```
-
-| Option       | Effect                                             |
-|--------------|----------------------------------------------------|
-| `-c <code>`  | Run inline code instead of reading a file          |
-| `--sandbox`  | Enforce hard limits on heap, ops, and call depth   |
-| `-d` / `-dd` | Debug output — IC stats and heap footprint         |
-| `-q`         | Suppress info logs                                 |
-| `-h`         | Show help                                          |
+There is no separate native CLI binary. The host runtime owns I/O, network, and module fetching — that's what keeps Edge Python sandboxed by construction.
 
 ## Your first program
 
-Save this as `hello.py`:
+Open the [playground](https://demo.edgepython.com) and paste:
 
 ```python
 greet = lambda name: f"Hello, {name}!"
 
 for who in ["world", "edge", "python"]:
     print(greet(who))
-```
-
-Run it:
-
-```bash
-edge hello.py
 ```
 
 ```text Output

@@ -9,15 +9,13 @@ Edge Python has no bundled stdlib. Modules are external artifacts — you write 
 
 | Module type | Status |
 |---|---|
-| `.py` source modules (multi-file projects) | ✅ implemented, works in CLI |
-| Rust → `.wasm` modules via `edge-sdk` | ✅ implemented, works in CLI |
-| `http(s)://` URL imports | ✅ implemented, works in CLI (no cache yet) |
+| `.py` source modules (multi-file projects) | ✅ implemented |
+| Rust → `.wasm` modules via `edge-sdk` | ✅ implemented |
+| `http(s)://` URL imports (host-fetched) | ✅ implemented (no cache yet) |
 | C / Zig / AS → `.wasm` modules | 🟡 same ABI works in theory; no SDK published yet, no test fixtures |
-| Native dyn-libs (`.so`, `.dylib`, `.dll`) | ❌ ABI designed, loader not implemented |
 | Integrity verification (`#sha256-...`) | ❌ planned |
-| Multi-arch manifest selection | ❌ planned |
 
-The rest of this page focuses on the Rust → WASM path, which is the only fully shipped non-`.py` flavor and the one the CLI loads natively.
+Edge Python ships as a WebAssembly module — there's no native dyn-lib path, by design. Modules are `.py` source or `.wasm` binaries.
 
 ## Quick start: Rust to WASM
 
@@ -117,17 +115,17 @@ print(add(2, square(3)))   # 11
 edge main.py
 ```
 
-The CLI loads the `.wasm` via wasmtime, registers each exported function as an Edge Python native, and dispatches your script's calls through the `CallExtern` opcode straight into the WASM instance.
+The host runtime loads the `.wasm` (browser shim via `WebAssembly.instantiateStreaming`, WASI host via its runtime API), registers each exported function as an Edge Python native, and dispatches your script's calls through the `CallExtern` opcode straight into the WASM instance.
 
 ## Reference example
 
-The canonical reference module lives at [`edge-sdk/examples/reference.rs`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/edge-sdk/examples/reference.rs). The integration test in [`compiler/tests/packages.rs`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/compiler/tests/packages.rs) builds that exact file to a real `.wasm`, loads it through the production loader, and runs an Edge Python script that imports from it. **If the reference breaks, CI fails** — so the documentation here can never drift from what actually compiles and runs.
+The canonical reference module lives at [`edge-sdk/examples/reference.rs`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/edge-sdk/examples/reference.rs). The integration test in [`compiler/tests/packages.rs`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/compiler/tests/packages.rs) builds that exact file to a real `.wasm`, loads it through the test loader, and runs an Edge Python script that imports from it. **If the reference breaks, CI fails** — so the documentation here can never drift from what actually compiles and runs.
 
 ## Reference loader
 
-The reference WASM loader lives in [`compiler/src/modules/packages/wasm_loader.rs`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/compiler/src/modules/packages/wasm_loader.rs) under `load_wasm_bindings`. It uses [`wasmtime`](https://wasmtime.dev/) to instantiate the module and walks every i64-typed export, wrapping each in a `NativeBinding` closure that dispatches into the wasmtime instance.
+A reference WASM loader lives in [`compiler/tests/loaders.rs`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/compiler/tests/loaders.rs) under `load_wasm_bindings`. It uses [`wasmtime`](https://wasmtime.dev/) to instantiate the module and walks every i64-typed export, wrapping each in a `NativeBinding` closure that dispatches into the wasmtime instance. `wasmtime` is a `[dev-dependencies]` entry — the production `compiler.wasm` doesn't bundle a WASM engine; loading is the host runtime's responsibility.
 
-The `edge` CLI ships with this loader, so end users don't write any Rust to use `.wasm` modules — they just point `packages.json` at the file. Embedders building on top of `compiler_lib` can either reuse `load_wasm_bindings` or substitute a different WebAssembly runtime ([`wasmer`](https://wasmer.io/), [`wasmi`](https://crates.io/crates/wasmi)) following the same `NativeBinding` shape.
+Production hosts implement the same shape against their own runtime: the [browser shim](https://github.com/dylan-sutton-chavez/edge-python/blob/main/demo/edge.js) does it via `WebAssembly.instantiateStreaming`; WASI embedders use their runtime's import API ([`wasmer`](https://wasmer.io/), [`wasmi`](https://crates.io/crates/wasmi), Cloudflare Workers, etc.).
 
 The runtime isn't prescribed — what matters is that bindings get into the parser via the `Resolver` trait. See [Imports](/reference/imports) for how the Resolver is wired in.
 
@@ -165,9 +163,9 @@ The ABI is language-agnostic. To add support for a new source language, a contri
 
 1. Write the equivalent of `edge_export!` for that language (a macro, a code generator, or just a documented manual pattern).
 2. Make sure the compiled output exports functions with the i64 wire format.
-3. Compile to either `.wasm` (works with the existing loader) or to a dyn-lib (needs a new loader to be added).
+3. Compile to `.wasm`.
 
-There's no formal SDK for C, Zig, or AssemblyScript yet — but a `.wasm` produced by any of them with the right exports will load with the existing wasmtime-based loader. We accept SDK contributions for any language that targets `wasm32-unknown-unknown` cleanly.
+There's no formal SDK for C, Zig, or AssemblyScript yet — but a `.wasm` produced by any of them with the right exports will load with any host that follows the reference loader's pattern. We accept SDK contributions for any language that targets `wasm32-unknown-unknown` cleanly.
 
 ## Hosting checklist
 

@@ -29,8 +29,10 @@ jobs:
         run: cargo shear
         working-directory: compiler
 
-      # Lint for native targets (windows, linux, macos).
-      - name: Clippy (native)
+      # Lint the lib + tests on the host target. The release artifact is
+      # the wasm32 build below; this catches issues in test-only code that
+      # uses wasmtime as a dev-dep to validate the WASM ABI end-to-end.
+      - name: Clippy (host / tests)
         run: cargo clippy --all-targets -- -D warnings
         working-directory: compiler
 

@@ -10,7 +10,7 @@ Edge Python supports `import`, `from <spec> import <names>`, and `from <spec> im
 | Flavor | What it is | How it dispatches |
 |---|---|---|
 | **Code module** | A `.py` file written in Edge Python | The module's top level is spliced into the importing chunk; requested names are bound (or wrapped in a `HeapObj::Module` for `import X`). |
-| **Native module** | Pre-compiled binary (`.wasm`, `.so`, `.dylib`, `.dll`) written in any low-level language | Dispatched through the `CallExtern` opcode (named import) or via a `HeapObj::Module` carrying `HeapObj::Extern` callables (`import X`). |
+| **Native module** | Pre-compiled `.wasm` binary written in any language that targets WebAssembly | Dispatched through the `CallExtern` opcode (named import) or via a `HeapObj::Module` carrying `HeapObj::Extern` callables (`import X`). |
 
 The same `import` syntax covers both. The host's resolver decides which flavor a given spec maps to.
 
@@ -50,7 +50,7 @@ print(slugify("Hello world"))
 
 Each module's top-level names live in their own namespace; only the exports you explicitly request become visible in the importer's scope. Helpers and constants stay private to their defining module, even when two modules use the same internal name. Inside an imported module, `__name__` is rebound to the module's spec for the duration of the splice, so the canonical `if __name__ == "__main__":` guard skips when the module is imported.
 
-The runtime never fetches anything. The host (browser JS, CLI binary, embedded Rust app) is responsible for bringing the bytes; the compiler accepts them through the `Resolver` trait.
+The runtime never fetches anything. The host (browser JS, WASI runtime, embedded Rust app) is responsible for bringing the bytes; the compiler accepts them through the `Resolver` trait.
 
 ## packages.json
 
@@ -82,44 +82,18 @@ Concretely:
 
 When multiple paths import the same module, it's fetched and parsed once: the resolver caches each canonical spec. Direct or indirect cycles (`a.py` imports `b.py`, `b.py` imports `a.py`) surface as parse-time `circular import` diagnostics instead of looping the splicer.
 
-## Running with the CLI
+## Host responsibilities
 
-The `edge` CLI wires this end-to-end:
+Edge Python's compiler is a WebAssembly module. Fetching bytes — from disk, from `https://`, from your build artifact pipeline — is the host's job. The browser shim ([`demo/edge.js`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/demo/edge.js)) does it via `fetch()`. WASI hosts use their runtime's filesystem and network APIs. Embedders pre-stage modules and feed them to the `Resolver`.
 
-```bash
-# Project layout
-my-app/
-├── packages.json
-├── main.py
-├── lib/
-│   └── utils.py
-└── vendor/
-    └── math.wasm        # built from your edge-sdk Rust crate
-
-# Run it
-edge main.py
-```
-
-Behind the scenes, the CLI:
-1. Reads `packages.json` from the script's directory (if present)
-2. Walks the script's imports during compilation
-3. For each import, the default resolver:
-   - Reads `.py` files and inlines their `def`s
-   - Loads `.wasm` files via wasmtime and registers their exports
-4. Runs the resulting bytecode
-
-No Rust to write. No SDK on the consumer side. Just a script and an import map.
-
-## Cold start and reproducibility
-
-| Scenario | Behavior |
+| Scenario | Who fetches |
 |---|---|
-| CLI script with local files | Resolution is direct disk reads — instant |
-| CLI script with `https://` URLs | Fetched synchronously at compile time via `ureq` + rustls. No cache yet. |
-| Browser playground | The host (JS) is responsible for fetching URLs and feeding bytes to the resolver |
+| Browser playground | `edge.js` shim — pre-fetches every spec the script imports, hands bytes to `Resolver` |
+| WASI runtime | Host program reads from disk / network using `wasi_snapshot_preview1` |
+| Embedded Rust app | Caller pre-stages a `HashMap<String, Resolved>` and constructs a custom `Resolver` |
 | Production deploy | `edge compile` (planned) will seal all imports into a single `.epy` artifact |
 
-The CLI now supports `http(s)://` URLs end-to-end:
+URL imports work as long as your host supports them:
 
 ```python
 from "https://example.com/json.wasm" import dumps
@@ -136,20 +110,18 @@ from json import dumps
 ```
 
 Caveats today:
-- **No cache layer** — every compile re-fetches. Mirror to local files for production.
+- **No cache layer in the reference shims** — every compile re-fetches. Cache at your host layer or mirror to local files.
 - **No integrity verification** — `#sha256-...` URL fragments are documented but not yet enforced.
 - **No lockfile** — planned alongside `edge compile`.
-- **Relative paths inside remote modules resolve against the entry script's directory, not the URL.** Use absolute URLs for transitive imports in remote modules until this is fixed.
 
 ## Sandbox
 
 | Module type | Sandbox |
 |---|---|
 | Code modules (`.py`) | Full sandbox — code only calls capabilities it imports |
-| Native WASM modules (`.wasm`) | Full sandbox — WASM isolates by construction |
-| Native dyn-libs (`.so` / `.dylib` / `.dll`) | **No sandbox** — requires `--allow-native` flag at runtime |
+| Native modules (`.wasm`) | Full sandbox — WASM isolates by construction |
 
-By default, only `.py` and `.wasm` modules load. Hosts that need native FFI (CUDA, libssh, custom drivers) opt in explicitly and accept the security tradeoff.
+Edge Python runs as a WebAssembly module, so the entire execution environment is sandboxed by the WASM runtime. There is no native dyn-lib loader and no `dlopen` path — that would defeat the sandbox guarantee that's the whole point.
 
 ## What doesn't work
 

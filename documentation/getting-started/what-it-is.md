@@ -22,7 +22,7 @@ The language reads like Python because it parses Python's syntax. It runs differ
 - **Walrus operator**: `:=` in expressions.
 - **Type annotations**: parsed and ignored, like CPython for non-strict tools.
 - **Module identity**: `__name__` is bound to `"__main__"` in the entry script and to the module's spec inside imported modules, so the canonical `if __name__ == "__main__":` guard works as expected.
-- **Modules**: `import`, `from <spec> import names`, and `from <spec> import *` resolve at compile time through a host-injected `Resolver`. Two flavors: `.py` source modules (top level spliced into the importer; named exports bound directly) and native modules (`.wasm`/dyn-libs, dispatched via the `CallExtern` opcode or wrapped in a `HeapObj::Module` for `import X`). See [Imports](/reference/imports) and [Writing modules](/reference/writing-modules).
+- **Modules**: `import`, `from <spec> import names`, and `from <spec> import *` resolve at compile time through a host-injected `Resolver`. Two flavors: `.py` source modules (top level spliced into the importer; named exports bound directly) and `.wasm` modules (dispatched via the `CallExtern` opcode or wrapped in a `HeapObj::Module` for `import X`). See [Imports](/reference/imports) and [Writing modules](/reference/writing-modules).
 
 ## What it doesn't support
 
@@ -30,7 +30,7 @@ These parse for syntactic compatibility but raise at runtime, or simply don't ex
 
 - **Inheritance / MRO**: classes work with `__init__`, attributes, and methods, but there is no base-class chain, no `super`, no method resolution order.
 - **Standard library**: there is no bundled stdlib. `json`, `regex`, `math`, etc. are external modules distributed as `.wasm` artifacts via URL — fetched at compile time, sealed into the artifact at deploy time. See [Imports](/reference/imports).
-- **I/O**: `input()` reads from a host-provided buffer (native: stdin, WASM: FFI). There is no file system, no network, no `os`, no `sys` — *unless* the host registers a native module that provides those capabilities.
+- **I/O**: `input()` reads from a host-provided buffer. There is no file system, no network, no `os`, no `sys` — *unless* the host registers a native module that provides those capabilities.
 - **Async**: `async def` creates real coroutines. `run()` provides cooperative scheduling with `sleep()` and `receive()`.
 - **Metaclasses, descriptors, decorators-on-classes, properties**: not modeled.
 - **Dynamic code**: no `exec`, no `eval`, no `compile`, no `__import__`.
@@ -49,7 +49,7 @@ A functional core gives Edge Python:
 
 ## Sandbox guarantees
 
-When run with `--sandbox`, Edge Python enforces:
+The whole Edge Python runtime is a WebAssembly module, so it inherits the sandbox guarantees of the WASM host (no syscalls, no FS, no network, isolated linear memory). On top of that, the embedder can enforce per-VM resource caps via `Limits::sandbox()`:
 
 | Limit              | Default sandbox |
 |--------------------|-----------------|
@@ -61,7 +61,10 @@ Hitting any limit raises a recoverable `RuntimeError` / `MemoryError` / `Recursi
 
 ## Where it runs
 
-- **Native**: `x86_64-linux`, `aarch64-darwin`, `x86_64-windows`. Single binary, no runtime dependencies.
-- **WebAssembly**: `wasm32-unknown-unknown`, `no_std`, `panic=abort`. Requires one host import — `env.js_print(ptr, len)` — called on every `print()` for real-time streaming output.
+Edge Python ships as a single `.wasm` artifact (`compiler_lib.wasm`, ~130 KB). It runs anywhere WebAssembly does:
 
-The same compiler and the same VM run on both targets. The only host-specific surface is `js_print` on the WASM target.
+- **Browser**: served alongside the [`edge.js`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/demo/edge.js) shim, which bridges `print()` and module imports across the WASM ↔ JS boundary.
+- **Server / edge runtimes**: Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute, Spin, etc. The host runtime owns I/O, fetching, and module loading.
+- **Embedded Rust apps**: load `compiler_lib.wasm` via your runtime of choice or, when `cargo`-linked, use the `compiler_lib` rlib directly.
+
+The same compiler and the same VM run everywhere. The only host-specific surface is one host import — `env.js_print(ptr, len)` — called on every `print()` for real-time streaming output.

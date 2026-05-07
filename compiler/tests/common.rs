@@ -12,9 +12,9 @@
      * Fixture functions covering the axes worth testing: pure vs impure,
        fixed-arity, allocates on heap, returns handle (int), errors.
 
-   The actual WASM loader lives in `compiler_lib::modules::packages::
-   load_wasm_bindings` (production code). Tests use the same loader the CLI
-   uses — single source of truth.
+   The reference WASM loader (`load_wasm_bindings`) lives in `tests/loaders.rs`
+   — `wasmtime` is a dev-only dep, so the production library never bundles a
+   WASM engine. Re-exported here so test files can pull it through `common`.
 
    This module is `tests/`-only: it never compiles into the production binary. */
 
@@ -27,8 +27,8 @@ use std::rc::Rc;
 use compiler_lib::modules::packages::{NativeBinding, Resolved, Resolver};
 use compiler_lib::modules::vm::types::{HeapObj, HeapPool, Val, VmErr};
 
-// Re-export the production loader so tests can `use crate::common::load_wasm_bindings`.
-pub use compiler_lib::modules::packages::load_wasm_bindings;
+// Re-export the test loader so tests can `use crate::common::load_wasm_bindings`.
+pub use crate::loaders::load_wasm_bindings;
 
 // ─── TestResolver ────────────────────────────────────────────────────────────
 
