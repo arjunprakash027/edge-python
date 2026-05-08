@@ -22,7 +22,7 @@ The language reads like Python because it parses Python's syntax. It runs differ
 - **Walrus operator**: `:=` in expressions.
 - **Type annotations**: parsed and ignored, like CPython for non-strict tools.
 - **Module identity**: `__name__` is bound to `"__main__"` in the entry script and to the module's spec inside imported modules, so the canonical `if __name__ == "__main__":` guard works as expected.
-- **Modules**: `import`, `from <spec> import names`, and `from <spec> import *` resolve at compile time through a host-injected `Resolver`. Two flavors: `.py` source modules (top level spliced into the importer; named exports bound directly) and native modules (`.wasm` binaries loaded by URL per the [WASM ABI](/reference/wasm-abi), or in-process Rust closures for embedders linking `compiler_lib`). See [Imports](/reference/imports) and [Writing modules](/reference/writing-modules).
+- **Modules**: `import`, `from <spec> import names`, and `from <spec> import *` resolve at compile time through a host-injected `Resolver`. Each module is compiled and initialised once: the parser registers it in the importing chunk's `imports` list, the VM runs every imported module's top level in dependency order before user code starts, and the resulting Module value is shared via a `LoadModule` opcode. Two flavors: `.py` source modules and native modules (`.wasm` binaries loaded by URL per the [WASM ABI](/reference/wasm-abi), or in-process Rust closures for embedders linking `compiler_lib`). See [Imports](/reference/imports) and [Writing modules](/reference/writing-modules).
 
 ## What it doesn't support
 

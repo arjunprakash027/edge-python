@@ -53,34 +53,31 @@
   },
 
   {
-    "_section": "Code modules — basic inlining (each requested fn ends up in chunk.functions)",
+    "_section": "Code modules — module-as-singleton: imported fns live in the module's own chunk",
+    "_comment": "Post-architectural-fix: imports compile each module ONCE; importers reference its functions via LoadModule + LoadAttr instead of splicing them into the parent chunk.",
     "src": "from u import normalize\nprint(normalize('  hi  '))",
     "output": ["hi"],
-    "modules": { "u": { "code": "def normalize(s):\n    return s.strip()" } },
-    "expect_functions": 1
+    "modules": { "u": { "code": "def normalize(s):\n    return s.strip()" } }
   },
 
   {
-    "_section": "Code modules — transitive deps pulled in automatically",
+    "_section": "Code modules — transitive deps resolve through their own module chunks",
     "_comment": "single-level: report calls label internally",
     "src": "from m import report\nprint(report(1))",
     "output": ["yes"],
-    "modules": { "m": { "code": "def label(p):\n    return 'yes' if p == 1 else 'no'\n\ndef report(p):\n    return label(p)" } },
-    "expect_functions": 2
+    "modules": { "m": { "code": "def label(p):\n    return 'yes' if p == 1 else 'no'\n\ndef report(p):\n    return label(p)" } }
   },
   {
-    "_comment": "multi-level chain a → b → c → d all inlined",
+    "_comment": "multi-level chain a → b → c → d through the same module",
     "src": "from m import a\nprint(a())",
     "output": ["d"],
-    "modules": { "m": { "code": "def d():\n    return 'd'\n\ndef c():\n    return d()\n\ndef b():\n    return c()\n\ndef a():\n    return b()" } },
-    "expect_functions": 4
+    "modules": { "m": { "code": "def d():\n    return 'd'\n\ndef c():\n    return d()\n\ndef b():\n    return c()\n\ndef a():\n    return b()" } }
   },
   {
-    "_comment": "shared helper inlined ONCE despite both a and b depending on it",
+    "_comment": "shared helper called by both a and b — single Module Val, same fn identity",
     "src": "from m import a, b\nprint(a())\nprint(b())",
     "output": ["A: hi", "B: hi"],
-    "modules": { "m": { "code": "def label():\n    return 'hi'\n\ndef a():\n    return 'A: ' + label()\n\ndef b():\n    return 'B: ' + label()" } },
-    "expect_functions": 3
+    "modules": { "m": { "code": "def label():\n    return 'hi'\n\ndef a():\n    return 'A: ' + label()\n\ndef b():\n    return 'B: ' + label()" } }
   },
   {
     "_comment": "alias stays on the user-imported name, transitive helper keeps its bare name",
@@ -109,8 +106,7 @@
       "m": { "native": ["add"] },
       "u": { "code": "def shout(n):\n    return n * 10" }
     },
-    "expect_externs": 1,
-    "expect_functions": 1
+    "expect_externs": 1
   },
   {
     "_comment": "native called from inside a user def — extern_table inherited to nested chunk",

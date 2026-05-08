@@ -304,7 +304,10 @@ mod runtime {
                     "module '", str spec,
                     "' not registered (host did not pre-fetch / register before run())"))?;
             match &entry.1 {
-                ModuleEntry::Code(src) => Ok(Resolved::Code(src.clone())),
+                ModuleEntry::Code(src) => Ok(Resolved::Code {
+                    src: src.clone(),
+                    canonical: spec.to_string(),
+                }),
                 ModuleEntry::Native(funcs) => {
                     let bindings: Vec<NativeBinding> = funcs.iter().map(|(name, id)| {
                         let id = *id;
@@ -350,7 +353,10 @@ mod runtime {
                             pure: false,
                         }
                     }).collect();
-                    Ok(Resolved::Native(bindings))
+                    Ok(Resolved::Native {
+                        bindings,
+                        canonical: spec.to_string(),
+                    })
                 }
             }
         }

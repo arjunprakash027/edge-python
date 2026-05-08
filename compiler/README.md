@@ -9,7 +9,7 @@ A compact, single-pass SSA-style bytecode compiler and stack VM for a functional
 
 ## 1. Paradigm
 
-Edge Python targets functional edge computing. The language treats functions as first-class values: lambdas, higher-order functions, currying, closures, comprehensions, and pure-function memoization are all central. Classes are supported with `__init__`, instance attributes, and methods. There is no inheritance and no method resolution order. `import` and `from <spec> import names` resolve at compile time through a host-injected `Resolver` — code modules are spliced inline, native modules dispatch via `CallExtern`. The VM itself has no module concept; modules are a parser-time construct.
+Edge Python targets functional edge computing. The language treats functions as first-class values: lambdas, higher-order functions, currying, closures, comprehensions, and pure-function memoization are all central. Classes are supported with `__init__`, instance attributes, and methods. There is no inheritance and no method resolution order. `import` and `from <spec> import names` resolve at compile time through a host-injected `Resolver`. Each module is compiled and initialised once: the parser registers it in the importing chunk's `imports` list, the VM runs every imported module's top level in dependency order, and importers reach the resulting `HeapObj::Module` value via `OpCode::LoadModule`. Native modules dispatch via `CallExtern` for fast call-site fusion.
 
 What this leaves is a small, fast, deterministic core: arithmetic with arbitrary-precision integers, sequences (lists, tuples, dicts, sets, strings, ranges), control flow, lambdas with closures, generators, exceptions, and a curated set of built-in functions exposed as first-class values.
 
@@ -39,7 +39,7 @@ What the compiler intentionally does *not* do:
 * No CSE, no GVN, no LICM, no inlining, no closed-form loop folding.
 * No dead-store elimination beyond what falls out of constant folding.
 * No IR — bytecode is the only representation.
-* No bundled stdlib: `import`, `from ... import`, and `from ... import *` resolve at compile time through a host-injected `Resolver` (see `modules/packages/`). The VM never learns about modules at runtime — `.py` imports splice their entire top level into the parent chunk (constants, classes, defs, branches), native imports register in `chunk.extern_table` and dispatch via `CallExtern`. `import X` materialises a `HeapObj::Module` so `X.attr` resolves at runtime.
+* No bundled stdlib: `import`, `from ... import`, and `from ... import *` resolve at compile time through a host-injected `Resolver` (see `modules/packages/`). Each module compiles to its own `SSAChunk` and runs once at `vm.init_modules` (called from `run()` before user code dispatches). The resulting `HeapObj::Module` value is registered in `vm.module_table` keyed by canonical spec; `OpCode::LoadModule` does an O(1) lookup so every importer sees the SAME module value. Native imports also register in `chunk.extern_table` for fast `CallExtern` dispatch at call sites.
 
 ---
 

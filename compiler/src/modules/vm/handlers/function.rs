@@ -98,13 +98,14 @@ impl<'a> VM<'a> {
 
         let val = self.heap.alloc(HeapObj::Func(global, defaults, captures))?;
 
-        // Module-level (entry-chunk) defs go into `globals` under their bare
-        // name so other top-level defs can resolve forward references at call
-        // time. Captures snapshot at MakeFunction time, so `def is_even`
-        // can't capture `is_odd` defined later in the same module — the
-        // call-site free-load fallback in exec_call reads globals to bridge
-        // that. Restricted to entry-chunk MakeFunction so nested defs
-        // (closures) don't pollute the global namespace.
+        // Top-level defs in the entry chunk go into `globals` so the
+        // call-site free-load fallback in `exec_call` resolves forward
+        // references — `def is_even` defined before `def is_odd` in
+        // the same module captures nothing useful at MakeFunction time,
+        // but at CALL time is_odd is in globals and the lookup succeeds.
+        // Module-level defs are NOT registered here: they live in the
+        // module's bindings (looked up via `fn_module[fi]` at call time)
+        // so cross-module helpers with the same name stay isolated.
         if core::ptr::eq(chunk, self.chunk) {
             let name_idx = self.functions[global].3 as usize;
             if name_idx < chunk.names.len() {
@@ -307,7 +308,19 @@ impl<'a> VM<'a> {
             let param_bm = &self.is_param_slot[fi];
             let caller_fi = self.body_to_fi.get(&(chunk as *const _)).copied();
             let callee_parent_fi = self.function_parents.get(fi).and_then(|x| *x);
-            let same_scope = caller_fi == callee_parent_fi;
+            // "Same scope" means the callee was defined in the caller's
+            // OWN scope — late-binding via caller slots is then correct
+            // (it's mutual recursion of sibling defs). Crossing a module
+            // boundary breaks that assumption: a function imported from
+            // module M shouldn't have its captured free vars rebound by
+            // the importer's slots, even if both happen to be top-level
+            // (parent_fi == None). Comparing fn_module on both sides
+            // restores per-module isolation that the old splice path
+            // achieved via name mangling.
+            let caller_module = caller_fi.and_then(|cf| self.fn_module.get(cf).cloned().flatten());
+            let callee_module = self.fn_module.get(fi).cloned().flatten();
+            let same_scope = caller_fi == callee_parent_fi
+                && caller_module == callee_module;
             let captured_set: crate::modules::fx::FxHashSet<usize> = if same_scope {
                 crate::modules::fx::FxHashSet::default()
             } else if let HeapObj::Func(_, _, captures) = self.heap.get(callee) {
@@ -355,11 +368,26 @@ impl<'a> VM<'a> {
                     fn_slots[*bs] = latest_v;
                     continue;
                 }
+                // Module-bindings fallback: if the callee was defined in
+                // an imported module, look up `bare` in that module's
+                // attrs first. Cross-module name collisions stay isolated
+                // — `a.helper` and `b.helper` resolve to their own
+                // module's helper instead of clobbering each other in the
+                // shared globals table.
+                if let Some(Some(spec)) = self.fn_module.get(fi).cloned()
+                    && let Some(mod_val) = self.module_table.get(&spec).copied()
+                    && mod_val.is_heap()
+                    && let HeapObj::Module(_, attrs) = self.heap.get(mod_val)
+                    && let Some((_, v)) = attrs.iter().find(|(n, _)| n == bare.as_str())
+                {
+                    fn_slots[*bs] = *v;
+                    continue;
+                }
                 // Globals fallback: catches forward-ref module-level mutual
-                // recursion when the call re-enters through a sibling def
-                // (so the immediate caller's chunk isn't the entry chunk that
-                // stores the sibling). Top-level defs register themselves in
-                // globals at MakeFunction time for this lookup.
+                // recursion in the entry chunk (where module_table doesn't
+                // apply because the entry isn't a "module"). Top-level defs
+                // in entry register themselves in globals at MakeFunction
+                // time for this lookup.
                 if let Some(&v) = self.globals.get(bare.as_str()) {
                     fn_slots[*bs] = v;
                 }

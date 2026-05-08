@@ -65,11 +65,20 @@ impl NativeBinding {
      the importing chunk's extern_table.
 
    Cloneable so resolvers can cache results across diamond imports without
-   re-fetching. NativeBinding's `func` is an Arc, so the clone is shallow. */
+   re-fetching. NativeBinding's `func` is an Arc, so the clone is shallow.
+
+   `canonical` is the resolver's authoritative identifier for the module
+   AFTER walk-up: the same source file imported as `from "./util.py" import x`
+   from one location and `from util import x` from another (where the
+   second resolves through `packages.json` to the same path) returns
+   IDENTICAL `canonical` values. The parser uses this string as the
+   module-table key so context-dependent bare names don't collide
+   (`db` resolved against `svc_a/packages.json` vs. `svc_b/packages.json`
+   yields different canonicals). */
 #[derive(Clone)]
 pub enum Resolved {
-    Code(String),
-    Native(Vec<NativeBinding>),
+    Code { src: alloc::string::String, canonical: alloc::string::String },
+    Native { bindings: Vec<NativeBinding>, canonical: alloc::string::String },
 }
 
 /* Host-injected lookup. Implementations should be cheap to call: the parser

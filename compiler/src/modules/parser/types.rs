@@ -30,6 +30,11 @@ pub enum OpCode {
        stack on entry has, top-down: module-name string, then `operand`
        (attr_name_str, attr_value) pairs. */
     BuildModule,
+    /* Push the Module Val for `chunk.imports[operand]` from the VM's
+       module_table. The module's top-level has already run during
+       `vm.init_modules()` before any user bytecode dispatches, so this
+       opcode is a constant-time lookup at runtime. */
+    LoadModule,
 }
 
 // Python builtin name → (specialised OpCode, leaves_value_on_stack).
@@ -92,6 +97,31 @@ pub struct Instruction {
     pub operand: u16,
 }
 
+/* An imported module declared at parse time.
+
+   The whole chunk-tree carries these (entry + every function/class body
+   that hosts an `import` statement). At `vm.run()` start, the VM walks
+   the tree once, dedupes by spec, and runs each `Code` module's
+   top-level exactly once in dependency order — the resulting Module Val
+   is registered in `vm.module_table` keyed by spec. `OpCode::LoadModule`
+   then becomes a constant-time table lookup at runtime.
+
+   `Code` shares the parsed chunk via `Rc` so a module imported from many
+   files compiles once and lives once. `Native` carries already-resolved
+   bindings (no chunk to run; the Module Val is built from the function
+   table at init time). */
+#[derive(Clone)]
+pub struct ImportEntry {
+    pub spec: alloc::string::String,
+    pub kind: ImportKind,
+}
+
+#[derive(Clone)]
+pub enum ImportKind {
+    Code(alloc::rc::Rc<SSAChunk>),
+    Native(Vec<crate::modules::vm::types::ExternFn>),
+}
+
 // Compiled SSA chunk: instructions + pools + Phi metadata + nested
 // functions/classes. One per module / function body / class body.
 #[derive(Default, Clone)]
@@ -124,6 +154,12 @@ pub struct SSAChunk {
        the generic `Call`. Per-chunk: each function body / class body has its own. */
     pub extern_table: Vec<ExternFn>,
     pub(super) extern_index: HashMap<String, u16>,
+    /* Imports declared by this chunk (`import X`, `from X import name`,
+       `from X import *`). `OpCode::LoadModule` operands index into this
+       Vec. Each unique spec across the entire chunk tree (entry +
+       transitively imported modules) becomes one Module Val at VM init,
+       shared via the VM's module_table — no per-importer duplication. */
+    pub imports: Vec<ImportEntry>,
 }
 
 impl SSAChunk {

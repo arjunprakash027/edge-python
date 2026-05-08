@@ -9,7 +9,7 @@ Edge Python supports `import`, `from <spec> import <names>`, and `from <spec> im
 
 | Flavor | What it is | How it dispatches |
 |---|---|---|
-| **Code module** | A `.py` file written in Edge Python | The module's top level is spliced into the importing chunk; requested names are bound (or wrapped in a `HeapObj::Module` for `import X`). |
+| **Code module** | A `.py` file written in Edge Python | The module's top level runs once at VM init in its own slot frame; the resulting bindings live in a `HeapObj::Module` value shared by every importer via `OpCode::LoadModule`. |
 | **Native module** | A `.wasm` binary following the [WASM module ABI](/reference/wasm-abi) (loaded by URL or path) **or** Rust closures provided in-process by an embedder via the `Resolver` trait. See [Writing modules](/reference/writing-modules). | Dispatched through the `CallExtern` opcode (named import) or via a `HeapObj::Module` carrying `HeapObj::Extern` callables (`import X`). |
 
 The same `import` syntax covers both. The host's resolver decides which flavor a given spec maps to.
@@ -43,12 +43,14 @@ print(slugify("Hello world"))
 
 1. The compiler scans your source for every `from <spec> ...` statement.
 2. For each spec, it asks the **host's `Resolver`** to materialise the module:
-   - `Resolved::Native(bindings)` — list of `(name, function pointer, pure flag)` tuples.
-   - `Resolved::Code(source)` — raw `.py` source string for sub-parsing.
-3. For natives, the bindings are appended to the chunk's `extern_table`. Named imports register the alias so the call site can emit a direct `CallExtern idx, argc`; `import X` additionally emits `LoadExtern + LoadConst + BuildModule` to wrap the bindings in a `HeapObj::Module` value.
-4. For code modules, the source is parsed into a sub-chunk and the **entire top level** is spliced into the parent chunk (constants, defs, classes, branches, with operand indices remapped). Named imports then either expose the bound parent slot directly or rebind it under an alias. `import X` reads each top-level binding via `LoadName` and folds them into a `HeapObj::Module`.
+   - `Resolved::Native { bindings, canonical }` — list of `(name, function pointer, pure flag)` tuples plus the resolver's authoritative spec.
+   - `Resolved::Code { src, canonical }` — raw `.py` source plus the canonical spec.
+3. For natives, the bindings are appended to the chunk's `extern_table`. Named imports register the alias so the call site can emit a direct `CallExtern idx, argc`. The module is also added to the chunk's `imports` list keyed by its canonical spec so first-class references and `import_module()` lookups resolve.
+4. For code modules, the source is parsed into a fresh `SSAChunk` and registered in the chunk's `imports` list. Each requested name becomes a `LoadModule + LoadAttr + StoreName` triple at the call site — no per-importer splicing, no name mangling.
 
-Each module's top-level names live in their own namespace; only the exports you explicitly request become visible in the importer's scope. Helpers and constants stay private to their defining module, even when two modules use the same internal name. Inside an imported module, `__name__` is rebound to the module's spec for the duration of the splice, so the canonical `if __name__ == "__main__":` guard skips when the module is imported.
+Modules are **singletons across the compilation unit**: the same canonical spec compiles to one `SSAChunk`, runs its top level once, and lives as one `HeapObj::Module` value shared by every importer. Two files importing `./util.py` see literally the same module value — `mod is mod_alias` is true and mutations to module attributes are observed by every consumer. Inside the module's top level, `__name__` is bound to the canonical spec, so the `if __name__ == "__main__":` guard skips when the file is imported.
+
+Helpers and constants stay private to their defining module: they live in the module's own slot frame and are reached via attribute access on the `HeapObj::Module` Val, not through the parent chunk's name table. Two modules with same-named helpers (`a.helper` vs. `b.helper`) keep their own bindings — `a.f`'s call to `helper` resolves through `a`'s attrs, not the importer's globals.
 
 The runtime never fetches anything. The host (browser JS, WASI runtime, embedded Rust app) is responsible for bringing the bytes; the compiler accepts them through the `Resolver` trait.
 
@@ -104,7 +106,7 @@ Concretely:
 
 ### Diamond imports and cycles
 
-When multiple paths import the same module, it's fetched and parsed once: the resolver caches each canonical spec. Direct or indirect cycles (`a.py` imports `b.py`, `b.py` imports `a.py`) surface as parse-time `circular import` diagnostics instead of looping the splicer.
+When multiple paths import the same module, it's fetched, parsed, and initialised exactly once. The parser caches the parsed `SSAChunk` per canonical spec and the VM's `init_modules` walk dedupes by spec, so the module's top-level body runs once even if a hundred files import it. Direct or indirect cycles (`a.py` imports `b.py`, `b.py` imports `a.py`) surface as a runtime `circular import` error during init.
 
 ## Host responsibilities
 

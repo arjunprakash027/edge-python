@@ -77,6 +77,12 @@ pub struct Parser<'src, I: Iterator<Item = Token>> {
        working unchanged (any `from X import ...` they encounter becomes a
        parse-time diagnostic). Construct with `with_resolver` to opt in. */
     pub(super) resolver: Box<dyn Resolver>,
+    /* Shared cache of parsed module chunks, keyed by canonical spec.
+       Sub-parsers spawned during import resolution inherit the same `Rc`
+       so a module imported from N files lex+parses exactly once. The
+       Module Val that all importers reference at runtime is also a true
+       singleton — built once by `vm.init_modules` from this same chunk. */
+    pub(super) module_cache: alloc::rc::Rc<core::cell::RefCell<HashMap<String, alloc::rc::Rc<SSAChunk>>>>,
 }
 
 // SSA versioning: track and emit version-suffixed names.
@@ -467,6 +473,18 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
        support `from X import names` pass their own `Resolver` here. The trait
        lives in `crate::modules::packages`. */
     pub fn with_resolver(source: &'src str, iter: I, resolver: Box<dyn Resolver>) -> Self {
+        Self::with_shared_cache(source, iter, resolver,
+            alloc::rc::Rc::new(core::cell::RefCell::new(HashMap::default())))
+    }
+
+    /* Sub-parsers share the entry's module cache so each canonical spec
+       parses exactly once across the whole compilation unit. */
+    pub(crate) fn with_shared_cache(
+        source: &'src str,
+        iter: I,
+        resolver: Box<dyn Resolver>,
+        module_cache: alloc::rc::Rc<core::cell::RefCell<HashMap<String, alloc::rc::Rc<SSAChunk>>>>,
+    ) -> Self {
         Self {
             source,
             tokens: iter.peekable(),
@@ -483,6 +501,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             bracket_stack: Vec::new(),
             errors: Vec::new(),
             resolver,
+            module_cache,
         }
     }
 

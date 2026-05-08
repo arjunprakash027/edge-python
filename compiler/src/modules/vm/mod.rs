@@ -14,6 +14,34 @@ pub use types::{Val, HeapObj, HeapPool, VmErr, Limits};
 use types::*;
 use cache::{OpcodeCache, FastOp, Templates};
 use alloc::{string::{String, ToString}, vec::Vec, vec};
+use crate::modules::parser::ImportKind;
+
+/* Walk a module chunk's top-level instructions for every `StoreName` op
+   and read the corresponding slot value. Each unique bare name (after
+   SSA strip) becomes one attribute on the resulting Module Val.
+   Repeated assignments to the same name post-coalescing share a
+   canonical slot; `seen` deduplicates so the latest value wins. */
+fn collect_module_attrs(chunk: &SSAChunk, slots: &[Val]) -> Vec<(String, Val)> {
+    let mut attrs: Vec<(String, Val)> = Vec::new();
+    let mut seen: crate::modules::fx::FxHashSet<String> =
+        crate::modules::fx::FxHashSet::default();
+    for ins in &chunk.instructions {
+        if !matches!(ins.opcode, OpCode::StoreName) { continue; }
+        let Some(name) = chunk.names.get(ins.operand as usize) else { continue; };
+        let bare = ssa_strip(name).to_string();
+        // Dunders are private: __name__, __main__, etc. exposed as attrs
+        // would leak the framing CPython uses. Match Python's `from m
+        // import *` semantics that skip names starting with `_`.
+        if bare.starts_with('_') { continue; }
+        if !seen.insert(bare.clone()) { continue; }
+        if let Some(&v) = slots.get(ins.operand as usize)
+            && !v.is_undef()
+        {
+            attrs.push((bare, v));
+        }
+    }
+    attrs
+}
 
 /* Saved stack/iter/with depths for unwinding to a try arm's handler. */
 pub(crate) struct ExceptionFrame {
@@ -91,6 +119,19 @@ pub struct VM<'a> {
        cleared on swallow / at run() entry; readable via error_pos() so the
        outer renderer can attach a Diagnostic-style caret. */
     pub(crate) error_byte_pos: Option<u32>,
+    /* spec → Module Val map populated by `init_modules` before user
+       bytecode runs. Both `OpCode::LoadModule` and the `import_module()`
+       builtin look up here. Each unique spec across the chunk tree
+       compiles once + initialises once + has one Module Val — modules
+       are true singletons, not per-importer copies. */
+    pub(crate) module_table: HashMap<String, Val>,
+    /* `fi → module spec`. Tracks which module a function lives in so
+       the call-site free-load fallback resolves bare-name references
+       against the function's OWN module's bindings instead of the
+       global namespace. Cross-module name collisions (`a.helper` vs
+       `b.helper`) stay isolated — fixes a regression that the splice
+       model handled via per-importer name mangling. */
+    pub(crate) fn_module: Vec<Option<String>>,
 }
 
 impl<'a> VM<'a> {
@@ -114,19 +155,36 @@ impl<'a> VM<'a> {
        parent of the callee?". When yes, propagation overwrites freely
        (Python late-binding); when no, captured slots are protected
        (fixes stacked decorators where each `w` captures its own `f`). */
-    fn build_function_table(&mut self, chunk: &'a SSAChunk, parent_fi: Option<usize>) {
+    fn build_function_table(
+        &mut self,
+        chunk: &'a SSAChunk,
+        parent_fi: Option<usize>,
+        module_spec: Option<&str>,
+    ) {
         let mut indices = Vec::with_capacity(chunk.functions.len());
         for desc in chunk.functions.iter() {
             let global = self.functions.len() as u32;
             self.functions.push(desc);
             self.function_parents.push(parent_fi);
+            self.fn_module.push(module_spec.map(String::from));
             self.body_to_fi.insert(&desc.1 as *const _, global as usize);
             indices.push(global);
-            self.build_function_table(&desc.1, Some(global as usize));
+            self.build_function_table(&desc.1, Some(global as usize), module_spec);
         }
         self.fn_index.push((chunk as *const _, indices));
         for class_body in chunk.classes.iter() {
-            self.build_function_table(class_body, parent_fi);
+            self.build_function_table(class_body, parent_fi, module_spec);
+        }
+        // Register imported code-modules so their MakeFunction ops at
+        // top-level resolve correctly when `init_modules` runs them.
+        // Each imported module's functions carry its spec, so free-load
+        // fallback at call time stays inside that module's namespace
+        // and cross-module helpers with the same name don't collide.
+        for entry in chunk.imports.iter() {
+            if let ImportKind::Code(sub) = &entry.kind {
+                let sub_ref: &'a SSAChunk = &**sub;
+                self.build_function_table(sub_ref, None, Some(&entry.spec));
+            }
         }
     }
 
@@ -292,6 +350,8 @@ impl<'a> VM<'a> {
             observed_impure: Vec::new(),
             exception_stack: Vec::new(),
             error_byte_pos: None,
+            module_table: HashMap::default(),
+            fn_module: Vec::new(),
             functions: Vec::new(),
             fn_index: Vec::new(),
             function_parents: Vec::new(),
@@ -309,7 +369,7 @@ impl<'a> VM<'a> {
             active_const_pools: Vec::new(),
             sandbox_off,
         };
-        vm.build_function_table(chunk, None);
+        vm.build_function_table(chunk, None, None);
         vm.body_maps = vm.functions.iter().map(|(_, body, _, _)| {
             body.names.iter().enumerate().map(|(i, n)| (n.clone(), i)).collect()
         }).collect();
@@ -457,8 +517,67 @@ impl<'a> VM<'a> {
 
     pub fn run(&mut self) -> Result<Val, VmErr> {
         self.error_byte_pos = None;
+        // Initialise every imported module (top-level runs once) BEFORE
+        // user code dispatches. Topological order falls out of recursive
+        // descent: a module's dependencies are seen + initialised before
+        // its own top-level runs.
+        let mut in_progress: crate::modules::fx::FxHashSet<String> =
+            crate::modules::fx::FxHashSet::default();
+        self.init_modules(self.chunk, &mut in_progress)?;
         let mut slots = self.fill_builtins(&self.chunk.names);
         self.exec(self.chunk, &mut slots)
+    }
+
+    /* Walk every import declared by `chunk` (and transitively by code
+       modules), initialising each unique spec exactly once. Code modules
+       run their top-level in a fresh slot frame and capture stored
+       top-level names as the resulting Module's attrs. Native modules
+       skip the run step — their bindings are already concrete. Cycle
+       detection: re-entering an in-progress spec errors out cleanly
+       rather than looping forever. */
+    fn init_modules(
+        &mut self,
+        chunk: &SSAChunk,
+        in_progress: &mut crate::modules::fx::FxHashSet<String>,
+    ) -> Result<(), VmErr> {
+        for entry in &chunk.imports {
+            if self.module_table.contains_key(&entry.spec) { continue; }
+            if !in_progress.insert(entry.spec.clone()) {
+                return Err(VmErr::Runtime("circular import"));
+            }
+            match &entry.kind {
+                ImportKind::Native(bindings) => {
+                    let mut attrs: Vec<(String, Val)> = Vec::with_capacity(bindings.len());
+                    for b in bindings {
+                        let val = self.heap.alloc(HeapObj::Extern(b.clone()))?;
+                        attrs.push((b.name.clone(), val));
+                    }
+                    let val = self.heap.alloc(HeapObj::Module(entry.spec.clone(), attrs))?;
+                    self.module_table.insert(entry.spec.clone(), val);
+                }
+                ImportKind::Code(sub_chunk) => {
+                    self.init_modules(sub_chunk, in_progress)?;
+                    let mut sub_slots = self.fill_builtins(&sub_chunk.names);
+                    // Each module sees its own spec in `__name__`, so
+                    // `if __name__ == "__main__":` blocks correctly skip
+                    // when a file is imported. Replaces the splice-era
+                    // `enter/leave_imported_scope` rebind hack — now
+                    // it's a clean per-module slot value.
+                    let spec_val = self.heap.alloc(HeapObj::Str(entry.spec.clone()))?;
+                    for (i, name) in sub_chunk.names.iter().enumerate() {
+                        if ssa_strip(name) == "__name__" {
+                            sub_slots[i] = spec_val;
+                        }
+                    }
+                    self.exec(sub_chunk, &mut sub_slots)?;
+                    let attrs = collect_module_attrs(sub_chunk, &sub_slots);
+                    let val = self.heap.alloc(HeapObj::Module(entry.spec.clone(), attrs))?;
+                    self.module_table.insert(entry.spec.clone(), val);
+                }
+            }
+            in_progress.remove(&entry.spec);
+        }
+        Ok(())
     }
 
     /* Source byte offset of the last propagating runtime error, or None if
@@ -1000,6 +1119,14 @@ impl<'a> VM<'a> {
                     .ok_or(cold_runtime("LoadExtern: extern index out of bounds"))?
                     .clone();
                 let v = self.heap.alloc(HeapObj::Extern(f))?;
+                self.push(v);
+            }
+
+            OpCode::LoadModule => {
+                let entry = chunk.imports.get(op as usize)
+                    .ok_or(cold_runtime("LoadModule: import index out of range"))?;
+                let v = *self.module_table.get(&entry.spec)
+                    .ok_or(cold_runtime("LoadModule: module not initialised"))?;
                 self.push(v);
             }
 

@@ -74,12 +74,18 @@ impl TestResolver {
     }
 
     pub fn with_native(self, spec: &str, bindings: Vec<NativeBinding>) -> Self {
-        self.state.borrow_mut().modules.insert(spec.to_string(), Resolved::Native(bindings));
+        self.state.borrow_mut().modules.insert(
+            spec.to_string(),
+            Resolved::Native { bindings, canonical: spec.to_string() },
+        );
         self
     }
 
     pub fn with_code(self, spec: &str, src: &str) -> Self {
-        self.state.borrow_mut().modules.insert(spec.to_string(), Resolved::Code(src.to_string()));
+        self.state.borrow_mut().modules.insert(
+            spec.to_string(),
+            Resolved::Code { src: src.to_string(), canonical: spec.to_string() },
+        );
         self
     }
 
