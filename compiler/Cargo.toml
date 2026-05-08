@@ -7,6 +7,7 @@ repository.workspace = true
 description = "Single-pass SSA compiler based on CPython 3.13: hand-written lexer, token-to-bytecode parser, threaded-code virtual machine with NaN-boxed values, inline caching, template memoization, and a mark-sweep garbage collector. Ships as a WebAssembly module."
 readme = "README.md"
 autotests = false
+autobins = false
 
 [lib]
 name = "compiler_lib"

@@ -99,7 +99,8 @@ src/
  │       ├── ops.rs
  │       ├── optimizer.rs
  │       └── types.rs
- └── bridge.rs
+ ├── abi.rs       # sealed-contract WASM module ABI v1 (depended on by main.rs)
+ └── main.rs      # WASM orchestration: parser/VM lifecycle + JS imports
 ```
 
 ## Capabilities

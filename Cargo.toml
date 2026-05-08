@@ -1,5 +1,5 @@
 [workspace]
-members = ["compiler"]
+members = ["compiler", "edge-pdk", "edge-pdk/macros", "examples/slugify-mod"]
 resolver = "2"
 
 [workspace.package]

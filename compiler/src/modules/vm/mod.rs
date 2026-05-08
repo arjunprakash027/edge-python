@@ -2,7 +2,7 @@ pub mod types;
 mod cache;
 mod ops;
 mod builtins;
-mod handlers;
+pub(crate) mod handlers;
 pub mod optimizer;
 
 use crate::s;
