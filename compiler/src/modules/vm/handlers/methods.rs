@@ -74,6 +74,43 @@ where F: FnOnce(&mut DictMap) -> Result<R, VmErr>
     }
 }
 
+/* Snapshot of a set's contents. Returned to callers as a Vec rather than
+   loaning a borrow of the heap so the heap is free during subsequent
+   allocations (alloc_set, eq scans). Order is HashSet iteration order; set
+   methods that produce a `set` re-collect into a fresh HashSet anyway. */
+#[inline]
+fn set_clone(vm: &VM, recv: Val) -> Result<Vec<Val>, VmErr> {
+    match vm.heap.get(recv) {
+        HeapObj::Set(rc) => Ok(rc.borrow().iter().copied().collect()),
+        _ => Err(cold_type("method requires a set receiver")),
+    }
+}
+
+/* Same shape as `list_mut` for set receivers. Used by mutating set methods
+   (add, remove, discard, pop, clear, update). */
+#[inline]
+fn set_mut<F, R>(vm: &mut VM, recv: Val, err: &'static str, f: F) -> Result<R, VmErr>
+where F: FnOnce(&mut crate::modules::fx::FxHashSet<Val>) -> Result<R, VmErr>
+{
+    match vm.heap.get_mut(recv) {
+        HeapObj::Set(rc) => f(&mut rc.borrow_mut()),
+        _ => Err(cold_type(err)),
+    }
+}
+
+/* Pull a Vec<Val> from any iterable (list/tuple/set). Used by set ops that
+   accept a non-set iterable (e.g. `s.update([1, 2])`, `s.union((3, 4))`). */
+#[inline]
+fn iter_to_vec(vm: &VM, v: Val) -> Result<Vec<Val>, VmErr> {
+    if !v.is_heap() { return Err(cold_type("expected an iterable")); }
+    match vm.heap.get(v) {
+        HeapObj::List(rc) => Ok(rc.borrow().clone()),
+        HeapObj::Tuple(t) => Ok(t.clone()),
+        HeapObj::Set(rc) => Ok(rc.borrow().iter().copied().collect()),
+        _ => Err(cold_type("expected an iterable")),
+    }
+}
+
 #[inline]
 fn capitalize_first(s: &str) -> String {
     let mut cs = s.chars();
@@ -197,6 +234,7 @@ macro_rules! define_methods {
                 "str"  => "Str",
                 "list" => "List",
                 "dict" => "Dict",
+                "set"  => "Set",
                 _ => return None,
             };
             $(
@@ -574,5 +612,114 @@ define_methods! {
             else { dict.insert(pos[0], default); Ok(default) }
         })?;
         vm.push(result); Ok(())
+    }),
+
+    // set: mutating.
+    (SetAdd, "add", mutating, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "add takes 1 argument")?;
+        set_mut(vm, recv, "add: receiver is not a set", |set| {
+            set.insert(pos[0]); Ok(())
+        })?;
+        vm.push(Val::none()); Ok(())
+    }),
+    (SetRemove, "remove", mutating, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "remove takes 1 argument")?;
+        set_mut(vm, recv, "remove: receiver is not a set", |set| {
+            if !set.remove(&pos[0]) { return Err(cold_value("element not found in set")); }
+            Ok(())
+        })?;
+        vm.push(Val::none()); Ok(())
+    }),
+    (SetDiscard, "discard", mutating, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "discard takes 1 argument")?;
+        set_mut(vm, recv, "discard: receiver is not a set", |set| {
+            set.remove(&pos[0]); Ok(())
+        })?;
+        vm.push(Val::none()); Ok(())
+    }),
+    (SetPop, "pop", mutating, |vm, recv, pos| {
+        check_arity(&pos, 0, 0, "pop takes no arguments")?;
+        let popped = set_mut(vm, recv, "pop: receiver is not a set", |set| {
+            // Pop an arbitrary element. HashSet doesn't expose pop(), so we
+            // grab one via iter() and remove it. Empty set raises like CPython.
+            let pick = set.iter().next().copied()
+                .ok_or(cold_value("pop from an empty set"))?;
+            set.remove(&pick);
+            Ok(pick)
+        })?;
+        vm.push(popped); Ok(())
+    }),
+    (SetClear, "clear", mutating, |vm, recv, pos| {
+        check_arity(&pos, 0, 0, "clear takes no arguments")?;
+        set_mut(vm, recv, "clear: receiver is not a set", |set| {
+            set.clear(); Ok(())
+        })?;
+        vm.push(Val::none()); Ok(())
+    }),
+    (SetUpdate, "update", mutating, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "update takes 1 argument")?;
+        let items = iter_to_vec(vm, pos[0])?;
+        set_mut(vm, recv, "update: receiver is not a set", |set| {
+            for v in items { set.insert(v); }
+            Ok(())
+        })?;
+        vm.push(Val::none()); Ok(())
+    }),
+
+    // set: pure (return a fresh set or a bool).
+    (SetCopy, "copy", pure, |vm, recv, pos| {
+        check_arity(&pos, 0, 0, "copy takes no arguments")?;
+        let items = set_clone(vm, recv)?;
+        vm.alloc_and_push_set(items)
+    }),
+    (SetUnion, "union", pure, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "union takes 1 argument")?;
+        let mut out = set_clone(vm, recv)?;
+        out.extend(iter_to_vec(vm, pos[0])?);
+        vm.alloc_and_push_set(out)
+    }),
+    (SetIntersection, "intersection", pure, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "intersection takes 1 argument")?;
+        let lhs = set_clone(vm, recv)?;
+        let rhs_items = iter_to_vec(vm, pos[0])?;
+        let rhs: crate::modules::fx::FxHashSet<Val> = rhs_items.into_iter().collect();
+        let out: Vec<Val> = lhs.into_iter().filter(|v| rhs.contains(v)).collect();
+        vm.alloc_and_push_set(out)
+    }),
+    (SetDifference, "difference", pure, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "difference takes 1 argument")?;
+        let lhs = set_clone(vm, recv)?;
+        let rhs_items = iter_to_vec(vm, pos[0])?;
+        let rhs: crate::modules::fx::FxHashSet<Val> = rhs_items.into_iter().collect();
+        let out: Vec<Val> = lhs.into_iter().filter(|v| !rhs.contains(v)).collect();
+        vm.alloc_and_push_set(out)
+    }),
+    (SetSymmetricDifference, "symmetric_difference", pure, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "symmetric_difference takes 1 argument")?;
+        let lhs: crate::modules::fx::FxHashSet<Val> = set_clone(vm, recv)?.into_iter().collect();
+        let rhs: crate::modules::fx::FxHashSet<Val> = iter_to_vec(vm, pos[0])?.into_iter().collect();
+        let out: Vec<Val> = lhs.symmetric_difference(&rhs).copied().collect();
+        vm.alloc_and_push_set(out)
+    }),
+    (SetIsSubset, "issubset", pure, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "issubset takes 1 argument")?;
+        let lhs = set_clone(vm, recv)?;
+        let rhs: crate::modules::fx::FxHashSet<Val> = iter_to_vec(vm, pos[0])?.into_iter().collect();
+        vm.push(Val::bool(lhs.iter().all(|v| rhs.contains(v))));
+        Ok(())
+    }),
+    (SetIsSuperset, "issuperset", pure, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "issuperset takes 1 argument")?;
+        let lhs: crate::modules::fx::FxHashSet<Val> = set_clone(vm, recv)?.into_iter().collect();
+        let rhs = iter_to_vec(vm, pos[0])?;
+        vm.push(Val::bool(rhs.iter().all(|v| lhs.contains(v))));
+        Ok(())
+    }),
+    (SetIsDisjoint, "isdisjoint", pure, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "isdisjoint takes 1 argument")?;
+        let lhs: crate::modules::fx::FxHashSet<Val> = set_clone(vm, recv)?.into_iter().collect();
+        let rhs = iter_to_vec(vm, pos[0])?;
+        vm.push(Val::bool(!rhs.iter().any(|v| lhs.contains(v))));
+        Ok(())
     }),
 }

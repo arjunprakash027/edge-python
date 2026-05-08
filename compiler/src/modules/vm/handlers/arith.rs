@@ -82,7 +82,10 @@ impl<'a> VM<'a> {
         self.pow_vals(a, b, "** requires numeric operands")
     }
 
-    /* BitAnd/Or/Xor via closure; BitNot is unary; Shl/Shr through BigInt. */
+    /* BitAnd/Or/Xor via closure; BitNot is unary; Shl/Shr through BigInt.
+       Set/Set operands hijack |, &, ^ to mean union, intersection, and
+       symmetric difference (Python semantics); other type combinations
+       fall through to the integer bitwise path. */
     pub(crate) fn handle_bitwise(&mut self, op: OpCode) -> Result<(), VmErr> {
         if op == OpCode::BitNot {
             let v = self.pop()?;
@@ -95,6 +98,12 @@ impl<'a> VM<'a> {
         }
 
         let (a, b) = self.pop2()?;
+        if a.is_heap() && b.is_heap()
+            && matches!(self.heap.get(a), HeapObj::Set(_))
+            && matches!(self.heap.get(b), HeapObj::Set(_))
+            && matches!(op, OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor) {
+            return self.set_binop_and_push(a, b, op);
+        }
         let result = match op {
             OpCode::BitAnd => self.bitwise_op(a, b, |x, y| x & y)?,
             OpCode::BitOr => self.bitwise_op(a, b, |x, y| x | y)?,
@@ -133,6 +142,18 @@ impl<'a> VM<'a> {
         // Record type-key for every compare op; cache::specialize() decides
         // which ones have a FastOp variant (all of them currently).
         cached_binop!(self.heap, rip, &op, a, b, cache);
+
+        // Set/Set comparison: subset / superset semantics, NOT total order.
+        // The `LtEq = !lt_vals(b, a)` translation that works for numbers
+        // would silently mis-answer here ({1,2} <= {2,3} would come back
+        // True), so set comparisons are computed directly from set
+        // membership and bypass lt_vals entirely.
+        if a.is_heap() && b.is_heap()
+            && matches!(self.heap.get(a), HeapObj::Set(_))
+            && matches!(self.heap.get(b), HeapObj::Set(_)) {
+            return self.set_compare_and_push(a, b, op);
+        }
+
         let result = match op {
             OpCode::Eq => eq_vals_with_heap(a, b, &self.heap),
             OpCode::NotEq => !eq_vals_with_heap(a, b, &self.heap),

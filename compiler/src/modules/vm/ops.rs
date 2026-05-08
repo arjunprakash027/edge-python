@@ -1,6 +1,7 @@
 use crate::s;
 
 use super::types::*;
+use crate::modules::parser::types::OpCode;
 
 use alloc::{string::String, vec::Vec, rc::Rc};
 use core::cell::RefCell;
@@ -67,6 +68,46 @@ impl<'a> VM<'a> {
             .and_then(|b| b.to_i64_checked())
             .ok_or(cold_type("bitwise op requires integer operands"))?;
         Ok(Val::int(op(ai, bi)))
+    }
+
+    /* Set | Set, Set & Set, Set ^ Set. Caller has already verified both
+       operands are sets. Uses HashSet's bit-eq for membership (consistent
+       with how the Set is stored — same dedup semantics as a literal
+       `{a, b, c}`); a future move to value-eq would touch this and the
+       set methods uniformly. */
+    pub(crate) fn set_binop_and_push(&mut self, a: Val, b: Val, op: OpCode) -> Result<(), VmErr> {
+        let (sa, sb) = match (self.heap.get(a), self.heap.get(b)) {
+            (HeapObj::Set(x), HeapObj::Set(y)) => (x.borrow().clone(), y.borrow().clone()),
+            _ => return Err(cold_runtime("set_binop on non-set operands")),
+        };
+        let items: Vec<Val> = match op {
+            OpCode::BitOr  => sa.union(&sb).copied().collect(),
+            OpCode::BitAnd => sa.intersection(&sb).copied().collect(),
+            OpCode::BitXor => sa.symmetric_difference(&sb).copied().collect(),
+            _ => return Err(cold_runtime("set_binop with non-bitwise opcode")),
+        };
+        self.alloc_and_push_set(items)
+    }
+
+    /* Set < Set, <= , > , >= , == , != with subset / superset semantics.
+       Caller has verified both sides are sets. */
+    pub(crate) fn set_compare_and_push(&mut self, a: Val, b: Val, op: OpCode) -> Result<(), VmErr> {
+        let (sa, sb) = match (self.heap.get(a), self.heap.get(b)) {
+            (HeapObj::Set(x), HeapObj::Set(y)) => (x.borrow(), y.borrow()),
+            _ => return Err(cold_runtime("set_compare on non-set operands")),
+        };
+        let result = match op {
+            OpCode::Eq    => *sa == *sb,
+            OpCode::NotEq => *sa != *sb,
+            OpCode::Lt    => sa.is_subset(&sb) && *sa != *sb,
+            OpCode::LtEq  => sa.is_subset(&sb),
+            OpCode::Gt    => sb.is_subset(&sa) && *sa != *sb,
+            OpCode::GtEq  => sb.is_subset(&sa),
+            _ => return Err(cold_runtime("set_compare with non-compare opcode")),
+        };
+        drop(sa); drop(sb);
+        self.push(Val::bool(result));
+        Ok(())
     }
 
     pub fn type_name(&self, v: Val) -> &'static str {
@@ -261,10 +302,27 @@ impl<'a> VM<'a> {
         if let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b)) {
             return self.bigint_to_val(ba.sub(&bb));
         }
+        // Set difference: `a - b` produces a fresh set with every element
+        // of `a` not present in `b`. Mirror Python's `set.difference`.
+        if a.is_heap() && b.is_heap()
+            && let (HeapObj::Set(sa), HeapObj::Set(sb)) = (self.heap.get(a), self.heap.get(b)) {
+            let items: Vec<Val> = sa.borrow().difference(&sb.borrow()).copied().collect();
+            return self.alloc_set_value(items);
+        }
         Err(VmErr::TypeMsg(s!(
             "unsupported operand type(s) for -: '",
             str self.type_name(a), "' and '", str self.type_name(b), "'"
         )))
+    }
+
+    /* Same shape as `alloc_list` (in builtins.rs) for sets — used by
+       `sub_vals`'s set-difference path which needs a value back, not a
+       push. Dedups via HashSet's bit-eq, consistent with how literals and
+       method results are stored. */
+    fn alloc_set_value(&mut self, items: Vec<Val>) -> Result<Val, VmErr> {
+        let mut s = crate::modules::fx::FxHashSet::default();
+        for v in items { s.insert(v); }
+        self.heap.alloc(HeapObj::Set(Rc::new(RefCell::new(s))))
     }
 
     pub fn mul_vals(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {

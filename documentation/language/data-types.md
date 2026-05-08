@@ -223,23 +223,32 @@ y
 
 ## Set
 
-Unordered collection of hashable values, no duplicates.
+Unordered collection of hashable values, no duplicates. Supports the standard mutators (`add`, `remove`, `discard`, `pop`, `clear`, `update`) and algebraic operators / methods (`|` `&` `-` `^` and `union`, `intersection`, `difference`, `symmetric_difference`); see [Methods](/reference/methods) for the full list.
 
 ```python
 s = {1, 2, 2, 3}
+s.add(4)
 print(s)
 print(len(s))
 
 # Empty set literal is set(), not {}
 print(set())
 print(type({}))     # this is a dict
+
+# Algebra
+print({1, 2, 3} | {3, 4})
+print({1, 2, 3} & {2, 3, 4})
+print({1, 2} <= {1, 2, 3})   # subset
 ```
 
 ```text Output
-{1, 2, 3}
-3
+{1, 2, 3, 4}
+4
 set()
 <class 'dict'>
+{1, 2, 3, 4}
+{2, 3}
+True
 ```
 
 ## Range

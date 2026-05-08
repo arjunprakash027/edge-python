@@ -272,6 +272,84 @@ print(d)
 {'a': 1}
 ```
 
+## Set methods
+
+### Mutation
+
+```python
+s = {1, 2, 3}
+
+s.add(4)
+print(s)
+
+s.remove(2)        # raises ValueError if absent
+s.discard(99)      # silently ignores absent values
+print(s)
+
+popped = s.pop()
+print(popped in {1, 3, 4})
+
+s.update([4, 5, 6])
+print(s)
+
+s.clear()
+print(s)
+```
+
+```text Output
+{1, 2, 3, 4}
+{1, 3, 4}
+True
+{1, 3, 4, 5, 6}
+set()
+```
+
+### Algebra
+
+`union`, `intersection`, `difference`, and `symmetric_difference` return a fresh set; their operator forms (`|`, `&`, `-`, `^`) work the same way and accept augmented assignment (`|=`, `&=`, `-=`, `^=`):
+
+```python
+a = {1, 2, 3}
+b = {3, 4, 5}
+
+print(a | b)
+print(a & b)
+print(a - b)
+print(a ^ b)
+
+print(a.union([4, 5]))           # accepts any iterable
+print({1, 2}.issubset({1, 2, 3}))
+print({1, 2, 3}.issuperset({1}))
+print({1, 2}.isdisjoint({3, 4}))
+```
+
+```text Output
+{1, 2, 3, 4, 5}
+{3}
+{1, 2}
+{1, 2, 4, 5}
+{1, 2, 3, 4, 5}
+True
+True
+True
+```
+
+Comparison operators between sets follow subset / superset semantics, not total order:
+
+```python
+print({1, 2} <  {1, 2, 3})   # proper subset
+print({1, 2} <= {1, 2})      # subset
+print({1, 2} >= {1})         # superset
+print({1, 2} <= {2, 3})      # disjoint sides → False
+```
+
+```text Output
+True
+True
+True
+False
+```
+
 ## Method summary
 
 ### String — `str`
@@ -325,3 +403,22 @@ print(d)
 | `update`      | 1       | yes      | None                          |
 | `pop`         | 1 or 2  | yes      | popped value or default       |
 | `setdefault`  | 1 or 2  | yes      | existing or default value     |
+
+### Set — `set`
+
+| Method                 | Arity | Mutates? | Returns                       |
+|------------------------|-------|----------|-------------------------------|
+| `add`                  | 1     | yes      | None                          |
+| `remove`               | 1     | yes      | None (ValueError if absent)   |
+| `discard`              | 1     | yes      | None                          |
+| `pop`                  | 0     | yes      | an arbitrary element          |
+| `clear`                | 0     | yes      | None                          |
+| `update`               | 1     | yes      | None                          |
+| `copy`                 | 0     | no       | shallow copy                  |
+| `union`                | 1     | no       | new set                       |
+| `intersection`         | 1     | no       | new set                       |
+| `difference`           | 1     | no       | new set                       |
+| `symmetric_difference` | 1     | no       | new set                       |
+| `issubset`             | 1     | no       | bool                          |
+| `issuperset`           | 1     | no       | bool                          |
+| `isdisjoint`           | 1     | no       | bool                          |

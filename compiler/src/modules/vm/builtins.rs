@@ -150,6 +150,14 @@ impl<'a> VM<'a> {
         self.push(v); Ok(())
     }
 
+    /* Allocate a Set from a Vec (deduping by Val's bit-eq), push, return
+       Ok. Mirrors `alloc_and_push_list`. Used by `set` methods that yield
+       a fresh set value (copy, union, intersection, difference, etc.). */
+    pub(crate) fn alloc_and_push_set(&mut self, items: Vec<Val>) -> Result<(), VmErr> {
+        let v = self.alloc_set(items)?;
+        self.push(v); Ok(())
+    }
+
     /* Allocate a Dict from a DictMap and push. */
     pub(crate) fn alloc_and_push_dict(&mut self, dm: DictMap) -> Result<(), VmErr> {
         let v = self.heap.alloc(HeapObj::Dict(Rc::new(RefCell::new(dm))))?;
