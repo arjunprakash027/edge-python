@@ -126,7 +126,7 @@ done
 
 ## match / case
 
-Pattern matching by equality and the `_` wildcard.
+Equality dispatch with a wildcard fallback. `match` in Edge Python is **not** full structural pattern matching: it does not support guards, OR patterns, sequence patterns, or capture variables. For those, use `if` / `elif`. The shape it does cover is "tag dispatch" where each case is a constant value compared with `==`, plus `_` to catch the rest.
 
 ```python
 def describe(n):

@@ -113,8 +113,8 @@ src/
 | bool   | functions        | iteration         | comments        |
 | list   | lambdas          | aggregation       | docstrings      |
 | dict   | generators       | math              | underscore      |
-| tuple  | comprehensions   | sequence ops      | complex numbers |
-| set    | try / except     | logical reduction | escape sequences|
+| tuple  | comprehensions   | sequence ops      | escape sequences|
+| set    | try / except     | logical reduction | -               |
 | range  | with             | number formatting | -               |
 | None   | async / await¹   | -                 | -               |
 |        | yield / yield from | -                | -               |

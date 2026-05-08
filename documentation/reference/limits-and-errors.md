@@ -90,6 +90,7 @@ Raised as `VmErr`. Most are catchable with `try` / `except`.
 | `Attribute`     | `AttributeError`     | Attribute not found on object      |
 | `Name`          | `NameError`          | Undefined name                     |
 | `ZeroDiv`       | `ZeroDivisionError`  | Division or modulo by zero         |
+| `Overflow`      | `OverflowError`      | Integer arithmetic past ±2⁴⁷    |
 | `CallDepth`     | `RecursionError`     | Past `max_calls`                   |
 | `Heap`          | `MemoryError`        | Past heap limit                    |
 | `Budget`        | `RuntimeError`       | Past op limit                      |

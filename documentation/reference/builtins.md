@@ -3,7 +3,7 @@ title: "Built-in functions"
 description: "Every built-in function in Edge Python with examples and outputs."
 ---
 
-Edge Python ships with 45 built-in functions. They're first-class values: pass them around, store them in containers, alias them.
+Edge Python ships with 47 built-in functions. They're first-class values: pass them around, store them in containers, alias them.
 
 ```python
 # All built-ins are real values
@@ -624,6 +624,61 @@ True
 False
 ```
 
+### setattr, delattr
+
+`setattr(obj, name, value)` stores an attribute on a user instance. `delattr(obj, name)` removes one. Both target instances of user-defined classes; builtin types do not have a writable attribute table.
+
+```python
+class Box:
+    def __init__(self):
+        pass
+
+b = Box()
+setattr(b, "x", 42)
+print(b.x)
+delattr(b, "x")
+print(hasattr(b, "x"))
+```
+
+```text Output
+42
+False
+```
+
+### slice
+
+`slice(stop)`, `slice(start, stop)`, or `slice(start, stop, step)` builds a reusable slice value that can be used as a sequence index.
+
+```python
+xs = [10, 20, 30, 40, 50]
+s = slice(1, 4)
+print(xs[s])
+print(xs[slice(0, 5, 2)])
+```
+
+```text Output
+[20, 30, 40]
+[10, 30, 50]
+```
+
+### vars
+
+`vars(instance)` returns a snapshot of the instance's `__dict__`. `vars(module)` returns a dict of the module's exported names.
+
+```python
+class P:
+    def __init__(self):
+        self.x = 1
+        self.y = 2
+
+p = P()
+print(vars(p))
+```
+
+```text Output
+{'x': 1, 'y': 2}
+```
+
 ## Async
 
 ### run
@@ -644,7 +699,7 @@ False
 |--------------|------------|--------------------------------------------|
 | `print`      | variadic   | space-separated, newline                   |
 | `input`      | 0          | reads from host-provided buffer            |
-| `abs`        | 1          | int / float / BigInt                       |
+| `abs`        | 1          | int / float                                |
 | `round`      | 1 or 2     | banker's rounding                          |
 | `min`        | variadic   | or single iterable                         |
 | `max`        | variadic   | or single iterable                         |
@@ -666,7 +721,7 @@ False
 | `ord`        | 1          | 1-char string -> int                        |
 | `len`        | 1          | element count                              |
 | `range`      | 1, 2, or 3 | lazy integer sequence                      |
-| `sorted`     | 1          | new sorted list                            |
+| `sorted`     | 1 or 2     | optional `key=` callable                   |
 | `reversed`   | 1          | reversed as list                           |
 | `enumerate`  | 1          | (index, value) pairs                       |
 | `zip`        | variadic   | parallel iteration                         |
