@@ -11,7 +11,7 @@ Run Edge Python (based on CPython 3.13) directly in the browser. Edge Python is 
 
 * **In-Browser Execution:** Fully client-side using WebAssembly and Web Workers.
 * **Lightweight Code Editor:** Custom syntax highlighting, line numbering, and auto-indentation using CodeJar.
-* **Underweight:** Maintaining a release size of approximately 133KB (including HTML, WASM, JS, and TailwindCSS).
+* **Underweight:** Maintaining a release size of approximately 100KB (including HTML, WASM, JS, and TailwindCSS).
 * **High Disponibility:** Maintained a Total Interactive Time (TTI) of 514ms, based on Cloudflare performance tests.
 
 ## Local Start

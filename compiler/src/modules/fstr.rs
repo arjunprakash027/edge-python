@@ -22,17 +22,29 @@ pub fn format_f64(f: f64) -> alloc::string::String {
     format_general(f)
 }
 
-/* `ryu` produces the shortest decimal that round-trips through
-   `parse::<f64>()`, identical guarantees to `core::fmt::Display for f64`,
-   but skips ~30 KB of Grisu/Dragon/bignum machinery that the default path
-   pulls in. Output may use scientific notation (`1e20`, `1e-7`) for
-   extreme magnitudes — matches Python's `repr(float)` semantics, which
-   the rest of the VM display logic targets. NaN / ±inf / ±0.0 / whole
-   numbers are still short-circuited above so we never hand `ryu` a value
-   it would format differently from Python. */
+/* 32-byte stack buffer is enough for any f64 in default formatting. */
 fn format_general(f: f64) -> alloc::string::String {
-    let mut buf = ryu::Buffer::new();
-    alloc::string::String::from(buf.format(f))
+    let mut buf = FmtBuf::new();
+    let _ = core::fmt::write(&mut buf, core::format_args!("{}", f));
+    alloc::string::String::from(buf.as_str())
+}
+
+struct FmtBuf { buf: [u8; 32], len: usize }
+impl FmtBuf {
+    fn new() -> Self { Self { buf: [0u8; 32], len: 0 } }
+    fn as_str(&self) -> &str {
+        unsafe { core::str::from_utf8_unchecked(&self.buf[..self.len]) }
+    }
+}
+impl core::fmt::Write for FmtBuf {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let bytes = s.as_bytes();
+        let end = (self.len + bytes.len()).min(self.buf.len());
+        let n = end - self.len;
+        self.buf[self.len..end].copy_from_slice(&bytes[..n]);
+        self.len = end;
+        Ok(())
+    }
 }
 
 #[macro_export]
