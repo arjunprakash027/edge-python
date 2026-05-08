@@ -20,6 +20,9 @@ use alloc::{boxed::Box, string::{String, ToString}, sync::Arc, vec::Vec};
 use crate::s;
 use crate::modules::vm::types::{HeapPool, Val, VmErr};
 
+pub mod manifest;
+pub use manifest::{Manifest, parse_manifest, walk_up_dirs, dir_of, join_relative};
+
 /* Callable signature for a native exposed to EdgePython. Receives the heap
    (so the function can allocate strings, lists, etc.) and a slice of its
    positional arguments; returns a `Val` or a `VmErr`. No kwargs (kwargs are a
@@ -76,33 +79,52 @@ pub enum Resolved {
 pub trait Resolver {
     fn resolve(&mut self, spec: &str) -> Result<Resolved, String>;
 
-    /* Sub-resolver for the imported file's transitive imports. Called by the
-       splicer after `resolve(spec)` returned `Resolved::Code` so the inner
-       parser can resolve the imported file's own `from ...` statements.
+    /* Sub-resolver for the imported file's transitive imports. Called by
+       the splicer after `resolve(spec)` returned `Resolved::Code` so the
+       inner parser can resolve the imported file's own `from ...`
+       statements.
 
-       The returned resolver should share import-map and module-cache state
-       with `self` (so a single root `packages.json` controls every transitive
-       resolution and diamond imports dedupe), and rescope its current
-       directory to the imported file's location so the file's own quoted
-       relative paths (`./helpers.py`) resolve correctly.
+       The returned resolver should share module-cache state with `self`
+       (so diamond imports dedupe) and rescope its current directory to the
+       imported file's location. The directory rescope serves two ends:
 
-       The default impl returns `NoopResolver`, which preserves the original
-       behavior of rejecting transitive imports. CLI / WASM hosts override
-       this to thread their resolver through. */
+         1. Quoted relative paths (`./helpers.py`) inside the imported file
+            resolve against the imported file's directory, not the entry
+            script's.
+         2. Bare-name imports inside the imported file walk up from that
+            directory looking for `packages.json`. A sub-package can carry
+            its own manifest and its bare names are decided locally
+            (hermetic by default; `extends` opts into inheriting from a
+            parent manifest's directory).
+
+       The default impl returns `NoopResolver`, which preserves the
+       original behavior of rejecting transitive imports. WASM and
+       embedder hosts override this to rescope and thread the resolver
+       through. */
     fn child(&self, _spec: &str) -> Box<dyn Resolver> {
         Box::new(NoopResolver)
     }
 
-    /* Return the raw bytes that back `spec`. Called by the parser when the
-       import has a `#sha256-...` fragment, so the parser can verify the hash
-       before invoking `resolve`. Hosts that don't support integrity checks
-       return Err — the parser surfaces the error verbatim, so a script that
-       requests integrity against a host that can't honour it fails clean
-       instead of silently bypassing verification.
+    /* Return the raw bytes that back `spec`. Called by the parser in two
+       situations:
 
-       The default impl returns Err. The same `spec` (already stripped of any
-       `#sha256-...` fragment by the parser) will be passed to `resolve` next,
-       so the host is free to cache the bytes between the two calls. */
+         1. Integrity verification: when a URL import carries a
+            `#sha256-...` fragment, the parser hashes the bytes returned
+            here against the declared digest before invoking `resolve`. A
+            host that can't supply the bytes returns Err and the parser
+            surfaces a clean "not supported" diagnostic rather than
+            silently bypassing the check.
+
+         2. Nested-manifest walk-up: when a bare name is encountered, the
+            host's `resolve` impl typically asks `fetch_bytes` for
+            `<dir>/packages.json` at each parent directory. Returning Err
+            for an absent manifest is the documented signal to "keep
+            walking up"; the parser only fails if the walk exhausts.
+
+       The default impl returns Err. The same `spec` (already stripped of
+       any `#sha256-...` fragment by the parser) will be passed to
+       `resolve` next, so the host is free to cache the bytes between the
+       two calls. */
     fn fetch_bytes(&mut self, _spec: &str) -> Result<alloc::vec::Vec<u8>, String> {
         Err(s!("module '", str _spec, "' integrity verification not supported by this resolver"))
     }

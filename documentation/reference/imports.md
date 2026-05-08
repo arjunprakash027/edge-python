@@ -70,14 +70,37 @@ After this, `from utils import x` resolves to `./lib/utils.py` relative to the e
 
 The `packages.json` file is **optional**. Scripts can use string-form paths directly without any project config — useful for one-off scripts and playground demos.
 
-### Entry-point semantics
+### Walk-up resolution
 
-Only the **entry script's** `packages.json` is read. Every transitively-imported module — even a module sitting in a deeper directory with its own `packages.json` — resolves through the entry's import map. This mirrors how `Cargo.toml` at the workspace root drives every dependency, or how the root `package.json` is the only one consulted in a Node script.
+Bare-name imports resolve against the **nearest `packages.json` walking up** from the importing file's directory. Each `packages.json` defines a *package boundary*: every file under its directory belongs to that package, and the manifest is the sole authority for what bare names mean inside it. Sub-directories may carry their own `packages.json` to scope their own aliases — exactly the way `node_modules` discovery works in Node and the way each crate has its own `Cargo.toml` in Rust.
+
+```
+my_app/
+├── packages.json          ← root manifest
+├── main.py                  bare imports here resolve via root manifest
+├── lib/
+│   ├── packages.json      ← sub-package manifest
+│   └── helper.py            bare imports here resolve via lib/ first
+└── ...
+```
 
 Concretely:
-- **Bare-name imports** (`from utils import x`) anywhere in the dependency graph hit the entry's `packages.json`.
-- **Quoted relative paths** (`from "./helpers.py" import f`) resolve against the directory of the importing file — so a transitively-imported `lib/a.py` doing `from "./b.py" import g` correctly finds `lib/b.py`.
-- A `packages.json` next to a sub-module is silently ignored. Configuration is centralized.
+- **Bare-name imports** (`from utils import x`) walk up from the importing file's directory looking for `packages.json`. The first one found decides.
+- **Hermetic by default**: if the nearest manifest doesn't declare the alias, compilation fails. There is no silent fall-through to outer manifests — that prevents a deep transitive dep from accidentally borrowing aliases the parent declared.
+- **`extends` opts in to inheritance**: a sub-manifest with `"extends": ".."` (or any directory expression) re-runs the search from the extended directory if it doesn't declare the alias locally. Cycles in the extends chain are detected at compile time.
+- **Quoted relative paths** (`from "./helpers.py" import f`) resolve against the importing file's directory — a transitively-imported `lib/a.py` doing `from "./b.py" import g` correctly finds `lib/b.py`.
+
+#### `extends`
+
+```json
+// lib/packages.json
+{
+  "extends": "..",
+  "imports": { "db": "./postgres.py" }
+}
+```
+
+`db` is local to `lib/`. Anything else falls through to `../packages.json`. Use it for monorepo-style sub-packages that share a common pool of upstream deps with the parent; omit it for hermetic libraries that should not be affected by what the consumer declares.
 
 ### Diamond imports and cycles
 
@@ -131,16 +154,37 @@ Verification lives in the compiler itself, not the host — so any host (browser
 
 Only `sha256` is supported today. A spec with any other prefix (`md5-...`, `sha384-...`) fails with `unrecognized integrity fragment`.
 
-## Caching
+## Lockfile and content-addressed cache
 
-The reference browser shim (`demo/edge.js`) keeps every fetched module's raw bytes in an in-memory `Map<spec, Uint8Array>` that **persists across `run()` calls**. Two consequences:
+The browser worker auto-generates a **lockfile** and a **content-addressed cache** as a side-effect of running scripts that import URLs. Both live in IndexedDB; together they reduce repeat runs to zero network round-trips and detect upstream content drift on demand.
 
-- **Same URL twice in one script fetches once**, and the same script run twice doesn't re-fetch its imports — the per-instance cache survives until the EdgePython instance is dropped or `clearCache()` is called.
-- **The map also feeds `js_fetch_bytes`** for `#sha256-...` integrity checks — one cache, two consumers, zero extra HTTP round-trips for verification.
+| File | Who writes it | Purpose |
+|---|---|---|
+| `packages.json` | the user | declares aliases (the manifest) |
+| `packages.lock.json` (logical, in IDB) | the worker | records every fetched spec → SHA-256 hash |
+| `cas/<hash>` (per blob, in IDB) | the worker | bytes content-addressed by SHA-256 |
 
-WASI hosts and Rust embedders make their own caching choices: the `Resolver` trait sees only `(spec → Resolved)` and `(spec → bytes for integrity)`; how those are sourced and how long they're held is the host's contract.
+### What runs do
 
-Lockfile-style integrity (record every URL → hash on first build, verify against the file on subsequent builds) is planned alongside `edge compile`.
+- **First run, cold**: every URL in the dependency graph is fetched, hashed, written to the CAS, and recorded in the lockfile.
+- **Subsequent runs**: each spec is looked up in the lockfile; if the hash is known and the corresponding blob is in the CAS, the bytes are served without touching the network. Identical content under different URLs deduplicates automatically (the hash is the key).
+- **`clearCache()`**: wipes the in-memory map, the CAS, and the lockfile. The next run treats everything as fresh.
+
+### Drift detection
+
+If a previously-locked URL serves different bytes than its recorded hash (because the upstream changed, or the cache was partially evicted and a re-fetch happened), the worker fails with both digests visible:
+
+```text
+integrity drift for 'https://cdn.foo/kit/index.py'
+  locked: sha256-abc123...
+  remote: sha256-zzz999...
+```
+
+This is the same primitive as inline `#sha256-...` integrity, applied automatically to every URL the user imports — explicit hashes in the source are still honoured and fail at compile time before any code runs.
+
+### Other hosts
+
+WASI hosts and Rust embedders make their own caching choices: the `Resolver` trait sees only `(spec → Resolved)` and `(spec → bytes via fetch_bytes)`. A CLI host typically pairs `packages.lock.json` next to `packages.json` (commitable to git) with `~/.cache/edgepython/sha256/` for the CAS, mirroring Cargo's split between project lockfile and shared registry cache. The browser worker uses IDB instead because that's where persistent storage lives in the browser.
 
 ## Sandbox
 

@@ -2,15 +2,16 @@
 
    Provides:
      * `TestResolver` — a `Resolver` that holds a `HashMap<String, Resolved>`
-       built up before each test. Equivalent to a stripped-down host (no fetch,
-       no FS — just an in-memory module map).
-     * `test_native(name)` — returns a `NativeBinding` for a fixture function,
-       so JSON test cases can declare `{ "native": ["add", "square"] }` and the
-       runner wires up the corresponding function pointers.
-     * Fixture functions covering the axes worth testing: pure vs impure,
-       fixed-arity, allocates on heap, returns handle (int), errors.
+       of fixture modules plus a `HashMap<dir, Manifest>` of nested
+       packages.json manifests. Walk-up resolution mirrors the WASM bridge
+       so the same fixture format exercises both.
+     * `test_native(name)` — returns a `NativeBinding` for a fixture
+       function, so JSON test cases can declare `{ "native": ["add"] }` and
+       the runner wires up the function pointers.
+     * Fixture functions covering pure / impure, fixed-arity, allocates on
+       heap, returns handle (int), errors.
 
-   This module is `tests/`-only: it never compiles into the production binary. */
+   `tests/`-only — never compiles into the production binary. */
 
 #![allow(dead_code)]
 
@@ -18,24 +19,30 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use compiler_lib::modules::packages::{NativeBinding, Resolved, Resolver};
+use compiler_lib::modules::fx::FxHashMap;
+use compiler_lib::modules::packages::{
+    NativeBinding, Resolved, Resolver,
+    Manifest, walk_up_dirs, dir_of, join_relative,
+};
 use compiler_lib::modules::vm::types::{HeapObj, HeapPool, Val, VmErr};
 
 // ─── TestResolver ────────────────────────────────────────────────────────────
 
-/* Shared state for a `TestResolver` and any of its `child()` sub-resolvers.
-   Mirrors the production CLI: one root packages.json (here, `aliases`) and
-   module map shared across all transitive resolutions, plus an in-flight
-   set for cycle detection. */
+/* Shared state across a TestResolver and its child sub-resolvers. Mirrors
+   the WASM bridge: one process-static manifest cache + module map shared
+   across all transitive resolutions, plus an in-flight set for cycle
+   detection on the canonical (post-alias) spec. */
 #[derive(Default)]
 struct TestResolverState {
     modules: HashMap<String, Resolved>,
-    aliases: HashMap<String, String>,
+    /* Manifests keyed by directory ("" for the root, "lib/" for a sub-pkg,
+       "https://cdn.foo/kit/" for a remote sub-pkg). The walk-up resolver
+       looks for a manifest at each parent dir of the importer's location. */
+    manifests: HashMap<String, Manifest>,
     in_flight: HashSet<String>,
-    /* Pre-staged raw bytes per spec, consumed by `fetch_bytes`. Lets
-       integrity-verification tests prove that the parser hashes the bytes
-       it would parse, by feeding a known buffer and asserting the resulting
-       diagnostic. Specs that don't appear here surface a plain "not
+    /* Pre-staged raw bytes per spec, consumed by `fetch_bytes`. Drives
+       integrity-verification tests by feeding the parser the same buffer it
+       would have hashed in production. Specs absent here surface a "not
        supported" error from the default Resolver impl. */
     bytes: HashMap<String, Vec<u8>>,
 }
@@ -43,6 +50,10 @@ struct TestResolverState {
 pub struct TestResolver {
     state: Rc<RefCell<TestResolverState>>,
     in_flight_marker: Option<String>,
+    /* Directory of the module that this resolver instance was scoped for
+       (set by `child(spec)`). Bare-name imports walk up from here looking
+       for a manifest. Empty string for the entry-script resolver. */
+    dir: String,
 }
 
 impl Drop for TestResolver {
@@ -58,6 +69,7 @@ impl TestResolver {
         Self {
             state: Rc::new(RefCell::new(TestResolverState::default())),
             in_flight_marker: None,
+            dir: String::new(),
         }
     }
 
@@ -72,72 +84,138 @@ impl TestResolver {
     }
 
     /* Feed the bytes the parser will hash for `spec` when verifying a
-       `#sha256-...` fragment. Tests pair this with `with_native` /
-       `with_code` so the parser's hash check sees exactly the bytes that
-       would have produced the resolved module. */
+       `#sha256-...` fragment. */
     pub fn with_bytes(self, spec: &str, bytes: Vec<u8>) -> Self {
         self.state.borrow_mut().bytes.insert(spec.to_string(), bytes);
         self
     }
 
-    /* Add a packages.json-style alias: bare-name imports map to a target spec
-       declared only in the root resolver. Subordinate (child) resolvers see
-       the same alias map, so a transitively-imported module can resolve a
-       bare name through the entry script's packages.json without declaring
-       its own. */
+    /* Add an alias to the root manifest (dir = ""). Equivalent to writing
+       `{"imports": { "<name>": "<target>" }}` in a sibling packages.json.
+       Idempotent and additive: multiple calls accumulate into one root
+       manifest, matching the original test API. */
     pub fn with_alias(self, name: &str, target: &str) -> Self {
-        self.state.borrow_mut().aliases.insert(name.to_string(), target.to_string());
+        {
+            let mut s = self.state.borrow_mut();
+            let m = s.manifests.entry(String::new())
+                .or_insert_with(|| Manifest {
+                    imports: FxHashMap::default(),
+                    extends: None,
+                });
+            m.imports.insert(name.to_string(), target.to_string());
+        }
         self
     }
 
-    /* Resolve a spec to its canonical key (alias-applied) used for both the
-       module map lookup and cycle detection. */
-    fn canonical(&self, spec: &str) -> String {
-        let s = self.state.borrow();
-        s.aliases.get(spec).cloned().unwrap_or_else(|| spec.to_string())
+    /* Add a nested manifest at `dir` ("" for root, "lib/" for sub, etc.).
+       Used by fixtures that want to exercise walk-up: bare-name resolution
+       from a module under `dir/foo.py` will hit this manifest first. */
+    pub fn with_manifest(self, dir: &str, imports: &[(&str, &str)], extends: Option<&str>) -> Self {
+        let mut imp = FxHashMap::default();
+        for (k, v) in imports { imp.insert(k.to_string(), v.to_string()); }
+        let m = Manifest { imports: imp, extends: extends.map(|s| s.to_string()) };
+        self.state.borrow_mut().manifests.insert(dir.to_string(), m);
+        self
     }
 }
 
 impl Resolver for TestResolver {
     fn resolve(&mut self, spec: &str) -> Result<Resolved, String> {
-        let key = self.canonical(spec);
-        if self.state.borrow().in_flight.contains(&key) {
+        if !spec.contains('/') {
+            let dir = self.dir.clone();
+            return self.resolve_bare(spec, &dir);
+        }
+        let canonical = if spec.contains("://") || spec.starts_with('/') {
+            spec.to_string()
+        } else {
+            join_relative(&self.dir, spec)
+        };
+        self.resolve_canonical(&canonical)
+    }
+
+    /* Sub-resolver for a transitive import: shares all state (modules,
+       manifests, in_flight, bytes) and rescopes `dir` to the imported
+       module's location. The Drop impl removes the in-flight marker when
+       the splicer is done parsing this module. */
+    fn child(&self, spec: &str) -> Box<dyn Resolver> {
+        let canon = spec.to_string();
+        self.state.borrow_mut().in_flight.insert(canon.clone());
+        Box::new(TestResolver {
+            state: Rc::clone(&self.state),
+            in_flight_marker: Some(canon),
+            dir: dir_of(spec).to_string(),
+        })
+    }
+
+    fn fetch_bytes(&mut self, spec: &str) -> Result<Vec<u8>, String> {
+        match self.state.borrow().bytes.get(spec) {
+            Some(b) => Ok(b.clone()),
+            None => Err(format!(
+                "module '{}' integrity verification not supported by this resolver", spec)),
+        }
+    }
+}
+
+impl TestResolver {
+    /* Walk up from `start_dir` looking for the nearest manifest that
+       declares `name`. Hermetic: first manifest encountered is
+       authoritative. `extends` relocates the search to another dir.
+       Cycle detection on the extends chain. */
+    fn resolve_bare(&mut self, name: &str, start_dir: &str) -> Result<Resolved, String> {
+        let mut visited: HashSet<String> = HashSet::new();
+        let mut search_dir = start_dir.to_string();
+        let mut hops = 0u32;
+        loop {
+            if hops > 32 {
+                return Err(format!("packages.json walk-up exceeded 32 hops resolving '{}'", name));
+            }
+            hops += 1;
+            let mut hit: Option<(String, Option<String>, Option<String>)> = None;
+            for dir in walk_up_dirs(&search_dir) {
+                let s = self.state.borrow();
+                if let Some(m) = s.manifests.get(&dir) {
+                    let target = m.imports.get(name).cloned();
+                    let ext = m.extends.clone();
+                    drop(s);
+                    hit = Some((dir, target, ext));
+                    break;
+                }
+            }
+            let Some((dir, target, ext)) = hit else {
+                return Err(format!(
+                    "no packages.json above '{}' declares '{}'", start_dir, name));
+            };
+            if let Some(target) = target {
+                let canonical = join_relative(&dir, &target);
+                return self.resolve_canonical(&canonical);
+            }
+            if let Some(ext) = ext {
+                let m_spec = format!("{}packages.json", dir);
+                if !visited.insert(m_spec) {
+                    return Err("circular extends chain in packages.json".to_string());
+                }
+                let mut next = join_relative(&dir, &ext);
+                if !next.ends_with('/') { next.push('/'); }
+                search_dir = next;
+                continue;
+            }
+            return Err(format!(
+                "alias '{}' not declared in '{}packages.json'\nhelp: declare it, add \"extends\": \"..\" to inherit, or use a quoted path",
+                name, dir));
+        }
+    }
+
+    fn resolve_canonical(&self, spec: &str) -> Result<Resolved, String> {
+        let s = self.state.borrow();
+        if s.in_flight.contains(spec) {
             return Err(format!("circular import: '{}'", spec));
         }
-        match self.state.borrow().modules.get(&key) {
+        match s.modules.get(spec) {
             // Clone so the same module can be re-imported (e.g.,
             // `from m import f; from m import f as g`). Test fixtures are
             // small; cloning is cheap.
             Some(r) => Ok(r.clone()),
             None => Err(format!("module '{}' not found in TestResolver", spec)),
-        }
-    }
-
-    /* Sub-resolver for transitive imports: shares the entry resolver's full
-       state (modules + aliases + in_flight), so a deeper module can resolve
-       a bare name declared only in the root configuration. The returned
-       resolver records its spec in in_flight; Drop removes it when the
-       splicer's parse step finishes. Mirrors the entry-point packages.json
-       semantics described in `documentation/reference/imports.md`. */
-    fn child(&self, spec: &str) -> Box<dyn Resolver> {
-        let canon = self.canonical(spec);
-        self.state.borrow_mut().in_flight.insert(canon.clone());
-        Box::new(TestResolver {
-            state: Rc::clone(&self.state),
-            in_flight_marker: Some(canon),
-        })
-    }
-
-    /* Surface pre-staged bytes for integrity verification, or fall through
-       to the default Err if the test didn't seed any. The parser will hash
-       whatever we return, so a test that wants to assert "good hash, loads
-       cleanly" feeds the bytes that produce the matching SHA-256. */
-    fn fetch_bytes(&mut self, spec: &str) -> Result<Vec<u8>, String> {
-        let key = self.canonical(spec);
-        match self.state.borrow().bytes.get(&key) {
-            Some(b) => Ok(b.clone()),
-            None => Err(format!(
-                "module '{}' integrity verification not supported by this resolver", spec)),
         }
     }
 }

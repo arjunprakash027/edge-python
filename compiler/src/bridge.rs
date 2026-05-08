@@ -20,7 +20,11 @@ mod runtime {
     use lol_alloc::LeakingPageAllocator;
     use crate::modules::{lexer::lex, parser::{Parser, Diagnostic}, vm::{VM, Limits}};
     use crate::modules::vm::types::{HeapPool, Val, VmErr};
-    use crate::modules::packages::{NativeBinding, Resolved, Resolver};
+    use crate::modules::packages::{
+        NativeBinding, Resolved, Resolver,
+        Manifest, parse_manifest, walk_up_dirs, dir_of, join_relative,
+    };
+    use crate::modules::fx::FxHashSet;
     use alloc::{boxed::Box, string::{String, ToString}, sync::Arc, vec::Vec};
     use crate::s;
 
@@ -71,6 +75,13 @@ mod runtime {
 
     static mut REGISTRY: Option<Vec<(String, ModuleEntry)>> = None;
 
+    /* Per-run cache of parsed manifests keyed by spec. The walk-up resolver
+       hits the same `<dir>/packages.json` repeatedly across transitive
+       imports; parsing once per spec amortizes the JSON read. Cleared with
+       REGISTRY in `reset_modules()` so a fresh run starts with no leftover
+       state. */
+    static mut MANIFESTS: Option<Vec<(String, Manifest)>> = None;
+
     unsafe fn registry() -> &'static mut Vec<(String, ModuleEntry)> {
         unsafe {
             let p = core::ptr::addr_of_mut!(REGISTRY);
@@ -79,16 +90,154 @@ mod runtime {
         }
     }
 
-    struct WasmHostResolver;
+    unsafe fn manifests() -> &'static mut Vec<(String, Manifest)> {
+        unsafe {
+            let p = core::ptr::addr_of_mut!(MANIFESTS);
+            if (*p).is_none() { *p = Some(Vec::new()); }
+            (*p).as_mut().unwrap()
+        }
+    }
+
+    /* The browser/WASM resolver. Each instance is scoped to a directory
+       (`""` for the entry script, `dir_of(spec)` after a `child()` call) so
+       bare-name imports inside a transitively-loaded module walk up from
+       the importer's own location, not from the entry script's. The
+       directory is the only mutable state carried per resolver — module
+       sources live in REGISTRY and parsed manifests in MANIFESTS, both
+       process-static. */
+    struct WasmHostResolver { dir: String }
 
     impl Resolver for WasmHostResolver {
         fn resolve(&mut self, spec: &str) -> Result<Resolved, String> {
+            // Bare names (no '/' anywhere) walk up looking for packages.json.
+            if !spec.contains('/') {
+                let dir = self.dir.clone();
+                return self.resolve_bare(spec, &dir);
+            }
+            // Quoted relative form (`./helpers.py`, `../shared/foo.py`):
+            // canonicalize against the current scope so a sub-module's
+            // relative path resolves to the same registry key the host
+            // pre-registered. Absolute URLs / leading-slash paths pass
+            // through unchanged.
+            let canonical = if spec.contains("://") || spec.starts_with('/') {
+                spec.to_string()
+            } else {
+                join_relative(&self.dir, spec)
+            };
+            self.resolve_canonical(&canonical)
+        }
+
+        /* Defer to the JS side, which cached the raw bytes during pre-fetch.
+           The shim allocates a fresh buffer (via `wasm_alloc`) the parser
+           reclaims as `Vec<u8>`. A null return from the host means "no bytes
+           cached for this spec" — surfaced as `Err` so the walk-up resolver
+           can interpret it as "no manifest at this dir, keep walking". */
+        fn fetch_bytes(&mut self, spec: &str) -> Result<Vec<u8>, String> {
+            let mut len: u32 = 0;
+            let ptr = unsafe {
+                js_fetch_bytes(spec.as_ptr(), spec.len() as u32, &mut len as *mut u32)
+            };
+            if ptr.is_null() {
+                return Err(s!("no bytes cached by host for '", str spec, "'"));
+            }
+            Ok(unsafe { Vec::from_raw_parts(ptr, len as usize, len as usize) })
+        }
+
+        /* Sub-resolver for a transitively-imported module. The new resolver
+           rescopes its directory to the module's location so the module's own
+           bare imports walk up from there. Module sources and manifests stay
+           in process-static caches, so this is just a directory rebind. */
+        fn child(&self, spec: &str) -> Box<dyn Resolver> {
+            Box::new(WasmHostResolver { dir: dir_of(spec).to_string() })
+        }
+    }
+
+    impl WasmHostResolver {
+        /* Resolve a bare name by walking up from `start_dir` looking for the
+           nearest `packages.json` that declares it. Hermetic by default —
+           the first manifest encountered is authoritative, missing-alias
+           there is a hard error. A manifest with `extends` relocates the
+           search to the extended directory and walk-up continues, with
+           cycle detection so a pathological "extends": "." can't loop. */
+        fn resolve_bare(&mut self, name: &str, start_dir: &str) -> Result<Resolved, String> {
+            let mut visited: FxHashSet<String> = FxHashSet::default();
+            let mut search_dir = start_dir.to_string();
+            let mut hops: u32 = 0;
+            loop {
+                if hops > 32 {
+                    return Err(s!("packages.json walk-up exceeded 32 hops resolving '", str name, "'"));
+                }
+                hops += 1;
+
+                // Walk dirs from search_dir up; first dir with a manifest decides.
+                let mut hit: Option<(String, Option<String>, Option<String>)> = None;
+                for dir in walk_up_dirs(&search_dir) {
+                    let m_spec = s!(str &dir, "packages.json");
+                    if let Some((target, ext)) = self.lookup_in_manifest(&m_spec, name)? {
+                        hit = Some((dir, target, ext));
+                        break;
+                    }
+                }
+                let Some((dir, target, ext)) = hit else {
+                    return Err(s!(
+                        "no packages.json above '", str start_dir,
+                        "' declares '", str name, "'"));
+                };
+                if let Some(target) = target {
+                    let canonical = join_relative(&dir, &target);
+                    return self.resolve_canonical(&canonical);
+                }
+                let m_spec = s!(str &dir, "packages.json");
+                if let Some(ext) = ext {
+                    if !visited.insert(m_spec) {
+                        return Err(s!("circular extends chain in packages.json"));
+                    }
+                    let mut next = join_relative(&dir, &ext);
+                    if !next.ends_with('/') { next.push('/'); }
+                    search_dir = next;
+                    continue;
+                }
+                return Err(s!(
+                    "alias '", str name, "' not declared in '", str &m_spec, "'\n",
+                    "help: declare it, add \"extends\": \"..\" to inherit, or use a quoted path"));
+            }
+        }
+
+        /* Two-step manifest read: bytes via host (cached in JS) → parse
+           (cached as Manifest in MANIFESTS). Returns:
+             Ok(None)                — host has no bytes for this spec
+             Ok(Some((target, ext))) — manifest exists; `target` is the
+                                       import target if `name` matches, `ext`
+                                       is the manifest's extends value */
+        #[allow(clippy::type_complexity)]
+        fn lookup_in_manifest(
+            &mut self, m_spec: &str, name: &str,
+        ) -> Result<Option<(Option<String>, Option<String>)>, String> {
+            let cache = unsafe { manifests() };
+            if let Some((_, m)) = cache.iter().find(|(s, _)| s == m_spec) {
+                return Ok(Some((m.imports.get(name).cloned(), m.extends.clone())));
+            }
+            let bytes = match self.fetch_bytes(m_spec) {
+                Ok(b) => b,
+                Err(_) => return Ok(None),
+            };
+            let parsed = parse_manifest(&bytes).map_err(|e| s!(
+                "packages.json at '", str m_spec, "': ", str &e))?;
+            let target = parsed.imports.get(name).cloned();
+            let ext = parsed.extends.clone();
+            cache.push((m_spec.to_string(), parsed));
+            Ok(Some((target, ext)))
+        }
+
+        /* Look up a canonical (URL / path / pre-registered) spec in the
+           module registry. Same as the pre-walk-up behavior — the registry
+           stores everything the host pre-fetched and registered. */
+        fn resolve_canonical(&self, spec: &str) -> Result<Resolved, String> {
             let reg = unsafe { registry() };
             let entry = reg.iter().find(|(s, _)| s == spec)
                 .ok_or_else(|| s!(
                     "module '", str spec,
-                    "' not registered (host did not pre-fetch / register before run())"
-                ))?;
+                    "' not registered (host did not pre-fetch / register before run())"))?;
             match &entry.1 {
                 ModuleEntry::Code(src) => Ok(Resolved::Code(src.clone())),
                 ModuleEntry::Native(funcs) => {
@@ -110,28 +259,6 @@ mod runtime {
                     Ok(Resolved::Native(bindings))
                 }
             }
-        }
-
-        /* Defer to the JS side, which cached the raw bytes during pre-fetch
-           (the same fetch that fed `register_code_module`). The shim returns
-           a freshly-allocated buffer the parser consumes; `Vec::from_raw_parts`
-           round-trips cleanly because `wasm_alloc` produces Vec-compatible
-           layout. */
-        fn fetch_bytes(&mut self, spec: &str) -> Result<Vec<u8>, String> {
-            let mut len: u32 = 0;
-            let ptr = unsafe {
-                js_fetch_bytes(
-                    spec.as_ptr(),
-                    spec.len() as u32,
-                    &mut len as *mut u32,
-                )
-            };
-            if ptr.is_null() {
-                return Err(s!(
-                    "module '", str spec,
-                    "' bytes not cached by host (integrity verification needs the host's pre-fetched bytes)"));
-            }
-            Ok(unsafe { Vec::from_raw_parts(ptr, len as usize, len as usize) })
         }
     }
 
@@ -198,10 +325,13 @@ mod runtime {
     }
 
     /* Clear the registry between runs so leftover state from a previous
-       compile doesn't leak into the next one. */
+       compile doesn't leak into the next one. Also clears the parsed
+       manifest cache: a host that re-fetched packages.json bytes between
+       runs (e.g., to honor a `clearCache()` call in the worker) needs the
+       compiler to re-parse, not reuse a stale Manifest. */
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn reset_modules() {
-        unsafe { registry().clear(); }
+        unsafe { registry().clear(); manifests().clear(); }
     }
 
     /* Pre-scan for the JS host. Walks the source for quoted module specs in
@@ -238,7 +368,8 @@ mod runtime {
         };
 
         let (tokens, lex_errs) = lex(src);
-        let mut p = Parser::with_resolver(src, tokens.into_iter(), Box::new(WasmHostResolver));
+        let resolver = Box::new(WasmHostResolver { dir: String::new() });
+        let mut p = Parser::with_resolver(src, tokens.into_iter(), resolver);
         for e in lex_errs {
             p.errors.push(Diagnostic { start: e.start, end: e.end, msg: e.msg.into() });
         }

@@ -52,6 +52,18 @@ mod test {
         },
     }
 
+    /* A `packages.json` declared at a directory inside the fixture's virtual
+       filesystem. Used by walk-up cases to assert nested-manifest semantics;
+       absent in flat fixtures, where `aliases` (a synthetic root manifest)
+       is sufficient. */
+    #[derive(serde::Deserialize)]
+    struct ManifestDef {
+        #[serde(default)]
+        imports: HashMap<String, String>,
+        #[serde(default)]
+        extends: Option<String>,
+    }
+
     #[derive(serde::Deserialize)]
     struct Case {
         src: String,
@@ -63,12 +75,16 @@ mod test {
         input: Vec<String>,
         #[serde(default)]
         modules: HashMap<String, ModuleDef>,
-        /* Stand-in for the entry script's `packages.json`. Bare-name imports
-           in any module (entry or transitively imported) resolve through this
-           map, mirroring the root-only packages.json semantics any host
-           implementation should follow. */
+        /* Stand-in for the root `packages.json`. Bare-name imports anywhere
+           in the dep graph resolve through this map unless a deeper
+           `packages.json` (declared via `manifests`) takes precedence. */
         #[serde(default)]
         aliases: HashMap<String, String>,
+        /* Nested manifests keyed by directory ("" for root, "lib/" for a
+           sub-package). The walk-up resolver uses these to verify
+           hermeticity, `extends`, and circular-extends detection. */
+        #[serde(default)]
+        manifests: HashMap<String, ManifestDef>,
         #[serde(default)]
         expect_externs: Option<usize>,
         #[serde(default)]
@@ -80,6 +96,7 @@ mod test {
     fn build_resolver(
         modules: &HashMap<String, ModuleDef>,
         aliases: &HashMap<String, String>,
+        manifests: &HashMap<String, ManifestDef>,
     ) -> TestResolver {
         let mut r = TestResolver::new();
         for (spec, def) in modules {
@@ -101,9 +118,22 @@ mod test {
                     }
                 }
             }
+            /* Auto-self-alias bare-name modules so flat fixtures keep
+               working without an explicit `aliases` block: `from m import x`
+               where `m` is registered as a module spec resolves through a
+               synthesized root entry `m -> m`. Quoted/URL specs skip this
+               (they bypass walk-up entirely via resolve_canonical). */
+            if !spec.contains('/') {
+                r = r.with_alias(spec, spec);
+            }
         }
         for (name, target) in aliases {
             r = r.with_alias(name, target);
+        }
+        for (dir, m) in manifests {
+            let pairs: Vec<(&str, &str)> = m.imports.iter()
+                .map(|(k, v)| (k.as_str(), v.as_str())).collect();
+            r = r.with_manifest(dir, &pairs, m.extends.as_deref());
         }
         r
     }
@@ -130,7 +160,7 @@ mod test {
         ).expect("invalid JSON");
 
         for case in cases {
-            let resolver = Box::new(build_resolver(&case.modules, &case.aliases));
+            let resolver = Box::new(build_resolver(&case.modules, &case.aliases, &case.manifests));
             let (tokens, _lex_errs) = lex(&case.src);
             let parser = Parser::with_resolver(&case.src, tokens.into_iter(), resolver);
             let (chunk, parse_errs) = parser.parse();

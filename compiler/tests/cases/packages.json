@@ -154,9 +154,9 @@
 
   {
     "_section": "Resolver and parser-time errors (with span checks where useful)",
-    "_comment": "no resolver entry → diagnostic mentions the spec, span covers it exactly",
+    "_comment": "no manifest declares the bare name → diagnostic mentions both the spec and the missing manifest, span covers the spec exactly",
     "src": "from missing import x\nprint(x)",
-    "error": "module 'missing' not found",
+    "error": "no packages.json above '' declares 'missing'",
     "error_span_covers": "missing"
   },
   {
@@ -470,5 +470,90 @@
     "src": "from m import const_42\nprint(const_42())",
     "modules": { "m": { "native": ["const_42"] } },
     "output": ["42"]
+  },
+
+  {
+    "_section": "Nested packages.json — walk-up resolves bare names against the nearest manifest",
+    "_comment": "Sub-module `lib/a.py` uses bare `helpers`; lib/packages.json declares it, so resolution stops there without consulting the root.",
+    "src": "from \"./lib/a.py\" import run\nprint(run())",
+    "output": ["nested:hi"],
+    "modules": {
+      "./lib/a.py":       { "code": "from helpers import label\n\ndef run():\n    return 'nested:' + label()" },
+      "./lib/helpers.py": { "code": "def label():\n    return 'hi'" }
+    },
+    "manifests": {
+      "./lib/": { "imports": { "helpers": "./helpers.py" } }
+    }
+  },
+  {
+    "_comment": "Hermetic: lib/packages.json doesn't declare 'utils' and has no extends — bare 'utils' inside lib/a.py errors clearly even though the root manifest declares it.",
+    "src": "from \"./lib/a.py\" import run\nprint(run())",
+    "modules": {
+      "./lib/a.py":  { "code": "from utils import slug\n\ndef run():\n    return slug('x')" },
+      "./util.py":   { "code": "def slug(s):\n    return s" }
+    },
+    "aliases": { "utils": "./util.py" },
+    "manifests": {
+      "./lib/": { "imports": { "other": "./other.py" } }
+    },
+    "error": "alias 'utils' not declared in './lib/packages.json'"
+  },
+  {
+    "_comment": "Extends: lib/packages.json says extends \"..\", so missing aliases fall through to the root manifest (Node-style fallback opt-in).",
+    "src": "from \"./lib/a.py\" import run\nprint(run())",
+    "output": ["root:hi"],
+    "modules": {
+      "./lib/a.py":  { "code": "from utils import slug\n\ndef run():\n    return 'root:' + slug('hi')" },
+      "./util.py":   { "code": "def slug(s):\n    return s" }
+    },
+    "aliases": { "utils": "./util.py" },
+    "manifests": {
+      "./lib/": { "imports": { "other": "./other.py" }, "extends": ".." }
+    }
+  },
+  {
+    "_comment": "No manifest anywhere on the walk-up path → error names the searched-from dir so the user knows where to drop a packages.json.",
+    "src": "from \"./lib/a.py\" import run\nprint(run())",
+    "modules": {
+      "./lib/a.py": { "code": "from utils import slug\n\ndef run():\n    return slug('x')" }
+    },
+    "error": "no packages.json above './lib/' declares 'utils'"
+  },
+  {
+    "_comment": "Two sub-packages with the same alias name (`db`) resolved to different targets — Cargo-like hermeticity, no leakage.",
+    "src": "from \"./svc_a/main.py\" import handle as ha\nfrom \"./svc_b/main.py\" import handle as hb\nprint(ha())\nprint(hb())",
+    "output": ["postgres", "mysql"],
+    "modules": {
+      "./svc_a/main.py":     { "code": "from db import name\n\ndef handle():\n    return name()" },
+      "./svc_a/postgres.py": { "code": "def name():\n    return 'postgres'" },
+      "./svc_b/main.py":     { "code": "from db import name\n\ndef handle():\n    return name()" },
+      "./svc_b/mysql.py":    { "code": "def name():\n    return 'mysql'" }
+    },
+    "manifests": {
+      "./svc_a/": { "imports": { "db": "./postgres.py" } },
+      "./svc_b/": { "imports": { "db": "./mysql.py" } }
+    }
+  },
+  {
+    "_comment": "Circular extends: lib points up at root, root points down at lib — resolver detects the cycle and errors instead of looping.",
+    "src": "from \"./lib/a.py\" import run\nprint(run())",
+    "modules": {
+      "./lib/a.py": { "code": "from missing import x\n\ndef run():\n    return x" }
+    },
+    "manifests": {
+      "":       { "imports": { "other": "./util.py" }, "extends": "./lib" },
+      "./lib/": { "imports": { "other": "./util.py" }, "extends": ".." }
+    },
+    "error": "circular extends chain"
+  },
+  {
+    "_comment": "Multi-level walk-up: bare name in lib/sub/x.py walks lib/sub/ → lib/ → \"\" before finding the declaring manifest at the root.",
+    "src": "from \"./lib/sub/x.py\" import f\nprint(f())",
+    "output": ["root-helper"],
+    "modules": {
+      "./lib/sub/x.py": { "code": "from helper import h\n\ndef f():\n    return h()" },
+      "./helper.py":    { "code": "def h():\n    return 'root-helper'" }
+    },
+    "aliases": { "helper": "./helper.py" }
   }
 ]
