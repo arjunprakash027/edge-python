@@ -147,7 +147,13 @@ impl Resolver for TestResolver {
         })
     }
 
-    fn fetch_bytes(&mut self, spec: &str) -> Result<Vec<u8>, String> {
+    fn fetch_bytes(
+        &mut self,
+        spec: &str,
+        _expected_hash: Option<[u8; 32]>,
+    ) -> Result<Vec<u8>, String> {
+        // Test fixture: in-memory map; integrity verification deferred
+        // to the parser's defence-in-depth hash check.
         match self.state.borrow().bytes.get(spec) {
             Some(b) => Ok(b.clone()),
             None => Err(format!(

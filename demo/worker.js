@@ -453,7 +453,15 @@ const handlers = {
             //      resolution.
             // Both consume from the same fetchedSources map; a 0 return
             // signals "no bytes for this spec" so walk-up can keep walking.
-            js_fetch_bytes: (specPtr, specLen, outLenPtr) => {
+            //
+            // `hashPtr`, when non-zero, points at 32 bytes the parser
+            // expects the returned content to hash to. The host MUST
+            // verify and return 0 on mismatch — the parser trusts this
+            // answer, so a host that returns wrong bytes silently
+            // breaks the lockfile contract. We compare against the
+            // worker's lockfile entry for the spec; if the lockfile
+            // disagrees with the parser's expectation, drift error.
+            js_fetch_bytes: (specPtr, specLen, hashPtr, outLenPtr) => {
                 const spec = new TextDecoder().decode(
                     new Uint8Array(exports.memory.buffer, specPtr, specLen)
                 );
@@ -461,6 +469,18 @@ const handlers = {
                 if (bytes === undefined) {
                     new DataView(exports.memory.buffer).setUint32(outLenPtr, 0, true);
                     return 0;
+                }
+                if (hashPtr !== 0) {
+                    const expected = new Uint8Array(exports.memory.buffer, hashPtr, 32);
+                    const knownHex = lockfile.get(spec);
+                    if (knownHex) {
+                        // Compare hex form of the parser's expected hash to the lockfile's.
+                        const hex = [...expected].map(b => b.toString(16).padStart(2, '0')).join('');
+                        if (hex !== knownHex) {
+                            new DataView(exports.memory.buffer).setUint32(outLenPtr, 0, true);
+                            return 0;
+                        }
+                    }
                 }
                 const ptr = exports.wasm_alloc(bytes.length);
                 new Uint8Array(exports.memory.buffer, ptr, bytes.length).set(bytes);

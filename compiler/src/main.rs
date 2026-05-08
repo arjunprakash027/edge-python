@@ -56,11 +56,20 @@ mod runtime {
             out: *mut u32,
         ) -> i32;
 
-        /* Returns the host-cached bytes for `spec` so the parser can
-           verify a `#sha256-...` integrity fragment OR walk up looking
-           for a `<dir>/packages.json`. A null return means "no bytes",
-           which the resolver treats as "keep walking up". */
-        fn js_fetch_bytes(spec_ptr: *const u8, spec_len: u32, out_len: *mut u32) -> *mut u8;
+        /* Returns the host-cached bytes for `spec`. When `hash_ptr` is
+           non-null, it points to 32 bytes — the expected sha-256 of the
+           returned content. The host MUST verify (e.g. against its
+           lockfile) and return null if the hash doesn't match. When
+           null, the host is free to fetch fresh content; the parser
+           will hash it itself if a `#sha256-...` fragment is in the
+           spec. A null return means "no bytes" (or "integrity drift")
+           and the parser surfaces it as "keep walking up" / verification
+           error depending on context. */
+        fn js_fetch_bytes(
+            spec_ptr: *const u8, spec_len: u32,
+            hash_ptr: *const u8,
+            out_len: *mut u32,
+        ) -> *mut u8;
     }
 
     fn stream_print(s: &str) {
@@ -199,10 +208,17 @@ mod runtime {
             self.resolve_canonical(&canonical)
         }
 
-        fn fetch_bytes(&mut self, spec: &str) -> Result<Vec<u8>, String> {
+        fn fetch_bytes(
+            &mut self,
+            spec: &str,
+            expected_hash: Option<[u8; 32]>,
+        ) -> Result<Vec<u8>, String> {
             let mut len: u32 = 0;
+            let hash_ptr = expected_hash.as_ref()
+                .map(|h| h.as_ptr())
+                .unwrap_or(core::ptr::null());
             let ptr = unsafe {
-                js_fetch_bytes(spec.as_ptr(), spec.len() as u32, &mut len as *mut u32)
+                js_fetch_bytes(spec.as_ptr(), spec.len() as u32, hash_ptr, &mut len as *mut u32)
             };
             if ptr.is_null() {
                 return Err(s!("no bytes cached by host for '", str spec, "'"));
@@ -267,7 +283,9 @@ mod runtime {
             if let Some((_, m)) = cache.iter().find(|(s, _)| s == m_spec) {
                 return Ok(Some((m.imports.get(name).cloned(), m.extends.clone())));
             }
-            let bytes = match self.fetch_bytes(m_spec) {
+            // Walk-up packages.json fetch — no integrity hash known
+            // (the manifest itself isn't pinned by URL fragment).
+            let bytes = match self.fetch_bytes(m_spec, None) {
                 Ok(b) => b,
                 Err(_) => return Ok(None),
             };

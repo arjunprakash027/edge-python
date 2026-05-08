@@ -121,11 +121,23 @@ pub trait Resolver {
             for an absent manifest is the documented signal to "keep
             walking up"; the parser only fails if the walk exhausts.
 
+       `expected_hash` is **mandatory** integrity contract: when `Some`,
+       the host MUST return bytes whose sha-256 digest equals the
+       expected value, OR return Err. Returning bytes with a different
+       digest is a contract violation — the parser trusts the host's
+       answer here for cross-host reproducibility. When `None`, the host
+       is free to fetch fresh content; the parser will hash it itself if
+       a `#sha256-...` fragment is in the spec.
+
        The default impl returns Err. The same `spec` (already stripped of
        any `#sha256-...` fragment by the parser) will be passed to
        `resolve` next, so the host is free to cache the bytes between the
        two calls. */
-    fn fetch_bytes(&mut self, _spec: &str) -> Result<alloc::vec::Vec<u8>, String> {
+    fn fetch_bytes(
+        &mut self,
+        _spec: &str,
+        _expected_hash: Option<[u8; 32]>,
+    ) -> Result<alloc::vec::Vec<u8>, String> {
         Err(s!("module '", str _spec, "' integrity verification not supported by this resolver"))
     }
 }

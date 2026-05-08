@@ -70,8 +70,8 @@ export class EdgePython {
         const env = {
             js_print: (ptr, len) => ep._handlePrint(ptr, len),
             js_call_native: (id, argsPtr, argsLen) => ep._handleNativeCall(id, argsPtr, argsLen),
-            js_fetch_bytes: (specPtr, specLen, outLenPtr) =>
-                ep._handleFetchBytes(specPtr, specLen, outLenPtr),
+            js_fetch_bytes: (specPtr, specLen, hashPtr, outLenPtr) =>
+                ep._handleFetchBytes(specPtr, specLen, hashPtr, outLenPtr),
         };
         const wasm = await WebAssembly.instantiateStreaming(fetch(wasmUrl), { env });
         ep.instance = wasm.instance;
@@ -282,8 +282,15 @@ export class EdgePython {
     /* Hand the WASM compiler the host-cached bytes for a spec so it can
      * verify a `#sha256-...` integrity fragment. Returns null (0) if no
      * bytes are cached — the parser treats that as "host doesn't support
-     * verification" and surfaces a clean diagnostic. */
-    _handleFetchBytes(specPtr, specLen, outLenPtr) {
+     * verification" and surfaces a clean diagnostic.
+     *
+     * `hashPtr`, when non-zero, points at 32 bytes the parser expects
+     * the returned content to hash to. Hosts that maintain a lockfile
+     * compare against it and return 0 on mismatch. The reference embedder
+     * doesn't track lockfile entries (the consumer's `cache` keeps bytes
+     * by spec, not by hash), so we don't perform an extra check here —
+     * the parser still re-hashes the bytes for defence in depth. */
+    _handleFetchBytes(specPtr, specLen, _hashPtr, outLenPtr) {
         const spec = TEXT_DECODER.decode(
             new Uint8Array(this.exports.memory.buffer, specPtr, specLen)
         );

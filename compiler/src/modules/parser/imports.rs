@@ -181,7 +181,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     fn resolve_with_integrity(&mut self, spec: &str) -> Result<(String, Resolved), String> {
         let (url, expected) = parse_integrity(spec)?;
         if let Some(hash) = expected {
-            let bytes = self.resolver.fetch_bytes(url)?;
+            // Pass the expected hash to the host so its lockfile / cache
+            // can verify on its side too. The parser still re-hashes the
+            // returned bytes as a defence-in-depth check — a misbehaving
+            // host that returns wrong content gets caught here.
+            let bytes = self.resolver.fetch_bytes(url, Some(hash))?;
             let computed = sha256(&bytes);
             if computed != hash {
                 return Err(s!(
