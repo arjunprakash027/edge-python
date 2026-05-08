@@ -53,11 +53,11 @@ pub enum TokenType {
     Comment, Newline, Indent, Dedent, Nl, Endmarker,
 }
 
-/* Parser-ready token list with indentation handled and soft keywords
-   (match/case/type) demoted to Name when followed by a token that can't
-   begin a soft-keyword construct. Returns the token vector alongside any
-   lex-time diagnostics so the caller can fold them into the parser's
-   error stream. */
+/* Parser-ready token list with indentation already handled. match/case/type
+   are hard keywords; the only soft-keyword path remaining is `_` (wildcard
+   in match patterns vs. plain identifier elsewhere). Returns the token
+   vector alongside any lex-time diagnostics so the caller can fold them
+   into the parser's error stream. */
 pub fn lex(source: &str) -> (Vec<Token>, Vec<LexError>) {
     let bytes = source.as_bytes();
     let len = source.len();
@@ -87,7 +87,11 @@ pub fn lex(source: &str) -> (Vec<Token>, Vec<LexError>) {
         if ended { break; }
         if tok == TokenType::Endmarker { ended = true; }
 
-        let is_soft = matches!(tok, TokenType::Match | TokenType::Case | TokenType::Type);
+        // `type` is the lone surviving soft keyword. `match`/`case` are now
+        // hard keywords because `match` / `case` only appear at statement
+        // start in Edge Python. `type` would collide with the `type()` builtin
+        // and with attributes named `type`, so it stays soft.
+        let is_soft = matches!(tok, TokenType::Type);
         let next_demotes = matches!(
             raw.get(i + 1),
             Some(&(
