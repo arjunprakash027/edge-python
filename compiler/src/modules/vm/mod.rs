@@ -124,6 +124,10 @@ pub struct VM<'a> {
        `handle_function` so `exec_call` can record it on the CallFrame
        it pushes. Cleared after each call returns. */
     pub(crate) pending_call_byte_pos: Option<u32>,
+    /* When `sleep(s)` yields, it stores the wakeup time here so the
+       scheduler can move the handle to Sleeping(until_ns). Cleared after
+       each scheduler step; None means "yield once and stay Ready". */
+    pub(crate) pending_sleep_until_ns: Option<u64>,
     /* spec → Module Val map populated by `init_modules` before user
        bytecode runs. Both `OpCode::LoadModule` and the `import_module()`
        builtin look up here. Each unique spec across the chunk tree
@@ -147,6 +151,19 @@ pub struct VM<'a> {
        entry and exit. Drained on error to feed the traceback renderer; the
        innermost (most recent) call is at the end of the Vec. */
     pub(crate) call_stack: Vec<crate::modules::vm::types::CallFrame>,
+    /* Cooperative scheduler for `run` / `gather` / `with_timeout`.
+       Empty between top-level invocations of `run`; each handle holds
+       a HeapObj::Coroutine Val plus its lifecycle state. */
+    pub(crate) scheduler: Vec<crate::modules::vm::types::CoroutineHandle>,
+    /* Host-installed wall-clock provider in nanoseconds. WASM hosts
+       wire this to `Date.now() * 1e6`; native hosts can use
+       `std::time::Instant`. None means the runtime falls back to a
+       single-yield sleep — tests stay deterministic without a clock. */
+    pub(crate) time_hook: Option<fn() -> u64>,
+    /* Internal monotonic counter used when `time_hook` is None: each
+       `sleep(s)` call moves it forward by `s * 1e9`, so coroutines still
+       wake in order even without a real clock. Resets at every `run()`. */
+    pub(crate) virtual_clock_ns: u64,
 }
 
 impl<'a> VM<'a> {
@@ -372,10 +389,14 @@ impl<'a> VM<'a> {
             exception_stack: Vec::new(),
             error_byte_pos: None,
             pending_call_byte_pos: None,
+            pending_sleep_until_ns: None,
             module_table: HashMap::default(),
             fn_module: Vec::new(),
             function_names: Vec::new(),
             call_stack: Vec::new(),
+            scheduler: Vec::new(),
+            time_hook: None,
+            virtual_clock_ns: 0,
             functions: Vec::new(),
             fn_index: Vec::new(),
             function_parents: Vec::new(),
@@ -612,6 +633,15 @@ impl<'a> VM<'a> {
     pub fn error_pos(&self) -> Option<usize> { self.error_byte_pos.map(|p| p as usize) }
     pub fn call_stack_frames(&self) -> &[crate::modules::vm::types::CallFrame] { &self.call_stack }
     pub fn function_names_ref(&self) -> &[String] { &self.function_names }
+    /// Install a host-provided wall-clock function returning nanoseconds.
+    /// Without one, `sleep` advances a virtual clock so coroutines still
+    /// interleave deterministically but no real wait happens.
+    pub fn set_time_hook(&mut self, hook: fn() -> u64) {
+        self.time_hook = Some(hook);
+    }
+    pub(crate) fn now_ns(&self) -> u64 {
+        match self.time_hook { Some(h) => h(), None => self.virtual_clock_ns }
+    }
 
     /* Mark all reachable roots and sweep. mark() is a no-op on non-heap
        values, so undef/None/int/float/bool slots are free to scan. */

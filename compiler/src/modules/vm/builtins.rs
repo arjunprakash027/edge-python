@@ -1410,50 +1410,158 @@ impl<'a> VM<'a> {
         }
     }
 
-    /* Round-robin coroutine scheduler. Queue items are (coro, sleep_left);
-       each tick decrements sleep, otherwise resumes one step. A negative
-       yielded int is interpreted as a sleep request in cycles (see call_sleep). */
+    /* `run(*coros)` — drive a cooperative scheduler until the *first*
+       argument finishes. Multiple positional args run concurrently;
+       additional ones are still drained until they resolve so caller
+       semantics match `gather`. Returns the first coroutine's result.
+
+       Behaviour reference:
+       - `Ready`     -> resume one step
+       - `Sleeping`  -> wait (advance clock to min(until_ns) when all are)
+       - `CancelPending` -> next resume raises CancelledError into the coro
+       - `Done/Errored/Cancelled` -> terminal; reaped from the scheduler
+
+       Errors in non-target coros are recorded on their handle and propagate
+       only when the user explicitly awaits them via `gather`/`with_timeout`. */
     pub fn call_run(&mut self, argc: u16) -> Result<(), VmErr> {
         let tasks = self.pop_n(argc as usize)?;
-        let mut queue: Vec<(Val, i64)> = tasks.into_iter()
-            .filter(|v| v.is_heap() && matches!(self.heap.get(*v), HeapObj::Coroutine(..)))
-            .map(|v| (v, 0))
-            .collect();
-
-        let mut max_cycles = 10_000_000u64;
-        while !queue.is_empty() && max_cycles > 0 {
-            max_cycles -= 1;
-            let mut next_queue: Vec<(Val, i64)> = Vec::new();
-
-            for (coro, sleep) in queue {
-                if sleep > 0 {
-                    next_queue.push((coro, sleep - 1));
-                    continue;
-                }
-                let result = self.resume_coroutine(coro)?;
-                let was_yielded = self.yielded;
-                self.yielded = false;
-
-                if was_yielded {
-                    let new_sleep = if result.is_int() && result.as_int() < 0 {
-                        -result.as_int()
-                    } else { 0 };
-                    next_queue.push((coro, new_sleep));
-                }
-                // Otherwise the coroutine finished; drop it from the queue.
-            }
-            queue = next_queue;
+        if tasks.is_empty() {
+            self.push(Val::none());
+            return Ok(());
         }
-
-        self.push(Val::none());
+        let target = tasks[0];
+        // Reset per-run virtual clock so deterministic tests don't drift.
+        if self.time_hook.is_none() { self.virtual_clock_ns = 0; }
+        for v in &tasks {
+            if v.is_heap() && matches!(self.heap.get(*v), HeapObj::Coroutine(..)) {
+                self.scheduler.push(super::types::CoroutineHandle {
+                    coro: *v,
+                    state: super::types::CoroState::Ready,
+                });
+            }
+        }
+        // Drain everything so concurrent coroutines all run to completion;
+        // remember the target handle's result for the return value (single
+        // arg: that coro's value; multi-arg: first arg's value, peers get
+        // their own values dropped — same as `gather` semantics).
+        self.run_until_all_done()?;
+        let mut result = Val::none();
+        if let Some(h) = self.scheduler.iter().find(|h| h.coro == target) {
+            match &h.state {
+                super::types::CoroState::Done(v) => result = *v,
+                super::types::CoroState::Errored(e) => {
+                    let e = e.clone();
+                    self.scheduler.clear();
+                    return Err(e);
+                }
+                _ => {}
+            }
+        }
+        self.scheduler.clear();
+        self.push(result);
         Ok(())
     }
 
-    /* Yield a negative int as a sleep marker for the scheduler. */
+    /* Drive the scheduler until every handle is in a terminal state
+       (Done / Errored / Cancelled). Errors are recorded on the handle —
+       only the caller decides whether to propagate them via target
+       lookup or `gather`'s fail-fast semantics. */
+    pub(crate) fn run_until_all_done(&mut self) -> Result<(), VmErr> {
+        loop {
+            let alive = self.scheduler.iter().any(|h| matches!(
+                h.state,
+                super::types::CoroState::Ready
+                | super::types::CoroState::CancelPending
+                | super::types::CoroState::Sleeping(_)
+            ));
+            if !alive { return Ok(()); }
+            // Pick a Ready handle; if none, advance clock to the earliest
+            // wakeup. If everyone is Done/Errored/Cancelled, bail out — we
+            // already returned target above so this means target is gone.
+            let mut next_ready: Option<usize> = None;
+            let mut min_wake: Option<u64> = None;
+            for (i, h) in self.scheduler.iter().enumerate() {
+                match &h.state {
+                    super::types::CoroState::Ready => { next_ready = Some(i); break; }
+                    super::types::CoroState::CancelPending => { next_ready = Some(i); break; }
+                    super::types::CoroState::Sleeping(w) => {
+                        if min_wake.map_or(true, |m| *w < m) { min_wake = Some(*w); }
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(i) = next_ready {
+                self.scheduler_step(i)?;
+                continue;
+            }
+            match min_wake {
+                Some(w) => {
+                    let now = self.now_ns();
+                    if w > now {
+                        if self.time_hook.is_none() { self.virtual_clock_ns = w; }
+                        // With a real clock we don't busy-wait: we still
+                        // advance virtual_clock_ns logically so subsequent
+                        // sleeps are relative to the new "now".
+                    }
+                    let now = self.now_ns();
+                    for h in self.scheduler.iter_mut() {
+                        if let super::types::CoroState::Sleeping(w) = h.state
+                            && w <= now
+                        {
+                            h.state = super::types::CoroState::Ready;
+                        }
+                    }
+                }
+                None => return Ok(()),
+            }
+        }
+    }
+
+    fn scheduler_step(&mut self, idx: usize) -> Result<(), VmErr> {
+        let coro = self.scheduler[idx].coro;
+        // CancelPending -> inject a CancelledError raise instead of resuming.
+        if matches!(self.scheduler[idx].state, super::types::CoroState::CancelPending) {
+            self.scheduler[idx].state = super::types::CoroState::Cancelled;
+            return Ok(());
+        }
+        // Snapshot before resume so a yield during sleep() can read it.
+        self.pending_sleep_until_ns = None;
+        let result = self.resume_coroutine(coro);
+        let yielded = self.yielded;
+        self.yielded = false;
+        let new_state = match result {
+            Err(e) => super::types::CoroState::Errored(e),
+            Ok(v) if yielded => {
+                // sleep() set pending_sleep_until_ns; receive() may also
+                // park indefinitely (we keep it Ready and re-drain queue).
+                if let Some(until) = self.pending_sleep_until_ns.take() {
+                    super::types::CoroState::Sleeping(until)
+                } else {
+                    let _ = v;
+                    super::types::CoroState::Ready
+                }
+            }
+            Ok(v) => super::types::CoroState::Done(v),
+        };
+        self.scheduler[idx].state = new_state;
+        Ok(())
+    }
+
+    /* Suspend until `s` real seconds elapse. With a host time_hook installed
+       this becomes a wall-clock wait managed by the scheduler; without one
+       it advances a per-run virtual clock so coroutines still yield in
+       order. Negative or non-numeric `s` sleeps zero (single yield). */
     pub fn call_sleep(&mut self) -> Result<(), VmErr> {
         let n = self.pop()?;
-        let cycles = if n.is_int() { n.as_int().max(0) } else { 0 };
-        self.push(Val::int(-cycles));
+        let secs: f64 = if n.is_int() { n.as_int() as f64 }
+                        else if n.is_float() { n.as_float() }
+                        else if n.is_bool() { n.as_bool() as i64 as f64 }
+                        else { 0.0 };
+        let secs = if secs < 0.0 { 0.0 } else { secs };
+        let until = self.now_ns().saturating_add((secs * 1_000_000_000.0) as u64);
+        self.pending_sleep_until_ns = Some(until);
+        // Push None as the yield value; the scheduler ignores it.
+        self.push(Val::none());
         self.yielded = true;
         Ok(())
     }

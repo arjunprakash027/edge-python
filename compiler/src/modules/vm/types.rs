@@ -510,6 +510,7 @@ pub fn eq_vals_with_heap(a: Val, b: Val, heap: &HeapPool) -> bool {
    *Msg / Name / Attribute / Raised variants carry dynamic text so the user
    sees the actual offending name or object type instead of a generic
    "attribute not found". */
+#[derive(Debug, Clone)]
 pub enum VmErr {
     CallDepth, Heap, Budget, ZeroDiv, Overflow,
     Name(String),
@@ -609,6 +610,39 @@ impl core::fmt::Display for VmErr {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(&self.render())
     }
+}
+
+/* Cooperative scheduler state for one coroutine living in `vm.scheduler`.
+   The scheduler steps each Ready handle once per round-robin pass, swaps
+   it to Sleeping/Done/Errored/Cancelled depending on what happened, and
+   ends the run when the target handle leaves the Ready/Sleeping pool. */
+#[derive(Clone, Debug)]
+pub enum CoroState {
+    /// Resumable on the next scheduler tick.
+    Ready,
+    /// Suspended until `until_ns` (per `vm.time_hook`). When all live
+    /// handles are Sleeping the scheduler advances the clock to the
+    /// minimum `until_ns` rather than spinning.
+    Sleeping(u64),
+    /// Resumed-on-next-tick state used while a `cancel()` request is
+    /// pending: the next resume injects a `CancelledError` raise into the
+    /// coroutine instead of advancing it normally.
+    CancelPending,
+    /// Coroutine returned with this Val.
+    Done(Val),
+    /// Coroutine raised an exception. Stored verbatim so `gather` /
+    /// `with_timeout` can propagate it to the caller.
+    Errored(VmErr),
+    /// Coroutine was cancelled and its CancelledError was already
+    /// observed (or it never ran). Returns `None` to gather()s peers.
+    Cancelled,
+}
+
+#[derive(Clone, Debug)]
+pub struct CoroutineHandle {
+    /// The Coroutine HeapObj Val passed by the user.
+    pub coro: Val,
+    pub state: CoroState,
 }
 
 /* One snapshot of a user-function call site, pushed when `exec_call` enters
