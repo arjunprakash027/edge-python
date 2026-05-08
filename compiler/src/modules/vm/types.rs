@@ -526,7 +526,7 @@ pub enum NativeFnId {
     List, Tuple, Dict, Set, IsInstance, Input, All, Any,
     Bin, Oct, Hex, Divmod, Pow, Repr, Reversed, Callable, Id,
     Hash, Format, Ascii, GetAttr, HasAttr, Next, Run, Sleep,
-    Receive, Map, Filter, Iter, Bytes,
+    Receive, Map, Filter, Iter, Bytes, ImportModule,
 }
 
 impl NativeFnId {
@@ -539,7 +539,7 @@ impl NativeFnId {
             "list", "tuple", "dict", "set", "isinstance", "input", "all", "any",
             "bin", "oct", "hex", "divmod", "pow", "repr", "reversed", "callable", "id",
             "hash", "format", "ascii", "getattr", "hasattr", "next", "run", "sleep",
-            "receive", "map", "filter", "iter", "bytes",
+            "receive", "map", "filter", "iter", "bytes", "import_module",
         ];
         NAMES[self as usize]
     }

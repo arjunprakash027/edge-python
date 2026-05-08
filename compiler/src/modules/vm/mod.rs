@@ -437,7 +437,7 @@ impl<'a> VM<'a> {
             NativeFnId::Format, NativeFnId::Ascii, NativeFnId::GetAttr, NativeFnId::HasAttr, NativeFnId::Next,
             NativeFnId::Run, NativeFnId::Sleep, NativeFnId::Receive,
             NativeFnId::Map, NativeFnId::Filter, NativeFnId::Iter,
-            NativeFnId::Bytes,
+            NativeFnId::Bytes, NativeFnId::ImportModule,
         ];
         for &id in builtin_fns {
             if let Ok(v) = vm.heap.alloc(HeapObj::NativeFn(id)) {
@@ -816,6 +816,22 @@ impl<'a> VM<'a> {
             }
             OpCode::StoreName => {
                 self.handle_store(op, slots)?;
+                // Mirror entry-chunk Module stores to `globals` so
+                // `import_module(name)` (and any cross-frame accessor)
+                // finds the alias the user wrote in their `import`
+                // statement. Restricted to entry chunk + Module Vals
+                // so user-level assignments to plain values don't
+                // pollute globals.
+                if core::ptr::eq(chunk, self.chunk) {
+                    let v = slots[op as usize];
+                    if v.is_heap()
+                        && matches!(self.heap.get(v), HeapObj::Module(..))
+                        && let Some(name) = chunk.names.get(op as usize)
+                    {
+                        let bare = ssa_strip(name).to_string();
+                        self.globals.insert(bare, v);
+                    }
+                }
             }
             OpCode::LoadConst => {
                 // Constants are pre-materialised at exec entry, so this is a

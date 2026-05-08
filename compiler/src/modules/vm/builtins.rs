@@ -1182,6 +1182,50 @@ impl<'a> VM<'a> {
         self.push(v); Ok(())
     }
 
+    /* `import_module(name)` — look up an already-imported module by its
+       runtime alias and return the `HeapObj::Module` Val. Lets a script
+       choose which of several pre-imported modules to use at runtime
+       without a manual dispatch dict:
+
+           import prod_handler
+           import dev_handler
+
+           def handler(env):
+               return import_module(env + "_handler").handle
+
+       The candidate module must be statically imported elsewhere (so its
+       lockfile entry is pinned and its top-level has run). Looking up
+       a name not bound to a Module fails with TypeError; looking up a
+       name that doesn't exist fails with NameError. Both errors carry
+       the offending name so the diagnostic points at the bad arg.
+
+       This is sugar over `globals()[name]` — there's no separate dynamic
+       module registry. The static-import + runtime-dispatch pattern is
+       deliberate: it preserves the lockfile + integrity guarantees that
+       a true `__import__()` would break. */
+    pub fn call_import_module(&mut self) -> Result<(), VmErr> {
+        let spec = self.pop()?;
+        if !spec.is_heap() {
+            return Err(cold_type("import_module() argument must be a string"));
+        }
+        let name = match self.heap.get(spec) {
+            HeapObj::Str(s) => s.clone(),
+            _ => return Err(cold_type("import_module() argument must be a string")),
+        };
+        // The parser stores top-level bindings under both bare name and
+        // `<name>_0` (SSA version 0); look up either form so users can
+        // pass the natural alias they wrote in their `import` statement.
+        let val = self.globals.get(&name)
+            .or_else(|| self.globals.get(&s!(str &name, "_0")))
+            .copied()
+            .ok_or_else(|| VmErr::Name(s!(
+                "module '", str &name, "' not imported in this scope")))?;
+        if !val.is_heap() || !matches!(self.heap.get(val), HeapObj::Module(..)) {
+            return Err(VmErr::TypeMsg(s!("'", str &name, "' is not a module")));
+        }
+        self.push(val); Ok(())
+    }
+
     /* `iter(x)` — flatten any iterable into a fresh List that `next()`
        drains front-to-back. Eager; the original collection is never
        mutated. Mirrors the universal ABI's `Op::Iter` shape. */

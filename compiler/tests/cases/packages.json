@@ -555,5 +555,40 @@
       "./helper.py":    { "code": "def h():\n    return 'root-helper'" }
     },
     "aliases": { "helper": "./helper.py" }
+  },
+
+  {
+    "_section": "import_module — runtime dispatch over statically-imported modules",
+    "_comment": "import_module(name) returns the Module Val bound under that name; lets the script choose which pre-imported module to use at runtime without a manual dispatch dict.",
+    "src": "import prod\nimport dev\nm = import_module('prod')\nprint(m.handler())",
+    "output": ["prod-handle"],
+    "modules": {
+      "prod": { "code": "def handler():\n    return 'prod-handle'" },
+      "dev":  { "code": "def handler():\n    return 'dev-handle'" }
+    }
+  },
+  {
+    "_comment": "Choosing at runtime — same module table covers both branches.",
+    "src": "import prod\nimport dev\nfor env in ['prod', 'dev']:\n    print(import_module(env).handler())",
+    "output": ["prod-handle", "dev-handle"],
+    "modules": {
+      "prod": { "code": "def handler():\n    return 'prod-handle'" },
+      "dev":  { "code": "def handler():\n    return 'dev-handle'" }
+    }
+  },
+  {
+    "_comment": "Looking up a module that was never imported errors at runtime, not silently None.",
+    "src": "try:\n    import_module('missing')\nexcept NameError:\n    print('caught')",
+    "output": ["caught"]
+  },
+  {
+    "_comment": "Looking up a non-module global (a builtin function) errors as TypeError.",
+    "src": "try:\n    import_module('len')\nexcept TypeError:\n    print('not a module')",
+    "output": ["not a module"]
+  },
+  {
+    "_comment": "Argument must be a string.",
+    "src": "try:\n    import_module(42)\nexcept TypeError:\n    print('arg type')",
+    "output": ["arg type"]
   }
 ]

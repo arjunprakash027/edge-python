@@ -411,6 +411,25 @@ print(list(filter(None, [0, 1, "", "hi", [], [1]])))
 [1, 'hi', [1]]
 ```
 
+### import_module
+
+`import_module(name)` returns a module value previously brought into scope via a static `import` or `from ... import` statement. Lets the script choose at runtime which of several pre-imported modules to use, without keeping a manual dispatch dict.
+
+```python
+import prod_handler
+import dev_handler
+
+def handle(env, request):
+    return import_module(env + "_handler").handle(request)
+
+handle("prod", req)
+handle("dev",  req)
+```
+
+The candidate modules **must be imported statically** somewhere — `import_module` is a runtime *lookup*, not a runtime *fetch*. This preserves the lockfile and integrity guarantees: every module the script can ever reach is known and verified at compile time. Calling `import_module(name)` where `name` was never imported raises `NameError`; calling it on a non-module global (e.g. a builtin function) raises `TypeError`.
+
+If you want truly dynamic loading patterns from CPython (`importlib.import_module`, `__import__`), they don't exist here by design — the static-import + runtime-dispatch shape above replaces them.
+
 ### bytes
 
 Three forms:
