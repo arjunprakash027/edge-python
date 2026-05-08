@@ -185,24 +185,6 @@ print(float("3.14"))
 3.14
 ```
 
-### complex
-
-`complex()` → `0j`, `complex(real)` → `(real+0j)`, `complex(real, imag)` builds from two reals. Each argument may be int / float / bool / complex.
-
-```python
-print(complex())
-print(complex(2))
-print(complex(2, 3))
-print(complex(1.5, -1.5))
-```
-
-```text Output
-0j
-(2+0j)
-(2+3j)
-(1.5-1.5j)
-```
-
 ### str
 
 ```python
@@ -688,7 +670,6 @@ False
 | `hex`        | 1          | `0x...` prefix                             |
 | `int`        | 0 or 1     | parse / truncate                           |
 | `float`      | 0 or 1     | parse / cast                               |
-| `complex`    | 0, 1, or 2 | `(real, imag)` pair from numeric args      |
 | `str`        | 0 or 1     | display form                               |
 | `bool`       | 0 or 1     | truthiness                                 |
 | `list`       | 0 or 1     | from any iterable                          |

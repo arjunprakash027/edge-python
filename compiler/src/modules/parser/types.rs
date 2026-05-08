@@ -86,7 +86,6 @@ pub enum Value {
     Int(i64),
     BigInt(String),
     Float(f64),
-    Complex(f64, f64),
     Bool(bool),
     None,
 }
@@ -499,7 +498,7 @@ fn unescape(s: &str) -> String {
 // Built-in types pre-registered as `Type` heap objects in the global
 // scope at VM init.
 pub const BUILTIN_TYPES: &[&str] = &[
-    "int", "float", "complex", "str", "bytes", "bool", "list",
+    "int", "float", "str", "bytes", "bool", "list",
     "tuple", "dict", "set", "range", "type", "NoneType",
     "Exception", "BaseException",
     "ValueError", "TypeError", "NameError", "KeyError",

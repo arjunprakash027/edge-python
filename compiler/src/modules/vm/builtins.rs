@@ -115,14 +115,6 @@ impl<'a> VM<'a> {
         } else if o.is_heap() {
             match self.heap.get(o) {
                 HeapObj::BigInt(b) => self.bigint_to_val(b.abs())?,
-                // |a + b·j| = sqrt(a² + b²). f64::sqrt lowers to an LLVM
-                // intrinsic on every supported target (incl. wasm32), so it
-                // costs no extra dependency and stays accurate to ulp.
-                HeapObj::Complex(re, im) => {
-                    let (re, im) = (*re, *im);
-                    let mag2 = re * re + im * im;
-                    Val::float(fsqrt(mag2))
-                }
                 _ => return Err(cold_type("abs() requires a number")),
             }
         } else {
@@ -209,30 +201,6 @@ impl<'a> VM<'a> {
 
     pub fn call_bool(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?; self.push(Val::bool(self.truthy(o))); Ok(())
-    }
-
-    /* complex() / complex(real) / complex(real, imag). Real and imag may be
-       int, float, or bool. Passing a Complex as the sole argument returns it
-       unchanged (CPython behaviour); passing Complex with a second argument
-       follows the `(re_a, im_a) + j*(re_b, im_b)` rule, which collapses to
-       `(re_a − im_b, im_a + re_b)`. */
-    pub fn call_complex(&mut self, argc: u16) -> Result<(), VmErr> {
-        let args = self.pop_n(argc as usize)?;
-        let (re, im) = match args.as_slice() {
-            [] => (0.0, 0.0),
-            [a] => self.to_complex_parts(*a)
-                .ok_or(cold_type("complex() argument must be a number"))?,
-            [a, b] => {
-                let (ra, ia) = self.to_complex_parts(*a)
-                    .ok_or(cold_type("complex() argument must be a number"))?;
-                let (rb, ib) = self.to_complex_parts(*b)
-                    .ok_or(cold_type("complex() argument must be a number"))?;
-                (ra - ib, ia + rb)
-            }
-            _ => return Err(cold_type("complex() takes 0 to 2 arguments")),
-        };
-        let v = self.alloc_complex(re, im)?;
-        self.push(v); Ok(())
     }
 
     pub fn call_type(&mut self) -> Result<(), VmErr> {
@@ -432,7 +400,7 @@ impl<'a> VM<'a> {
                 ),
                 HeapObj::NativeFn(id) => {
                     let name = id.name();
-                    if !matches!(name, "int"|"str"|"bytes"|"float"|"complex"|"bool"|"list"|"tuple"|"dict"|"set") {
+                    if !matches!(name, "int"|"str"|"bytes"|"float"|"bool"|"list"|"tuple"|"dict"|"set") {
                         return Err(VmErr::Type("isinstance() arg 2 must be a type or tuple of types"));
                     }
                     Ok(
@@ -935,61 +903,6 @@ impl<'a> VM<'a> {
        handler. Caller picks the error message so each surface keeps its own
        diagnostic. */
     pub(crate) fn pow_vals(&mut self, a: Val, b: Val, err_msg: &'static str) -> Result<Val, VmErr> {
-        if (self.is_complex(a) || self.is_complex(b)) && b.is_int() {
-            // Integer exponent on a complex base: repeated multiplication via
-            // exponentiation-by-squaring on the (re, im) pair. Negative exp
-            // inverts the result via the standard `1 / z` formula. Real-valued
-            // bases promoted through to_complex_parts so `2 ** (3+0j)` also
-            // hits this path (Python returns `(8+0j)`).
-            let (mut re, mut im) = self.to_complex_parts(a)
-                .ok_or_else(|| cold_type(err_msg))?;
-            let exp = b.as_int();
-            let neg = exp < 0;
-            let mut e = (exp as i64).unsigned_abs() as u32;
-            let (mut rr, mut ri) = (1.0, 0.0);
-            while e > 0 {
-                if e & 1 != 0 {
-                    let (a, b) = (rr * re - ri * im, rr * im + ri * re);
-                    rr = a; ri = b;
-                }
-                let (a, b) = (re * re - im * im, 2.0 * re * im);
-                re = a; im = b;
-                e >>= 1;
-            }
-            if neg {
-                let denom = rr * rr + ri * ri;
-                if denom == 0.0 { return Err(VmErr::ZeroDiv); }
-                // `1/z = (1+0j) / z`, expanded so the imag term is `0 - ri`
-                // (subtraction) rather than `-ri` (unary negation). They agree
-                // mathematically but IEEE 754 disagrees on sign-of-zero —
-                // `0 - 0` is +0, `-0` is −0 — and CPython's complex repr
-                // surfaces the sign bit, so we'd print `(1-0j)` for `(1+0j)
-                // ** -1` instead of the expected `(1+0j)` otherwise.
-                rr /= denom; ri = (0.0 - ri) / denom;
-            }
-            return self.alloc_complex(rr, ri);
-        }
-        if self.is_complex(a) || self.is_complex(b) {
-            // z^w = exp(w · log(z)) where log(z) = ln|z| + arg(z)·j.
-            let (ar, ai) = self.to_complex_parts(a)
-                .ok_or_else(|| cold_type(err_msg))?;
-            let (br, bi) = self.to_complex_parts(b)
-                .ok_or_else(|| cold_type(err_msg))?;
-            let mag2 = ar * ar + ai * ai;
-            // Special-case the degenerate base so we don't take ln(0) — Python
-            // returns 1 for 0**0, 0 for 0**(positive), raises for 0**(negative).
-            if mag2 == 0.0 {
-                if br == 0.0 && bi == 0.0 { return self.alloc_complex(1.0, 0.0); }
-                if br > 0.0 { return self.alloc_complex(0.0, 0.0); }
-                return Err(VmErr::ZeroDiv);
-            }
-            let log_re = 0.5 * fln(mag2);
-            let log_im = fatan2(ai, ar);
-            let prod_re = br * log_re - bi * log_im;
-            let prod_im = br * log_im + bi * log_re;
-            let mag = fexp(prod_re);
-            return self.alloc_complex(mag * fcos(prod_im), mag * fsin(prod_im));
-        }
         if let Some(ba) = self.to_bigint(a) && b.is_int() {
             let exp = b.as_int();
             if exp >= 0 {
@@ -1045,7 +958,6 @@ impl<'a> VM<'a> {
                 HeapObj::Str(s) => s.hash(&mut h),
                 HeapObj::Bytes(b) => b.hash(&mut h),
                 HeapObj::BigInt(b) => { b.neg.hash(&mut h); b.limbs.hash(&mut h); }
-                HeapObj::Complex(re, im) => { re.to_bits().hash(&mut h); im.to_bits().hash(&mut h); }
                 HeapObj::Tuple(items) => {
                     for v in items { v.0.hash(&mut h); }
                 }

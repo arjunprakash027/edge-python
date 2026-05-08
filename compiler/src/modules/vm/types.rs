@@ -498,9 +498,6 @@ pub enum HeapObj {
     Slice(Val, Val, Val),
     Type(String),
     BigInt(BigInt),
-    /* Two-f64 complex number. Doesn't fit in NaN-boxed Val, so it lives
-       on the heap. Equality is value-based; hash combines both halves. */
-    Complex(f64, f64),
     BoundMethod(Val, BuiltinMethodId),
     NativeFn(NativeFnId),
     Class(String, Vec<(String, Val)>),
@@ -529,7 +526,7 @@ pub enum NativeFnId {
     List, Tuple, Dict, Set, IsInstance, Input, All, Any,
     Bin, Oct, Hex, Divmod, Pow, Repr, Reversed, Callable, Id,
     Hash, Format, Ascii, GetAttr, HasAttr, Next, Run, Sleep,
-    Receive, Map, Filter, Iter, Bytes, ImportModule, Complex,
+    Receive, Map, Filter, Iter, Bytes, ImportModule,
 }
 
 impl NativeFnId {
@@ -542,7 +539,7 @@ impl NativeFnId {
             "list", "tuple", "dict", "set", "isinstance", "input", "all", "any",
             "bin", "oct", "hex", "divmod", "pow", "repr", "reversed", "callable", "id",
             "hash", "format", "ascii", "getattr", "hasattr", "next", "run", "sleep",
-            "receive", "map", "filter", "iter", "bytes", "import_module", "complex",
+            "receive", "map", "filter", "iter", "bytes", "import_module",
         ];
         NAMES[self as usize]
     }
@@ -652,9 +649,9 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
             for &(_, v) in captures { f(v); }
         }
         HeapObj::Module(_, attrs) => for (_, v) in attrs { f(*v); },
-        // Variants without Val payloads (Str, Bytes, BigInt, Complex, Type,
+        // Variants without Val payloads (Str, Bytes, BigInt, Type,
         // NativeFn, Range, Extern) — terminal, nothing to trace.
-        HeapObj::Str(_) | HeapObj::Bytes(_) | HeapObj::BigInt(_) | HeapObj::Complex(..)
+        HeapObj::Str(_) | HeapObj::Bytes(_) | HeapObj::BigInt(_)
         | HeapObj::Type(_) | HeapObj::NativeFn(_) | HeapObj::Range(..) | HeapObj::Extern(_) => {}
     }
 }
@@ -824,7 +821,6 @@ impl HeapPool {
                 Some(HeapObj::Module(..)) => 20,
                 Some(HeapObj::Extern(_)) => 21,
                 Some(HeapObj::Bytes(_)) => 22,
-                Some(HeapObj::Complex(..)) => 23,
                 None => 0,
             }
         } else { 0 }
@@ -861,7 +857,6 @@ pub fn eq_vals_with_heap(a: Val, b: Val, heap: &HeapPool) -> bool {
         (HeapObj::List(x), HeapObj::List(y)) => eq_seq(&x.borrow(), &y.borrow(), |a,b| eq_vals_with_heap(a, b, heap)),
         (HeapObj::Set(x), HeapObj::Set(y)) => *x.borrow() == *y.borrow(),
         (HeapObj::Dict(x), HeapObj::Dict(y)) => eq_dict(&x.borrow(), &y.borrow(), |a,b| eq_vals_with_heap(a, b, heap)),
-        (HeapObj::Complex(r1, i1), HeapObj::Complex(r2, i2)) => r1 == r2 && i1 == i2,
         // Cross-type comparisons fall through to false. Notably `bytes == str`
         // is False in Python, even when the bytes are valid UTF-8 of the str.
         _ => false,
@@ -961,119 +956,6 @@ impl IterFrame {
 }
 
 // Pure-Rust f64 math (no libm, works under no_std / WASM).
-
-/* sqrt via Newton-Raphson on f64 — pure-Rust, no libm. The exponent-halving
-   bit hack gives an initial guess accurate to ~3 bits, then ~5 iterations
-   converge to ulp. abs(complex) and any future numeric call site that needs
-   sqrt go through here so there's one math kit for the whole VM. */
-#[inline]
-pub fn fsqrt(x: f64) -> f64 {
-    if x.is_nan() || x < 0.0 { return f64::NAN; }
-    if x == 0.0 || x == f64::INFINITY { return x; }
-    let bits = f64::to_bits(x);
-    let mut g = f64::from_bits((bits >> 1) + (1023u64 << 51));
-    for _ in 0..6 {
-        let next = 0.5 * (g + x / g);
-        if next == g { break; }
-        g = next;
-    }
-    g
-}
-
-/* Trig kit needed by complex ** non-integer-exponent (z^w = exp(w·log(z))).
-   No libm dep: range reduction + Taylor series at the reduced argument
-   converges in <12 terms to ~ulp on f64. fsin reduces via the period of
-   2π and the symmetry sin(π−x) = sin(x); fcos delegates so range reduction
-   lives in one place. */
-pub fn fsin(x: f64) -> f64 {
-    if !x.is_finite() { return f64::NAN; }
-    let two_pi = 2.0 * core::f64::consts::PI;
-    let mut x = x - ftrunc(x / two_pi) * two_pi;
-    if x > core::f64::consts::PI { x -= two_pi; }
-    else if x <= -core::f64::consts::PI { x += two_pi; }
-    if x > core::f64::consts::FRAC_PI_2 { x = core::f64::consts::PI - x; }
-    else if x < -core::f64::consts::FRAC_PI_2 { x = -core::f64::consts::PI - x; }
-    let x2 = x * x;
-    let mut term = x;
-    let mut sum = x;
-    for k in 0..10 {
-        term *= -x2 / (((2 * k + 2) * (2 * k + 3)) as f64);
-        sum += term;
-    }
-    sum
-}
-
-/* fcos with its own range reduction — going through `fsin(π/2 − x)` lets
-   floating-point noise leak into the answer near x = 0 (the input becomes
-   π/2 and the Taylor sum no longer cancels exactly to 1). Reducing here
-   keeps `fcos(0) == 1.0` exact, which `complex ** 0.5` and other "trivial"
-   imag-part-zero cases rely on for clean repr. */
-pub fn fcos(x: f64) -> f64 {
-    if !x.is_finite() { return f64::NAN; }
-    let two_pi = 2.0 * core::f64::consts::PI;
-    let mut x = x - ftrunc(x / two_pi) * two_pi;
-    if x > core::f64::consts::PI { x -= two_pi; }
-    else if x <= -core::f64::consts::PI { x += two_pi; }
-    let neg = if x > core::f64::consts::FRAC_PI_2 {
-        x = core::f64::consts::PI - x; true
-    } else if x < -core::f64::consts::FRAC_PI_2 {
-        x = -core::f64::consts::PI - x; true
-    } else { false };
-    let x2 = x * x;
-    let mut term = 1.0;
-    let mut sum = 1.0;
-    for k in 0..10 {
-        term *= -x2 / (((2 * k + 1) * (2 * k + 2)) as f64);
-        sum += term;
-    }
-    if neg { -sum } else { sum }
-}
-
-/* atan via reduction to |x| <= tan(π/8) ≈ 0.4142, where Taylor converges
-   in ~10 terms. Two reductions in sequence: |x| > 1 → atan(1/x) flip,
-   then |x| > 0.4142 → addition formula atan(x) = π/4 + atan((x−1)/(x+1))
-   which lands the argument in (−0.4142, 0]. */
-pub fn fatan(x: f64) -> f64 {
-    if x.is_nan() { return f64::NAN; }
-    if x.is_infinite() {
-        return if x > 0.0 { core::f64::consts::FRAC_PI_2 } else { -core::f64::consts::FRAC_PI_2 };
-    }
-    if x < 0.0 { return -fatan(-x); }
-    if x > 1.0 { return core::f64::consts::FRAC_PI_2 - fatan(1.0 / x); }
-    if x > 0.4142135623730951 {
-        let q = (x - 1.0) / (x + 1.0);
-        return core::f64::consts::FRAC_PI_4 + fatan_small(q);
-    }
-    fatan_small(x)
-}
-
-fn fatan_small(x: f64) -> f64 {
-    let x2 = x * x;
-    let mut term = x;
-    let mut sum = x;
-    let mut sign = -1.0;
-    for k in 1..15 {
-        term *= x2;
-        sum += sign * term / ((2 * k + 1) as f64);
-        sign = -sign;
-    }
-    sum
-}
-
-/* Two-arg arctangent in (−π, π]. Splits by quadrant and feeds the slope
-   to fatan; the y-axis cases short-circuit to ±π/2. Mirrors libm's
-   atan2(y, x); used by complex.log and (transitively) by complex pow. */
-pub fn fatan2(y: f64, x: f64) -> f64 {
-    if x.is_nan() || y.is_nan() { return f64::NAN; }
-    if x > 0.0 { return fatan(y / x); }
-    if x < 0.0 {
-        return if y >= 0.0 { fatan(y / x) + core::f64::consts::PI }
-               else { fatan(y / x) - core::f64::consts::PI };
-    }
-    if y > 0.0 { return core::f64::consts::FRAC_PI_2; }
-    if y < 0.0 { return -core::f64::consts::FRAC_PI_2; }
-    0.0
-}
 
 #[inline]
 pub fn fpowi(mut base: f64, exp: i32) -> f64 {

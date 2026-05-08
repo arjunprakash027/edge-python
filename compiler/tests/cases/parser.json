@@ -1083,14 +1083,7 @@
     "annotations": {}
   },
   {
-    "src": "x = 3j",
-    "constants": ["complex(0,3)"],
-    "names": ["x_1"],
-    "instructions": [["LoadConst",0], ["StoreName",0], ["ReturnValue",0]],
-    "annotations": {}
-  },
-  {
-    "src": "x = ...", 
+    "src": "x = ...",
     "constants": [], 
     "names": ["x_1"], 
     "instructions": [["LoadEllipsis",0], ["StoreName",0], ["ReturnValue",0]], 

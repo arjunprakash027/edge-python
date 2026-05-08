@@ -496,7 +496,7 @@ impl<'a> VM<'a> {
             NativeFnId::Format, NativeFnId::Ascii, NativeFnId::GetAttr, NativeFnId::HasAttr, NativeFnId::Next,
             NativeFnId::Run, NativeFnId::Sleep, NativeFnId::Receive,
             NativeFnId::Map, NativeFnId::Filter, NativeFnId::Iter,
-            NativeFnId::Bytes, NativeFnId::ImportModule, NativeFnId::Complex,
+            NativeFnId::Bytes, NativeFnId::ImportModule,
         ];
         for &id in builtin_fns {
             if let Ok(v) = vm.heap.alloc(HeapObj::NativeFn(id)) {

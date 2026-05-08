@@ -192,15 +192,6 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 }
                 self.emit_const(Value::Bytes(buf));
             }
-            TokenType::Complex => {
-                // `3j` / `2.5j` — bare imaginary literal. The real part is 0;
-                // expressions like `2 + 3j` rely on `+` to combine an Int/Float
-                // with this Complex(0, im) at runtime.
-                let raw = self.lexeme(&t).replace('_', "");
-                let s = raw.trim_end_matches(['j', 'J']);
-                let im: f64 = s.parse().unwrap_or(0.0);
-                self.emit_const(Value::Complex(0.0, im));
-            }
             TokenType::Int | TokenType::Float => {
                 self.parse_number(self.lexeme(&t), t.kind);
             }

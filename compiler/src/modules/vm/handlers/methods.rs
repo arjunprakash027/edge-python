@@ -24,14 +24,6 @@ fn recv_bytes(vm: &VM, recv: Val) -> Result<alloc::vec::Vec<u8>, VmErr> {
 }
 
 #[inline]
-fn recv_complex(vm: &VM, recv: Val) -> Result<(f64, f64), VmErr> {
-    match vm.heap.get(recv) {
-        HeapObj::Complex(re, im) => Ok((*re, *im)),
-        _ => Err(cold_type("method requires a complex receiver")),
-    }
-}
-
-#[inline]
 fn val_to_str(vm: &VM, v: Val) -> Result<String, VmErr> {
     match vm.heap.get(v) {
         HeapObj::Str(s) => Ok(s.clone()),
@@ -155,18 +147,6 @@ impl<'a> VM<'a> {
             .ok_or(VmErr::Runtime("LoadAttr: bad name index"))?;
         let obj = self.pop()?;
 
-        // Complex .real / .imag — data attributes (not callables), unlike
-        // .conjugate which routes through the regular method dispatch below.
-        if obj.is_heap()
-            && let HeapObj::Complex(re, im) = self.heap.get(obj) {
-                let bare = crate::modules::parser::ssa_strip(name);
-                match bare {
-                    "real" => { self.push(Val::float(*re)); return Ok(()); }
-                    "imag" => { self.push(Val::float(*im)); return Ok(()); }
-                    _ => {}
-                }
-        }
-
         // Module attribute lookup: linear scan over the attr table. Sized
         // for ~30 entries; any module larger than that is unusual.
         if obj.is_heap()
@@ -264,7 +244,6 @@ macro_rules! define_methods {
                 "list"  => "List",
                 "dict"  => "Dict",
                 "set"   => "Set",
-                "complex" => "Complex",
                 _ => return None,
             };
             $(
@@ -335,16 +314,6 @@ define_methods! {
             out.push(HEX[(b & 0x0F) as usize] as char);
         }
         let v = vm.heap.alloc(HeapObj::Str(out))?;
-        vm.push(v); Ok(())
-    }),
-
-    // complex.conjugate() — flip the sign of the imaginary part. .real
-    // and .imag are data attributes resolved in handle_load_attr (no
-    // method dispatch); only conjugate() is callable.
-    (ComplexConjugate, "conjugate", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "conjugate takes no arguments")?;
-        let (re, im) = recv_complex(vm, recv)?;
-        let v = vm.alloc_complex(re, -im)?;
         vm.push(v); Ok(())
     }),
 

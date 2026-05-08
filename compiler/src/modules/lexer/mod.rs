@@ -46,7 +46,7 @@ pub enum TokenType {
     // Delimiters
     Lpar, Rpar, Lsqb, Rsqb, Lbrace, Rbrace,
     // Literals
-    Name, Complex, Float, Int, String, Bytes,
+    Name, Float, Int, String, Bytes,
     // F-string
     FstringStart, FstringMiddle, FstringEnd,
     // Whitespace and structure

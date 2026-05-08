@@ -180,15 +180,7 @@
     "tokens": ["Float", "Endmarker"]
   },
   {
-    "src": "3j", 
-    "tokens": ["Complex", "Endmarker"]
-  },
-  {
-    "src": "2.5J", 
-    "tokens": ["Complex", "Endmarker"]
-  },
-  {
-    "src": "'hello'", 
+    "src": "'hello'",
     "tokens": ["String", "Endmarker"]
   },
   {
@@ -528,15 +520,7 @@
     "tokens": ["Float", "Endmarker"]
   },
   {
-    "src": "0j", 
-    "tokens": ["Complex", "Endmarker"]
-  },
-  {
-    "src": "3.14j", 
-    "tokens": ["Complex", "Endmarker"]
-  },
-  {
-    "src": "\"double\"", 
+    "src": "\"double\"",
     "tokens": ["String", "Endmarker"]
   },
   {
