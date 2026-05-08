@@ -182,8 +182,7 @@ impl<'a> VM<'a> {
         // and cross-module helpers with the same name don't collide.
         for entry in chunk.imports.iter() {
             if let ImportKind::Code(sub) = &entry.kind {
-                let sub_ref: &'a SSAChunk = &**sub;
-                self.build_function_table(sub_ref, None, Some(&entry.spec));
+                self.build_function_table(sub, None, Some(&entry.spec));
             }
         }
     }
