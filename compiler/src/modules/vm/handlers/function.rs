@@ -522,6 +522,7 @@ impl<'a> VM<'a> {
             | Iter => Some(1),
             Divmod | IsInstance | HasAttr | Map | Filter => Some(2),
             Bytes => None,  // 0/1/2-arg: bytes() | bytes(n|iter) | bytes(str, "utf-8")
+            Complex => None, // 0/1/2-arg: complex() | complex(real) | complex(real, imag)
             ImportModule => Some(1),
             _ => None,
         };
@@ -591,6 +592,7 @@ impl<'a> VM<'a> {
             Filter => self.call_filter(chunk, slots),
             Iter => self.call_iter(),
             Bytes => self.call_bytes(argc),
+            Complex => self.call_complex(argc),
             ImportModule => self.call_import_module(),
         }
     }

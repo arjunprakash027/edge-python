@@ -40,6 +40,7 @@ impl<'a> VM<'a> {
         } else if v.is_heap() {
             match self.heap.get(v) {
                 HeapObj::BigInt(b) => { let n = b.neg(); self.bigint_to_val(n)? }
+                HeapObj::Complex(re, im) => { let (re, im) = (*re, *im); self.alloc_complex(-re, -im)? }
                 _ => return Err(cold_type("unary - requires a number")),
             }
         } else {

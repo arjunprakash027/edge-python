@@ -496,7 +496,7 @@ impl<'a> VM<'a> {
             NativeFnId::Format, NativeFnId::Ascii, NativeFnId::GetAttr, NativeFnId::HasAttr, NativeFnId::Next,
             NativeFnId::Run, NativeFnId::Sleep, NativeFnId::Receive,
             NativeFnId::Map, NativeFnId::Filter, NativeFnId::Iter,
-            NativeFnId::Bytes, NativeFnId::ImportModule,
+            NativeFnId::Bytes, NativeFnId::ImportModule, NativeFnId::Complex,
         ];
         for &id in builtin_fns {
             if let Ok(v) = vm.heap.alloc(HeapObj::NativeFn(id)) {
@@ -1192,7 +1192,7 @@ impl<'a> VM<'a> {
             }
             OpCode::Assert | OpCode::Del | OpCode::Global | OpCode::Nonlocal
             | OpCode::TypeAlias
-            | OpCode::Raise | OpCode::RaiseFrom | OpCode::Await | OpCode::YieldFrom => {
+            | OpCode::Raise | OpCode::RaiseFrom | OpCode::Await => {
                 self.handle_side(opcode, operand, slots)?;
             }
             OpCode::SetupExcept => {

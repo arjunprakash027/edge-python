@@ -16,7 +16,7 @@ The language reads like Python because it parses Python's syntax. It runs differ
 - **Pattern matching**: `match` / `case`, including `_` wildcard.
 - **Exceptions**: `try` / `except` / `else` / `finally`, with named handlers and `raise from`.
 - **Context managers**: `with` blocks, single and multi-target.
-- **Numbers**: arbitrary-precision integers (BigInt fallback past 2⁴⁷), IEEE-754 floats.
+- **Numbers**: arbitrary-precision integers (BigInt fallback past 2⁴⁷), IEEE-754 floats, complex (`2+3j`).
 - **Sequences**: lists, tuples, dicts (insertion-ordered), sets, ranges, strings.
 - **f-strings**: with format specs, embedded expressions, and `!r` / `!s` flags.
 - **Walrus operator**: `:=` in expressions.

@@ -133,7 +133,7 @@ impl<'a> VM<'a> {
     }
 
     /* Side-effecting / impure ops: assert, del, global/nonlocal, import,
-       type alias, raise, await, yield-from. */
+       type alias, raise, await. */
     pub(crate) fn handle_side(&mut self, op: OpCode, operand: u16, slots: &mut [Val]) -> Result<(), VmErr> {
         match op {
             OpCode::Assert => {
@@ -172,7 +172,6 @@ impl<'a> VM<'a> {
                     self.push(val);
                 }
             }
-            OpCode::YieldFrom => {}
             _ => return Err(cold_runtime("non-side opcode in handle_side")),
         }
         Ok(())

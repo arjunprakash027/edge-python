@@ -45,6 +45,7 @@ mod test {
                     Value::Bool(b) => b.to_string(),
                     Value::None => "None".to_string(),
                     Value::BigInt(s) => s.clone(),
+                    Value::Complex(re, im) => format!("complex({},{})", re, im),
                 })
                 .collect();
 

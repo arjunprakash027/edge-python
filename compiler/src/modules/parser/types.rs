@@ -18,7 +18,7 @@ pub enum OpCode {
     BuildSlice, MakeClass, SetupExcept, PopExcept, Raise, BitAnd, BitOr, BitXor,
     BitNot, Shl, Shr, In, NotIn, Is, IsNot, UnpackSequence, BuildTuple, SetupWith, ExitWith, Yield,
     Del, Assert, Global, Nonlocal, UnpackArgs, ListAppend, SetAdd, MapAdd, BuildSet, RaiseFrom,
-    UnpackEx, LoadEllipsis, Await, MakeCoroutine, YieldFrom, TypeAlias, StoreItem, Dup2,
+    UnpackEx, LoadEllipsis, Await, MakeCoroutine, TypeAlias, StoreItem, Dup2,
     JumpIfFalseOrPop, JumpIfTrueOrPop, Dup, CallMethod, CallMethodArgs, CallAll, CallAny, CallBin,
     CallOct, CallHex, CallDivmod, CallPow, CallRepr, CallReversed, CallCallable, CallId, CallHash,
     PopIter, DelItem, CallExtern,
@@ -86,6 +86,7 @@ pub enum Value {
     Int(i64),
     BigInt(String),
     Float(f64),
+    Complex(f64, f64),
     Bool(bool),
     None,
 }
@@ -498,7 +499,7 @@ fn unescape(s: &str) -> String {
 // Built-in types pre-registered as `Type` heap objects in the global
 // scope at VM init.
 pub const BUILTIN_TYPES: &[&str] = &[
-    "int", "float", "str", "bytes", "bool", "list",
+    "int", "float", "complex", "str", "bytes", "bool", "list",
     "tuple", "dict", "set", "range", "type", "NoneType",
     "Exception", "BaseException",
     "ValueError", "TypeError", "NameError", "KeyError",

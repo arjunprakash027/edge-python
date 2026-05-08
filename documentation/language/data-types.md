@@ -99,6 +99,35 @@ True
 1.6
 ```
 
+## Complex
+
+Two `f64`s — real and imaginary part. Literals use the `j` (or `J`) suffix on the imaginary; `2 + 3j` parses as `int + complex` and the runtime promotes both sides through the complex path. Mixed arithmetic with int / float coerces to complex. Integer exponents go through repeated multiplication (exact); non-integer (or complex) exponents go through `exp(w · log(z))`, accurate to ~6–9 digits for typical magnitudes — pure-Rust trig kit, no `cmath` module needed.
+
+```python
+z = 2 + 3j
+print(z)
+print(type(z))
+print(z.real, z.imag)
+print(z.conjugate())
+print(abs(3 + 4j))
+print((1 + 2j) * (3 + 4j))
+print((1 + 1j) ** 2)
+print(complex(1, -1))
+print(round(((1+1j) ** 0.5).real, 6))
+```
+
+```text Output
+(2+3j)
+<class 'complex'>
+2.0 3.0
+(2-3j)
+5.0
+(-5+10j)
+2j
+(1-1j)
+1.098684
+```
+
 ## String
 
 Strings are immutable. Indexing returns a single-character string.

@@ -1083,10 +1083,10 @@
     "annotations": {}
   },
   {
-    "src": "x = 3j", 
-    "constants": ["3"], 
-    "names": ["x_1"], 
-    "instructions": [["LoadConst",0], ["StoreName",0], ["ReturnValue",0]], 
+    "src": "x = 3j",
+    "constants": ["complex(0,3)"],
+    "names": ["x_1"],
+    "instructions": [["LoadConst",0], ["StoreName",0], ["ReturnValue",0]],
     "annotations": {}
   },
   {

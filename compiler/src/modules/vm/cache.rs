@@ -72,6 +72,7 @@ impl OpcodeCache {
                     }
                     Value::BigInt(s) => heap.alloc(HeapObj::BigInt(BigInt::from_decimal(s)))?,
                     Value::Float(f) => Val::float(*f),
+                    Value::Complex(r, i) => heap.alloc(HeapObj::Complex(*r, *i))?,
                     Value::Bool(b) => Val::bool(*b),
                     Value::None => Val::none(),
                     Value::Str(s) => heap.alloc(HeapObj::Str(s.to_string()))?,

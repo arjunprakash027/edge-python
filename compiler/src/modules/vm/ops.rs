@@ -6,6 +6,47 @@ use crate::modules::parser::types::OpCode;
 use alloc::{string::String, vec::Vec, rc::Rc};
 use core::cell::RefCell;
 
+/* Render an f64 the way CPython renders the components of a complex
+   number: whole-number floats drop the trailing `.0` (so `2.0+3.0j`
+   prints `2+3j`), zero keeps its sign bit, NaN / inf use the standard
+   names. Distinct from `format_f64`, which always keeps `.0`. */
+fn format_complex_part(f: f64) -> String {
+    if f == 0.0 {
+        return if f.is_sign_negative() { "-0".into() } else { "0".into() };
+    }
+    const I64_UPPER: f64 = i64::MAX as f64;
+    if f.is_finite() && f >= (i64::MIN as f64) && f < I64_UPPER && f == (f as i64) as f64 {
+        let mut b = itoa::Buffer::new();
+        return b.format(f as i64).into();
+    }
+    crate::modules::fstr::format_f64(f)
+}
+
+/* Format `re + im*j` Python-style: when `re` is +0.0 the real part is
+   omitted (`3j`); otherwise the full parenthesised form is used with the
+   sign taken from `im`'s sign bit so `(2-3j)` stays `(2-3j)` and
+   `complex(2, -0.0)` prints `(2-0j)`. */
+fn format_complex(re: f64, im: f64) -> String {
+    if re == 0.0 && re.is_sign_positive() {
+        let mut s = format_complex_part(im);
+        s.push('j');
+        return s;
+    }
+    let mut s = String::with_capacity(16);
+    s.push('(');
+    s.push_str(&format_complex_part(re));
+    if im.is_sign_negative() && !im.is_nan() {
+        s.push('-');
+        s.push_str(&format_complex_part(-im));
+    } else {
+        s.push('+');
+        s.push_str(&format_complex_part(im));
+    }
+    s.push('j');
+    s.push(')');
+    s
+}
+
 /* Render a `bytes` value as `b'...'` with Python's repr conventions:
    printable ASCII verbatim, control / high-bit / quote / backslash as
    `\xHH` or named escape. Always uses single quotes and escapes embedded
@@ -82,6 +123,7 @@ impl<'a> VM<'a> {
             HeapObj::Coroutine(..) => true,
             HeapObj::Module(..) => true,
             HeapObj::Extern(_) => true,
+            HeapObj::Complex(re, im) => *re != 0.0 || *im != 0.0,
         }
     }
 
@@ -163,6 +205,7 @@ impl<'a> VM<'a> {
             HeapObj::Coroutine(..) => "coroutine",
             HeapObj::Module(..) => "module",
             HeapObj::Extern(_) => "builtin_function_or_method",
+            HeapObj::Complex(..) => "complex",
         }}
     }
 
@@ -214,6 +257,7 @@ impl<'a> VM<'a> {
             HeapObj::Coroutine(..) => "<coroutine>".into(),
             HeapObj::Module(name, _) => s!("<module '", str name, "'>"),
             HeapObj::Extern(f) => s!("<extern function ", str &f.name, ">"),
+            HeapObj::Complex(re, im) => format_complex(*re, *im),
             HeapObj::Set(s) => {
                 let mut items: Vec<Val> = s.borrow().iter().cloned().collect();
                 if items.is_empty() { return "set()".into(); }
@@ -290,6 +334,10 @@ impl<'a> VM<'a> {
                 None => self.i128_to_val(a.as_int() as i128 + b.as_int() as i128),
             };
         }
+        if self.is_complex(a) || self.is_complex(b) {
+            let ((ra, ia), (rb, ib)) = self.complex_pair(a, b, "+")?;
+            return self.alloc_complex(ra + rb, ia + ib);
+        }
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(Val::float(af + bf)); }
         if let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b)) {
             return self.bigint_to_val(ba.add(&bb));
@@ -328,6 +376,10 @@ impl<'a> VM<'a> {
                 None => self.i128_to_val(a.as_int() as i128 - b.as_int() as i128),
             };
         }
+        if self.is_complex(a) || self.is_complex(b) {
+            let ((ra, ia), (rb, ib)) = self.complex_pair(a, b, "-")?;
+            return self.alloc_complex(ra - rb, ia - ib);
+        }
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(Val::float(af - bf)); }
         if let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b)) {
             return self.bigint_to_val(ba.sub(&bb));
@@ -362,6 +414,11 @@ impl<'a> VM<'a> {
                 Some(r) => self.heap.alloc(HeapObj::BigInt(BigInt::from_i64(r))),
                 None => self.i128_to_val(a.as_int() as i128 * b.as_int() as i128),
             };
+        }
+        if self.is_complex(a) || self.is_complex(b) {
+            let ((ra, ia), (rb, ib)) = self.complex_pair(a, b, "*")?;
+            // (ra + ia·j)(rb + ib·j) = (ra·rb − ia·ib) + (ra·ib + ia·rb)·j
+            return self.alloc_complex(ra * rb - ia * ib, ra * ib + ia * rb);
         }
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(Val::float(af * bf)); }
         if let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b)) {
@@ -401,7 +458,14 @@ impl<'a> VM<'a> {
         )))
     }
 
-    pub fn div_vals(&self, a: Val, b: Val) -> Result<Val, VmErr> {
+    pub fn div_vals(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
+        if self.is_complex(a) || self.is_complex(b) {
+            let ((ra, ia), (rb, ib)) = self.complex_pair(a, b, "/")?;
+            let denom = rb * rb + ib * ib;
+            if denom == 0.0 { return Err(VmErr::ZeroDiv); }
+            // (ra + ia·j) / (rb + ib·j) = ((ra·rb + ia·ib) + (ia·rb − ra·ib)·j) / |b|²
+            return self.alloc_complex((ra * rb + ia * ib) / denom, (ia * rb - ra * ib) / denom);
+        }
         let bv = self.to_f64_coerce(b).map_err(|_| cold_type("'/' requires numeric operands"))?;
         if bv == 0.0 { return Err(VmErr::ZeroDiv); }
         let av = self.to_f64_coerce(a).map_err(|_| cold_type("'/' requires numeric operands"))?;
@@ -427,6 +491,56 @@ impl<'a> VM<'a> {
         if v.is_heap()
             && let HeapObj::BigInt(b) = self.heap.get(v) { return Ok(b.to_f64()); }
         Err(cold_type("numeric operand required"))
+    }
+
+    /* True iff `v` is a Complex heap value. Used by binops to decide whether
+       to promote both sides through the complex path. */
+    #[inline]
+    pub(crate) fn is_complex(&self, v: Val) -> bool {
+        v.is_heap() && matches!(self.heap.get(v), HeapObj::Complex(..))
+    }
+
+    /* Coerce any real-or-complex numeric to a (re, im) pair. BigInt loses
+       precision when its magnitude exceeds f64's mantissa; matches CPython's
+       behaviour for `int + complex` with very large ints. Returns None for
+       non-numeric values so callers can raise a typed operand error. */
+    #[inline]
+    pub(crate) fn to_complex_parts(&self, v: Val) -> Option<(f64, f64)> {
+        if v.is_int() { return Some((v.as_int() as f64, 0.0)); }
+        if v.is_float() { return Some((v.as_float(), 0.0)); }
+        if v.is_bool() { return Some((v.as_bool() as i64 as f64, 0.0)); }
+        if v.is_heap() {
+            match self.heap.get(v) {
+                HeapObj::Complex(r, i) => return Some((*r, *i)),
+                HeapObj::BigInt(b) => return Some((b.to_f64(), 0.0)),
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /* Allocate a Complex value. None'd inline since `add_vals` & friends call
+       it once per binop on the complex path. */
+    #[inline]
+    pub(crate) fn alloc_complex(&mut self, re: f64, im: f64) -> Result<Val, VmErr> {
+        self.heap.alloc(HeapObj::Complex(re, im))
+    }
+
+    /* Build the standard "unsupported operand type(s) for X" error for binops
+       where one side is Complex and the other isn't a numeric. */
+    fn complex_op_err(&self, a: Val, b: Val, op: &str) -> VmErr {
+        VmErr::TypeMsg(s!(
+            "unsupported operand type(s) for ", str op, ": '",
+            str self.type_name(a), "' and '", str self.type_name(b), "'"
+        ))
+    }
+
+    /* Promote both sides via to_complex_parts; error if either is non-numeric.
+       Encapsulates the boilerplate so add/sub/mul/div stay a single line. */
+    fn complex_pair(&self, a: Val, b: Val, op: &str) -> Result<((f64, f64), (f64, f64)), VmErr> {
+        let pa = self.to_complex_parts(a).ok_or_else(|| self.complex_op_err(a, b, op))?;
+        let pb = self.to_complex_parts(b).ok_or_else(|| self.complex_op_err(a, b, op))?;
+        Ok((pa, pb))
     }
 
     pub(crate) fn i128_to_val(&mut self, r: i128) -> Result<Val, VmErr> {

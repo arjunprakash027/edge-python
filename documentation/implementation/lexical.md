@@ -50,7 +50,7 @@ The keyword lookup is routed by `(length, first_byte)` to skip most `memcmp`s. M
 3.14
 .5 # leading-dot float
 1e-5 # exponent
-3j # complex (lexed; only real part survives at runtime)
+3j # complex literal — Complex(0.0, 3.0)
 ```
 
 The number scanner handles base prefixes, underscore separators, optional exponents, the leading-dot form, and the trailing `j` / `J` for complex literals.
