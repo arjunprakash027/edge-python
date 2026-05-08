@@ -145,7 +145,6 @@ impl<'a> VM<'a> {
                 if slot < slots.len() { slots[slot] = Val::undef(); }
             }
             OpCode::Global | OpCode::Nonlocal => self.mark_impure(),
-            OpCode::TypeAlias => { self.pop()?; }
             OpCode::Raise | OpCode::RaiseFrom => {
                 self.mark_impure();
                 let exc = self.pop()?;

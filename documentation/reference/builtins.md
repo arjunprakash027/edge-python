@@ -593,20 +593,6 @@ print(format("hi", ">10"))
         hi
 ```
 
-### ascii
-
-Like `repr`, but escapes non-ASCII characters with `\uXXXX` / `\UXXXXXXXX`.
-
-```python
-print(ascii("café"))
-print(ascii("hello"))
-```
-
-```text Output
-'caf\u00e9'
-'hello'
-```
-
 ## Attribute access
 
 `getattr` and `hasattr` work against the built-in method tables on strings, lists, and dicts. User-defined class attributes are also supported.
@@ -693,7 +679,6 @@ False
 | `hash`       | 1          | hash for hashable values                   |
 | `repr`       | 1          | developer-readable form                    |
 | `format`     | 1 or 2     | applies the same format-spec mini-language as f-strings |
-| `ascii`      | 1          | repr with non-ASCII escapes                |
 | `getattr`    | 2 or 3     | bound method or default                    |
 | `hasattr`    | 2          | True if method exists                      |
 | `next`       | 1 or 2     | next item from iterator                    |

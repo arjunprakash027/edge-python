@@ -518,7 +518,7 @@ impl<'a> VM<'a> {
             Input | Receive => Some(0),
             Len | Abs | Str | Int | Float | Bool | Type | Chr | Ord
             | Sorted | Enumerate | List | Tuple | Bin | Oct | Hex
-            | Repr | Reversed | Callable | Id | Hash | Ascii | Next | Sleep
+            | Repr | Reversed | Callable | Id | Hash | Next | Sleep
             | Iter => Some(1),
             Divmod | IsInstance | HasAttr | Map | Filter => Some(2),
             Bytes => None,  // 0/1/2-arg: bytes() | bytes(n|iter) | bytes(str, "utf-8")
@@ -579,7 +579,6 @@ impl<'a> VM<'a> {
             Callable => self.call_callable(),
             Id => self.call_id(),
             Hash => self.call_hash(),
-            Ascii => self.call_ascii(),
             Divmod => self.call_divmod(),
             IsInstance => self.call_isinstance(),
             HasAttr => self.call_hasattr(),

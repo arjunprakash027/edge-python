@@ -992,23 +992,6 @@ impl<'a> VM<'a> {
         self.alloc_and_push_str(result)
     }
 
-    // ascii(obj) — repr but with non-ASCII escaped.
-
-    pub fn call_ascii(&mut self) -> Result<(), VmErr> {
-        let o = self.pop()?;
-        let r = self.repr(o);
-        let mut out = String::with_capacity(r.len());
-        for c in r.chars() {
-            if (c as u32) < 0x80 { out.push(c); continue; }
-            let (escape, pad) = if (c as u32) < 0x10000 { ("\\u", 4) } else { ("\\U", 8) };
-            out.push_str(escape);
-            let hex = i64_to_radix(c as i64, 16, "");
-            for _ in 0..(pad - hex.len()) { out.push('0'); }
-            out.push_str(&hex);
-        }
-        self.alloc_and_push_str(out)
-    }
-
     // getattr(obj, name [, default]).
 
     pub fn call_getattr(&mut self, op: u16) -> Result<(), VmErr> {

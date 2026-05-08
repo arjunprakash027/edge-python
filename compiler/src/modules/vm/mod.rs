@@ -493,7 +493,7 @@ impl<'a> VM<'a> {
             NativeFnId::All, NativeFnId::Any, NativeFnId::Bin, NativeFnId::Oct,
             NativeFnId::Hex, NativeFnId::Divmod, NativeFnId::Pow, NativeFnId::Repr,
             NativeFnId::Reversed, NativeFnId::Callable, NativeFnId::Id, NativeFnId::Hash,
-            NativeFnId::Format, NativeFnId::Ascii, NativeFnId::GetAttr, NativeFnId::HasAttr, NativeFnId::Next,
+            NativeFnId::Format, NativeFnId::GetAttr, NativeFnId::HasAttr, NativeFnId::Next,
             NativeFnId::Run, NativeFnId::Sleep, NativeFnId::Receive,
             NativeFnId::Map, NativeFnId::Filter, NativeFnId::Iter,
             NativeFnId::Bytes, NativeFnId::ImportModule,
@@ -1192,7 +1192,6 @@ impl<'a> VM<'a> {
                 self.push(a); self.push(b); self.push(a); self.push(b);
             }
             OpCode::Assert | OpCode::Del | OpCode::Global | OpCode::Nonlocal
-            | OpCode::TypeAlias
             | OpCode::Raise | OpCode::RaiseFrom | OpCode::Await => {
                 self.handle_side(opcode, operand, slots)?;
             }
