@@ -1054,6 +1054,88 @@ impl<'a> VM<'a> {
         Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")))
     }
 
+    /* slice(stop) | slice(start, stop) | slice(start, stop, step). Constructs
+       a HeapObj::Slice from up to three numeric arguments. Mirrors Python's
+       slice() builtin; the result can be passed as a sequence index. */
+    pub fn call_slice(&mut self, argc: u16) -> Result<(), VmErr> {
+        let args = self.pop_n(argc as usize)?;
+        let (start, stop, step) = match args.as_slice() {
+            [stop] => (Val::none(), *stop, Val::none()),
+            [start, stop] => (*start, *stop, Val::none()),
+            [start, stop, step] => (*start, *stop, *step),
+            _ => return Err(cold_type("slice() takes 1 to 3 arguments")),
+        };
+        let v = self.heap.alloc(HeapObj::Slice(start, stop, step))?;
+        self.push(v); Ok(())
+    }
+
+    /* vars(obj) — Instance: copy of __dict__ as a dict; Module: dict from
+       its attrs table. Like Python's vars(), no argument form is not
+       supported (no module-level __dict__ accessor in Edge Python). */
+    pub fn call_vars(&mut self) -> Result<(), VmErr> {
+        let obj = self.pop()?;
+        if !obj.is_heap() {
+            return Err(cold_type("vars() requires an instance or module"));
+        }
+        // Two passes so we can drop the immutable borrow on heap before any
+        // alloc(). For modules, materialise the attr names first as Vec<String>.
+        enum Source { Instance(Vec<(Val, Val)>), Module(Vec<(String, Val)>) }
+        let src = match self.heap.get(obj) {
+            HeapObj::Instance(_, attrs) => Source::Instance(attrs.borrow().entries.clone()),
+            HeapObj::Module(_, attrs) => Source::Module(attrs.clone()),
+            _ => return Err(cold_type("vars() requires an instance or module")),
+        };
+        let entries: Vec<(Val, Val)> = match src {
+            Source::Instance(e) => e,
+            Source::Module(items) => {
+                let mut out = Vec::with_capacity(items.len());
+                for (name, v) in items {
+                    let key = self.heap.alloc(HeapObj::Str(name))?;
+                    out.push((key, v));
+                }
+                out
+            }
+        };
+        let mut dm = DictMap::with_capacity(entries.len());
+        for (k, v) in entries { dm.insert(k, v); }
+        self.alloc_and_push_dict(dm)
+    }
+
+    /* setattr(obj, name, value) — store an attribute on a user instance.
+       Mirrors `obj.name = value`. Errors on non-instances since builtin
+       types (str/list/dict/...) have no mutable attribute table. */
+    pub fn call_setattr(&mut self) -> Result<(), VmErr> {
+        let value = self.pop()?;
+        let name = self.expect_str_arg("setattr() name must be a string")?;
+        let obj = self.pop()?;
+        if !obj.is_heap() || !matches!(self.heap.get(obj), HeapObj::Instance(..)) {
+            return Err(cold_type("setattr() target must be an instance"));
+        }
+        let key = self.heap.alloc(HeapObj::Str(name))?;
+        if let HeapObj::Instance(_, attrs) = self.heap.get_mut(obj) {
+            attrs.borrow_mut().insert(key, value);
+        }
+        self.push(Val::none());
+        Ok(())
+    }
+
+    /* delattr(obj, name) — remove an attribute from a user instance. */
+    pub fn call_delattr(&mut self) -> Result<(), VmErr> {
+        let name = self.expect_str_arg("delattr() name must be a string")?;
+        let obj = self.pop()?;
+        if !obj.is_heap() || !matches!(self.heap.get(obj), HeapObj::Instance(..)) {
+            return Err(cold_type("delattr() target must be an instance"));
+        }
+        // Strings <= 128 bytes are interned, so re-allocating the name yields
+        // the same Val that StoreAttr used as the key — bit-eq lookup hits.
+        let key = self.heap.alloc(HeapObj::Str(name))?;
+        if let HeapObj::Instance(_, attrs) = self.heap.get(obj) {
+            attrs.borrow_mut().remove(&key);
+        }
+        self.push(Val::none());
+        Ok(())
+    }
+
     // hasattr(obj, name).
 
     pub fn call_hasattr(&mut self) -> Result<(), VmErr> {

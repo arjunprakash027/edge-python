@@ -493,10 +493,12 @@ impl<'a> VM<'a> {
             NativeFnId::All, NativeFnId::Any, NativeFnId::Bin, NativeFnId::Oct,
             NativeFnId::Hex, NativeFnId::Divmod, NativeFnId::Pow, NativeFnId::Repr,
             NativeFnId::Reversed, NativeFnId::Callable, NativeFnId::Id, NativeFnId::Hash,
-            NativeFnId::Format, NativeFnId::GetAttr, NativeFnId::HasAttr, NativeFnId::Next,
+            NativeFnId::Format, NativeFnId::GetAttr, NativeFnId::HasAttr,
+            NativeFnId::SetAttr, NativeFnId::DelAttr, NativeFnId::Next,
             NativeFnId::Run, NativeFnId::Sleep, NativeFnId::Receive,
             NativeFnId::Map, NativeFnId::Filter, NativeFnId::Iter,
             NativeFnId::Bytes, NativeFnId::ImportModule,
+            NativeFnId::Slice, NativeFnId::Vars,
         ];
         for &id in builtin_fns {
             if let Ok(v) = vm.heap.alloc(HeapObj::NativeFn(id)) {

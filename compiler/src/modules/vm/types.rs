@@ -172,8 +172,8 @@ pub enum NativeFnId {
     Range, Round, Min, Max, Sum, Sorted, Enumerate, Zip,
     List, Tuple, Dict, Set, IsInstance, Input, All, Any,
     Bin, Oct, Hex, Divmod, Pow, Repr, Reversed, Callable, Id,
-    Hash, Format, GetAttr, HasAttr, Next, Run, Sleep,
-    Receive, Map, Filter, Iter, Bytes, ImportModule,
+    Hash, Format, GetAttr, HasAttr, SetAttr, DelAttr, Next, Run, Sleep,
+    Receive, Map, Filter, Iter, Bytes, ImportModule, Slice, Vars,
 }
 
 impl NativeFnId {
@@ -185,8 +185,10 @@ impl NativeFnId {
             "range", "round", "min", "max", "sum", "sorted", "enumerate", "zip",
             "list", "tuple", "dict", "set", "isinstance", "input", "all", "any",
             "bin", "oct", "hex", "divmod", "pow", "repr", "reversed", "callable", "id",
-            "hash", "format", "getattr", "hasattr", "next", "run", "sleep",
+            "hash", "format", "getattr", "hasattr", "setattr", "delattr",
+            "next", "run", "sleep",
             "receive", "map", "filter", "iter", "bytes", "import_module",
+            "slice", "vars",
         ];
         NAMES[self as usize]
     }

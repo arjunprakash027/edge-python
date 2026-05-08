@@ -508,6 +508,153 @@ define_methods! {
         vm.push(v); Ok(())
     }),
 
+    /* str.removeprefix(p) — strip leading prefix if present, else return
+       unchanged. str.removesuffix(s) — same for trailing suffix. */
+    (StrRemovePrefix, "removeprefix", pure, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "removeprefix takes 1 argument")?;
+        let s = recv_str(vm, recv)?;
+        let p = val_to_str(vm, pos[0])?;
+        let out = s.strip_prefix(p.as_str()).map(|t| t.to_string()).unwrap_or(s);
+        let v = vm.heap.alloc(HeapObj::Str(out))?;
+        vm.push(v); Ok(())
+    }),
+    (StrRemoveSuffix, "removesuffix", pure, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "removesuffix takes 1 argument")?;
+        let s = recv_str(vm, recv)?;
+        let suf = val_to_str(vm, pos[0])?;
+        let out = s.strip_suffix(suf.as_str()).map(|t| t.to_string()).unwrap_or(s);
+        let v = vm.heap.alloc(HeapObj::Str(out))?;
+        vm.push(v); Ok(())
+    }),
+
+    /* str.splitlines() — split on every \n, \r, or \r\n, dropping the
+       separator. Mirrors Python's keepends=False default. */
+    (StrSplitlines, "splitlines", pure, |vm, recv, pos| {
+        check_arity(&pos, 0, 0, "splitlines takes no arguments")?;
+        let s = recv_str(vm, recv)?;
+        let mut parts: Vec<Val> = Vec::new();
+        for line in s.split_inclusive(|c: char| c == '\n' || c == '\r') {
+            let trimmed = line.trim_end_matches(|c: char| c == '\n' || c == '\r').to_string();
+            parts.push(vm.heap.alloc(HeapObj::Str(trimmed))?);
+        }
+        // split_inclusive does not yield an empty trailing chunk, but if the
+        // last char is a separator the loop above produces one extra empty
+        // segment — drop it to match Python.
+        if let Some(last) = parts.last()
+            && let HeapObj::Str(t) = vm.heap.get(*last)
+            && t.is_empty() && s.ends_with(['\n', '\r']) {
+                parts.pop();
+            }
+        vm.alloc_and_push_list(parts)
+    }),
+
+    /* str.partition(sep) — find sep, return (head, sep, tail). If sep is
+       absent: (s, "", ""). rpartition splits at the last occurrence. */
+    (StrPartition, "partition", pure, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "partition takes 1 argument")?;
+        let s = recv_str(vm, recv)?;
+        let sep = val_to_str(vm, pos[0])?;
+        if sep.is_empty() { return Err(cold_value("empty separator")); }
+        let (a, b, c): (String, String, String) = match s.find(sep.as_str()) {
+            Some(i) => (s[..i].to_string(), sep.clone(), s[i + sep.len()..].to_string()),
+            None => (s, String::new(), String::new()),
+        };
+        let av = vm.heap.alloc(HeapObj::Str(a))?;
+        let bv = vm.heap.alloc(HeapObj::Str(b))?;
+        let cv = vm.heap.alloc(HeapObj::Str(c))?;
+        vm.alloc_and_push_tuple(vec![av, bv, cv])
+    }),
+    (StrRPartition, "rpartition", pure, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "rpartition takes 1 argument")?;
+        let s = recv_str(vm, recv)?;
+        let sep = val_to_str(vm, pos[0])?;
+        if sep.is_empty() { return Err(cold_value("empty separator")); }
+        let (a, b, c): (String, String, String) = match s.rfind(sep.as_str()) {
+            Some(i) => (s[..i].to_string(), sep.clone(), s[i + sep.len()..].to_string()),
+            None => (String::new(), String::new(), s),
+        };
+        let av = vm.heap.alloc(HeapObj::Str(a))?;
+        let bv = vm.heap.alloc(HeapObj::Str(b))?;
+        let cv = vm.heap.alloc(HeapObj::Str(c))?;
+        vm.alloc_and_push_tuple(vec![av, bv, cv])
+    }),
+
+    /* bytes.find(sub) / bytes.index(sub) / bytes.count(sub) / bytes.replace(old, new)
+       — byte-oriented analogs of the str methods. */
+    (BytesFind, "find", pure, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "find takes 1 argument")?;
+        let buf = recv_bytes(vm, recv)?;
+        let sub = recv_bytes(vm, pos[0])?;
+        let idx = buf.windows(sub.len()).position(|w| w == sub.as_slice())
+            .map(|i| i as i64).unwrap_or(-1);
+        vm.push(Val::int(idx));
+        Ok(())
+    }),
+    (BytesIndex, "index", pure, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "index takes 1 argument")?;
+        let buf = recv_bytes(vm, recv)?;
+        let sub = recv_bytes(vm, pos[0])?;
+        let idx = buf.windows(sub.len()).position(|w| w == sub.as_slice())
+            .ok_or(cold_value("subsection not found"))?;
+        vm.push(Val::int(idx as i64));
+        Ok(())
+    }),
+    (BytesCount, "count", pure, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "count takes 1 argument")?;
+        let buf = recv_bytes(vm, recv)?;
+        let sub = recv_bytes(vm, pos[0])?;
+        if sub.is_empty() {
+            vm.push(Val::int(buf.len() as i64 + 1));
+            return Ok(());
+        }
+        let mut n = 0i64;
+        let mut i = 0usize;
+        while i + sub.len() <= buf.len() {
+            if buf[i..i + sub.len()] == sub[..] { n += 1; i += sub.len(); }
+            else { i += 1; }
+        }
+        vm.push(Val::int(n));
+        Ok(())
+    }),
+    (BytesReplace, "replace", pure, |vm, recv, pos| {
+        check_arity(&pos, 2, 2, "replace takes 2 arguments")?;
+        let buf = recv_bytes(vm, recv)?;
+        let old = recv_bytes(vm, pos[0])?;
+        let new = recv_bytes(vm, pos[1])?;
+        if old.is_empty() {
+            let v = vm.heap.alloc(HeapObj::Bytes(buf))?;
+            vm.push(v); return Ok(());
+        }
+        let mut out: Vec<u8> = Vec::with_capacity(buf.len());
+        let mut i = 0usize;
+        while i < buf.len() {
+            if i + old.len() <= buf.len() && buf[i..i + old.len()] == old[..] {
+                out.extend_from_slice(&new); i += old.len();
+            } else {
+                out.push(buf[i]); i += 1;
+            }
+        }
+        let v = vm.heap.alloc(HeapObj::Bytes(out))?;
+        vm.push(v); Ok(())
+    }),
+    (BytesSplit, "split", pure, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "split takes 1 argument")?;
+        let buf = recv_bytes(vm, recv)?;
+        let sep = recv_bytes(vm, pos[0])?;
+        if sep.is_empty() { return Err(cold_value("empty separator")); }
+        let mut parts: Vec<Val> = Vec::new();
+        let mut start = 0usize;
+        let mut i = 0usize;
+        while i + sep.len() <= buf.len() {
+            if buf[i..i + sep.len()] == sep[..] {
+                parts.push(vm.heap.alloc(HeapObj::Bytes(buf[start..i].to_vec()))?);
+                i += sep.len(); start = i;
+            } else { i += 1; }
+        }
+        parts.push(vm.heap.alloc(HeapObj::Bytes(buf[start..].to_vec()))?);
+        vm.alloc_and_push_list(parts)
+    }),
+
     // str: padding.
     (StrCenter, "center", pure, |vm, recv, pos| {
         check_arity(&pos, 1, 2, "center takes 1 or 2 arguments")?;
@@ -676,6 +823,26 @@ define_methods! {
             items.push(t);
         }
         vm.alloc_and_push_list(items)
+    }),
+    /* dict.copy() — shallow copy. Mutations to the result don't affect
+       the original. */
+    (DictCopy, "copy", pure, |vm, recv, pos| {
+        check_arity(&pos, 0, 0, "copy takes no arguments")?;
+        let entries = dict_entries(vm, recv)?;
+        let mut dm = DictMap::with_capacity(entries.len());
+        for (k, v) in entries { dm.insert(k, v); }
+        vm.alloc_and_push_dict(dm)
+    }),
+    /* dict.popitem() — remove and return the last (key, value) tuple.
+       Raises KeyError on an empty dict. */
+    (DictPopItem, "popitem", mutating, |vm, recv, pos| {
+        check_arity(&pos, 0, 0, "popitem takes no arguments")?;
+        let pair = dict_mut(vm, recv, "popitem: receiver is not a dict", |dict| {
+            let (k, v) = dict.entries.last().copied().ok_or(cold_value("popitem(): dictionary is empty"))?;
+            dict.remove(&k);
+            Ok((k, v))
+        })?;
+        vm.alloc_and_push_tuple(vec![pair.0, pair.1])
     }),
     (DictGet, "get", pure, |vm, recv, pos| {
         check_arity(&pos, 1, 2, "get takes 1 or 2 arguments")?;

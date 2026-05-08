@@ -540,8 +540,11 @@ impl<'a> VM<'a> {
             | Sorted | Enumerate | List | Tuple | Bin | Oct | Hex
             | Repr | Reversed | Callable | Id | Hash | Next | Sleep
             | Iter => Some(1),
-            Divmod | IsInstance | HasAttr | Map | Filter => Some(2),
+            Divmod | IsInstance | HasAttr | Map | Filter | DelAttr => Some(2),
+            SetAttr => Some(3),
             Bytes => None,  // 0/1/2-arg: bytes() | bytes(n|iter) | bytes(str, "utf-8")
+            Slice => None,  // 1/2/3-arg
+            Vars => Some(1),
             ImportModule => Some(1),
             _ => None,
         };
@@ -610,6 +613,10 @@ impl<'a> VM<'a> {
             Filter => self.call_filter(chunk, slots),
             Iter => self.call_iter(),
             Bytes => self.call_bytes(argc),
+            Slice => self.call_slice(argc),
+            Vars => self.call_vars(),
+            SetAttr => self.call_setattr(),
+            DelAttr => self.call_delattr(),
             ImportModule => self.call_import_module(),
         }
     }
