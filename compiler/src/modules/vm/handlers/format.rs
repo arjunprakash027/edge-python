@@ -23,7 +23,7 @@
    Returns Ok(formatted) or Err(message) so the caller can raise ValueError. */
 
 use alloc::string::{String, ToString};
-use crate::modules::vm::types::{Val, HeapObj, HeapPool, fabs, ffloor, flog10, fsignum, ftrunc};
+use crate::modules::vm::types::{Val, HeapObj, HeapPool, fabs, fsignum, ftrunc};
 
 pub fn format_value(v: Val, spec: &str, heap: &HeapPool) -> Result<String, &'static str> {
     if spec.is_empty() {
@@ -116,15 +116,15 @@ fn apply(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static str> {
             if v.is_int() || v.is_float() || v.is_bool() || v.is_none() {
                 if s.ty == b's' { return Err("'s' format spec requires a string"); }
                 /* No type char + numeric: format like default unless precision/
-                   thousands present, in which case treat as float-general. */
+                   thousands present, in which case treat as float fixed. */
                 if s.precision.is_some() || s.thousands {
-                    return format_float(v, s, b'g', heap);
+                    return format_float(v, s, b'f', heap);
                 }
                 if v.is_int() {
                     return Ok(pad_numeric(s, &itoa_str(v.as_int())));
                 }
                 if v.is_float() {
-                    return format_float(v, s, b'g', heap);
+                    return format_float(v, s, b'f', heap);
                 }
             }
             let raw = display_inline(v, heap);
@@ -135,13 +135,7 @@ fn apply(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static str> {
             Ok(pad_string(s, &truncated))
         }
         b'd' | b'b' | b'o' | b'x' | b'X' => format_int(v, s, heap),
-        b'c' => {
-            let i = require_int(v, heap)?;
-            let cp = u32::try_from(i).map_err(|_| "%c arg not in range(0x110000)")?;
-            let ch = char::from_u32(cp).ok_or("%c arg not in range(0x110000)")?;
-            Ok(pad_string(s, &ch.to_string()))
-        }
-        b'f' | b'F' | b'e' | b'E' | b'g' | b'G' | b'%' => format_float(v, s, s.ty, heap),
+        b'f' | b'F' => format_float(v, s, s.ty, heap),
         _ => Err("unknown format type"),
     }
 }
@@ -171,27 +165,20 @@ fn format_float(v: Val, s: &Spec, ty: u8, heap: &HeapPool) -> Result<String, &'s
 
     /* NaN/inf go through unchanged (Python emits "nan"/"inf" before padding). */
     if f.is_nan() {
-        let body = if matches!(ty, b'F' | b'E' | b'G') { "NAN" } else { "nan" };
+        let body = if ty == b'F' { "NAN" } else { "nan" };
         return Ok(pad_string(s, body));
     }
     if f.is_infinite() {
         let mut out = String::new();
         let sign_ch = sign_char(f.is_sign_negative(), s.sign);
         if let Some(c) = sign_ch { out.push(c); }
-        out.push_str(if matches!(ty, b'F' | b'E' | b'G') { "INF" } else { "inf" });
+        out.push_str(if ty == b'F' { "INF" } else { "inf" });
         return Ok(pad_aligned(s, &out, sign_ch.map(|_| 1).unwrap_or(0)));
     }
 
     let mag = f.abs();
     let body = match ty {
-        b'%' => fixed(mag * 100.0, prec) + "%",
         b'f' | b'F' => fixed(mag, prec),
-        b'e' => exp(mag, prec, false),
-        b'E' => exp(mag, prec, true).to_uppercase(),
-        b'g' | b'G' => {
-            let g = general(mag, if s.precision.is_some() { prec } else { 6 });
-            if ty == b'G' { g.to_uppercase() } else { g }
-        }
         _ => unreachable!(),
     };
     let body = if s.thousands { add_thousands_float(&body) } else { body };
@@ -200,12 +187,6 @@ fn format_float(v: Val, s: &Spec, ty: u8, heap: &HeapPool) -> Result<String, &'s
     if let Some(c) = sign_ch { left.push(c); }
     left.push_str(&body);
     Ok(pad_aligned(s, &left, sign_ch.map(|_| 1).unwrap_or(0)))
-}
-
-fn require_int(v: Val, _heap: &HeapPool) -> Result<i64, &'static str> {
-    if v.is_int() { return Ok(v.as_int()); }
-    if v.is_bool() { return Ok(v.as_bool() as i64); }
-    Err("format spec requires an integer")
 }
 
 fn require_float(v: Val, _heap: &HeapPool) -> Result<f64, &'static str> {
@@ -357,70 +338,10 @@ fn fixed(mag: f64, prec: usize) -> String {
     out
 }
 
-fn exp(mag: f64, prec: usize, _upper: bool) -> String {
-    if mag == 0.0 {
-        let mut o = String::from("0");
-        if prec > 0 {
-            o.push('.');
-            for _ in 0..prec { o.push('0'); }
-        }
-        o.push_str("e+00");
-        return o;
-    }
-    let exponent = ffloor(flog10(mag)) as i32;
-    let mantissa = mag / pow10_i(exponent);
-    let mant_str = fixed(mantissa, prec);
-    let mut o = mant_str;
-    o.push('e');
-    if exponent >= 0 { o.push('+'); } else { o.push('-'); }
-    let abs = exponent.unsigned_abs();
-    if abs < 10 { o.push('0'); }
-    let mut b = itoa::Buffer::new();
-    o.push_str(b.format(abs));
-    o
-}
-
-fn general(mag: f64, prec: usize) -> String {
-    /* CPython's `g`: switch to scientific when exp < -4 or >= prec.
-       Trailing zeros are stripped (and trailing `.`). */
-    let p = prec.max(1);
-    if mag == 0.0 {
-        return String::from("0");
-    }
-    let exponent = ffloor(flog10(mag)) as i32;
-    let body = if exponent < -4 || exponent >= p as i32 {
-        exp(mag, p - 1, false)
-    } else {
-        let frac_digits = (p as i32 - 1 - exponent).max(0) as usize;
-        fixed(mag, frac_digits)
-    };
-    strip_trailing(&body)
-}
-
-fn strip_trailing(s: &str) -> String {
-    /* Strip trailing zeros (and a trailing `.`) from the mantissa portion
-       only. Anything after `e` is left alone. */
-    let split = s.find('e');
-    let (mant, tail) = match split {
-        Some(i) => (&s[..i], &s[i..]),
-        None => (s, ""),
-    };
-    let mut m = mant.to_string();
-    if m.contains('.') {
-        while m.ends_with('0') { m.pop(); }
-        if m.ends_with('.') { m.pop(); }
-    }
-    m.push_str(tail);
-    m
-}
-
 fn pow10(n: usize) -> f64 {
     let mut r = 1.0f64;
     for _ in 0..n { r *= 10.0; }
     r
-}
-fn pow10_i(n: i32) -> f64 {
-    if n >= 0 { pow10(n as usize) } else { 1.0 / pow10((-n) as usize) }
 }
 fn itoa_str(i: i64) -> String {
     let mut b = itoa::Buffer::new(); b.format(i).to_string()

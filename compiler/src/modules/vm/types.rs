@@ -681,7 +681,3 @@ pub fn fsignum(x: f64) -> f64 {
     if x > 0.0 { 1.0 } else if x < 0.0 { -1.0 } else { 0.0 }
 }
 
-#[inline]
-pub fn flog10(x: f64) -> f64 {
-    fln(x) / core::f64::consts::LN_10
-}
