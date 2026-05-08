@@ -262,6 +262,45 @@ impl<'a> VM<'a> {
         self.alloc_and_push_list(items)
     }
 
+    /* sorted(iterable, key=fn). Decorate-sort-undecorate: pre-apply `key`
+       to every item, sort the parallel keys vec, then re-emit items in the
+       new order. Key=None falls back to the no-key path. */
+    pub fn call_sorted_with_key(
+        &mut self, key: Option<Val>,
+        chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val],
+    ) -> Result<(), VmErr> {
+        let key = match key {
+            Some(k) if !k.is_none() => k,
+            _ => return self.call_sorted(),
+        };
+        let o = self.pop()?;
+        let items = self.extract_iter(o, false)?;
+        let mut keys: Vec<Val> = Vec::with_capacity(items.len());
+        for &item in &items {
+            self.push(key);
+            self.push(item);
+            self.exec_call(1, chunk, slots)?;
+            keys.push(self.pop()?);
+        }
+        let mut indices: Vec<usize> = (0..items.len()).collect();
+        let mut sort_err: Option<VmErr> = None;
+        indices.sort_by(|&a, &b| {
+            if sort_err.is_some() { return core::cmp::Ordering::Equal; }
+            match self.lt_vals(keys[a], keys[b]) {
+                Ok(true) => core::cmp::Ordering::Less,
+                Ok(false) => match self.lt_vals(keys[b], keys[a]) {
+                    Ok(true) => core::cmp::Ordering::Greater,
+                    Ok(false) => core::cmp::Ordering::Equal,
+                    Err(e) => { sort_err = Some(e); core::cmp::Ordering::Equal }
+                },
+                Err(e) => { sort_err = Some(e); core::cmp::Ordering::Equal }
+            }
+        });
+        if let Some(e) = sort_err { return Err(e); }
+        let sorted: Vec<Val> = indices.into_iter().map(|i| items[i]).collect();
+        self.alloc_and_push_list(sorted)
+    }
+
     /* In-place sort using lt_vals for ordering. Captures the first error
        and surfaces it after the sort completes — sort_by closures can't
        return Result directly. */

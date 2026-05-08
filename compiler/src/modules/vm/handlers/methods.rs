@@ -161,6 +161,25 @@ impl<'a> VM<'a> {
                     "module '", str mod_name, "' has no attribute '", str bare, "'")));
             }
 
+        // Class attribute lookup: `MyClass.method` returns the unbound
+        // function directly (no `self` prepended). Useful for class-as-namespace
+        // patterns and for accessing class-level constants.
+        if obj.is_heap()
+            && let HeapObj::Class(_, members) = self.heap.get(obj) {
+                let bare = crate::modules::parser::ssa_strip(name);
+                if let Some((_, v)) = members.iter().find(|(n, _)| n == bare) {
+                    let v = *v;
+                    self.push(v);
+                    return Ok(());
+                }
+                let cls_name = match self.heap.get(obj) {
+                    HeapObj::Class(n, _) => n.clone(),
+                    _ => alloc::string::String::new(),
+                };
+                return Err(VmErr::Attribute(s!(
+                    "type object '", str &cls_name, "' has no attribute '", str bare, "'")));
+            }
+
         // Instance attribute lookup: check `__dict__` first, then class methods.
         if obj.is_heap()
             && let HeapObj::Instance(cls_val, attrs) = self.heap.get(obj) {

@@ -506,12 +506,32 @@ impl<'a> VM<'a> {
         positional: Vec<Val>, kw: Vec<Val>,
         chunk: &SSAChunk, slots: &mut [Val],
     ) -> Result<(), VmErr> {
+        use super::super::types::NativeFnId::*;
+
+        // sorted() is the one builtin that accepts keyword arguments
+        // (`sorted(xs, key=fn)`). Pull the key out of kw_flat (Vec of
+        // alternating name/value) before the generic "no kwargs" check.
+        let mut sort_key: Option<Val> = None;
+        let kw = if id == Sorted {
+            let mut leftover: Vec<Val> = Vec::new();
+            for chunk_pair in kw.chunks(2) {
+                let (name_v, val_v) = (chunk_pair[0], chunk_pair[1]);
+                let is_key = name_v.is_heap()
+                    && matches!(self.heap.get(name_v), HeapObj::Str(s) if s == "key");
+                if is_key {
+                    sort_key = Some(val_v);
+                } else {
+                    leftover.push(name_v);
+                    leftover.push(val_v);
+                }
+            }
+            leftover
+        } else { kw };
+
         if !kw.is_empty() {
             return Err(cold_type("native function takes no keyword arguments"));
         }
         let argc = positional.len() as u16;
-
-        use super::super::types::NativeFnId::*;
 
         // Pre-validate fixed arity to keep the stack clean on error.
         let expected: Option<u16> = match id {
@@ -567,7 +587,7 @@ impl<'a> VM<'a> {
             Type => self.call_type(),
             Chr => self.call_chr(),
             Ord => self.call_ord(),
-            Sorted => self.call_sorted(),
+            Sorted => self.call_sorted_with_key(sort_key, chunk, slots),
             Enumerate => self.call_enumerate(),
             List => self.call_list(),
             Tuple => self.call_tuple(),

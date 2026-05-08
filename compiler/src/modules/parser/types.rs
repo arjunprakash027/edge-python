@@ -51,7 +51,8 @@ pub(super) fn builtin(name: &str) -> Option<(OpCode, bool)> {
         "min" => Some((OpCode::CallMin, true)),
         "max" => Some((OpCode::CallMax, true)),
         "sum" => Some((OpCode::CallSum, true)),
-        "sorted" => Some((OpCode::CallSorted, true)),
+        // sorted accepts `key=` kwarg — falls through to the generic
+        // LoadName+Call path so kwargs reach dispatch_native intact.
         "enumerate" => Some((OpCode::CallEnumerate, true)),
         "zip" => Some((OpCode::CallZip, true)),
         "list" => Some((OpCode::CallList, true)),

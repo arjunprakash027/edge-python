@@ -873,6 +873,28 @@ impl<'a> VM<'a> {
                     "module '", str &mod_name, "' has no attribute '", str bare, "'")));
             }
 
+        // Class.method(args): direct method call on the class object,
+        // without prepending self. Mirrors the LoadAttr Class arm.
+        if obj.is_heap()
+            && let HeapObj::Class(_, members) = self.heap.get(obj) {
+                let bare = ssa_strip(name);
+                if let Some((_, mv)) = members.iter().find(|(n, _)| n == bare) {
+                    let mv = *mv;
+                    self.push(mv);
+                    for a in &positional { self.push(*a); }
+                    for a in &kw_flat   { self.push(*a); }
+                    let argc = positional.len() as u16;
+                    let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
+                    return self.exec_call(encoded, chunk, slots);
+                }
+                let cls_name = match self.heap.get(obj) {
+                    HeapObj::Class(n, _) => n.clone(),
+                    _ => alloc::string::String::new(),
+                };
+                return Err(VmErr::Attribute(s!(
+                    "type object '", str &cls_name, "' has no attribute '", str bare, "'")));
+            }
+
         // User-defined method on Instance: call with self prepended.
         if obj.is_heap()
             && let HeapObj::Instance(cls_val, _) = self.heap.get(obj) {
@@ -1081,12 +1103,23 @@ impl<'a> VM<'a> {
                 let body = &chunk.classes[ci];
                 let mut class_slots = self.fill_builtins(&body.names);
                 self.exec(body, &mut class_slots)?;
+                // Collect every defined slot as a class member: methods (Func),
+                // class-level constants (`Status.IDLE = 0`), and any other Val
+                // produced by class-body execution. Lets `MyClass.method()`
+                // call methods directly (no self) and `MyClass.CONST` work as
+                // a namespace-style read.
                 let mut methods: Vec<(alloc::string::String, Val)> = Vec::new();
                 for (i, name) in body.names.iter().enumerate() {
                     if let Some(&v) = class_slots.get(i)
-                        && !v.is_undef() && v.is_heap()
-                        && matches!(self.heap.get(v), HeapObj::Func(..)) {
+                        && !v.is_undef() {
                             let base = ssa_strip(name);
+                            // Builtin globals also live in class_slots (filled
+                            // by fill_builtins). Skip them so `MyClass.print`
+                            // doesn't shadow the global builtin.
+                            let is_builtin_shadow = v.is_heap()
+                                && matches!(self.heap.get(v), HeapObj::NativeFn(_))
+                                && self.globals.get(base).copied() == Some(v);
+                            if is_builtin_shadow { continue; }
                             if !methods.iter().any(|(n, _)| n == base) {
                                 methods.push((base.to_string(), v));
                             }
