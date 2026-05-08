@@ -234,7 +234,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             } else {
                 self.chunk.emit(OpCode::Dup, 0);
                 self.expr();
+                let isinst_pos = self.last_end as u32;
                 self.chunk.emit(OpCode::CallIsInstance, 0);
+                self.chunk.record_call_pos(isinst_pos);
                 self.chunk.emit(OpCode::JumpIfFalse, 0);
                 next_arm_jump = Some(self.chunk.instructions.len() - 1);
 

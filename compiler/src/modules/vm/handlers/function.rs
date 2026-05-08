@@ -427,11 +427,29 @@ impl<'a> VM<'a> {
         let snap = self.live_slots.len();
         self.live_slots.extend_from_slice(slots);
 
+        // Push a CallFrame so the multi-frame traceback renderer can show
+        // this call's source line if the body errors. The frame snapshots
+        // the caller's chunk source/path so render works without holding a
+        // borrow on the live chunk pointers.
+        let call_byte_pos = self.pending_call_byte_pos.take().unwrap_or(0);
+        self.call_stack.push(super::super::types::CallFrame {
+            fi,
+            call_byte_pos,
+            caller_source: chunk.source.clone(),
+            caller_path: chunk.path.clone(),
+        });
+
         self.observed_impure.push(false);
         let exec_result = self.exec(body, &mut fn_slots);
         let callee_impure = self.observed_impure.pop().unwrap_or(true);
         self.live_slots.truncate(snap);
         self.depth -= 1;
+        // On success the frame is popped; on error we leave it in place so
+        // the renderer can walk the chain. The error catch in dispatch is
+        // responsible for clearing the stack on swallowed exceptions.
+        if exec_result.is_ok() {
+            self.call_stack.pop();
+        }
 
         // Back-propagate `nonlocal` writes to the caller's matching slots.
         let nl_table = &self.nonlocal_tables[fi];

@@ -562,6 +562,46 @@ impl VmErr {
         crate::modules::parser::Diagnostic { start: pos, end: pos, msg: self.render() }
             .render(src, path)
     }
+
+    /* Multi-frame traceback. The error site renders first as `error: ...`
+       with a rustc-style source preview; each entry in `frames` appends a
+       `note: called from <fname>` block walking outward from the innermost
+       call to the entry chunk. `frames` is given innermost-first (most
+       recent caller closest to index 0); the renderer reverses to outermost
+       so the chain reads top-down like CPython's traceback.
+
+       `error_src` / `error_path` correspond to the chunk where the exception
+       was raised; each frame carries its own caller's source so the chain
+       traverses module boundaries without losing context. */
+    pub fn render_traceback(
+        &self,
+        error_src: &str,
+        error_byte_pos: Option<usize>,
+        error_path: Option<&str>,
+        frames: &[CallFrame],
+        function_names: &[alloc::string::String],
+    ) -> alloc::string::String {
+        let mut out = self.render_at(error_src, error_byte_pos, error_path);
+        // Frames are pushed innermost-first as the error propagates up; render
+        // outermost-first so the chain reads "outermost called inner called
+        // innermost" — easier to follow than the reverse.
+        for f in frames.iter().rev() {
+            let fname = function_names.get(f.fi)
+                .map(|s| s.as_str()).unwrap_or("<anonymous>");
+            let pos = f.call_byte_pos as usize;
+            let path: Option<&str> = if f.caller_path.is_empty() { None } else { Some(f.caller_path.as_str()) };
+            let note = crate::modules::parser::Diagnostic {
+                start: pos, end: pos,
+                msg: alloc::format!("called from {}()", fname),
+            }.render(f.caller_source.as_str(), path);
+            // Diagnostic prefixes "error:" by convention; rewrite to "note:"
+            // for the chained frames so the topmost line stays the only red.
+            let note = note.replacen("error:", "note:", 1);
+            out.push('\n');
+            out.push_str(&note);
+        }
+        out
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -569,6 +609,24 @@ impl core::fmt::Display for VmErr {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(&self.render())
     }
+}
+
+/* One snapshot of a user-function call site, pushed when `exec_call` enters
+   a HeapObj::Func and popped on return/error. Carries everything the
+   traceback renderer needs without requiring a chunk lookup at error time:
+     - `fi`: index into `vm.function_names` for the called function's name
+     - `call_byte_pos`: byte offset of the Call opcode in the *caller's*
+       source (set from `caller_chunk.resolve_call(rip)` then falling back
+       to `resolve(rip)` for stmt-level)
+     - `caller_source` / `caller_path`: shared Arc clones of the caller's
+       chunk metadata so render walks each frame without holding a borrow
+       on the live chunk pointers. */
+#[derive(Clone, Debug)]
+pub struct CallFrame {
+    pub fi: usize,
+    pub call_byte_pos: u32,
+    pub caller_source: alloc::sync::Arc<alloc::string::String>,
+    pub caller_path: alloc::sync::Arc<alloc::string::String>,
 }
 
 /* Iterator state for ForIter. Consumed one item at a time. */

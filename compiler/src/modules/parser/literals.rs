@@ -272,9 +272,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
        `CallExtern` (operand = (extern_idx << 8) | argc); rest fall through to
        the generic `LoadName + Call`. */
     pub(super) fn call(&mut self, name: String) -> bool {
+        let call_pos = self.last_end as u32;
         if name == "print" {
             let (pos, kw) = self.parse_args();
             self.chunk.emit(OpCode::CallPrint, pos + kw);
+            self.chunk.record_call_pos(call_pos);
             return false;
         }
 
@@ -286,6 +288,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         if let Some((op, leaves_value)) = builtin(name.as_str()) {
             let (pos, kw) = self.parse_args();
             self.chunk.emit(op, pos + kw);
+            self.chunk.record_call_pos(call_pos);
             return leaves_value;
         }
 
@@ -297,6 +300,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             let (pos, _kw) = self.parse_args();
             let encoded = (extern_idx << 8) | (pos & 0xFF);
             self.chunk.emit(OpCode::CallExtern, encoded);
+            self.chunk.record_call_pos(call_pos);
             return true;
         }
 
@@ -305,10 +309,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let (pos, kw) = self.parse_args();
         let encoded = ((kw & 0xFF) << 8) | (pos & 0xFF);
         self.chunk.emit(OpCode::Call, encoded);
+        self.chunk.record_call_pos(call_pos);
         true
     }
 
     pub(super) fn call_range(&mut self) {
+        let call_pos = self.last_end as u32;
         self.advance();
         let mut argc = 0u16;
         while !matches!(self.peek(), Some(TokenType::Rpar) | None) {
@@ -318,6 +324,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
         self.eat(TokenType::Rpar);
         self.chunk.emit(OpCode::CallRange, argc);
+        self.chunk.record_call_pos(call_pos);
     }
 
     pub(super) fn parse_args(&mut self) -> (u16, u16) {
@@ -438,7 +445,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.chunk.emit(if is_async { OpCode::MakeCoroutine } else { OpCode::MakeFunction }, fi);
 
         for _ in 0..decorators {
+            let pos = self.last_end as u32;
             self.chunk.emit(OpCode::Call, 1);
+            self.chunk.record_call_pos(pos);
         }
 
         let ver = self.increment_version(&fname);

@@ -119,6 +119,11 @@ pub struct VM<'a> {
        cleared on swallow / at run() entry; readable via error_pos() so the
        outer renderer can attach a Diagnostic-style caret. */
     pub(crate) error_byte_pos: Option<u32>,
+    /* Byte offset of the Call instruction currently being dispatched.
+       Snapshotted by the dispatch loop right before invoking
+       `handle_function` so `exec_call` can record it on the CallFrame
+       it pushes. Cleared after each call returns. */
+    pub(crate) pending_call_byte_pos: Option<u32>,
     /* spec → Module Val map populated by `init_modules` before user
        bytecode runs. Both `OpCode::LoadModule` and the `import_module()`
        builtin look up here. Each unique spec across the chunk tree
@@ -132,6 +137,16 @@ pub struct VM<'a> {
        `b.helper`) stay isolated — fixes a regression that the splice
        model handled via per-importer name mangling. */
     pub(crate) fn_module: Vec<Option<String>>,
+    /* Function-name registry parallel to `functions`. Populated when
+       `MakeFunction` runs (the next StoreName operand identifies the bind),
+       consulted by the multi-frame traceback renderer to fill the
+       `<fname>` placeholder in `note: called from <fname>()` lines. Empty
+       string entries are anonymous lambdas. */
+    pub(crate) function_names: Vec<String>,
+    /* Active call frames pushed/popped by exec_call on every user-function
+       entry and exit. Drained on error to feed the traceback renderer; the
+       innermost (most recent) call is at the end of the Vec. */
+    pub(crate) call_stack: Vec<crate::modules::vm::types::CallFrame>,
 }
 
 impl<'a> VM<'a> {
@@ -168,6 +183,13 @@ impl<'a> VM<'a> {
             self.function_parents.push(parent_fi);
             self.fn_module.push(module_spec.map(String::from));
             self.body_to_fi.insert(&desc.1 as *const _, global as usize);
+            // Resolve the function's bare name from its parent chunk: desc.3
+            // is the name slot index into chunk.names. ssa_strip drops the
+            // SSA version suffix so the traceback shows `f`, not `f_2`.
+            let name = chunk.names.get(desc.3 as usize)
+                .map(|n| crate::modules::parser::ssa_strip(n).to_string())
+                .unwrap_or_default();
+            self.function_names.push(name);
             indices.push(global);
             self.build_function_table(&desc.1, Some(global as usize), module_spec);
         }
@@ -349,8 +371,11 @@ impl<'a> VM<'a> {
             observed_impure: Vec::new(),
             exception_stack: Vec::new(),
             error_byte_pos: None,
+            pending_call_byte_pos: None,
             module_table: HashMap::default(),
             fn_module: Vec::new(),
+            function_names: Vec::new(),
+            call_stack: Vec::new(),
             functions: Vec::new(),
             fn_index: Vec::new(),
             function_parents: Vec::new(),
@@ -585,6 +610,8 @@ impl<'a> VM<'a> {
        run() succeeded / hasn't been called. Renderers turn this into the
        fancy `--> path:line:col` form via parser::Diagnostic. */
     pub fn error_pos(&self) -> Option<usize> { self.error_byte_pos.map(|p| p as usize) }
+    pub fn call_stack_frames(&self) -> &[crate::modules::vm::types::CallFrame] { &self.call_stack }
+    pub fn function_names_ref(&self) -> &[String] { &self.function_names }
 
     /* Mark all reachable roots and sweep. mark() is a no-op on non-heap
        values, so undef/None/int/float/bool slots are free to scan. */
@@ -792,6 +819,10 @@ impl<'a> VM<'a> {
                             self.pending_pos_delta = 0;
                             self.pending_kw_delta  = 0;
                             self.error_byte_pos    = None;
+                            // Caught exception: discard the partial traceback
+                            // so a later unhandled error doesn't carry stale
+                            // frames from the swallowed one.
+                            self.call_stack.clear();
                             // Cold path: allocate-once String for the lookup
                             // key. `Raised` carries the user-supplied class
                             // name so `except <Type>` can match it.
@@ -1062,6 +1093,11 @@ impl<'a> VM<'a> {
             | OpCode::CallHex | OpCode::CallDivmod | OpCode::CallPow | OpCode::CallRepr
             | OpCode::CallReversed | OpCode::CallCallable | OpCode::CallId | OpCode::CallHash
             | OpCode::CallExtern => {
+                // Snapshot the byte_pos of this call site so exec_call can
+                // record it on the new CallFrame. Prefer call_byte_pos
+                // (instr-level) and fall back to the enclosing statement.
+                self.pending_call_byte_pos = chunk.resolve_call(rip as u32)
+                    .or_else(|| chunk.resolve(rip as u32));
                 self.handle_function(ins.opcode, op, chunk, slots)?;
             }
 

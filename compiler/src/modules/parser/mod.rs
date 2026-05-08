@@ -147,6 +147,10 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         // afterwards (its own `from X import ...`); those don't leak back up.
         self.chunk.extern_table = saved_chunk.extern_table.clone();
         self.chunk.extern_index = saved_chunk.extern_index.clone();
+        // Inherit source/path so nested function bodies render with the same
+        // file context as their enclosing module in tracebacks.
+        self.chunk.source = saved_chunk.source.clone();
+        self.chunk.path = saved_chunk.path.clone();
         f(self);
         let body = core::mem::take(&mut self.chunk);
         self.chunk = saved_chunk;
@@ -477,6 +481,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             alloc::rc::Rc::new(core::cell::RefCell::new(HashMap::default())))
     }
 
+    /* Same as `with_resolver` but tags the chunk with a display path used by
+       the runtime traceback renderer (`<File "main.py", line ...>`). */
+    pub fn with_path(source: &'src str, iter: I, resolver: Box<dyn Resolver>, path: &str) -> Self {
+        let mut p = Self::with_resolver(source, iter, resolver);
+        p.chunk.path = alloc::sync::Arc::new(path.into());
+        p
+    }
+
     /* Sub-parsers share the entry's module cache so each canonical spec
        parses exactly once across the whole compilation unit. */
     pub(crate) fn with_shared_cache(
@@ -485,10 +497,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         resolver: Box<dyn Resolver>,
         module_cache: alloc::rc::Rc<core::cell::RefCell<HashMap<String, alloc::rc::Rc<SSAChunk>>>>,
     ) -> Self {
+        let mut chunk = SSAChunk::default();
+        chunk.source = alloc::sync::Arc::new(source.into());
         Self {
             source,
             tokens: iter.peekable(),
-            chunk: SSAChunk::default(),
+            chunk,
             ssa_versions: HashMap::default(),
             join_stack: Vec::new(),
             loop_starts: Vec::new(),
