@@ -358,6 +358,21 @@ impl<'a> Scanner<'a> {
                 return Some((TokenType::String, line_at_start, start, self.pos));
             }
 
+            // Bytes literal: b/B prefix (with optional r/R for raw bytes).
+            // Same scanning machinery as strings — escapes are decoded
+            // later in the parser, where bytes-specific rules apply
+            // (`\xHH` → single byte; non-ASCII source bytes preserved
+            // verbatim instead of being UTF-8 validated).
+            if is_bytes_prefix(slice)
+                && let Some(&q) = self.src.get(self.pos)
+                && (q == b'"' || q == b'\'')
+            {
+                let q_start = self.pos;
+                self.pos += 1;
+                self.scan_string(q, q_start);
+                return Some((TokenType::Bytes, line_at_start, start, self.pos));
+            }
+
             let kind = keyword(slice).unwrap_or(TokenType::Name);
             return Some((kind, line_at_start, start, self.pos));
         }

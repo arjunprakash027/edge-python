@@ -1512,10 +1512,10 @@
     "annotations": {}
   },
   {
-    "src": "b'bytes'", 
-    "constants": ["bytes"], 
-    "names": [], 
-    "instructions": [["LoadConst",0],["PopTop",0],["ReturnValue",0]], 
+    "src": "b'bytes'",
+    "constants": ["b\"bytes\""],
+    "names": [],
+    "instructions": [["LoadConst",0],["PopTop",0],["ReturnValue",0]],
     "annotations": {}
   },
   {

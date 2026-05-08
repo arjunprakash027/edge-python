@@ -6,6 +6,33 @@ use crate::modules::parser::types::OpCode;
 use alloc::{string::String, vec::Vec, rc::Rc};
 use core::cell::RefCell;
 
+/* Render a `bytes` value as `b'...'` with Python's repr conventions:
+   printable ASCII verbatim, control / high-bit / quote / backslash as
+   `\xHH` or named escape. Always uses single quotes and escapes embedded
+   single quotes — matches CPython's `repr(b"...")` for the common path. */
+fn format_bytes(buf: &[u8]) -> String {
+    let mut out = String::with_capacity(buf.len() + 3);
+    out.push_str("b'");
+    for &b in buf {
+        match b {
+            b'\\' => out.push_str("\\\\"),
+            b'\'' => out.push_str("\\'"),
+            b'\n' => out.push_str("\\n"),
+            b'\r' => out.push_str("\\r"),
+            b'\t' => out.push_str("\\t"),
+            0x20..=0x7E => out.push(b as char),
+            _ => {
+                out.push_str("\\x");
+                const HEX: &[u8; 16] = b"0123456789abcdef";
+                out.push(HEX[(b >> 4) as usize] as char);
+                out.push(HEX[(b & 0x0F) as usize] as char);
+            }
+        }
+    }
+    out.push('\'');
+    out
+}
+
 /* Coerce a numeric pair to f64; returns None if neither operand is a float. */
 fn coerce_floats(a: Val, b: Val) -> Option<(f64, f64)> {
     if !a.is_float() && !b.is_float() { return None; }
@@ -37,6 +64,7 @@ impl<'a> VM<'a> {
         if v.is_float() { return v.as_float() != 0.0; }
         match self.heap.get(v) {
             HeapObj::Str(s) => !s.is_empty(),
+            HeapObj::Bytes(b) => !b.is_empty(),
             HeapObj::BigInt(b) => !b.is_zero(),
             HeapObj::List(l) => !l.borrow().is_empty(),
             HeapObj::Tuple(t) => !t.is_empty(),
@@ -117,6 +145,7 @@ impl<'a> VM<'a> {
         else if v.is_none() { "NoneType" }
         else { match self.heap.get(v) {
             HeapObj::Str(_) => "str",
+            HeapObj::Bytes(_) => "bytes",
             HeapObj::BigInt(_) => "int",
             HeapObj::List(_) => "list",
             HeapObj::Dict(_) => "dict",
@@ -165,6 +194,7 @@ impl<'a> VM<'a> {
         if v.is_none() { return "None".into(); }
         match self.heap.get(v) {
             HeapObj::Str(s) => s.clone(),
+            HeapObj::Bytes(b) => format_bytes(b),
             HeapObj::BigInt(b) => b.to_decimal(),
             HeapObj::Type(name) => s!("<class '", str name, "'>"),
             HeapObj::Func(i,_,_) => s!("<function ", int *i),

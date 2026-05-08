@@ -218,6 +218,12 @@ impl<'a> VM<'a> {
                 let items = self.str_to_char_vals(&s)?;
                 IterFrame::Seq { items, idx: 0 }
             },
+            HeapObj::Bytes(b) => {
+                // for-loop over bytes yields ints, matching `iter()` and
+                // indexing semantics.
+                let items: Vec<Val> = b.iter().map(|&byte| Val::int(byte as i64)).collect();
+                IterFrame::Seq { items, idx: 0 }
+            },
             HeapObj::Coroutine(..) => return Ok(IterFrame::Coroutine(obj)),
             _ => return Err(VmErr::TypeMsg(s!("'", str self.type_name(obj), "' object is not iterable"))),
         })
@@ -431,6 +437,7 @@ impl<'a> VM<'a> {
             NativeFnId::Format, NativeFnId::Ascii, NativeFnId::GetAttr, NativeFnId::HasAttr, NativeFnId::Next,
             NativeFnId::Run, NativeFnId::Sleep, NativeFnId::Receive,
             NativeFnId::Map, NativeFnId::Filter, NativeFnId::Iter,
+            NativeFnId::Bytes,
         ];
         for &id in builtin_fns {
             if let Ok(v) = vm.heap.alloc(HeapObj::NativeFn(id)) {

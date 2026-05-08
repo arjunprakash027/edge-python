@@ -192,8 +192,8 @@
     "tokens": ["String", "Endmarker"]
   },
   {
-    "src": "b'bytes'", 
-    "tokens": ["String", "Endmarker"]
+    "src": "b'bytes'",
+    "tokens": ["Bytes", "Endmarker"]
   },
   {
     "src": "r'raw'", 
@@ -548,16 +548,16 @@
     "tokens": ["String", "Endmarker"]
   },
   {
-    "src": "rb'raw bytes'", 
-    "tokens": ["String", "Endmarker"]
+    "src": "rb'raw bytes'",
+    "tokens": ["Bytes", "Endmarker"]
   },
   {
-    "src": "BR'RAWBYTES'", 
-    "tokens": ["String", "Endmarker"]
+    "src": "BR'RAWBYTES'",
+    "tokens": ["Bytes", "Endmarker"]
   },
   {
-    "src": "Rb'mixed'", 
-    "tokens": ["String", "Endmarker"]
+    "src": "Rb'mixed'",
+    "tokens": ["Bytes", "Endmarker"]
   },
   {
     "src": "'hello' 'world'", 

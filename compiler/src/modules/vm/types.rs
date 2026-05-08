@@ -488,6 +488,7 @@ impl Ord for BigInt {
 #[derive(Clone, Debug)]
 pub enum HeapObj {
     Str(String),
+    Bytes(Vec<u8>),
     List(Rc<RefCell<Vec<Val>>>),
     Dict(Rc<RefCell<DictMap>>),
     Set(Rc<RefCell<HashSet<Val>>>),
@@ -525,7 +526,7 @@ pub enum NativeFnId {
     List, Tuple, Dict, Set, IsInstance, Input, All, Any,
     Bin, Oct, Hex, Divmod, Pow, Repr, Reversed, Callable, Id,
     Hash, Format, Ascii, GetAttr, HasAttr, Next, Run, Sleep,
-    Receive, Map, Filter, Iter,
+    Receive, Map, Filter, Iter, Bytes,
 }
 
 impl NativeFnId {
@@ -538,7 +539,7 @@ impl NativeFnId {
             "list", "tuple", "dict", "set", "isinstance", "input", "all", "any",
             "bin", "oct", "hex", "divmod", "pow", "repr", "reversed", "callable", "id",
             "hash", "format", "ascii", "getattr", "hasattr", "next", "run", "sleep",
-            "receive", "map", "filter", "iter",
+            "receive", "map", "filter", "iter", "bytes",
         ];
         NAMES[self as usize]
     }
@@ -648,9 +649,9 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
             for &(_, v) in captures { f(v); }
         }
         HeapObj::Module(_, attrs) => for (_, v) in attrs { f(*v); },
-        // Variants without Val payloads (Str, BigInt, Type, NativeFn, Range,
-        // Extern) — terminal, nothing to trace.
-        HeapObj::Str(_) | HeapObj::BigInt(_) | HeapObj::Type(_)
+        // Variants without Val payloads (Str, Bytes, BigInt, Type, NativeFn,
+        // Range, Extern) — terminal, nothing to trace.
+        HeapObj::Str(_) | HeapObj::Bytes(_) | HeapObj::BigInt(_) | HeapObj::Type(_)
         | HeapObj::NativeFn(_) | HeapObj::Range(..) | HeapObj::Extern(_) => {}
     }
 }
@@ -669,6 +670,11 @@ pub struct HeapPool {
     alloc_count: usize,
     limit: usize,
     strings: HashMap<String, u32>,
+    /* Interns short bytes literals so that two `b"key"` allocations
+       collapse to the same Val. Required because Val's Hash uses raw
+       bits — without interning, a dict's `d[b"key"]` lookup hashes a
+       different slot than the one that was inserted. Mirrors `strings`. */
+    bytes_intern: HashMap<Vec<u8>, u32>,
 }
 
 impl HeapPool {
@@ -681,6 +687,7 @@ impl HeapPool {
             alloc_count: 0,
             limit,
             strings: HashMap::default(),
+            bytes_intern: HashMap::default(),
         }
     }
 
@@ -688,6 +695,11 @@ impl HeapPool {
         if let HeapObj::Str(ref s) = obj
             && s.len() <= 128
             && let Some(&idx) = self.strings.get(s) {
+                return Ok(Val::heap(idx));
+        }
+        if let HeapObj::Bytes(ref b) = obj
+            && b.len() <= 128
+            && let Some(&idx) = self.bytes_intern.get(b) {
                 return Ok(Val::heap(idx));
         }
         if self.live >= self.limit { return Err(cold_heap()); }
@@ -702,8 +714,11 @@ impl HeapPool {
             i
         };
 
-        if let HeapObj::Str(s) = self.slots[idx as usize].obj.as_ref().unwrap()
-            && s.len() <= 128 { self.strings.insert(s.clone(), idx); }
+        match self.slots[idx as usize].obj.as_ref().unwrap() {
+            HeapObj::Str(s) if s.len() <= 128 => { self.strings.insert(s.clone(), idx); }
+            HeapObj::Bytes(b) if b.len() <= 128 => { self.bytes_intern.insert(b.clone(), idx); }
+            _ => {}
+        }
 
         self.live += 1;
         self.alloc_count += 1;
@@ -733,6 +748,12 @@ impl HeapPool {
                 Some(_) if slot.marked => { slot.marked = false; }
                 Some(HeapObj::Str(s)) => {
                     self.strings.remove(s);
+                    slot.obj = None;
+                    self.free_list.push(idx as u32);
+                    self.live -= 1;
+                }
+                Some(HeapObj::Bytes(b)) => {
+                    self.bytes_intern.remove(b);
                     slot.obj = None;
                     self.free_list.push(idx as u32);
                     self.live -= 1;
@@ -799,6 +820,7 @@ impl HeapPool {
                 Some(HeapObj::Coroutine(..)) => 19,
                 Some(HeapObj::Module(..)) => 20,
                 Some(HeapObj::Extern(_)) => 21,
+                Some(HeapObj::Bytes(_)) => 22,
                 None => 0,
             }
         } else { 0 }
@@ -830,10 +852,13 @@ pub fn eq_vals_with_heap(a: Val, b: Val, heap: &HeapPool) -> bool {
     match (heap.get(a), heap.get(b)) {
         (HeapObj::BigInt(x), HeapObj::BigInt(y)) => x.cmp(y) == core::cmp::Ordering::Equal,
         (HeapObj::Str(x), HeapObj::Str(y)) => x == y,
+        (HeapObj::Bytes(x), HeapObj::Bytes(y)) => x == y,
         (HeapObj::Tuple(x), HeapObj::Tuple(y)) => eq_seq(x, y, |a,b| eq_vals_with_heap(a, b, heap)),
         (HeapObj::List(x), HeapObj::List(y)) => eq_seq(&x.borrow(), &y.borrow(), |a,b| eq_vals_with_heap(a, b, heap)),
         (HeapObj::Set(x), HeapObj::Set(y)) => *x.borrow() == *y.borrow(),
         (HeapObj::Dict(x), HeapObj::Dict(y)) => eq_dict(&x.borrow(), &y.borrow(), |a,b| eq_vals_with_heap(a, b, heap)),
+        // Cross-type comparisons fall through to false. Notably `bytes == str`
+        // is False in Python, even when the bytes are valid UTF-8 of the str.
         _ => false,
     }
 }

@@ -75,6 +75,7 @@ impl OpcodeCache {
                     Value::Bool(b) => Val::bool(*b),
                     Value::None => Val::none(),
                     Value::Str(s) => heap.alloc(HeapObj::Str(s.to_string()))?,
+                    Value::Bytes(b) => heap.alloc(HeapObj::Bytes(b.clone()))?,
                 };
                 out.push(v);
             }

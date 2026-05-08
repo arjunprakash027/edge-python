@@ -493,6 +493,7 @@ impl<'a> VM<'a> {
             | Repr | Reversed | Callable | Id | Hash | Ascii | Next | Sleep
             | Iter => Some(1),
             Divmod | IsInstance | HasAttr | Map | Filter => Some(2),
+            Bytes => None,  // 0/1/2-arg: bytes() | bytes(n|iter) | bytes(str, "utf-8")
             _ => None,
         };
         if let Some(n) = expected
@@ -560,6 +561,7 @@ impl<'a> VM<'a> {
             Map => self.call_map(chunk, slots),
             Filter => self.call_filter(chunk, slots),
             Iter => self.call_iter(),
+            Bytes => self.call_bytes(argc),
         }
     }
 }

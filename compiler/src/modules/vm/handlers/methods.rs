@@ -16,6 +16,14 @@ fn recv_str(vm: &VM, recv: Val) -> Result<String, VmErr> {
 }
 
 #[inline]
+fn recv_bytes(vm: &VM, recv: Val) -> Result<alloc::vec::Vec<u8>, VmErr> {
+    match vm.heap.get(recv) {
+        HeapObj::Bytes(b) => Ok(b.clone()),
+        _ => Err(cold_type("method requires a bytes receiver")),
+    }
+}
+
+#[inline]
 fn val_to_str(vm: &VM, v: Val) -> Result<String, VmErr> {
     match vm.heap.get(v) {
         HeapObj::Str(s) => Ok(s.clone()),
@@ -231,10 +239,11 @@ macro_rules! define_methods {
            hot path: CallMethod fusion bypasses LoadAttr+Call entirely. */
         pub fn lookup_method(ty: &str, attr: &str) -> Option<BuiltinMethodId> {
             let prefix = match ty {
-                "str"  => "Str",
-                "list" => "List",
-                "dict" => "Dict",
-                "set"  => "Set",
+                "str"   => "Str",
+                "bytes" => "Bytes",
+                "list"  => "List",
+                "dict"  => "Dict",
+                "set"   => "Set",
                 _ => return None,
             };
             $(
@@ -254,6 +263,77 @@ macro_rules! define_methods {
 }
 
 define_methods! {
+    // str.encode([encoding]) — to bytes. Default and only supported
+    // encoding is UTF-8 (ASCII is a strict subset that succeeds when the
+    // string is pure ASCII; any other name errors out so silent
+    // mismatches don't sneak through).
+    (StrEncode, "encode", pure, |vm, recv, pos| {
+        check_arity(&pos, 0, 1, "encode takes 0 or 1 arguments")?;
+        let s = recv_str(vm, recv)?;
+        if let Some(arg) = pos.first() {
+            let enc = val_to_str(vm, *arg)?;
+            match enc.as_str() {
+                "utf-8" | "utf8" => {}
+                "ascii" if !s.is_ascii() => {
+                    return Err(cold_value("'ascii' codec can't encode non-ASCII characters"));
+                }
+                "ascii" => {}
+                _ => return Err(cold_value("unsupported encoding (expected 'utf-8' or 'ascii')")),
+            }
+        }
+        let v = vm.heap.alloc(HeapObj::Bytes(s.into_bytes()))?;
+        vm.push(v); Ok(())
+    }),
+
+    // bytes.decode([encoding]) — back to str. Validates UTF-8 and errors
+    // on invalid sequences (Python raises UnicodeDecodeError; we surface
+    // it as a ValueError to keep the error taxonomy compact).
+    (BytesDecode, "decode", pure, |vm, recv, pos| {
+        check_arity(&pos, 0, 1, "decode takes 0 or 1 arguments")?;
+        let buf = recv_bytes(vm, recv)?;
+        if let Some(arg) = pos.first() {
+            let enc = val_to_str(vm, *arg)?;
+            if !matches!(enc.as_str(), "utf-8" | "utf8" | "ascii") {
+                return Err(cold_value("unsupported encoding (expected 'utf-8' or 'ascii')"));
+            }
+        }
+        let text = alloc::string::String::from_utf8(buf)
+            .map_err(|_| cold_value("invalid UTF-8 in bytes.decode()"))?;
+        let v = vm.heap.alloc(HeapObj::Str(text))?;
+        vm.push(v); Ok(())
+    }),
+
+    // bytes.hex() — lowercase hex of every byte. No separator.
+    (BytesHex, "hex", pure, |vm, recv, pos| {
+        check_arity(&pos, 0, 0, "hex takes no arguments")?;
+        let buf = recv_bytes(vm, recv)?;
+        let mut out = alloc::string::String::with_capacity(buf.len() * 2);
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        for &b in &buf {
+            out.push(HEX[(b >> 4) as usize] as char);
+            out.push(HEX[(b & 0x0F) as usize] as char);
+        }
+        let v = vm.heap.alloc(HeapObj::Str(out))?;
+        vm.push(v); Ok(())
+    }),
+
+    // bytes.startswith(prefix) / bytes.endswith(suffix) — bytes-only
+    // prefix matching (str.startswith handles strings).
+    (BytesStartswith, "startswith", pure, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "startswith takes 1 argument")?;
+        let buf = recv_bytes(vm, recv)?;
+        let prefix = recv_bytes(vm, pos[0])?;
+        vm.push(Val::bool(buf.starts_with(&prefix)));
+        Ok(())
+    }),
+    (BytesEndswith, "endswith", pure, |vm, recv, pos| {
+        check_arity(&pos, 1, 1, "endswith takes 1 argument")?;
+        let buf = recv_bytes(vm, recv)?;
+        let suffix = recv_bytes(vm, pos[0])?;
+        vm.push(Val::bool(buf.ends_with(&suffix)));
+        Ok(())
+    }),
+
     // str: zero-arg transforms.
     (StrUpper, "upper", pure, |vm, recv, pos| {
         check_arity(&pos, 0, 0, "upper takes no arguments")?;

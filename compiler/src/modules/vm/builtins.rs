@@ -53,7 +53,7 @@ fn normalize_index(i: i64, len: usize) -> usize {
     (if i < 0 { len as i64 + i } else { i }) as usize
 }
 
-enum SliceSource { List(Vec<Val>), Tuple(Vec<Val>), Str(Vec<char>) }
+enum SliceSource { List(Vec<Val>), Tuple(Vec<Val>), Str(Vec<char>), Bytes(Vec<u8>) }
 
 impl SliceSource {
     fn len(&self) -> i64 {
@@ -61,6 +61,7 @@ impl SliceSource {
             Self::List(v)  => v.len() as i64,
             Self::Tuple(v) => v.len() as i64,
             Self::Str(v)   => v.len() as i64,
+            Self::Bytes(v) => v.len() as i64,
         }
     }
 }
@@ -94,6 +95,7 @@ impl<'a> VM<'a> {
         let o = self.pop()?;
         let n: i64 = if o.is_heap() { match self.heap.get(o) {
             HeapObj::Str(s) => s.chars().count() as i64,
+            HeapObj::Bytes(b) => b.len() as i64,
             HeapObj::List(v) => v.borrow().len() as i64,
             HeapObj::Tuple(v) => v.len() as i64,
             HeapObj::Dict(v) => v.borrow().len() as i64,
@@ -395,7 +397,7 @@ impl<'a> VM<'a> {
                 ),
                 HeapObj::NativeFn(id) => {
                     let name = id.name();
-                    if !matches!(name, "int"|"str"|"float"|"bool"|"list"|"tuple"|"dict"|"set") {
+                    if !matches!(name, "int"|"str"|"bytes"|"float"|"bool"|"list"|"tuple"|"dict"|"set") {
                         return Err(VmErr::Type("isinstance() arg 2 must be a type or tuple of types"));
                     }
                     Ok(
@@ -576,6 +578,18 @@ impl<'a> VM<'a> {
                 return Ok(true);
         }
 
+        // bytes[i] yields an int (the byte value 0..=255), distinct from
+        // str[i] which yields a length-1 str. Matches Python semantics —
+        // the principal reason `bytes` is a separate type.
+        if obj.is_heap() && idx.is_int()
+            && let HeapObj::Bytes(b) = self.heap.get(obj) {
+                let i = idx.as_int();
+                let ui = normalize_index(i, b.len());
+                let byte = *b.get(ui).ok_or(cold_value("bytes index out of range"))?;
+                self.push(Val::int(byte as i64));
+                return Ok(true);
+        }
+
         let v = self.getitem_val(obj, idx)?;
         self.push(v);
         Ok(false)
@@ -592,6 +606,7 @@ impl<'a> VM<'a> {
             HeapObj::List(v) => SliceSource::List(v.borrow().clone()),
             HeapObj::Tuple(v) => SliceSource::Tuple(v.clone()),
             HeapObj::Str(s) => SliceSource::Str(s.chars().collect()),
+            HeapObj::Bytes(b) => SliceSource::Bytes(b.clone()),
             _ => return Err(cold_type("object is not sliceable")),
         };
 
@@ -624,6 +639,10 @@ impl<'a> VM<'a> {
             SliceSource::Str(chars) => {
                 let sliced: String = indices.iter().filter_map(|&i| chars.get(i)).collect();
                 self.heap.alloc(HeapObj::Str(sliced))
+            }
+            SliceSource::Bytes(buf) => {
+                let sliced: Vec<u8> = indices.iter().filter_map(|&i| buf.get(i).copied()).collect();
+                self.heap.alloc(HeapObj::Bytes(sliced))
             }
         }
     }
@@ -934,6 +953,7 @@ impl<'a> VM<'a> {
         else if o.is_heap() {
             match self.heap.get(o) {
                 HeapObj::Str(s) => s.hash(&mut h),
+                HeapObj::Bytes(b) => b.hash(&mut h),
                 HeapObj::BigInt(b) => { b.neg.hash(&mut h); b.limbs.hash(&mut h); }
                 HeapObj::Tuple(items) => {
                     for v in items { v.0.hash(&mut h); }
@@ -1086,10 +1106,80 @@ impl<'a> VM<'a> {
             let s = s.clone();
             return self.str_to_char_vals(&s);
         }
+        if let HeapObj::Bytes(b) = self.heap.get(o) {
+            // bytes iterates as ints (the byte values), not as length-1
+            // bytes. Matches Python and the indexing behavior above.
+            return Ok(b.iter().map(|&byte| Val::int(byte as i64)).collect());
+        }
         if let HeapObj::Dict(rc) = self.heap.get(o) {
             return Ok(rc.borrow().keys().collect());
         }
         self.extract_iter(o, true)
+    }
+
+    /* `bytes()` constructor — three forms, mirroring Python:
+         bytes()                    → empty bytes
+         bytes(n)        if int     → n zero bytes
+         bytes(iter)     if iter    → bytes of those ints, each in 0..=255
+         bytes(s, "utf-8")          → encode str s with the given encoding
+       Encodings recognised: "utf-8", "utf8", "ascii". Anything else errors
+       so silent encoding mismatches don't slip through. */
+    pub fn call_bytes(&mut self, argc: u16) -> Result<(), VmErr> {
+        let args = self.pop_n(argc as usize)?;
+        let buf: Vec<u8> = match args.len() {
+            0 => Vec::new(),
+            1 => {
+                let a = args[0];
+                if a.is_int() {
+                    let n = a.as_int();
+                    if n < 0 { return Err(cold_value("negative count")); }
+                    alloc::vec![0u8; n as usize]
+                } else if a.is_heap() {
+                    if let HeapObj::Bytes(b) = self.heap.get(a) {
+                        b.clone()
+                    } else {
+                        let items = self.iter_to_vec_general(a)?;
+                        let mut out = Vec::with_capacity(items.len());
+                        for v in items {
+                            if !v.is_int() {
+                                return Err(cold_type("bytes() iterable must contain ints"));
+                            }
+                            let n = v.as_int();
+                            if !(0..=255).contains(&n) {
+                                return Err(cold_value("bytes must be in range(0, 256)"));
+                            }
+                            out.push(n as u8);
+                        }
+                        out
+                    }
+                } else {
+                    return Err(cold_type("bytes() requires an int, an iterable of ints, or (str, encoding)"));
+                }
+            }
+            2 => {
+                // bytes(s, "utf-8") — string encoding form.
+                let (s, enc) = (args[0], args[1]);
+                let HeapObj::Str(text) = self.heap.get(s).clone() else {
+                    return Err(cold_type("bytes() first argument must be a string when encoding is given"));
+                };
+                let HeapObj::Str(encoding) = self.heap.get(enc) else {
+                    return Err(cold_type("bytes() encoding must be a string"));
+                };
+                match encoding.as_str() {
+                    "utf-8" | "utf8" => text.into_bytes(),
+                    "ascii" => {
+                        if !text.is_ascii() {
+                            return Err(cold_value("'ascii' codec can't encode non-ASCII characters"));
+                        }
+                        text.into_bytes()
+                    }
+                    _ => return Err(cold_value("unsupported encoding (expected 'utf-8' or 'ascii')")),
+                }
+            }
+            _ => return Err(cold_type("bytes() takes at most 2 arguments")),
+        };
+        let v = self.heap.alloc(HeapObj::Bytes(buf))?;
+        self.push(v); Ok(())
     }
 
     /* `iter(x)` — flatten any iterable into a fresh List that `next()`

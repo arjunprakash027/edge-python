@@ -135,6 +135,80 @@ b
 c
 ```
 
+## Bytes
+
+Immutable sequence of bytes (each 0–255). Distinct from `str`: stores raw octets, not Unicode. Indexing returns an `int`, not a single-byte slice.
+
+```python
+data = b"hello"
+print(data)
+print(type(data))
+print(len(data))
+print(data[0])           # int — the byte value
+print(data[1:4])         # bytes — slice
+```
+
+```text Output
+b'hello'
+<class 'bytes'>
+5
+104
+b'ell'
+```
+
+```python
+# Hex escapes for arbitrary bytes
+raw = b"\x00\x01\xff"
+print(raw)
+print(raw.hex())
+```
+
+```text Output
+b'\x00\x01\xff'
+0001ff
+```
+
+```python
+# Iteration yields ints, not bytes
+for byte in b"abc":
+    print(byte)
+```
+
+```text Output
+97
+98
+99
+```
+
+```python
+# Constructors
+print(bytes())                  # empty
+print(bytes(3))                 # zero-filled, length 3
+print(bytes([65, 66, 67]))      # from int iterable
+print(bytes("hi", "utf-8"))     # encoded string
+```
+
+```text Output
+b''
+b'\x00\x00\x00'
+b'ABC'
+b'hi'
+```
+
+```python
+# Round-tripping with str
+s = "Edge Python"
+encoded = s.encode("utf-8")
+decoded = encoded.decode("utf-8")
+print(encoded, decoded)
+```
+
+```text Output
+b'Edge Python' Edge Python
+```
+
+`bytes` is hashable (works as dict key, set member) and comparable to other `bytes` values; `bytes == str` is always `False`, even when the bytes are valid UTF-8 of the string. Supported methods: `decode`, `hex`, `startswith`, `endswith`. Encoding names recognised by `encode`/`decode`/`bytes(s, ...)`: `"utf-8"` (default) and `"ascii"`.
+
 ## List
 
 Mutable sequence.

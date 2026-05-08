@@ -38,6 +38,8 @@ mod test {
                 .iter()
                 .map(|v| match v {
                     Value::Str(s) => s.clone(),
+                    Value::Bytes(b) => format!("b{:?}",
+                        String::from_utf8_lossy(b).to_string()),
                     Value::Int(i) => i.to_string(),
                     Value::Float(f) => f.to_string(),
                     Value::Bool(b) => b.to_string(),

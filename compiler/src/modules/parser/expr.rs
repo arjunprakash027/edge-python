@@ -3,7 +3,7 @@ use crate::s;
 use super::Parser;
 use super::types::{OpCode, Value, MAX_EXPR_DEPTH, Instruction};
 
-use super::types::parse_string;
+use super::types::{parse_string, parse_bytes_literal};
 use crate::modules::lexer::{Token, TokenType};
 
 use alloc::{string::ToString, vec::Vec, vec, string::String};
@@ -179,6 +179,18 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     s.push_str(&parse_string(self.lexeme(&t)));
                 }
                 self.emit_const(Value::Str(s));
+            }
+            TokenType::Bytes => {
+                // Adjacent-literal concatenation matches Python: `b"a" b"b"`
+                // is one `b"ab"`. Mixing bytes + str literals is a SyntaxError
+                // in Python; we surface that the same way (the parser's
+                // generic dispatch path will see the wrong-token diagnostic).
+                let mut buf = parse_bytes_literal(self.lexeme(&t));
+                while matches!(self.peek(), Some(TokenType::Bytes)) {
+                    let t = self.advance();
+                    buf.extend_from_slice(&parse_bytes_literal(self.lexeme(&t)));
+                }
+                self.emit_const(Value::Bytes(buf));
             }
             TokenType::Complex => {
                 let raw = self.lexeme(&t).replace('_', "");

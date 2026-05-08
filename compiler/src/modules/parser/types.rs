@@ -77,6 +77,7 @@ pub(super) fn builtin(name: &str) -> Option<(OpCode, bool)> {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Str(String),
+    Bytes(alloc::vec::Vec<u8>),
     Int(i64),
     BigInt(String),
     Float(f64),
@@ -370,6 +371,65 @@ pub(super) fn parse_string(s: &str) -> String {
     if is_raw { inner.to_string() } else { unescape(inner) }
 }
 
+/* Parse a bytes literal `b"..."` / `rb"..."` to its raw byte content.
+   Different from `parse_string` in three ways:
+     1. Source bytes are read directly (not as Unicode chars), so
+        non-ASCII bytes pass through verbatim — this is the whole point
+        of `b""`, holding arbitrary octets.
+     2. `\xHH` produces a single byte 0..=255, not a code point.
+     3. `\u`/`\U`/`\N{}` escapes are rejected (Python's bytes literals
+        forbid them — fall through as literal `\u`, etc.). */
+pub(super) fn parse_bytes_literal(s: &str) -> alloc::vec::Vec<u8> {
+    let bytes = s.as_bytes();
+    let is_raw = s.contains('r') || s.contains('R');
+    // Skip the prefix (one or two ASCII chars: b, B, br, rb, etc.)
+    let mut i = 0;
+    while i < bytes.len() && matches!(bytes[i], b'b' | b'B' | b'r' | b'R') {
+        i += 1;
+    }
+    // Strip enclosing quotes — triple or single, matching parse_string.
+    let body = if bytes.len() >= i + 6
+        && (bytes[i..i + 3] == *b"\"\"\"" || bytes[i..i + 3] == *b"'''")
+    {
+        &bytes[i + 3..bytes.len() - 3]
+    } else {
+        &bytes[i + 1..bytes.len() - 1]
+    };
+    if is_raw { return body.to_vec(); }
+
+    let mut out: alloc::vec::Vec<u8> = alloc::vec::Vec::with_capacity(body.len());
+    let mut j = 0;
+    while j < body.len() {
+        if body[j] != b'\\' { out.push(body[j]); j += 1; continue; }
+        if j + 1 >= body.len() { out.push(b'\\'); break; }
+        match body[j + 1] {
+            b'n' => { out.push(b'\n'); j += 2; }
+            b't' => { out.push(b'\t'); j += 2; }
+            b'r' => { out.push(b'\r'); j += 2; }
+            b'\\' => { out.push(b'\\'); j += 2; }
+            b'\'' => { out.push(b'\''); j += 2; }
+            b'"' => { out.push(b'"'); j += 2; }
+            b'0' => { out.push(0); j += 2; }
+            b'x' => {
+                // \xHH — exactly two hex digits.
+                if j + 3 < body.len() {
+                    let hi = (body[j + 2] as char).to_digit(16);
+                    let lo = (body[j + 3] as char).to_digit(16);
+                    if let (Some(hi), Some(lo)) = (hi, lo) {
+                        out.push((hi as u8) * 16 + lo as u8);
+                        j += 4;
+                        continue;
+                    }
+                }
+                // Malformed: leave the backslash + 'x' verbatim.
+                out.push(b'\\'); out.push(b'x'); j += 2;
+            }
+            other => { out.push(b'\\'); out.push(other); j += 2; }
+        }
+    }
+    out
+}
+
 fn unescape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
@@ -402,7 +462,7 @@ fn unescape(s: &str) -> String {
 // Built-in types pre-registered as `Type` heap objects in the global
 // scope at VM init.
 pub const BUILTIN_TYPES: &[&str] = &[
-    "int", "float", "str", "bool", "list",
+    "int", "float", "str", "bytes", "bool", "list",
     "tuple", "dict", "set", "range", "type", "NoneType",
     "Exception", "BaseException",
     "ValueError", "TypeError", "NameError", "KeyError",

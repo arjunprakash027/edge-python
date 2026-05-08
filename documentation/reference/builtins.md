@@ -411,6 +411,31 @@ print(list(filter(None, [0, 1, "", "hi", [], [1]])))
 [1, 'hi', [1]]
 ```
 
+### bytes
+
+Three forms:
+
+- `bytes()` → empty `bytes`
+- `bytes(n)` where `n` is an int → `n` zero bytes
+- `bytes(iterable)` of ints in `0..=255` → bytes with those values
+- `bytes(s, encoding)` where `s` is a `str` → encoded bytes (`"utf-8"` or `"ascii"`)
+
+```python
+print(bytes())
+print(bytes(4))
+print(bytes([72, 101, 108, 108, 111]))
+print(bytes("café", "utf-8"))
+```
+
+```text Output
+b''
+b'\x00\x00\x00\x00'
+b'Hello'
+b'caf\xc3\xa9'
+```
+
+See [Bytes](/language/data-types#bytes) in the data-types reference for the literal syntax (`b"..."`), indexing, slicing, and methods.
+
 ## Logical reductions
 
 ### all, any

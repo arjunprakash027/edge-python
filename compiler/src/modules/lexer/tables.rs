@@ -134,11 +134,23 @@ pub fn is_fstring_prefix(s: &[u8]) -> bool {
     }
 }
 
-/* Regular string prefix: b, B, r, R, u, U, br, rb (any case). */
+/* Regular string prefix: r, R, u, U (the b/B variants are handled by
+   `is_bytes_prefix` so the lexer can emit a distinct `Bytes` token). */
 #[inline]
 pub fn is_string_prefix(s: &[u8]) -> bool {
     match s.len() {
-        1 => matches!(s[0], b'b' | b'B' | b'r' | b'R' | b'u' | b'U'),
+        1 => matches!(s[0], b'r' | b'R' | b'u' | b'U'),
+        _ => false,
+    }
+}
+
+/* Bytes literal prefix: b, B, br, Br, bR, BR, rb, Rb, rB, RB. Returned
+   as `TokenType::Bytes` by the lexer so the parser can emit `Value::Bytes`
+   instead of `Value::Str`. */
+#[inline]
+pub fn is_bytes_prefix(s: &[u8]) -> bool {
+    match s.len() {
+        1 => matches!(s[0], b'b' | b'B'),
         2 => matches!(
             (s[0], s[1]),
             (b'b' | b'B', b'r' | b'R') | (b'r' | b'R', b'b' | b'B')
@@ -209,8 +221,9 @@ pub const fn token_to_str(kind: &TokenType) -> &'static str {
         TokenType::Name => "identifier", 
         TokenType::Complex => "complex number", 
         TokenType::Float => "float",
-        TokenType::Int => "integer", 
+        TokenType::Int => "integer",
         TokenType::String => "string",
+        TokenType::Bytes => "bytes literal",
 
         // F-string
         TokenType::FstringStart => "f-string start", 
