@@ -22,6 +22,11 @@ path = "tests/main.rs"
 [dependencies]
 hashbrown = { version = "0.17", default-features = false }
 itoa = "1"
+# Shortest round-trip f64 formatter (~5 KB of WASM). Replaces the default
+# `core::fmt::Display for f64` path which pulls in Grisu + Dragon + bignum
+# (~30 KB). Behaviorally compatible: both produce the shortest decimal
+# representation that round-trips through `parse::<f64>()`.
+ryu = { version = "1", default-features = false }
 
 # WASM-only global allocator. Pulled into wasm32 builds automatically; absent
 # on host builds (where std's allocator is fine and `compiler.wasm` is just a

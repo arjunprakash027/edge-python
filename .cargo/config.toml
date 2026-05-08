@@ -5,5 +5,18 @@
 # Edge Python ships). `cargo build --release` (no alias) still produces
 # host artifacts (.rlib + host cdylib) for embedders linking compiler_lib
 # directly into a Rust app.
+#
+# The wasm alias rebuilds `core`/`alloc` from source (`-Z build-std`) and
+# lowers every `panic!()` to a bare `unreachable` via the unstable
+# `-Cpanic=immediate-abort` strategy. That eliminates panic-message
+# strings and source-location paths from the artifact (~30-40% size
+# reduction) at the cost of losing diagnostic text on a panic — acceptable
+# since `panic = "abort"` in `Cargo.toml` already terminates the wasm
+# instance on any panic. Requires the nightly toolchain pinned in
+# `rust-toolchain.toml`. The rustflags below scope `immediate-abort` to
+# the wasm target only so host builds continue to use stable `abort`.
 [alias]
-wasm = "build --release --target wasm32-unknown-unknown -p edge-python"
+wasm = "build --release --target wasm32-unknown-unknown -p edge-python -Z build-std=core,alloc"
+
+[target.wasm32-unknown-unknown]
+rustflags = ["-Zunstable-options", "-Cpanic=immediate-abort"]

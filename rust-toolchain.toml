@@ -1,0 +1,13 @@
+# Pinned to nightly so the wasm release build can use `-Z build-std` to
+# compile `core`/`alloc` with the `panic_immediate_abort` feature, which
+# strips panic message strings + location paths from the final artifact.
+# That feature is required by the `cargo wasm` alias in `.cargo/config.toml`
+# and accounts for ~30-40% of the WASM size budget; without nightly the
+# alias would fail on the unstable flag.
+#
+# Host builds (`cargo build`, `cargo test`) are unaffected — nightly is a
+# superset of stable, so existing tests/clippy rules continue to apply.
+[toolchain]
+channel = "nightly"
+components = ["rust-src", "clippy", "rustfmt"]
+targets = ["wasm32-unknown-unknown"]
