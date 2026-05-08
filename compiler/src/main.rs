@@ -506,6 +506,20 @@ mod runtime {
        primitive codec — lives in `crate::abi`. This file just wires it
        to the parser/VM. */
 
+    /* Shared prologue for every `dispatch_*`: resolve `recv_h` against the
+       handle table and run `f` against the live VM. Two failure modes:
+       the handle is stale/invalid (`invalid_recv_msg`) or the host called
+       us outside `run()` ("edge_op called outside run()"). Caller passes
+       the op-specific invalid-handle message as a `&'static str` so each
+       error keeps its existing exact text. */
+    fn with_recv<F>(invalid_recv_msg: &'static str, recv_h: u32, f: F) -> Result<Val, VmErr>
+    where F: FnOnce(&mut VM<'static>, Val) -> Result<Val, VmErr>
+    {
+        let recv = get_val(recv_h).ok_or(VmErr::Runtime(invalid_recv_msg))?;
+        with_vm(|vm| f(vm, recv))
+            .ok_or(VmErr::Runtime("edge_op called outside run()"))?
+    }
+
     /// Universal dispatch entry point. JS calls this after staging
     /// `name` and `argv` into host linear memory. Returns 0 with a
     /// fresh handle in `*out_handle`, or 1 with the error stashed for
@@ -546,9 +560,7 @@ mod runtime {
     }
 
     fn dispatch_call(recv_h: u32, name: &str, args: Vec<Val>) -> Result<Val, VmErr> {
-        let recv = get_val(recv_h)
-            .ok_or(VmErr::Runtime("edge_op call: invalid receiver handle"))?;
-        with_vm(|vm| {
+        with_recv("edge_op call: invalid receiver handle", recv_h, |vm, recv| {
             let ty = vm.type_name(recv);
             let mid = lookup_method(ty, name)
                 .ok_or_else(|| VmErr::Attribute(s!(
@@ -559,15 +571,13 @@ mod runtime {
                 return Err(VmErr::Runtime("edge_op call: method left no result"));
             }
             Ok(vm.stack.pop().unwrap())
-        }).ok_or(VmErr::Runtime("edge_op called outside run()"))?
+        })
     }
 
     /* GetAttr: module / instance attribute, or bind a builtin method as a
        BoundMethod handle the guest can later Call. */
     fn dispatch_get_attr(recv_h: u32, name: &str) -> Result<Val, VmErr> {
-        let recv = get_val(recv_h)
-            .ok_or(VmErr::Runtime("edge_op get_attr: invalid receiver handle"))?;
-        with_vm(|vm| {
+        with_recv("edge_op get_attr: invalid receiver handle", recv_h, |vm, recv| {
             // Module attribute.
             if recv.is_heap()
                 && let HeapObj::Module(_, attrs) = vm.heap.get(recv)
@@ -602,7 +612,7 @@ mod runtime {
             }
             Err(VmErr::Attribute(s!(
                 "'", str ty, "' object has no attribute '", str name, "'")))
-        }).ok_or(VmErr::Runtime("edge_op called outside run()"))?
+        })
     }
 
     /* SetAttr: write `name` on an instance's __dict__. Modules and builtin
@@ -612,9 +622,7 @@ mod runtime {
             return Err(VmErr::TypeMsg(s!("set_attr expects exactly 1 value, got ", int args.len() as i64)));
         }
         let value = args[0];
-        let recv = get_val(recv_h)
-            .ok_or(VmErr::Runtime("edge_op set_attr: invalid receiver handle"))?;
-        with_vm(|vm| {
+        with_recv("edge_op set_attr: invalid receiver handle", recv_h, |vm, recv| {
             if !recv.is_heap() {
                 return Err(VmErr::Type("cannot set attribute on this type"));
             }
@@ -625,7 +633,7 @@ mod runtime {
                 return Ok(Val::none());
             }
             Err(VmErr::Type("cannot set attribute on this type"))
-        }).ok_or(VmErr::Runtime("edge_op called outside run()"))?
+        })
     }
 
     /* GetItem: container[index]. Routes through the VM's existing `get_item`
@@ -634,10 +642,8 @@ mod runtime {
         if args.len() != 1 {
             return Err(VmErr::TypeMsg(s!("get_item expects 1 index, got ", int args.len() as i64)));
         }
-        let recv = get_val(recv_h)
-            .ok_or(VmErr::Runtime("edge_op get_item: invalid receiver handle"))?;
         let idx = args[0];
-        with_vm(|vm| {
+        with_recv("edge_op get_item: invalid receiver handle", recv_h, |vm, recv| {
             let stack_before = vm.stack.len();
             vm.push(recv);
             vm.push(idx);
@@ -646,7 +652,7 @@ mod runtime {
                 return Err(VmErr::Runtime("edge_op get_item: get_item left no result"));
             }
             Ok(vm.stack.pop().unwrap())
-        }).ok_or(VmErr::Runtime("edge_op called outside run()"))?
+        })
     }
 
     /* SetItem: container[index] = value. Routes through `store_item`. */
@@ -654,11 +660,9 @@ mod runtime {
         if args.len() != 2 {
             return Err(VmErr::TypeMsg(s!("set_item expects (index, value), got ", int args.len() as i64, " args")));
         }
-        let recv = get_val(recv_h)
-            .ok_or(VmErr::Runtime("edge_op set_item: invalid receiver handle"))?;
         let idx = args[0];
         let value = args[1];
-        with_vm(|vm| {
+        with_recv("edge_op set_item: invalid receiver handle", recv_h, |vm, recv| {
             // store_item pops top→bottom as (value, idx, container), so
             // push in the matching order.
             vm.push(recv);
@@ -666,13 +670,11 @@ mod runtime {
             vm.push(value);
             vm.store_item()?;
             Ok(Val::none())
-        }).ok_or(VmErr::Runtime("edge_op called outside run()"))?
+        })
     }
 
     fn dispatch_len(recv_h: u32) -> Result<Val, VmErr> {
-        let recv = get_val(recv_h)
-            .ok_or(VmErr::Runtime("edge_op len: invalid receiver handle"))?;
-        with_vm(|vm| {
+        with_recv("edge_op len: invalid receiver handle", recv_h, |vm, recv| {
             let n: i64 = match vm.heap.get(recv) {
                 HeapObj::Str(s)    => s.chars().count() as i64,
                 HeapObj::List(rc)  => rc.borrow().len() as i64,
@@ -683,7 +685,7 @@ mod runtime {
                     "object of type '", str vm.type_name(recv), "' has no len()"))),
             };
             Ok(Val::int(n))
-        }).ok_or(VmErr::Runtime("edge_op called outside run()"))?
+        })
     }
 
     /* Iter: materialize the receiver into a List the guest can index via
@@ -691,9 +693,7 @@ mod runtime {
        the VM's iter_stack abstraction, so anything iterable becomes a
        random-access sequence. Range / Set / Dict.keys all flatten here. */
     fn dispatch_iter(recv_h: u32) -> Result<Val, VmErr> {
-        let recv = get_val(recv_h)
-            .ok_or(VmErr::Runtime("edge_op iter: invalid receiver handle"))?;
-        with_vm(|vm| {
+        with_recv("edge_op iter: invalid receiver handle", recv_h, |vm, recv| {
             let items: Vec<Val> = match vm.heap.get(recv) {
                 HeapObj::List(rc)  => rc.borrow().clone(),
                 HeapObj::Tuple(t)  => t.clone(),
@@ -723,7 +723,7 @@ mod runtime {
                     "object of type '", str vm.type_name(recv), "' is not iterable"))),
             };
             vm.heap.alloc(HeapObj::List(Rc::new(RefCell::new(items))))
-        }).ok_or(VmErr::Runtime("edge_op called outside run()"))?
+        })
     }
 
     /* IterNext: convenience over Iter — guests typically use Iter + GetItem
@@ -731,9 +731,7 @@ mod runtime {
        loops: it pops the head of a list-handle and returns it; on empty,
        returns a Raised("StopIteration"). */
     fn dispatch_iter_next(recv_h: u32) -> Result<Val, VmErr> {
-        let recv = get_val(recv_h)
-            .ok_or(VmErr::Runtime("edge_op iter_next: invalid receiver handle"))?;
-        with_vm(|vm| {
+        with_recv("edge_op iter_next: invalid receiver handle", recv_h, |vm, recv| {
             if let HeapObj::List(rc) = vm.heap.get(recv) {
                 let mut v = rc.borrow_mut();
                 if v.is_empty() {
@@ -745,7 +743,7 @@ mod runtime {
                     "iter_next expects a List iterator (produced by Op::Iter), got '",
                     str vm.type_name(recv), "'")))
             }
-        }).ok_or(VmErr::Runtime("edge_op called outside run()"))?
+        })
     }
 
     /// Bootstrap encoder: wrap a primitive value in a fresh handle.

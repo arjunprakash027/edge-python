@@ -106,24 +106,16 @@ impl<'a> VM<'a> {
 
     pub fn call_abs(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
-        if o.is_int() {
-            let r = (o.as_int() as i128).abs();
-            let v = self.i128_to_val(r)?;
-            self.push(v);
+        let v = if o.is_int() {
+            self.i128_to_val((o.as_int() as i128).abs())?
         } else if o.is_float() {
-            self.push(Val::float(o.as_float().abs()));
-        } else if o.is_heap() {
-            if let HeapObj::BigInt(b) = self.heap.get(o) {
-                let ab = b.abs();
-                let v = self.bigint_to_val(ab)?;
-                self.push(v);
-            } else {
-                return Err(cold_type("abs() requires a number"));
-            }
+            Val::float(o.as_float().abs())
+        } else if o.is_heap() && let HeapObj::BigInt(b) = self.heap.get(o) {
+            self.bigint_to_val(b.abs())?
         } else {
             return Err(cold_type("abs() requires a number"));
-        }
-        Ok(())
+        };
+        self.push(v); Ok(())
     }
 
     pub fn call_str(&mut self) -> Result<(), VmErr> {
@@ -172,20 +164,16 @@ impl<'a> VM<'a> {
 
     pub fn call_int(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
-        if o.is_heap()
-            && let HeapObj::BigInt(b) = self.heap.get(o) {
-                let b = b.clone();
-                let v = self.bigint_to_val(b)?;
-                self.push(v);
-                return Ok(());
+        if o.is_heap() && let HeapObj::BigInt(b) = self.heap.get(o) {
+            let v = self.bigint_to_val(b.clone())?;
+            self.push(v); return Ok(());
         }
         let i = if o.is_int() { o.as_int() }
             else if o.is_float() { o.as_float() as i64 }
             else if o.is_bool() { o.as_bool() as i64 }
-            else if o.is_heap() { match self.heap.get(o) {
-                HeapObj::Str(s) => s.trim().parse().map_err(|_| cold_value("int(): invalid literal"))?,
-                _ => return Err(cold_type("int() requires a number or string")),
-            }}
+            else if o.is_heap() && let HeapObj::Str(s) = self.heap.get(o) {
+                s.trim().parse().map_err(|_| cold_value("int(): invalid literal"))?
+            }
             else { return Err(cold_type("int() requires a number or string")); };
         let v = self.bigint_to_val(BigInt::from_i64(i))?;
         self.push(v); Ok(())
@@ -198,11 +186,10 @@ impl<'a> VM<'a> {
         let f = if o.is_float() { o.as_float() }
             else if o.is_bool() { o.as_bool() as i64 as f64 }
             else if o.is_int() { o.as_int() as f64 }
-            else if o.is_heap() { match self.heap.get(o) {
-                HeapObj::Str(s) => s.trim().parse().map_err(|_| cold_value("float(): invalid literal"))?,
-                HeapObj::BigInt(b) => b.to_f64(),
-                _ => return Err(cold_type("float() requires a number or string"))
-            }}
+            else if o.is_heap() && let HeapObj::Str(s) = self.heap.get(o) {
+                s.trim().parse().map_err(|_| cold_value("float(): invalid literal"))?
+            }
+            else if o.is_heap() && let HeapObj::BigInt(b) = self.heap.get(o) { b.to_f64() }
             else { return Err(cold_type("float() requires a number or string")); };
         self.push(Val::float(f)); Ok(())
     }
@@ -351,11 +338,9 @@ impl<'a> VM<'a> {
 
     pub fn call_tuple(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
-        let items: Vec<Val> = if o.is_heap() { match self.heap.get(o) {
-            HeapObj::Tuple(v) => v.clone(),
-            HeapObj::List(v)  => v.borrow().clone(),
-            _ => return Err(cold_type("tuple() argument must be iterable")),
-        }} else { return Err(cold_type("tuple() argument must be iterable")); };
+        let items: Vec<Val> = if o.is_heap() && let HeapObj::Tuple(v) = self.heap.get(o) { v.clone() }
+            else if o.is_heap() && let HeapObj::List(v) = self.heap.get(o) { v.borrow().clone() }
+            else { return Err(cold_type("tuple() argument must be iterable")); };
         self.alloc_and_push_tuple(items)
     }
 
@@ -555,19 +540,13 @@ impl<'a> VM<'a> {
             self.push(val);
         } else {
             let o = self.pop()?;
-            let src: Vec<Val> = if o.is_heap() {
-                match self.heap.get(o) {
-                    HeapObj::List(v)  => v.borrow().clone(),
-                    HeapObj::Tuple(v) => v.clone(),
-                    HeapObj::Set(v) => v.borrow().iter().cloned().collect(),
-                    HeapObj::Str(s) => {
-                        let s = s.clone();
-                        self.str_to_char_vals(&s)?
-                    },
-                    _ => return Err(cold_type("set() argument must be iterable")),
-                }
-            } else {
-                return Err(cold_type("set() argument must be iterable"));
+            if !o.is_heap() { return Err(cold_type("set() argument must be iterable")); }
+            let src: Vec<Val> = match self.heap.get(o) {
+                HeapObj::List(v)  => v.borrow().clone(),
+                HeapObj::Tuple(v) => v.clone(),
+                HeapObj::Set(v)   => v.borrow().iter().cloned().collect(),
+                HeapObj::Str(s)   => { let s = s.clone(); self.str_to_char_vals(&s)? },
+                _ => return Err(cold_type("set() argument must be iterable")),
             };
             let val = self.alloc_set(src)?;
             self.push(val);
