@@ -656,6 +656,14 @@ impl<'a> VM<'a> {
         let idx_val = self.pop()?;
         let cont = self.pop()?;
         if !cont.is_heap() { return Err(cold_type("object does not support item assignment")); }
+        // Slice assignment: `xs[a:b] = iterable` (step must be 1 for resize).
+        // Resolves the target range, materialises RHS, and splices in place.
+        if idx_val.is_heap()
+            && let HeapObj::Slice(start, stop, step) = self.heap.get(idx_val).clone()
+        {
+            let new_items = self.extract_iter(value, false)?;
+            return self.store_slice(cont, start, stop, step, new_items);
+        }
         match self.heap.get_mut(cont) {
             HeapObj::List(v) => {
                 if !idx_val.is_int() { return Err(cold_type("list indices must be integers")); }
@@ -676,6 +684,13 @@ impl<'a> VM<'a> {
         let idx_val = self.pop()?;
         let cont    = self.pop()?;
         if !cont.is_heap() { return Err(cold_type("object does not support item deletion")); }
+        // Slice deletion: `del xs[a:b]` — same step=1 restriction as
+        // store_slice. Reuses store_slice with an empty replacement vec.
+        if idx_val.is_heap()
+            && let HeapObj::Slice(start, stop, step) = self.heap.get(idx_val).clone()
+        {
+            return self.store_slice(cont, start, stop, step, Vec::new());
+        }
         match self.heap.get_mut(cont) {
             HeapObj::List(v) => {
                 if !idx_val.is_int() { return Err(cold_type("list indices must be integers")); }
@@ -692,6 +707,63 @@ impl<'a> VM<'a> {
             HeapObj::Tuple(_) => return Err(cold_type("tuple does not support item deletion")),
             _ => return Err(cold_type("object does not support item deletion")),
         }
+        Ok(())
+    }
+
+    /* Splice replacement for `xs[a:b] = items` and `del xs[a:b]`. Only
+       step=1 slices resize the list; step != 1 requires the replacement to
+       match the slice's element count exactly (Python's extended-slice
+       rule). For lists only — tuples/strings are immutable. */
+    fn store_slice(
+        &mut self, cont: Val,
+        start: Val, stop: Val, step: Val,
+        new_items: Vec<Val>,
+    ) -> Result<(), VmErr> {
+        let st = if step.is_none() { 1 }
+            else if step.is_int() { step.as_int() }
+            else { return Err(cold_type("slice step must be an integer")); };
+        if st == 0 { return Err(cold_value("slice step cannot be zero")); }
+
+        let HeapObj::List(rc) = self.heap.get_mut(cont) else {
+            return Err(cold_type("object does not support slice assignment"));
+        };
+        let mut b = rc.borrow_mut();
+        let len = b.len() as i64;
+
+        let clamp = |v: Val, def: i64| -> i64 {
+            if v.is_none() { def }
+            else if v.is_int() { let i = v.as_int(); if i < 0 { (len + i).max(0) } else { i.min(len) } }
+            else { def }
+        };
+
+        if st == 1 {
+            let s = clamp(start, 0).max(0) as usize;
+            let e = clamp(stop, len).max(s as i64) as usize;
+            b.splice(s..e, new_items);
+            return Ok(());
+        }
+
+        // Extended slice (step != 1): collect target indices, require RHS
+        // length to match exactly.
+        let (s, e) = if st > 0 { (clamp(start, 0), clamp(stop, len)) }
+                     else      { (clamp(start, len - 1), clamp(stop, -1)) };
+        let mut indices: Vec<usize> = Vec::new();
+        let mut cur = s;
+        if st > 0 { while cur < e { indices.push(cur as usize); cur += st; } }
+        else      { while cur > e { indices.push(cur as usize); cur += st; } }
+
+        if new_items.is_empty() {
+            // Extended-slice deletion: remove highest-index first to keep
+            // earlier indices valid.
+            let mut sorted = indices.clone();
+            sorted.sort_unstable();
+            for &i in sorted.iter().rev() { b.remove(i); }
+            return Ok(());
+        }
+        if new_items.len() != indices.len() {
+            return Err(cold_value("attempt to assign sequence of one size to extended slice of another"));
+        }
+        for (i, v) in indices.into_iter().zip(new_items) { b[i] = v; }
         Ok(())
     }
 
@@ -974,7 +1046,21 @@ impl<'a> VM<'a> {
 
     pub fn call_next(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
-        if !o.is_heap() || !matches!(self.heap.get(o), HeapObj::Coroutine(..)) {
+        if !o.is_heap() { return Err(cold_type("next() requires an iterator")); }
+        // Lists produced by `iter()` (or used directly) are consumed
+        // front-to-back. Matches the universal handle ABI's IterNext op
+        // (see `host.rs::dispatch_iter_next`) so script-side `next()` and
+        // host-side `Op::IterNext` exhibit identical semantics.
+        if let HeapObj::List(rc) = self.heap.get(o) {
+            let rc = rc.clone();
+            let mut v = rc.borrow_mut();
+            if v.is_empty() { return Err(VmErr::Raised(s!("StopIteration"))); }
+            let item = v.remove(0);
+            drop(v);
+            self.push(item);
+            return Ok(());
+        }
+        if !matches!(self.heap.get(o), HeapObj::Coroutine(..)) {
             return Err(cold_type("next() requires an iterator"));
         }
         self.push(o);
@@ -986,6 +1072,77 @@ impl<'a> VM<'a> {
         } else {
             Err(VmErr::Runtime("StopIteration"))
         }
+    }
+
+    /* Flatten any iterable to a fresh `Vec<Val>` — the union of every
+       sequence-like type the VM exposes. Used by iter()/map()/filter() so
+       all three accept the same set of inputs (lists, tuples, sets, dicts
+       — keys —, ranges, and strings — chars allocated as length-1 Strs). */
+    pub(crate) fn iter_to_vec_general(&mut self, o: Val) -> Result<Vec<Val>, VmErr> {
+        if !o.is_heap() {
+            return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable")));
+        }
+        if let HeapObj::Str(s) = self.heap.get(o) {
+            let s = s.clone();
+            return self.str_to_char_vals(&s);
+        }
+        if let HeapObj::Dict(rc) = self.heap.get(o) {
+            return Ok(rc.borrow().keys().collect());
+        }
+        self.extract_iter(o, true)
+    }
+
+    /* `iter(x)` — flatten any iterable into a fresh List that `next()`
+       drains front-to-back. Eager; the original collection is never
+       mutated. Mirrors the universal ABI's `Op::Iter` shape. */
+    pub fn call_iter(&mut self) -> Result<(), VmErr> {
+        let o = self.pop()?;
+        let items = self.iter_to_vec_general(o)?;
+        self.alloc_and_push_list(items)
+    }
+
+    /* `map(fn, iter)` — eager: applies `fn` to each item, returns a list.
+       Re-enters `exec_call` per item so closures with captures behave like
+       native calls (caller chunk/slots match the surrounding frame). */
+    pub fn call_map(
+        &mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val],
+    ) -> Result<(), VmErr> {
+        let iterable = self.pop()?;
+        let fn_val = self.pop()?;
+        let items = self.iter_to_vec_general(iterable)?;
+        let mut out: Vec<Val> = Vec::with_capacity(items.len());
+        for item in items {
+            self.push(fn_val);
+            self.push(item);
+            self.exec_call(1, chunk, slots)?;
+            out.push(self.pop()?);
+        }
+        self.alloc_and_push_list(out)
+    }
+
+    /* `filter(pred, iter)` — eager: keeps items where `pred(item)` is
+       truthy. Same call-shape as `map`. A `None` predicate behaves like
+       Python's identity-truthy filter. */
+    pub fn call_filter(
+        &mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val],
+    ) -> Result<(), VmErr> {
+        let iterable = self.pop()?;
+        let fn_val = self.pop()?;
+        let items = self.iter_to_vec_general(iterable)?;
+        let mut out: Vec<Val> = Vec::new();
+        for item in items {
+            let keep = if fn_val.is_none() {
+                self.truthy(item)
+            } else {
+                self.push(fn_val);
+                self.push(item);
+                self.exec_call(1, chunk, slots)?;
+                let r = self.pop()?;
+                self.truthy(r)
+            };
+            if keep { out.push(item); }
+        }
+        self.alloc_and_push_list(out)
     }
 
     /* Resume a suspended coroutine. On yield: persists ip/slots/stack/iters

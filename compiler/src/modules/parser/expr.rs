@@ -331,6 +331,17 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                         }
                         self.eat(TokenType::Rsqb);
                         self.chunk.emit(OpCode::BuildSlice, parts);
+                        // Slice assignment: `xs[a:b] = iterable`. The slice
+                        // value sits on the stack as the index for StoreItem;
+                        // the runtime detects HeapObj::Slice and replaces the
+                        // range with the RHS items.
+                        if matches!(self.peek(), Some(TokenType::Equal)) {
+                            self.advance();
+                            self.expr();
+                            self.chunk.emit(OpCode::StoreItem, 0);
+                            self.chunk.emit(OpCode::LoadNone, 0);
+                            return;
+                        }
                         self.chunk.emit(OpCode::GetItem, 0);
                     } else {
                         self.eat(TokenType::Rsqb);

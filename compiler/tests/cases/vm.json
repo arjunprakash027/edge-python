@@ -1334,6 +1334,36 @@
   {"src": "def is_even(n):\n    return True if n == 0 else is_odd(n - 1)\ndef is_odd(n):\n    return False if n == 0 else is_even(n - 1)\nprint(is_even(4))", "output": ["True"]},
   {"src": "def shout(n):\n    return n * 10\ndef outer():\n    def inner(x):\n        return shout(x)\n    return inner(3)\nprint(outer())", "output": ["30"]},
 
+  {"src": "print(list(map(lambda x: x * 2, [1, 2, 3])))", "output": ["[2, 4, 6]"]},
+  {"src": "def double(x): return x * 2\nprint(list(map(double, range(4))))", "output": ["[0, 2, 4, 6]"]},
+  {"src": "print(list(filter(lambda x: x > 2, [1, 2, 3, 4])))", "output": ["[3, 4]"]},
+  {"src": "print(list(filter(None, [0, 1, '', 'hi', [], [1]])))", "output": ["[1, 'hi', [1]]"]},
+  {"src": "result = list(map(lambda s: s.upper(), filter(lambda s: len(s) > 2, ['hi', 'hello', 'a', 'world'])))\nprint(result)", "output": ["['HELLO', 'WORLD']"]},
+  {"src": "print(sum(map(lambda x: x * x, range(5))))", "output": ["30"]},
+
+  {"src": "it = iter([10, 20, 30])\nprint(next(it))\nprint(next(it))\nprint(next(it))", "output": ["10", "20", "30"]},
+  {"src": "it = iter(range(3))\nprint(next(it))\nprint(next(it))", "output": ["0", "1"]},
+  {"src": "it = iter('abc')\nprint(next(it))\nprint(next(it))", "output": ["a", "b"]},
+  {"src": "it = iter([1])\nnext(it)\ntry:\n    next(it)\nexcept StopIteration:\n    print('done')", "output": ["done"]},
+  {"src": "xs = [1, 2, 3]\nit = iter(xs)\nnext(it)\nprint(xs)", "output": ["[1, 2, 3]"]},
+
+  {"src": "xs = [1, 2, 3, 4, 5]\nxs[1:3] = [20, 30]\nprint(xs)", "output": ["[1, 20, 30, 4, 5]"]},
+  {"src": "xs = [1, 2, 3, 4, 5]\nxs[1:3] = [10, 20, 30, 40]\nprint(xs)", "output": ["[1, 10, 20, 30, 40, 4, 5]"]},
+  {"src": "xs = [1, 2, 3, 4, 5]\nxs[1:3] = []\nprint(xs)", "output": ["[1, 4, 5]"]},
+  {"src": "xs = [1, 2, 3, 4, 5]\nxs[2:2] = [99, 100]\nprint(xs)", "output": ["[1, 2, 99, 100, 3, 4, 5]"]},
+  {"src": "xs = [1, 2, 3, 4, 5]\nxs[:] = [9, 8, 7]\nprint(xs)", "output": ["[9, 8, 7]"]},
+  {"src": "xs = [1, 2, 3, 4, 5]\ndel xs[1:3]\nprint(xs)", "output": ["[1, 4, 5]"]},
+  {"src": "xs = [1, 2, 3, 4, 5]\ndel xs[:2]\nprint(xs)", "output": ["[3, 4, 5]"]},
+  {"src": "xs = [1, 2, 3, 4, 5]\ndel xs[2:]\nprint(xs)", "output": ["[1, 2]"]},
+
+  {"src": "data = [1, 2, 3, 4, 5, 6]\nwhile (n := len(data)) > 3:\n    data.pop()\nprint(data, n)", "output": ["[1, 2, 3] 3"]},
+  {"src": "if (x := 42) > 10:\n    print(x)", "output": ["42"]},
+
+  {"src": "print(sum(x * x for x in range(5)))", "output": ["30"]},
+  {"src": "print(any(x > 100 for x in [1, 2, 200]))", "output": ["True"]},
+  {"src": "print(max(len(s) for s in ['hi', 'hello', 'world']))", "output": ["5"]},
+  {"src": "g = (x * 2 for x in [1, 2, 3])\nprint(list(g))", "output": ["[2, 4, 6]"]},
+
   {"src": "s = {1, 2, 3}\ns.add(4)\nprint(s)", "output": ["{1, 2, 3, 4}"]},
   {"src": "s = {1, 2, 3}\ns.add(2)\nprint(len(s))", "output": ["3"]},
   {"src": "s = {1, 2, 3}\ns.remove(2)\nprint(s)", "output": ["{1, 3}"]},

@@ -150,7 +150,7 @@ impl<'a> VM<'a> {
 
         if let HeapObj::NativeFn(id) = self.heap.get(callee) {
             let id = *id;
-            return self.dispatch_native(id, positional, kw_flat);
+            return self.dispatch_native(id, positional, kw_flat, chunk, slots);
         }
 
         if let HeapObj::Extern(extern_fn) = self.heap.get(callee) {
@@ -476,6 +476,7 @@ impl<'a> VM<'a> {
     pub(crate) fn dispatch_native(
         &mut self, id: super::super::types::NativeFnId,
         positional: Vec<Val>, kw: Vec<Val>,
+        chunk: &SSAChunk, slots: &mut [Val],
     ) -> Result<(), VmErr> {
         if !kw.is_empty() {
             return Err(cold_type("native function takes no keyword arguments"));
@@ -489,8 +490,9 @@ impl<'a> VM<'a> {
             Input | Receive => Some(0),
             Len | Abs | Str | Int | Float | Bool | Type | Chr | Ord
             | Sorted | Enumerate | List | Tuple | Bin | Oct | Hex
-            | Repr | Reversed | Callable | Id | Hash | Ascii | Next | Sleep => Some(1),
-            Divmod | IsInstance | HasAttr => Some(2),
+            | Repr | Reversed | Callable | Id | Hash | Ascii | Next | Sleep
+            | Iter => Some(1),
+            Divmod | IsInstance | HasAttr | Map | Filter => Some(2),
             _ => None,
         };
         if let Some(n) = expected
@@ -555,6 +557,9 @@ impl<'a> VM<'a> {
             Run => self.call_run(argc),
             Sleep => self.call_sleep(),
             Receive => self.call_receive(),
+            Map => self.call_map(chunk, slots),
+            Filter => self.call_filter(chunk, slots),
+            Iter => self.call_iter(),
         }
     }
 }

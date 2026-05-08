@@ -340,21 +340,75 @@ print(list(zip([1, 2], [3, 4], [5, 6])))
 
 ### next
 
-`next(iterator)` or `next(iterator, default)` — retrieve the next item from an iterator. Raises `StopIteration` if exhausted and no default is given.
+`next(iterator)` retrieves the next item from an iterator. Raises `StopIteration` if exhausted.
 
 ```python
 it = iter([10, 20, 30])
 print(next(it))
 print(next(it))
-print(next(it, "done"))
-print(next(it, "done"))
+print(next(it))
 ```
 
 ```text Output
 10
 20
 30
-done
+```
+
+### iter
+
+`iter(x)` returns a fresh iterator over any iterable (list, tuple, set, dict, range, str). The original collection is never mutated — `iter()` materialises a copy that `next()` drains front-to-back.
+
+```python
+it = iter([1, 2, 3])
+print(next(it))
+print(next(it))
+
+# Strings yield characters
+chars = iter("abc")
+print(next(chars))
+```
+
+```text Output
+1
+2
+a
+```
+
+### map
+
+`map(fn, iterable)` applies `fn` to each item and returns a list. Eager — the full list materialises immediately, suitable for pipelines into `sum`, `list`, `max`, etc.
+
+```python
+print(list(map(lambda x: x * 2, [1, 2, 3])))
+print(sum(map(lambda x: x * x, range(5))))
+
+def normalize(s):
+    return s.strip().lower()
+
+print(list(map(normalize, ["  Hi ", "WORLD"])))
+```
+
+```text Output
+[2, 4, 6]
+30
+['hi', 'world']
+```
+
+### filter
+
+`filter(pred, iterable)` keeps items where `pred(item)` is truthy. Returns a list. A `None` predicate filters by truthiness directly (equivalent to `lambda x: x`).
+
+```python
+print(list(filter(lambda x: x > 2, [1, 2, 3, 4])))
+
+# `None` keeps any truthy value
+print(list(filter(None, [0, 1, "", "hi", [], [1]])))
+```
+
+```text Output
+[3, 4]
+[1, 'hi', [1]]
 ```
 
 ## Logical reductions

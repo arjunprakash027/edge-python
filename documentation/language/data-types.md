@@ -169,6 +169,27 @@ True
 True
 ```
 
+```python
+# Slice assignment (step=1) resizes the list in place
+xs = [1, 2, 3, 4, 5]
+xs[1:3] = [20, 30, 40]
+print(xs)
+
+# Slice deletion
+del xs[2:4]
+print(xs)
+
+# Insertion via empty slice
+xs[1:1] = [99]
+print(xs)
+```
+
+```text Output
+[1, 20, 30, 40, 4, 5]
+[1, 20, 4, 5]
+[1, 99, 20, 4, 5]
+```
+
 ## Tuple
 
 Immutable sequence. The fastest container for fixed-size data and the only one usable as a dict key in mixed-type cases.

@@ -166,12 +166,36 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 loop {
                     let name = self.advance_text();
                     if self.eat_if(TokenType::Lsqb) {
-                        // del x[k]: load container + key, mutate in place.
-                        // Slice deletion (x[i:j]) is not supported — `expr()`
-                        // stops at `:` so the eat(Rsqb) below errors cleanly.
+                        // del x[k] or del x[a:b]. For slices, parse the
+                        // start:stop[:step] form and emit BuildSlice so the
+                        // runtime DelItem sees a HeapObj::Slice as the index.
                         self.emit_load_ssa(name);
-                        self.expr();
-                        self.eat(TokenType::Rsqb);
+                        let is_slice = matches!(self.peek(), Some(TokenType::Colon));
+                        if is_slice {
+                            self.chunk.emit(OpCode::LoadNone, 0);
+                        } else {
+                            self.expr();
+                        }
+                        if self.eat_if(TokenType::Colon) {
+                            let mut parts = 2u16;
+                            if matches!(self.peek(), Some(TokenType::Colon | TokenType::Rsqb)) {
+                                self.chunk.emit(OpCode::LoadNone, 0);
+                            } else {
+                                self.expr();
+                            }
+                            if self.eat_if(TokenType::Colon) {
+                                parts = 3;
+                                if matches!(self.peek(), Some(TokenType::Rsqb)) {
+                                    self.chunk.emit(OpCode::LoadNone, 0);
+                                } else {
+                                    self.expr();
+                                }
+                            }
+                            self.eat(TokenType::Rsqb);
+                            self.chunk.emit(OpCode::BuildSlice, parts);
+                        } else {
+                            self.eat(TokenType::Rsqb);
+                        }
                         self.chunk.emit(OpCode::DelItem, 0);
                     } else {
                         let idx = self.push_ssa_name(&name, self.current_version(&name));
@@ -377,7 +401,40 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             Some(TokenType::Lsqb) => {
                 self.emit_load_ssa(name);
                 self.advance();
-                self.expr();
+                // Detect slice form (`xs[a:b]`): mirrors postfix_tail's
+                // subscript path so `xs[a:b] = iter` lowers to BuildSlice +
+                // StoreItem (the runtime store_item recognises HeapObj::Slice
+                // as a splice index).
+                let is_slice = matches!(self.peek(), Some(TokenType::Colon));
+                if is_slice { self.chunk.emit(OpCode::LoadNone, 0); }
+                else { self.expr(); }
+                if self.eat_if(TokenType::Colon) {
+                    let mut parts = 2u16;
+                    if matches!(self.peek(), Some(TokenType::Colon | TokenType::Rsqb)) {
+                        self.chunk.emit(OpCode::LoadNone, 0);
+                    } else {
+                        self.expr();
+                    }
+                    if self.eat_if(TokenType::Colon) {
+                        parts = 3;
+                        if matches!(self.peek(), Some(TokenType::Rsqb)) {
+                            self.chunk.emit(OpCode::LoadNone, 0);
+                        } else {
+                            self.expr();
+                        }
+                    }
+                    self.eat(TokenType::Rsqb);
+                    self.chunk.emit(OpCode::BuildSlice, parts);
+                    if matches!(self.peek(), Some(TokenType::Equal)) {
+                        self.advance();
+                        self.expr();
+                        self.chunk.emit(OpCode::StoreItem, 0);
+                        return false;
+                    }
+                    self.chunk.emit(OpCode::GetItem, 0);
+                    self.expr_tails();
+                    return true;
+                }
                 self.eat(TokenType::Rsqb);
                 if matches!(self.peek(), Some(TokenType::Equal)) {
                     self.advance();
