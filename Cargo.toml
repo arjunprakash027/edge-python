@@ -1,5 +1,9 @@
 [workspace]
 members = ["compiler", "edge-pdk", "edge-pdk/macros", "examples/slugify-mod"]
+# Wasm-only example crates live in `members` (so they share the lockfile and
+# resolve path deps) but are excluded from default workspace commands. Run
+# them explicitly with `-p` against `wasm32-unknown-unknown`.
+default-members = ["compiler", "edge-pdk", "edge-pdk/macros"]
 resolver = "2"
 
 [workspace.package]

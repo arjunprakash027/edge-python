@@ -28,6 +28,8 @@ jobs:
       # Lint the lib + tests on the host target. The release artifact is the
       # wasm32 build below; this catches issues in test-only code that uses
       # wasmtime as a dev-dep to validate the WASM ABI end-to-end.
+      # Wasm-only example crates are excluded via `default-members` in the
+      # workspace Cargo.toml.
       - name: Clippy (host / tests)
         run: cargo clippy --all-targets -- -D warnings
 
@@ -36,4 +38,4 @@ jobs:
         run: rustup target add wasm32-unknown-unknown
 
       - name: Clippy (wasm)
-        run: cargo clippy --lib --target wasm32-unknown-unknown -p edge-python -- -D warnings
+        run: cargo clippy --lib --target wasm32-unknown-unknown -p edge-python -p slugify-mod -- -D warnings
