@@ -419,6 +419,19 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let (params, defaults) = self.parse_params();
         let body = self.compile_body(&params);
 
+        // Register the body's free names in the parent's chunk so the parent's
+        // MakeFunction captures them, propagating the chain and giving nested
+        // defs access to grandparent (and higher) vars. Mirrors `parse_lambda`;
+        // without this loop, `def A → def B → def C` where C references A's
+        // var fails with NameError because B never captured it.
+        let param_slots: crate::modules::fx::FxHashSet<String> = params.iter()
+            .map(|p| s!(str p.trim_start_matches('*'), "_0")).collect();
+        for name in &body.names {
+            if !param_slots.contains(name.as_str()) {
+                self.chunk.push_name(name);
+            }
+        }
+
         let fi = self.chunk.functions.len() as u16;
         let name_slot = self.push_ssa_name(&fname, self.current_version(&fname) + 1);
         self.chunk.functions.push((params, body, defaults, name_slot));

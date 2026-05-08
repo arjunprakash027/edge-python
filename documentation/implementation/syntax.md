@@ -195,7 +195,7 @@ self.with_fresh_chunk(|s| {
 });
 ```
 
-Free variables in the body — names that aren't parameters and don't have a local binding — are looked up in the outer chunk's name table. The `MakeFunction` opcode at runtime captures matching slots from the enclosing scope into the function's `captures` list.
+Free variables in the body — names that aren't parameters and don't have a local binding — are looked up in the outer chunk's name table. The `MakeFunction` opcode at runtime captures matching slots from the enclosing scope into the function's `captures` list. Nested `def` and `lambda` push their own free names back into their parent's name table, so each enclosing function captures whatever its descendants need; the chain propagates through any depth (e.g. `def A → def B → def C` where `C` references a var in `A`).
 
 After body compilation, `compile_body` inspects the body's instruction stream for opcodes that imply impurity (`StoreItem`, `StoreAttr`, `CallPrint`, `CallInput`, `Global`, `Nonlocal`, `Import`, `Raise`, `Yield`, `LoadAttr`) and sets `body.is_pure` accordingly. The runtime template-memoization layer uses this flag — pure functions get their `(args) -> result` mapping cached after two hits.
 

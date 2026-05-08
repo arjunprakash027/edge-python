@@ -415,3 +415,29 @@ print(base(5))
 ```text Output
 12
 ```
+
+Parameterized decorators are factories: a function that takes the
+decorator's arguments and returns the actual decorator. The wrapped
+function captures values from both the inner and outer scope.
+
+```python
+def repeat(n):
+    def decorator(fn):
+        def wrapped(x):
+            for i in range(n):
+                fn(x)
+        return wrapped
+    return decorator
+
+@repeat(3)
+def greet(name):
+    print(f"hi {name}")
+
+greet("world")
+```
+
+```text Output
+hi world
+hi world
+hi world
+```

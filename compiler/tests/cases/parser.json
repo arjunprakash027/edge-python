@@ -1149,10 +1149,10 @@
     "functions": 1
   },
   {
-    "src": "async def f():\n    await x", 
-    "constants": [], 
-    "names": ["f_1"], 
-    "instructions": [["MakeCoroutine",0], ["StoreName",0], ["ReturnValue",0]], 
+    "src": "async def f():\n    await x",
+    "constants": [],
+    "names": ["x_0", "f_1"],
+    "instructions": [["MakeCoroutine",0], ["StoreName",1], ["ReturnValue",0]],
     "annotations": {}, 
     "functions": 1
   },
@@ -1413,10 +1413,10 @@
     "annotations": {}
   },
   {
-    "src": "def f():\n    f()", 
-    "constants": [], 
-    "names": ["f_1"], 
-    "instructions": [["MakeFunction",0],["StoreName",0],["ReturnValue",0]], 
+    "src": "def f():\n    f()",
+    "constants": [],
+    "names": ["f_0", "f_1"],
+    "instructions": [["MakeFunction",0],["StoreName",0],["ReturnValue",0]],
     "annotations": {}, 
     "functions": 1
   },
