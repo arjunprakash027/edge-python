@@ -23,7 +23,7 @@
 
 #[cfg(target_arch = "wasm32")]
 mod runtime {
-    use lol_alloc::LeakingPageAllocator;
+    use lol_alloc::{AssumeSingleThreaded, LeakingAllocator};
     use crate::abi::{
         classify_decode, classify_encode,
         DecodeBits, EncodeRequest, ErrorKind, ErrorStash, HandleTable, Op,
@@ -67,8 +67,19 @@ mod runtime {
         unsafe { js_print(s.as_ptr(), s.len()); }
     }
 
+    /* Bump-pointer allocator: places multiple allocations per WebAssembly
+       page instead of one page per alloc. The default `LeakingPageAllocator`
+       requests `memory.grow(1)` for every Vec/String, which on hosts that
+       gate page commits through a hypervisor (Snapdragon X Elite Copilot+
+       PCs run V8 with HVCI/VBS active) costs ~0.2 ms per call. A perceptron
+       training run produces ~3,000 small allocs ⇒ ~600 ms of grow overhead.
+       Bumping inside pages cuts that to ~50 grows total.
+       `AssumeSingleThreaded` wraps the non-`Sync` bump allocator so it can
+       live in a `static`; sound because each Web Worker / host instance
+       runs the WASM on a single thread. */
     #[global_allocator]
-    static A: LeakingPageAllocator = LeakingPageAllocator;
+    static A: AssumeSingleThreaded<LeakingAllocator> =
+        unsafe { AssumeSingleThreaded::new(LeakingAllocator::new()) };
 
     #[panic_handler]
     fn panic(_: &core::panic::PanicInfo) -> ! { core::arch::wasm32::unreachable() }
