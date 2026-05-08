@@ -8,6 +8,7 @@ description = "Edge Python Plugin Development Kit — the author-side runtime fo
 
 [lib]
 crate-type = ["rlib"]
+doctest = false
 
 [dependencies]
 macros = { path = "macros", version = "0.1.0" }

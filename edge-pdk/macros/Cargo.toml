@@ -8,6 +8,8 @@ description = "Internal proc-macro for the `edge` crate. NOT FOR DIRECT USE — 
 
 [lib]
 proc-macro = true
+test = false
+doctest = false
 
 [dependencies]
 proc-macro2 = "1"
