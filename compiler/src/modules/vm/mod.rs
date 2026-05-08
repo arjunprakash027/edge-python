@@ -728,7 +728,7 @@ impl<'a> VM<'a> {
             .unwrap_or_else(|| OpcodeCache::new(chunk));
         cache.ensure_fused(chunk);
         // Pre-materialise the constant pool here (not in OpcodeCache::new)
-        // because Str/BigInt allocate into the live HeapPool.
+        // because Str allocates into the live HeapPool.
         if let Err(e) = cache.ensure_const_vals(chunk, &mut self.heap) {
             self.opcode_caches.insert(key, cache);
             return Err(e);
@@ -795,6 +795,7 @@ impl<'a> VM<'a> {
                             // name so `except <Type>` can match it.
                             let msg: alloc::string::String = match &e {
                                 VmErr::ZeroDiv     => "ZeroDivisionError".into(),
+                                VmErr::Overflow    => "OverflowError".into(),
                                 VmErr::Type(_)     => "TypeError".into(),
                                 VmErr::TypeMsg(_)  => "TypeError".into(),
                                 VmErr::Value(_)    => "ValueError".into(),

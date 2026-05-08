@@ -46,13 +46,13 @@ For arithmetic and comparison opcodes, the loop first checks `cache.get_fast(ip)
 | Tag       | Pattern                                 | Notes                        |
 |-----------|-----------------------------------------|------------------------------|
 | Float     | any non-canonical IEEE-754              | Quiet NaN remapped           |
-| Int       | `QNAN \| SIGN \| i48`                   | ±2⁴⁷ inline; BigInt above    |
+| Int       | `QNAN \| SIGN \| i48`                   | ±2⁴⁷ inline; OverflowError above |
 | None      | `QNAN \| 1`                             |                              |
 | True      | `QNAN \| 2`                             |                              |
 | False     | `QNAN \| 3`                             |                              |
 | Heap      | `QNAN \| 4 \| (i28 << 4)`               | 28-bit index into `HeapPool` |
 
-The heap is an arena of `Option<HeapObj>` slots with a free list. Strings of 64 bytes or fewer are interned in a side hash. Integers above 2⁴⁷ are promoted to `BigInt`, a base-2³² little-endian limb array with Knuth Algorithm D for division. The garbage collector is a single-color mark-and-sweep that runs when `live > gc_threshold` or `alloc_count > max(live/4, 4096)`.
+The heap is an arena of `Option<HeapObj>` slots with a free list. Strings of 64 bytes or fewer are interned in a side hash. Integer arithmetic stays strictly within ±2⁴⁷; any overflow raises `OverflowError` instead of growing onto the heap. The garbage collector is a single-color mark-and-sweep that runs when `live > gc_threshold` or `alloc_count > max(live/4, 4096)`.
 
 ## What the compiler intentionally does *not* do
 
@@ -117,7 +117,7 @@ src/
 | set    | try / except     | logical reduction | escape sequences|
 | range  | with             | number formatting | -               |
 | None   | async / await¹   | -                 | -               |
-| BigInt | yield / yield from | -                | -               |
+|        | yield / yield from | -                | -               |
 
 `async def` creates real coroutines. `run()` provides a cooperative event loop with `sleep()` and `receive()`.
 
@@ -132,5 +132,4 @@ src/
 7. Casey et al. *Towards Superinstructions for Java Interpreters* (SCOPES 2003). LoadAttr+Call fusion.
 8. Michie. *Memo Functions and Machine Learning* (Nature 1968). Pure-function memoization.
 9. McCarthy. *Recursive Functions of Symbolic Expressions* (CACM 1960). Mark-sweep GC.
-10. Knuth. *The Art of Computer Programming, Vol. 2* (1981). Algorithm D for BigInt division.
-11. Backus. *Can Programming Be Liberated from the von Neumann Style?* (CACM 1978). Function-level paradigm.
+10. Backus. *Can Programming Be Liberated from the von Neumann Style?* (CACM 1978). Function-level paradigm.

@@ -29,26 +29,6 @@ fn i64_to_radix(n: i64, radix: u32, prefix: &str) -> String {
     s
 }
 
-fn bigint_to_radix(b: &BigInt, radix: u32, prefix: &str) -> String {
-    let mut out = String::new();
-    if b.neg { out.push('-'); }
-    out.push_str(prefix);
-    if b.is_zero() { out.push('0'); return out; }
-
-    let radix_big = BigInt::from_i64(radix as i64);
-    let mut work = b.abs();
-    let mut digits = Vec::<u8>::new();
-    while !work.is_zero() {
-        let (q, r) = work.divmod(&radix_big).unwrap();
-        let d = r.to_i64_checked().unwrap() as u8;
-        digits.push(if d < 10 { b'0' + d } else { b'a' + d - 10 });
-        work = q;
-    }
-    digits.reverse();
-    out.push_str(unsafe { core::str::from_utf8_unchecked(&digits) });
-    out
-}
-
 fn normalize_index(i: i64, len: usize) -> usize {
     (if i < 0 { len as i64 + i } else { i }) as usize
 }
@@ -109,14 +89,9 @@ impl<'a> VM<'a> {
     pub fn call_abs(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         let v = if o.is_int() {
-            self.i128_to_val((o.as_int() as i128).abs())?
+            self.int_or_overflow(o.as_int().checked_abs())?
         } else if o.is_float() {
             Val::float(o.as_float().abs())
-        } else if o.is_heap() {
-            match self.heap.get(o) {
-                HeapObj::BigInt(b) => self.bigint_to_val(b.abs())?,
-                _ => return Err(cold_type("abs() requires a number")),
-            }
         } else {
             return Err(cold_type("abs() requires a number"));
         };
@@ -169,10 +144,6 @@ impl<'a> VM<'a> {
 
     pub fn call_int(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
-        if o.is_heap() && let HeapObj::BigInt(b) = self.heap.get(o) {
-            let v = self.bigint_to_val(b.clone())?;
-            self.push(v); return Ok(());
-        }
         let i = if o.is_int() { o.as_int() }
             else if o.is_float() { o.as_float() as i64 }
             else if o.is_bool() { o.as_bool() as i64 }
@@ -180,7 +151,7 @@ impl<'a> VM<'a> {
                 s.trim().parse().map_err(|_| cold_value("int(): invalid literal"))?
             }
             else { return Err(cold_type("int() requires a number or string")); };
-        let v = self.bigint_to_val(BigInt::from_i64(i))?;
+        let v = self.int_or_overflow(Some(i))?;
         self.push(v); Ok(())
     }
 
@@ -194,7 +165,6 @@ impl<'a> VM<'a> {
             else if o.is_heap() && let HeapObj::Str(s) = self.heap.get(o) {
                 s.trim().parse().map_err(|_| cold_value("float(): invalid literal"))?
             }
-            else if o.is_heap() && let HeapObj::BigInt(b) = self.heap.get(o) { b.to_f64() }
             else { return Err(cold_type("float() requires a number or string")); };
         self.push(Val::float(f)); Ok(())
     }
@@ -255,7 +225,6 @@ impl<'a> VM<'a> {
             }
             (Some(o), None) if o.is_float() => Val::int(fround(o.as_float()) as i64),
             (Some(o), _) if o.is_int() => *o,
-            (Some(o), _) if o.is_heap() && matches!(self.heap.get(*o), HeapObj::BigInt(_)) => *o,
             _ => return Err(cold_type("round() requires a number")),
         };
         self.push(v); Ok(())
@@ -831,14 +800,13 @@ impl<'a> VM<'a> {
         self.alloc_and_push_str(s)
     }
 
-    /* Converts int/BigInt to "<prefix><digits>" with optional sign. */
+    /* Converts int to "<prefix><digits>" with optional sign. */
     fn int_to_radix_string(&self, v: Val, radix: u32, prefix: &str) -> Result<String, VmErr> {
         if v.is_int() {
             return Ok(i64_to_radix(v.as_int(), radix, prefix));
         }
-        if v.is_heap()
-            && let HeapObj::BigInt(b) = self.heap.get(v) {
-                return Ok(bigint_to_radix(b, radix, prefix));
+        if v.is_bool() {
+            return Ok(i64_to_radix(v.as_bool() as i64, radix, prefix));
         }
         Err(cold_type("integer required"))
     }
@@ -848,11 +816,15 @@ impl<'a> VM<'a> {
     pub fn call_divmod(&mut self) -> Result<(), VmErr> {
         let b = self.pop()?;
         let a = self.pop()?;
-        let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b))
+        let (Some(ai), Some(bi)) = (self.as_i64(a), self.as_i64(b))
             else { return Err(cold_type("divmod() requires integer operands")); };
-        let (q, r) = ba.divmod(&bb).ok_or(VmErr::ZeroDiv)?;
-        let qv = self.bigint_to_val(q)?;
-        let rv = self.bigint_to_val(r)?;
+        if bi == 0 { return Err(VmErr::ZeroDiv); }
+        let q = ai.checked_div(bi).ok_or(cold_overflow())?;
+        let r = ai - q * bi;
+        // Floor-div sign correction so divmod matches `(a // b, a % b)`.
+        let (q, r) = if (r != 0) && ((r < 0) != (bi < 0)) { (q - 1, r + bi) } else { (q, r) };
+        let qv = self.int_or_overflow(Some(q))?;
+        let rv = self.int_or_overflow(Some(r))?;
         self.alloc_and_push_tuple(vec![qv, rv])
     }
 
@@ -865,29 +837,28 @@ impl<'a> VM<'a> {
                 Ok(())
             }
             3 => {
-                // Modular exponentiation: (a ** b) % c
+                // Modular exponentiation: (a ** b) % c on i64.
                 let (Some(base), Some(modulus)) =
-                    (self.to_bigint(args[0]), self.to_bigint(args[2]))
+                    (self.as_i64(args[0]), self.as_i64(args[2]))
                     else { return Err(cold_type("pow() with 3 args requires integers")); };
                 if !args[1].is_int() {
                     return Err(cold_type("pow() with 3 args requires integer exponent"));
                 }
                 let mut e = args[1].as_int();
                 if e < 0 { return Err(cold_value("pow() exponent must be non-negative")); }
-                if modulus.is_zero() { return Err(VmErr::ZeroDiv); }
+                if modulus == 0 { return Err(VmErr::ZeroDiv); }
 
-                let mut result = BigInt::from_i64(1);
-                let (_, mut base) = base.divmod(&modulus).unwrap();
+                let m = (modulus as i128).abs();
+                let mut result = 1i128;
+                let mut b = (base as i128).rem_euclid(m);
                 while e > 0 {
                     if e & 1 == 1 {
-                        let (_, r) = result.mul(&base).divmod(&modulus).unwrap();
-                        result = r;
+                        result = (result * b).rem_euclid(m);
                     }
-                    let (_, b2) = base.mul(&base).divmod(&modulus).unwrap();
-                    base = b2;
+                    b = (b * b).rem_euclid(m);
                     e >>= 1;
                 }
-                let r = self.bigint_to_val(result)?;
+                let r = self.int_or_overflow(Some(result as i64))?;
                 self.push(r);
                 Ok(())
             }
@@ -900,16 +871,30 @@ impl<'a> VM<'a> {
     }
 
     /* Two-arg power, shared between the pow() builtin and the `**` operator
-       handler. Caller picks the error message so each surface keeps its own
-       diagnostic. */
+       handler. Integer ** non-negative integer stays i64 with overflow trap;
+       floats and negative exponents promote to f64. */
     pub(crate) fn pow_vals(&mut self, a: Val, b: Val, err_msg: &'static str) -> Result<Val, VmErr> {
-        if let Some(ba) = self.to_bigint(a) && b.is_int() {
+        if let (Some(ai), true) = (self.as_i64(a), b.is_int()) {
             let exp = b.as_int();
             if exp >= 0 {
-                if exp > u32::MAX as i64 { return Err(cold_value("pow() exponent too large")); }
-                return self.bigint_to_val(ba.pow_u32(exp as u32));
+                // Exponentiation by squaring on i64. Overflow at any step traps
+                // as OverflowError; bases ±1/0 finish without overflowing even
+                // with very large exponents.
+                let mut result: i64 = 1;
+                let mut base = ai;
+                let mut e = exp;
+                while e > 0 {
+                    if e & 1 == 1 {
+                        result = result.checked_mul(base).ok_or(cold_overflow())?;
+                    }
+                    e >>= 1;
+                    if e > 0 {
+                        base = base.checked_mul(base).ok_or(cold_overflow())?;
+                    }
+                }
+                return self.int_or_overflow(Some(result));
             }
-            return Ok(Val::float(fpowi(ba.to_f64(), exp as i32)));
+            return Ok(Val::float(fpowi(ai as f64, exp as i32)));
         }
         let to_f = |v: Val| -> Result<f64, VmErr> {
             if v.is_int() { Ok(v.as_int() as f64) }
@@ -957,7 +942,6 @@ impl<'a> VM<'a> {
             match self.heap.get(o) {
                 HeapObj::Str(s) => s.hash(&mut h),
                 HeapObj::Bytes(b) => b.hash(&mut h),
-                HeapObj::BigInt(b) => { b.neg.hash(&mut h); b.limbs.hash(&mut h); }
                 HeapObj::Tuple(items) => {
                     for v in items { v.0.hash(&mut h); }
                 }

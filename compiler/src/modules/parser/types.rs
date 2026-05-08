@@ -84,7 +84,6 @@ pub enum Value {
     Str(String),
     Bytes(alloc::vec::Vec<u8>),
     Int(i64),
-    BigInt(String),
     Float(f64),
     Bool(bool),
     None,

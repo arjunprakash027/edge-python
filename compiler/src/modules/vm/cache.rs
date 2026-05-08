@@ -1,4 +1,4 @@
-use super::types::{Val, HeapObj, HeapPool, VmErr, BigInt, eq_vals_with_heap};
+use super::types::{Val, HeapObj, HeapPool, VmErr, eq_vals_with_heap, cold_overflow};
 use crate::modules::parser::{OpCode, SSAChunk, Instruction, Value};
 
 use alloc::{vec, vec::Vec, string::ToString};
@@ -58,7 +58,8 @@ impl OpcodeCache {
     }
 
     /* Materialise the constant pool. Int/Float/Bool/None become inline Vals
-       (no heap touch); Str/BigInt allocate once and are then shared. */
+       (no heap touch); Str allocates once and is then shared. Ints outside
+       the 47-bit Val range trap as OverflowError at materialisation. */
     pub fn ensure_const_vals(&mut self, chunk: &SSAChunk, heap: &mut HeapPool)
         -> Result<&[Val], VmErr>
     {
@@ -68,9 +69,8 @@ impl OpcodeCache {
                 let v = match c {
                     Value::Int(i) => {
                         if *i >= Val::INT_MIN && *i <= Val::INT_MAX { Val::int(*i) }
-                        else { heap.alloc(HeapObj::BigInt(BigInt::from_i64(*i)))? }
+                        else { return Err(cold_overflow()); }
                     }
-                    Value::BigInt(s) => heap.alloc(HeapObj::BigInt(BigInt::from_decimal(s)))?,
                     Value::Float(f) => Val::float(*f),
                     Value::Bool(b) => Val::bool(*b),
                     Value::None => Val::none(),

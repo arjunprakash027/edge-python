@@ -130,358 +130,6 @@ impl Val {
     #[inline(always)] pub fn as_heap(&self) -> u32 { ((self.0 >> 4) & 0x0FFF_FFFF) as u32 }
 }
 
-/* Signed arbitrary-precision integer, base-2³² little-endian limbs.
-   Empty limbs means zero (then neg must be false). */
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BigInt {
-    pub neg: bool,
-    pub limbs: Vec<u32>,
-}
-
-impl BigInt {
-    pub fn zero() -> Self { Self { neg: false, limbs: Vec::new() } }
-    pub fn is_zero(&self) -> bool { self.limbs.is_empty() }
-
-    pub fn shl_u32(&self, shift: u32) -> Self {
-        if self.is_zero() || shift == 0 { return self.clone(); }
-        let limb_shift = (shift / 32) as usize;
-        let bit_shift  = shift % 32;
-        let mut limbs = vec![0u32; limb_shift];
-        let mut carry = 0u64;
-        for &l in &self.limbs {
-            let cur = (l as u64) << bit_shift | carry;
-            limbs.push(cur as u32);
-            carry = cur >> 32;
-        }
-        if carry != 0 { limbs.push(carry as u32); }
-        Self { neg: self.neg, limbs }
-    }
-
-    pub fn shr_u32(&self, shift: u32) -> Self {
-        if self.is_zero() || shift == 0 { return self.clone(); }
-        let limb_shift = (shift / 32) as usize;
-        let bit_shift  = shift % 32;
-        if limb_shift >= self.limbs.len() { return Self::zero(); }
-        let mut limbs: Vec<u32> = Vec::new();
-        for i in limb_shift..self.limbs.len() {
-            let mut word = self.limbs[i] >> bit_shift;
-            if bit_shift > 0 && i + 1 < self.limbs.len() {
-                word |= self.limbs[i + 1] << (32 - bit_shift);
-            }
-            limbs.push(word);
-        }
-        Self::trim(&mut limbs);
-        Self { neg: self.neg, limbs }
-    }
-
-    pub fn from_i64(v: i64) -> Self {
-        if v == 0 { return Self::zero(); }
-        let neg = v < 0;
-        let abs = (v as i128).unsigned_abs() as u64;
-        let mut limbs = vec![(abs & 0xFFFF_FFFF) as u32];
-        if abs >> 32 != 0 { limbs.push((abs >> 32) as u32); }
-        Self { neg, limbs }
-    }
-
-    pub fn from_i128(v: i128) -> Self {
-        if v == 0 { return Self::zero(); }
-        let neg = v < 0;
-        let mut abs = v.unsigned_abs();
-        let mut limbs = Vec::new();
-        while abs != 0 { limbs.push((abs & 0xFFFF_FFFF) as u32); abs >>= 32; }
-        Self { neg, limbs }
-    }
-
-    pub fn from_decimal(s: &str) -> Self {
-        let (neg, digits) = if let Some(stripped) = s.strip_prefix('-') { (true, stripped) } else { (false, s) };
-        let mut r = Self::zero();
-        for c in digits.chars() {
-            let d = (c as u8).wrapping_sub(b'0') as u32;
-            r = r.mul_u32(10);
-            if d != 0 { r = r.add(&Self { neg: false, limbs: vec![d] }); }
-        }
-        r.neg = neg && !r.is_zero();
-        r
-    }
-
-    pub fn to_i64_checked(&self) -> Option<i64> {
-        match self.limbs.len() {
-            0 => Some(0),
-            1 => Some(if self.neg { -(self.limbs[0] as i64) } else { self.limbs[0] as i64 }),
-            2 => {
-                let abs = self.limbs[0] as u64 | ((self.limbs[1] as u64) << 32);
-                if self.neg {
-                    if abs > i64::MIN.unsigned_abs() { 
-                        None 
-                    } else if abs == i64::MIN.unsigned_abs() {
-                        Some(i64::MIN)
-                    } else { 
-                        Some(-(abs as i64)) 
-                    }
-                } else {
-                    if abs > i64::MAX as u64 { None } else { Some(abs as i64) }
-                }
-            }
-            _ => None,
-        }
-    }
-
-    pub fn to_f64(&self) -> f64 {
-        let (mut r, mut base) = (0.0f64, 1.0f64);
-        for &l in &self.limbs { r += l as f64 * base; base *= 4_294_967_296.0; }
-        if self.neg { -r } else { r }
-    }
-
-    pub fn neg(&self) -> Self {
-        if self.is_zero() { self.clone() }
-        else { Self { neg: !self.neg, limbs: self.limbs.clone() } }
-    }
-    pub fn abs(&self) -> Self { Self { neg: false, limbs: self.limbs.clone() } }
-
-    fn trim(v: &mut Vec<u32>) { while v.last() == Some(&0) { v.pop(); } }
-
-    fn cmp_mag(a: &[u32], b: &[u32]) -> core::cmp::Ordering {
-        use core::cmp::Ordering::*;
-        if a.len() != b.len() { return a.len().cmp(&b.len()); }
-        for (&x, &y) in a.iter().rev().zip(b.iter().rev()) {
-            match x.cmp(&y) { Equal => {} o => return o }
-        }
-        Equal
-    }
-
-    fn add_mag(a: &[u32], b: &[u32]) -> Vec<u32> {
-        let mut out = Vec::with_capacity(a.len().max(b.len()) + 1);
-        let mut carry = 0u64;
-        for i in 0..a.len().max(b.len()) {
-            let s = a.get(i).copied().unwrap_or(0) as u64
-                  + b.get(i).copied().unwrap_or(0) as u64
-                  + carry;
-            out.push(s as u32); carry = s >> 32;
-        }
-        if carry != 0 { out.push(carry as u32); }
-        out
-    }
-
-    fn sub_mag(a: &[u32], b: &[u32]) -> Vec<u32> {
-        let mut out = Vec::with_capacity(a.len());
-        let mut borrow = 0i64;
-        for (i, _item) in a.iter().enumerate() {
-            let d = a[i] as i64 - b.get(i).copied().unwrap_or(0) as i64 - borrow;
-            borrow = if d < 0 { 1 } else { 0 };
-            out.push((d + if d < 0 { 0x1_0000_0000 } else { 0 }) as u32);
-        }
-        Self::trim(&mut out); out
-    }
-
-    pub fn add(&self, other: &Self) -> Self {
-        if self.neg == other.neg {
-            return Self { neg: self.neg, limbs: Self::add_mag(&self.limbs, &other.limbs) };
-        }
-        match Self::cmp_mag(&self.limbs, &other.limbs) {
-            core::cmp::Ordering::Equal => Self::zero(),
-            core::cmp::Ordering::Greater => Self { neg: self.neg,  limbs: Self::sub_mag(&self.limbs,  &other.limbs) },
-            core::cmp::Ordering::Less => Self { neg: other.neg, limbs: Self::sub_mag(&other.limbs, &self.limbs)  },
-        }
-    }
-    pub fn sub(&self, other: &Self) -> Self { self.add(&other.neg()) }
-
-    pub fn mul(&self, other: &Self) -> Self {
-        if self.is_zero() || other.is_zero() { return Self::zero(); }
-        let (n, m) = (self.limbs.len(), other.limbs.len());
-        let mut tmp = vec![0u64; n + m];
-        for (i, &ai) in self.limbs.iter().enumerate() {
-            for (j, &bj) in other.limbs.iter().enumerate() {
-                tmp[i + j] += ai as u64 * bj as u64;
-            }
-        }
-        let mut limbs = Vec::with_capacity(n + m);
-        let mut carry = 0u64;
-        for &d in &tmp { let s = d + carry; limbs.push(s as u32); carry = s >> 32; }
-        if carry != 0 { limbs.push(carry as u32); }
-        Self::trim(&mut limbs);
-        Self { neg: self.neg != other.neg, limbs }
-    }
-
-    pub fn mul_u32(&self, d: u32) -> Self {
-        if d == 0 || self.is_zero() { return Self::zero(); }
-        let mut carry = 0u64;
-        let mut limbs = Vec::with_capacity(self.limbs.len() + 1);
-        for &l in &self.limbs { let s = l as u64 * d as u64 + carry; limbs.push(s as u32); carry = s >> 32; }
-        if carry != 0 { limbs.push(carry as u32); }
-        Self { neg: self.neg, limbs }
-    }
-
-    fn div_mag(u: &[u32], v: &[u32]) -> (Vec<u32>, Vec<u32>) {
-        let n = v.len();
-        let m = u.len().saturating_sub(n);
-
-        // Single-limb fast path
-        if n == 1 {
-            let d = v[0] as u64;
-            let mut rem = 0u64;
-            let mut q = vec![0u32; u.len()];
-            for i in (0..u.len()).rev() {
-                let cur = (rem << 32) | u[i] as u64;
-                q[i] = (cur / d) as u32;
-                rem = cur % d;
-            }
-            Self::trim(&mut q);
-            return (q, if rem == 0 { vec![] } else { vec![rem as u32] });
-        }
-
-        // Normalize so v[n-1] >= BASE/2, bounding q_hat error to at most 2
-        let shift = v[n - 1].leading_zeros();
-        let vn = Self::shl_limbs(v, shift);
-        let mut un = Self::shl_limbs_ext(u, shift);
-
-        let (vn1, vn2) = (vn[n - 1] as u64, vn[n - 2] as u64);
-        let mut q = vec![0u32; m + 1];
-
-        for j in (0..=m).rev() {
-            // Estimate quotient digit, then refine (at most 2 corrections)
-            let u2 = ((un[j + n] as u64) << 32) | un[j + n - 1] as u64;
-            let (mut q_hat, mut r_hat) = (u2 / vn1, u2 % vn1);
-            while q_hat >= (1u64 << 32)
-                || q_hat * vn2 > ((r_hat << 32) | un[j + n - 2] as u64)
-            {
-                q_hat -= 1;
-                r_hat += vn1;
-                if r_hat >= (1u64 << 32) { break; }
-            }
-
-            // Subtract q_hat * vn from un[j..]
-            let mut borrow = 0i64;
-            for i in 0..n {
-                let prod = q_hat * vn[i] as u64;
-                let diff = un[j+i] as i64 - borrow - (prod & 0xFFFF_FFFF) as i64;
-                un[j+i] = diff as u32;
-                borrow = (prod >> 32) as i64 - (diff >> 32);
-            }
-            let top = un[j + n] as i64 - borrow;
-            un[j + n] = top as u32;
-
-            // Add back if q_hat was too large (rare)
-            if top < 0 {
-                q_hat -= 1;
-                let mut carry = 0u64;
-                for i in 0..n {
-                    let s = un[j+i] as u64 + vn[i] as u64 + carry;
-                    un[j+i] = s as u32;
-                    carry = s >> 32;
-                }
-                un[j+n] = un[j+n].wrapping_add(carry as u32);
-            }
-
-            q[j] = q_hat as u32;
-        }
-
-        // Denormalize remainder
-        let mut rem = Self::shr_limbs(&un[..n], shift);
-        Self::trim(&mut q);
-        Self::trim(&mut rem);
-        (q, rem)
-    }
-
-    /* Shift left, returning n+1 limbs to hold overflow. */
-    fn shl_limbs_ext(limbs: &[u32], shift: u32) -> Vec<u32> {
-        let mut out = vec![0u32; limbs.len() + 1];
-        if shift == 0 {
-            out[..limbs.len()].copy_from_slice(limbs);
-            return out;
-        }
-        out[limbs.len()] = limbs[limbs.len() - 1] >> (32 - shift);
-        for i in (1..limbs.len()).rev() {
-            out[i] = (limbs[i] << shift) | (limbs[i-1] >> (32 - shift));
-        }
-        out[0] = limbs[0] << shift;
-        out
-    }
-
-    /* Shift left without overflow limb. */
-    fn shl_limbs(limbs: &[u32], shift: u32) -> Vec<u32> {
-        if shift == 0 { return limbs.to_vec(); }
-        let mut out = vec![0u32; limbs.len()];
-        for i in (1..limbs.len()).rev() {
-            out[i] = (limbs[i] << shift) | (limbs[i-1] >> (32 - shift));
-        }
-        out[0] = limbs[0] << shift;
-        out
-    }
-
-    /* Shift right to undo normalization. */
-    fn shr_limbs(limbs: &[u32], shift: u32) -> Vec<u32> {
-        if shift == 0 { return limbs.to_vec(); }
-        let mut out = vec![0u32; limbs.len()];
-        for i in 0..limbs.len() - 1 {
-            out[i] = (limbs[i] >> shift) | (limbs[i+1] << (32 - shift));
-        }
-        *out.last_mut().unwrap() = limbs.last().unwrap() >> shift;
-        out
-    }
-
-    pub fn divmod(&self, other: &Self) -> Option<(Self, Self)> {
-        if other.is_zero() { return None; }
-        if self.is_zero()  { return Some((Self::zero(), Self::zero())); }
-
-        let (q_l, r_l) = Self::div_mag(&self.limbs, &other.limbs);
-        let mut q = Self { neg: self.neg != other.neg, limbs: q_l };
-        let mut r = Self { neg: self.neg, limbs: r_l };
-
-        if !r.is_zero() && r.neg != other.neg {
-            q = q.sub(&Self { neg: false, limbs: vec![1] });
-            r = r.add(other);
-        }
-        Some((q, r))
-    }
-
-    pub fn pow_u32(&self, mut exp: u32) -> Self {
-        if exp == 0 { return Self { neg: false, limbs: vec![1] }; }
-        let mut base = self.clone();
-        let mut result = Self { neg: false, limbs: vec![1] };
-        while exp > 0 {
-            if exp & 1 != 0 { result = result.mul(&base); }
-            base = base.mul(&base);
-            exp >>= 1;
-        }
-        result
-    }
-
-    pub fn to_decimal(&self) -> alloc::string::String {
-        if self.is_zero() { return alloc::string::String::from("0"); }
-        const BASE: u64 = 1_000_000_000;
-        let mut limbs = self.limbs.clone();
-        let mut groups: alloc::vec::Vec<u32> = alloc::vec::Vec::new();
-        while !limbs.is_empty() {
-            let mut rem = 0u64;
-            let mut nl: alloc::vec::Vec<u32> = alloc::vec::Vec::new();
-            for &l in limbs.iter().rev() {
-                let cur = (rem << 32) | l as u64;
-                let q = cur / BASE; rem = cur % BASE;
-                if !nl.is_empty() || q != 0 { nl.push(q as u32); }
-            }
-            nl.reverse(); groups.push(rem as u32); limbs = nl;
-        }
-        let mut s = alloc::string::String::new();
-        if self.neg { s.push('-'); }
-        s.push_str(&crate::modules::fstr::format_dec_groups(&groups));
-        s
-    }
-}
-
-impl PartialOrd for BigInt {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(Ord::cmp(self, other))
-    }
-}
-impl Ord for BigInt {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        if self.neg != other.neg {
-            return if self.neg { core::cmp::Ordering::Less } else { core::cmp::Ordering::Greater };
-        }
-        let m = Self::cmp_mag(&self.limbs, &other.limbs);
-        if self.neg { m.reverse() } else { m }
-    }
-}
 
 /* Heap-allocated value variants. Stored in HeapPool's arena; addressed
    by index via the Val::heap tag. */
@@ -497,7 +145,6 @@ pub enum HeapObj {
     Range(i64, i64, i64),
     Slice(Val, Val, Val),
     Type(String),
-    BigInt(BigInt),
     BoundMethod(Val, BuiltinMethodId),
     NativeFn(NativeFnId),
     Class(String, Vec<(String, Val)>),
@@ -649,9 +296,9 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
             for &(_, v) in captures { f(v); }
         }
         HeapObj::Module(_, attrs) => for (_, v) in attrs { f(*v); },
-        // Variants without Val payloads (Str, Bytes, BigInt, Type,
-        // NativeFn, Range, Extern) — terminal, nothing to trace.
-        HeapObj::Str(_) | HeapObj::Bytes(_) | HeapObj::BigInt(_)
+        // Variants without Val payloads (Str, Bytes, Type, NativeFn,
+        // Range, Extern) — terminal, nothing to trace.
+        HeapObj::Str(_) | HeapObj::Bytes(_)
         | HeapObj::Type(_) | HeapObj::NativeFn(_) | HeapObj::Range(..) | HeapObj::Extern(_) => {}
     }
 }
@@ -811,7 +458,6 @@ impl HeapPool {
                 Some(HeapObj::Range(..)) => 11,
                 Some(HeapObj::Slice(..)) => 12,
                 Some(HeapObj::Type(_)) => 13,
-                Some(HeapObj::BigInt(_)) => 14,
                 Some(HeapObj::BoundMethod(_, _)) => 15,
                 Some(HeapObj::NativeFn(_)) => 16,
                 Some(HeapObj::BoundUserMethod(..)) => 17,
@@ -837,10 +483,6 @@ pub(super) fn eq_dict(a: &DictMap, b: &DictMap, eq: impl Fn(Val,Val)->bool) -> b
 }
 
 pub fn eq_vals_with_heap(a: Val, b: Val, heap: &HeapPool) -> bool {
-    if let (Some(ba), Some(bb)) = (bigint_of(a, heap), bigint_of(b, heap)) {
-        return ba.cmp(bb) == core::cmp::Ordering::Equal;
-    }
-
     if !a.is_heap() || !b.is_heap() {
         if a.is_int() && b.is_int() { return a.as_int() == b.as_int(); }
         if a.is_float() && b.is_float() { return a.as_float() == b.as_float(); }
@@ -850,7 +492,6 @@ pub fn eq_vals_with_heap(a: Val, b: Val, heap: &HeapPool) -> bool {
     }
 
     match (heap.get(a), heap.get(b)) {
-        (HeapObj::BigInt(x), HeapObj::BigInt(y)) => x.cmp(y) == core::cmp::Ordering::Equal,
         (HeapObj::Str(x), HeapObj::Str(y)) => x == y,
         (HeapObj::Bytes(x), HeapObj::Bytes(y)) => x == y,
         (HeapObj::Tuple(x), HeapObj::Tuple(y)) => eq_seq(x, y, |a,b| eq_vals_with_heap(a, b, heap)),
@@ -863,17 +504,12 @@ pub fn eq_vals_with_heap(a: Val, b: Val, heap: &HeapPool) -> bool {
     }
 }
 
-fn bigint_of(v: Val, heap: &HeapPool) -> Option<&BigInt> {
-    if v.is_heap() && let HeapObj::BigInt(b) = heap.get(v) { return Some(b); }
-    None
-}
-
 /* Runtime errors. Static-string variants avoid alloc on the hot error path;
    *Msg / Name / Attribute / Raised variants carry dynamic text so the user
    sees the actual offending name or object type instead of a generic
    "attribute not found". */
 pub enum VmErr {
-    CallDepth, Heap, Budget, ZeroDiv,
+    CallDepth, Heap, Budget, ZeroDiv, Overflow,
     Name(String),
     Type(&'static str),
     TypeMsg(String),
@@ -890,6 +526,7 @@ impl VmErr {
             Self::Heap => "MemoryError: heap limit",
             Self::Budget => "RuntimeError: budget exceeded",
             Self::ZeroDiv => "ZeroDivisionError: division by zero",
+            Self::Overflow => "OverflowError: integer too large for 47-bit Val",
             Self::Type(s) => s,
             Self::Value(s) => s,
             Self::Runtime(s) => s,
@@ -1015,6 +652,7 @@ pub fn fpowf(base: f64, exp: f64) -> f64 {
 #[cold] #[inline(never)] pub fn cold_type(m: &'static str) -> VmErr { VmErr::Type(m) }
 #[cold] #[inline(never)] pub fn cold_value(m: &'static str) -> VmErr { VmErr::Value(m) }
 #[cold] #[inline(never)] pub fn cold_runtime(m: &'static str) -> VmErr { VmErr::Runtime(m) }
+#[cold] #[inline(never)] pub fn cold_overflow() -> VmErr { VmErr::Overflow }
 
 /* Single-write SSA store after register coalescing. */
 #[inline(always)]

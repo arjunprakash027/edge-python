@@ -6,7 +6,7 @@ use super::types::{OpCode, Value, MAX_EXPR_DEPTH, Instruction};
 use super::types::{parse_string, parse_bytes_literal};
 use crate::modules::lexer::{Token, TokenType};
 
-use alloc::{string::ToString, vec::Vec, vec, string::String};
+use alloc::{string::ToString, vec::Vec, string::String};
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
@@ -277,36 +277,15 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let s = raw.replace('_', "");
         if kind == TokenType::Float { self.emit_const(Value::Float(s.parse().unwrap_or(0.0))); return; }
         let (digits, base) = Self::parse_int_prefix(&s);
-        let maybe = if base == 10 {
-            digits.parse().ok()
+        let parsed = if base == 10 {
+            digits.parse::<i64>().ok()
         } else {
             i64::from_str_radix(digits, base).ok()
         };
-        match maybe {
+        match parsed {
             Some(v) => self.emit_const(Value::Int(v)),
-            None => {
-                let dec = if base == 10 { digits.to_string() } else { Self::big_base_to_dec(digits, base) };
-                self.emit_const(Value::BigInt(dec));
-            }
+            None => self.error("integer literal too large for 47-bit Val (max \u{00b1}140737488355327)"),
         }
-    }
-
-    fn big_base_to_dec(s: &str, base: u32) -> String {
-        const DEC: u64 = 1_000_000_000;
-        let mut limbs: Vec<u32> = vec![0];
-        for c in s.chars() {
-            let d = c.to_digit(base).unwrap_or(0) as u64;
-            let mut carry = d;
-            for limb in limbs.iter_mut() {
-                let cur = *limb as u64 * base as u64 + carry;
-                *limb = (cur % DEC) as u32;
-                carry = cur / DEC;
-            }
-            if carry != 0 { limbs.push(carry as u32); }
-        }
-        let mut out = crate::modules::fstr::format_dec_groups(&limbs);
-        if out.is_empty() { out.push('0'); }
-        out
     }
 
     /* Trailers after an atom: .attr, [i], [s:e], (args), chained. */

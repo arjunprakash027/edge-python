@@ -43,27 +43,23 @@ True
 
 ## Integer
 
-48-bit inline by default; transparently promoted to BigInt above ±2⁴⁷. Arithmetic preserves precision indefinitely.
+47-bit signed inline (range ±2⁴⁷ minus one). Operations that overflow raise `OverflowError`.
 
 ```python
-# Inline range
-print(2 ** 47)
+# Inside the supported range
+print(2 ** 46)
+print(2 ** 46 - 1)
 
-# Promoted to BigInt
-print(2 ** 100)
-print(10 ** 30)
-
-# BigInt arithmetic stays exact
-print(10 ** 20 + 1)
-print(2 ** 64 * 2 ** 64)
+try:
+    print(2 ** 47)
+except OverflowError:
+    print("overflow")
 ```
 
 ```text Output
-140737488355328
-1267650600228229401496703205376
-1000000000000000000000000000000
-100000000000000000001
-340282366920938463463374607431768211456
+70368744177664
+70368744177663
+overflow
 ```
 
 ```python

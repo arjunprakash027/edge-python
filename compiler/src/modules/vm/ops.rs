@@ -65,7 +65,6 @@ impl<'a> VM<'a> {
         match self.heap.get(v) {
             HeapObj::Str(s) => !s.is_empty(),
             HeapObj::Bytes(b) => !b.is_empty(),
-            HeapObj::BigInt(b) => !b.is_zero(),
             HeapObj::List(l) => !l.borrow().is_empty(),
             HeapObj::Tuple(t) => !t.is_empty(),
             HeapObj::Dict(d) => !d.borrow().is_empty(),
@@ -86,16 +85,14 @@ impl<'a> VM<'a> {
     }
 
     pub fn bitwise_op(&mut self, a: Val, b: Val, op: impl Fn(i64, i64) -> i64) -> Result<Val, VmErr> {
-        if a.is_int() && b.is_int() {
-            return Ok(Val::int(op(a.as_int(), b.as_int())));
-        }
-        let ai = self.to_bigint(a)
-            .and_then(|b| b.to_i64_checked())
-            .ok_or(cold_type("bitwise op requires integer operands"))?;
-        let bi = self.to_bigint(b)
-            .and_then(|b| b.to_i64_checked())
-            .ok_or(cold_type("bitwise op requires integer operands"))?;
-        Ok(Val::int(op(ai, bi)))
+        let ai = if a.is_int() { a.as_int() }
+                 else if a.is_bool() { a.as_bool() as i64 }
+                 else { return Err(cold_type("bitwise op requires integer operands")); };
+        let bi = if b.is_int() { b.as_int() }
+                 else if b.is_bool() { b.as_bool() as i64 }
+                 else { return Err(cold_type("bitwise op requires integer operands")); };
+        let r = op(ai, bi);
+        Val::int_checked(r).ok_or(cold_overflow())
     }
 
     /* Set | Set, Set & Set, Set ^ Set. Caller has already verified both
@@ -146,7 +143,6 @@ impl<'a> VM<'a> {
         else { match self.heap.get(v) {
             HeapObj::Str(_) => "str",
             HeapObj::Bytes(_) => "bytes",
-            HeapObj::BigInt(_) => "int",
             HeapObj::List(_) => "list",
             HeapObj::Dict(_) => "dict",
             HeapObj::Set(_) => "set",
@@ -195,7 +191,6 @@ impl<'a> VM<'a> {
         match self.heap.get(v) {
             HeapObj::Str(s) => s.clone(),
             HeapObj::Bytes(b) => format_bytes(b),
-            HeapObj::BigInt(b) => b.to_decimal(),
             HeapObj::Type(name) => s!("<class '", str name, "'>"),
             HeapObj::Func(i,_,_) => s!("<function ", int *i),
             HeapObj::Slice(s,e,st) => s!("slice(", str &self.display(*s), ", ", str &self.display(*e), ", ", str &self.display(*st), ")"),
@@ -254,9 +249,6 @@ impl<'a> VM<'a> {
         let b = if b.is_bool() { Val::int(b.as_bool() as i64) } else { b };
         if a.is_int() && b.is_int() { return Ok(a.as_int() < b.as_int()); }
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(af < bf); }
-        if let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b)) {
-            return Ok(ba.cmp(&bb) == core::cmp::Ordering::Less);
-        }
         if a.is_heap() && b.is_heap()
             && let (HeapObj::Str(x), HeapObj::Str(y)) = (self.heap.get(a), self.heap.get(b)) {
                 return Ok(x < y);
@@ -284,16 +276,9 @@ impl<'a> VM<'a> {
     }
     pub fn add_vals(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
         if a.is_int() && b.is_int() {
-            return match a.as_int().checked_add(b.as_int()) {
-                Some(r) if (Val::INT_MIN..=Val::INT_MAX).contains(&r) => Ok(Val::int(r)),
-                Some(r) => self.heap.alloc(HeapObj::BigInt(BigInt::from_i64(r))),
-                None => self.i128_to_val(a.as_int() as i128 + b.as_int() as i128),
-            };
+            return self.int_or_overflow(a.as_int().checked_add(b.as_int()));
         }
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(Val::float(af + bf)); }
-        if let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b)) {
-            return self.bigint_to_val(ba.add(&bb));
-        }
         if a.is_heap() && b.is_heap() {
             match (self.heap.get(a), self.heap.get(b)) {
                 (HeapObj::Str(sa), HeapObj::Str(sb)) => {
@@ -322,16 +307,9 @@ impl<'a> VM<'a> {
 
     pub fn sub_vals(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
         if a.is_int() && b.is_int() {
-            return match a.as_int().checked_sub(b.as_int()) {
-                Some(r) if (Val::INT_MIN..=Val::INT_MAX).contains(&r) => Ok(Val::int(r)),
-                Some(r) => self.heap.alloc(HeapObj::BigInt(BigInt::from_i64(r))),
-                None => self.i128_to_val(a.as_int() as i128 - b.as_int() as i128),
-            };
+            return self.int_or_overflow(a.as_int().checked_sub(b.as_int()));
         }
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(Val::float(af - bf)); }
-        if let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b)) {
-            return self.bigint_to_val(ba.sub(&bb));
-        }
         // Set difference: `a - b` produces a fresh set with every element
         // of `a` not present in `b`. Mirror Python's `set.difference`.
         if a.is_heap() && b.is_heap()
@@ -357,16 +335,9 @@ impl<'a> VM<'a> {
 
     pub fn mul_vals(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
         if a.is_int() && b.is_int() {
-            return match a.as_int().checked_mul(b.as_int()) {
-                Some(r) if (Val::INT_MIN..=Val::INT_MAX).contains(&r) => Ok(Val::int(r)),
-                Some(r) => self.heap.alloc(HeapObj::BigInt(BigInt::from_i64(r))),
-                None => self.i128_to_val(a.as_int() as i128 * b.as_int() as i128),
-            };
+            return self.int_or_overflow(a.as_int().checked_mul(b.as_int()));
         }
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(Val::float(af * bf)); }
-        if let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b)) {
-            return self.bigint_to_val(ba.mul(&bb));
-        }
         let (seq_val, count) = if a.is_heap() && b.is_int() { (a, b.as_int()) }
                 else if a.is_int() && b.is_heap() { (b, a.as_int()) }
                 else {
@@ -408,31 +379,30 @@ impl<'a> VM<'a> {
         Ok(Val::float(av / bv))
     }
 
-    pub(crate) fn to_bigint(&self, v: Val) -> Option<BigInt> {
-        if v.is_int() { return Some(BigInt::from_i64(v.as_int())); }
-        if v.is_heap()
-            && let HeapObj::BigInt(b) = self.heap.get(v) { return Some(b.clone()); }
-        None
-    }
-
-    pub(crate) fn bigint_to_val(&mut self, b: BigInt) -> Result<Val, VmErr> {
-        if let Some(i) = b.to_i64_checked()
-            && (Val::INT_MIN..=Val::INT_MAX).contains(&i) { return Ok(Val::int(i)); }
-        self.heap.alloc(HeapObj::BigInt(b))
+    /* Promote any int-like operand to a plain i64 for the integer fast-path.
+       Returns None for floats / heap objects so callers can fall through to
+       a typed-operand error. */
+    pub(crate) fn as_i64(&self, v: Val) -> Option<i64> {
+        if v.is_int() { Some(v.as_int()) }
+        else if v.is_bool() { Some(v.as_bool() as i64) }
+        else { None }
     }
 
     pub(crate) fn to_f64_coerce(&self, v: Val) -> Result<f64, VmErr> {
         if v.is_int() { return Ok(v.as_int() as f64); }
         if v.is_float() { return Ok(v.as_float()); }
-        if v.is_heap()
-            && let HeapObj::BigInt(b) = self.heap.get(v) { return Ok(b.to_f64()); }
+        if v.is_bool() { return Ok(v.as_bool() as i64 as f64); }
         Err(cold_type("numeric operand required"))
     }
 
-    pub(crate) fn i128_to_val(&mut self, r: i128) -> Result<Val, VmErr> {
-        if r >= Val::INT_MIN as i128 && r <= Val::INT_MAX as i128 {
-            return Ok(Val::int(r as i64));
+    /* Wrap a checked-arith result into a Val, or raise OverflowError. The
+       inner range check is ±2^47 because the NaN-boxed Val tag uses 47 bits
+       for the integer payload — values outside that range can't fit. */
+    #[inline]
+    pub(crate) fn int_or_overflow(&self, r: Option<i64>) -> Result<Val, VmErr> {
+        match r {
+            Some(i) if (Val::INT_MIN..=Val::INT_MAX).contains(&i) => Ok(Val::int(i)),
+            _ => Err(cold_overflow()),
         }
-        self.heap.alloc(HeapObj::BigInt(BigInt::from_i128(r)))
     }
 }

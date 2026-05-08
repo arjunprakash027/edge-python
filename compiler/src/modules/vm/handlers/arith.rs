@@ -5,7 +5,8 @@ use ops::cached_binop;
 
 impl<'a> VM<'a> {
 
-    /* Add/Sub/Mul/Div with IC; Mod/Pow/FloorDiv via BigInt; Minus is unary. */
+    /* Add/Sub/Mul/Div with IC; Mod/Pow/FloorDiv on i64 with overflow trap;
+       Minus is unary. */
     pub(crate) fn handle_arith(&mut self, op: OpCode, rip: usize, cache: &mut OpcodeCache) -> Result<(), VmErr> {
         if op == OpCode::Minus {
             return self.exec_neg();
@@ -34,14 +35,9 @@ impl<'a> VM<'a> {
     fn exec_neg(&mut self) -> Result<(), VmErr> {
         let v = self.pop()?;
         let result = if v.is_int() {
-            self.i128_to_val(-(v.as_int() as i128))?
+            self.int_or_overflow(v.as_int().checked_neg())?
         } else if v.is_float() {
             Val::float(-v.as_float())
-        } else if v.is_heap() {
-            match self.heap.get(v) {
-                HeapObj::BigInt(b) => { let n = b.neg(); self.bigint_to_val(n)? }
-                _ => return Err(cold_type("unary - requires a number")),
-            }
         } else {
             return Err(cold_type("unary - requires a number"));
         };
@@ -58,10 +54,13 @@ impl<'a> VM<'a> {
             let r = af - ffloor(af / bf) * bf;
             return Ok(Val::float(r));
         }
-        let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b))
+        let (Some(ai), Some(bi)) = (self.as_i64(a), self.as_i64(b))
             else { return Err(cold_type("% requires numeric operands")); };
-        let (_, r) = ba.divmod(&bb).ok_or(VmErr::ZeroDiv)?;
-        self.bigint_to_val(r)
+        if bi == 0 { return Err(VmErr::ZeroDiv); }
+        // Floor-mod on i64: result takes the divisor's sign, matching Python.
+        let r = ai.rem_euclid(bi.abs());
+        let r = if bi < 0 && r != 0 { r - bi.abs() } else { r };
+        self.int_or_overflow(Some(r))
     }
 
     fn exec_floordiv(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
@@ -72,27 +71,29 @@ impl<'a> VM<'a> {
             // ffloor() handles all magnitudes; `as i64` would overflow for large floats.
             return Ok(Val::float(ffloor(af / bf)));
         }
-        let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b))
+        let (Some(ai), Some(bi)) = (self.as_i64(a), self.as_i64(b))
             else { return Err(cold_type("// requires numeric operands")); };
-        let (q, _) = ba.divmod(&bb).ok_or(VmErr::ZeroDiv)?;
-        self.bigint_to_val(q)
+        if bi == 0 { return Err(VmErr::ZeroDiv); }
+        // Floor-div on i64: round toward negative infinity, matching Python.
+        let q = ai.checked_div(bi).ok_or(cold_overflow())?;
+        let r = ai - q * bi;
+        let q = if (r != 0) && ((r < 0) != (bi < 0)) { q - 1 } else { q };
+        self.int_or_overflow(Some(q))
     }
 
     fn exec_pow(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
         self.pow_vals(a, b, "** requires numeric operands")
     }
 
-    /* BitAnd/Or/Xor via closure; BitNot is unary; Shl/Shr through BigInt.
-       Set/Set operands hijack |, &, ^ to mean union, intersection, and
-       symmetric difference (Python semantics); other type combinations
+    /* BitAnd/Or/Xor via closure on i64; BitNot is unary; Shl/Shr on i64 with
+       overflow trap. Set/Set operands hijack |, &, ^ to mean union, intersection,
+       and symmetric difference (Python semantics); other type combinations
        fall through to the integer bitwise path. */
     pub(crate) fn handle_bitwise(&mut self, op: OpCode) -> Result<(), VmErr> {
         if op == OpCode::BitNot {
             let v = self.pop()?;
-            let b = self.to_bigint(v).ok_or(cold_type("~ requires an integer"))?;
-            let one = BigInt::from_i64(1);
-            let result = b.add(&one).neg();
-            let out = self.bigint_to_val(result)?;
+            let i = self.as_i64(v).ok_or(cold_type("~ requires an integer"))?;
+            let out = self.int_or_overflow(Some(!i))?;
             self.push(out);
             return Ok(());
         }
@@ -120,21 +121,17 @@ impl<'a> VM<'a> {
         if !b.is_int() { return Err(cold_type("shift count must be an integer")); }
         let shift = b.as_int();
         if shift < 0 { return Err(cold_value("negative shift count")); }
-        let ba = self.to_bigint(a).ok_or(cold_type("<< requires an integer"))?;
-        if shift >= 512 { return Err(cold_value("shift too large")); }
-        let factor = BigInt::from_i64(1).shl_u32(shift as u32);
-        self.bigint_to_val(ba.mul(&factor))
+        if shift >= 47 { return Err(cold_overflow()); }
+        let ai = self.as_i64(a).ok_or(cold_type("<< requires an integer"))?;
+        self.int_or_overflow(ai.checked_shl(shift as u32))
     }
 
     fn exec_shr(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
         if !b.is_int() { return Err(cold_type("shift count must be an integer")); }
         let shift = b.as_int();
         if shift < 0 { return Err(cold_value("negative shift count")); }
-        if a.is_int() {
-            return Ok(Val::int(a.as_int() >> shift.min(63)));
-        }
-        let ba = self.to_bigint(a).ok_or(cold_type(">> requires an integer"))?;
-        self.bigint_to_val(ba.shr_u32(shift.min(1024) as u32))
+        let ai = self.as_i64(a).ok_or(cold_type(">> requires an integer"))?;
+        Ok(Val::int(ai >> shift.min(63)))
     }
 
     pub(crate) fn handle_compare(&mut self, op: OpCode, rip: usize, cache: &mut OpcodeCache) -> Result<(), VmErr> {

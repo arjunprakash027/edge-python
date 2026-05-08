@@ -23,7 +23,7 @@
    Returns Ok(formatted) or Err(message) so the caller can raise ValueError. */
 
 use alloc::string::{String, ToString};
-use crate::modules::vm::types::{Val, HeapObj, HeapPool, BigInt, fabs, ffloor, flog10, fsignum, ftrunc};
+use crate::modules::vm::types::{Val, HeapObj, HeapPool, fabs, ffloor, flog10, fsignum, ftrunc};
 
 pub fn format_value(v: Val, spec: &str, heap: &HeapPool) -> Result<String, &'static str> {
     if spec.is_empty() {
@@ -113,9 +113,7 @@ fn apply(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static str> {
        float types coerce ints up; string types accept strings only. */
     match s.ty {
         0 | b's' => {
-            if v.is_int() || v.is_float() || v.is_bool() || v.is_none()
-                || (v.is_heap() && matches!(heap.get(v), HeapObj::BigInt(_)))
-            {
+            if v.is_int() || v.is_float() || v.is_bool() || v.is_none() {
                 if s.ty == b's' { return Err("'s' format spec requires a string"); }
                 /* No type char + numeric: format like default unless precision/
                    thousands present, in which case treat as float-general. */
@@ -124,9 +122,6 @@ fn apply(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static str> {
                 }
                 if v.is_int() {
                     return Ok(pad_numeric(s, &itoa_str(v.as_int())));
-                }
-                if v.is_heap() && let HeapObj::BigInt(b) = heap.get(v) {
-                    return Ok(pad_numeric(s, &b.to_decimal()));
                 }
                 if v.is_float() {
                     return format_float(v, s, b'g', heap);
@@ -207,56 +202,43 @@ fn format_float(v: Val, s: &Spec, ty: u8, heap: &HeapPool) -> Result<String, &'s
     Ok(pad_aligned(s, &left, sign_ch.map(|_| 1).unwrap_or(0)))
 }
 
-fn require_int(v: Val, heap: &HeapPool) -> Result<i64, &'static str> {
+fn require_int(v: Val, _heap: &HeapPool) -> Result<i64, &'static str> {
     if v.is_int() { return Ok(v.as_int()); }
     if v.is_bool() { return Ok(v.as_bool() as i64); }
-    if v.is_heap() && let HeapObj::BigInt(b) = heap.get(v) {
-        return b.to_i64_checked().ok_or("integer too large for format type");
-    }
     Err("format spec requires an integer")
 }
 
-fn require_float(v: Val, heap: &HeapPool) -> Result<f64, &'static str> {
+fn require_float(v: Val, _heap: &HeapPool) -> Result<f64, &'static str> {
     if v.is_float() { return Ok(v.as_float()); }
     if v.is_int() { return Ok(v.as_int() as f64); }
     if v.is_bool() { return Ok(v.as_bool() as i64 as f64); }
-    if v.is_heap() && let HeapObj::BigInt(b) = heap.get(v) { return Ok(b.to_f64()); }
     Err("format spec requires a number")
 }
 
-fn int_to_decimal_parts(v: Val, heap: &HeapPool) -> Result<(bool, String), &'static str> {
+fn int_to_decimal_parts(v: Val, _heap: &HeapPool) -> Result<(bool, String), &'static str> {
     if v.is_int() {
         let i = v.as_int();
         let neg = i < 0;
-        let mag = if i == i64::MIN {
-            BigInt::from_i64(i).abs().to_decimal()
-        } else {
-            let mut b = itoa::Buffer::new();
-            b.format(i.unsigned_abs()).to_string()
-        };
+        let mut b = itoa::Buffer::new();
+        // i.unsigned_abs() handles i64::MIN — but Val ints are bounded to ±2^47
+        // so this can't overflow.
+        let mag = b.format(i.unsigned_abs()).to_string();
         return Ok((neg, mag));
     }
     if v.is_bool() { return Ok((false, itoa_str(v.as_bool() as i64))); }
-    if v.is_heap() && let HeapObj::BigInt(b) = heap.get(v) {
-        let s = b.to_decimal();
-        if let Some(rest) = s.strip_prefix('-') { return Ok((true, rest.to_string())); }
-        return Ok((false, s));
-    }
     Err("format spec requires an integer")
 }
 
 fn decimal_to_radix(mag: &str, radix: u32) -> String {
     /* Convert a non-negative decimal magnitude string to the given radix.
-       Goes through BigInt to handle values beyond i64. */
+       Operates on u64 since Val ints are bounded to ±2^47. */
     if mag == "0" { return String::from("0"); }
-    let mut bi = BigInt::from_decimal(mag);
-    let r = BigInt::from_i64(radix as i64);
+    let mut n: u64 = mag.parse().unwrap_or(0);
     let mut out = String::new();
-    while !bi.is_zero() {
-        let (q, rem) = bi.divmod(&r).unwrap();
-        let d = rem.to_i64_checked().unwrap() as u32;
+    while n > 0 {
+        let d = (n % radix as u64) as u32;
         out.push(core::char::from_digit(d, radix).unwrap());
-        bi = q;
+        n /= radix as u64;
     }
     out.chars().rev().collect()
 }
@@ -358,8 +340,7 @@ fn fixed(mag: f64, prec: usize) -> String {
     } else {
         ftrunc(scaled + 0.5 * fsignum(scaled))
     };
-    let bi = BigInt::from_decimal(&u128_to_dec(fabs(rounded) as u128));
-    let dec = bi.to_decimal();
+    let dec = u128_to_dec(fabs(rounded) as u128);
     if prec == 0 { return dec; }
     /* Pad on the left so we can insert a `.` exactly `prec` chars from the end. */
     let needed = prec + 1;
@@ -463,8 +444,6 @@ pub fn display_inline(v: Val, heap: &HeapPool) -> String {
     if v.is_float() { return crate::modules::fstr::format_f64(v.as_float()); }
     if v.is_heap()
         && let HeapObj::Str(s) = heap.get(v) { return s.clone(); }
-    if v.is_heap()
-        && let HeapObj::BigInt(b) = heap.get(v) { return b.to_decimal(); }
     /* Fall back to nothing — caller should use VM::display for full coverage. */
     String::new()
 }
