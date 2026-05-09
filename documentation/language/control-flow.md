@@ -126,7 +126,42 @@ done
 
 ## match / case
 
-Equality dispatch with a wildcard fallback. `match` in Edge Python is **not** full structural pattern matching: it does not support guards, OR patterns, sequence patterns, or capture variables. For those, use `if` / `elif`. The shape it does cover is "tag dispatch" where each case is a constant value compared with `==`, plus `_` to catch the rest.
+Edge Python supports a useful subset of structural pattern matching: literal patterns, capture variables, the `_` wildcard, OR patterns (`|`), guards (`if`), and sequence patterns including the `*rest` star.
+
+**Not** supported: mapping patterns (`{"key": x}`), class patterns (`Point(x=0)`), nested sequence patterns inside another sequence, or value-shape captures via `as`. For those, use chained `if` / `elif`.
+
+```python
+def classify(p):
+    match p:
+        case 0:
+            return 'zero'
+        case 1 | 2 | 3:
+            return 'small'
+        case n if n < 0:
+            return 'negative'
+        case [x, y] if x == y:
+            return 'diagonal'
+        case [first, *middle, last]:
+            return f'span {first}..{last}'
+        case _:
+            return 'other'
+
+print(classify(0))
+print(classify(2))
+print(classify(-7))
+print(classify([3, 3]))
+print(classify([1, 2, 3, 4, 5]))
+```
+
+```text Output
+zero
+small
+negative
+diagonal
+span 1..5
+```
+
+Within a sequence pattern, each item is one of: a literal (`int` / `float` / `str` / `True` / `False` / `None`), a capture name, or `_`. Nested sequences (`case [[a, b], c]:`) are not supported — flatten them or use guards.
 
 ```python
 def describe(n):
