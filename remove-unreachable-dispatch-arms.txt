@@ -1,0 +1,41 @@
+Branch: remove-unreachable-dispatch-arms
+Tech debt: D42 — dead MakeClass/StoreAttr arm in dispatch_generic.
+
+================================================================================
+Commit 1: drop unreachable dispatch_generic arm
+================================================================================
+File: compiler/src/modules/vm/dispatch.rs
+
+What was wrong:
+  dispatch_generic (line 576) is the fallback called from the main
+  dispatch via:
+    other => self.dispatch_generic(other, op, slots)?
+  It only ever sees opcodes the main match did NOT handle.
+
+  The main match has explicit arms for OpCode::MakeClass at line 483
+  and OpCode::StoreAttr at line 515, so neither variant can reach
+  dispatch_generic. Yet dispatch_generic carried:
+
+    OpCode::MakeClass | OpCode::StoreAttr =>
+        return Err(cold_runtime("MakeClass/StoreAttr must be in main dispatch"));
+
+  Defensive in intent, dead in practice. Worse, it gives a false sense
+  of exhaustiveness: the catch-all `_` immediately after means the
+  presence of explicit arms here doesn't add real coverage.
+
+Fix:
+  Removed the unreachable arm. The catch-all
+    _ => return Err(cold_runtime("unexpected opcode in generic dispatch"))
+  remains as the runtime safety net.
+
+  The follow-up suggestion to replace `_` with an explicit list of
+  variants legitimately reaching dispatch_generic — so adding a new
+  OpCode breaks the build instead of being silently dropped to runtime
+  error — is structural and is left for a separate refactor.
+
+Documentation:
+  README and design.md mention MakeClass/StoreAttr only at the language
+  level (decorators, impurity tracking), not at the dispatch level. No
+  doc changes required.
+
+Tests: cargo test -> 6/6 passed.

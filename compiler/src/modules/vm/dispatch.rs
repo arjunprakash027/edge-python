@@ -666,9 +666,6 @@ impl<'a> VM<'a> {
             // Emitted by `break` inside a for-loop to drop the abandoned
             // iterator so the surrounding for-iter reads from its own iter.
             OpCode::PopIter => { self.iter_stack.pop(); }
-            OpCode::MakeClass | OpCode::StoreAttr => {
-                return Err(cold_runtime("MakeClass/StoreAttr must be in main dispatch"));
-            }
             _ => return Err(cold_runtime("unexpected opcode in generic dispatch")),
         }
         Ok(())
