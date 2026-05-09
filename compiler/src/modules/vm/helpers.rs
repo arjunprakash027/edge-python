@@ -1,0 +1,180 @@
+use crate::s;
+use alloc::{string::{String, ToString}, vec, vec::Vec};
+
+use super::VM;
+use super::types::*;
+
+impl<'a> VM<'a> {
+
+    /* Source byte offset of the last propagating runtime error, or None if
+       run() succeeded / hasn't been called. */
+    pub fn error_pos(&self) -> Option<usize> { self.error_byte_pos.map(|p| p as usize) }
+    pub fn call_stack_frames(&self) -> &[CallFrame] { &self.call_stack }
+    pub fn function_names_ref(&self) -> &[String] { &self.function_names }
+
+    /// Install a host-provided wall-clock function returning nanoseconds.
+    /// Without one, `sleep` advances a virtual clock so coroutines still
+    /// interleave deterministically but no real wait happens.
+    pub fn set_time_hook(&mut self, hook: fn() -> u64) {
+        self.time_hook = Some(hook);
+    }
+    pub(crate) fn now_ns(&self) -> u64 {
+        match self.time_hook { Some(h) => h(), None => self.virtual_clock_ns }
+    }
+
+    pub fn heap_usage(&self) -> usize { self.heap.usage() }
+    pub fn cache_stats(&self) -> (usize, usize) {
+        (self.templates.count(), self.chunk.instructions.len())
+    }
+
+    // Stack helpers.
+
+    #[inline] pub(crate) fn push(&mut self, v: Val) { self.stack.push(v); }
+
+    #[inline] pub(crate) fn pop(&mut self) -> Result<Val, VmErr> {
+        self.stack.pop().ok_or(cold_runtime("stack underflow"))
+    }
+    #[inline] pub(crate) fn pop2(&mut self) -> Result<(Val, Val), VmErr> {
+        let b = self.pop()?; let a = self.pop()?; Ok((a, b))
+    }
+    #[inline] pub(crate) fn pop_n(&mut self, n: usize) -> Result<Vec<Val>, VmErr> {
+        let at = self.stack.len().checked_sub(n)
+            .ok_or(cold_runtime("stack underflow"))?;
+        Ok(self.stack.split_off(at))
+    }
+
+    /* Materialise an iterable into Vec<Val> for `*args` positional spread. */
+    pub(crate) fn iter_to_vec_for_spread(&self, v: Val) -> Result<Vec<Val>, VmErr> {
+        if !v.is_heap() {
+            return Err(VmErr::Type("argument after * must be an iterable"));
+        }
+        Ok(match self.heap.get(v) {
+            HeapObj::List(rc)  => rc.borrow().clone(),
+            HeapObj::Tuple(t)  => t.clone(),
+            HeapObj::Set(rc)   => rc.borrow().iter().cloned().collect(),
+            HeapObj::Range(s, e, st) => {
+                let (s, e, st) = (*s, *e, *st);
+                if st == 0 { return Err(VmErr::Value("range() arg 3 must not be zero")); }
+                let mut out = Vec::new();
+                let mut i = s;
+                if st > 0 { while i < e { out.push(Val::int(i)); i += st; } }
+                else      { while i > e { out.push(Val::int(i)); i += st; } }
+                out
+            }
+            _ => return Err(VmErr::Type("argument after * must be an iterable")),
+        })
+    }
+
+    /* Materialise a mapping into (key_str, value) pairs for `**kwargs` spread. */
+    pub(crate) fn mapping_to_kw_pairs(&self, v: Val) -> Result<Vec<(Val, Val)>, VmErr> {
+        if !v.is_heap() {
+            return Err(VmErr::Type("argument after ** must be a mapping"));
+        }
+        match self.heap.get(v) {
+            HeapObj::Dict(rc) => {
+                let entries: Vec<(Val, Val)> = rc.borrow().iter().collect();
+                for (k, _) in &entries {
+                    if !k.is_heap() || !matches!(self.heap.get(*k), HeapObj::Str(_)) {
+                        return Err(VmErr::Type("keywords must be strings"));
+                    }
+                }
+                Ok(entries)
+            }
+            _ => Err(VmErr::Type("argument after ** must be a mapping")),
+        }
+    }
+
+    /* `Val::undef()` distinguishes unbound slots from None. LoadName
+       checks `is_undef()` to raise NameError, avoiding Option<Val> reads. */
+    pub(crate) fn fill_builtins(&self, names: &[String]) -> Vec<Val> {
+        let mut slots = vec![Val::undef(); names.len()];
+        for (i, name) in names.iter().enumerate() {
+            if let Some(v) = self.globals.get(name) {
+                slots[i] = *v;
+            }
+        }
+        slots
+    }
+
+    #[inline]
+    pub(crate) fn checked_jump(&mut self, target: usize, limit: usize) -> Result<usize, VmErr> {
+        // Non-sandboxed mode has unlimited budget; skip the decrement entirely.
+        // Bounds check stays — malformed bytecode could still produce bad targets.
+        if !self.sandbox_off {
+            if self.budget == 0 { return Err(cold_budget()); }
+            self.budget -= 1;
+        }
+        if target > limit { return Err(cold_runtime("jump target out of bounds")); }
+        Ok(target)
+    }
+
+    pub(crate) fn str_to_char_vals(&mut self, s: &str) -> Result<Vec<Val>, VmErr> {
+        s.chars().map(|c| self.heap.alloc(HeapObj::Str(c.to_string()))).collect()
+    }
+
+    pub(crate) fn make_iter_frame(&mut self, obj: Val) -> Result<IterFrame, VmErr> {
+        if !obj.is_heap() {
+            return Err(VmErr::TypeMsg(s!("'", str self.type_name(obj), "' object is not iterable")));
+        }
+        Ok(match self.heap.get(obj) {
+            HeapObj::Range(s, e, st) => IterFrame::Range { cur: *s, end: *e, step: *st },
+            HeapObj::List(v) => IterFrame::Seq { items: v.borrow().clone(), idx: 0 },
+            HeapObj::Tuple(v) => IterFrame::Seq { items: v.clone(), idx: 0 },
+            HeapObj::Dict(p) => IterFrame::Seq { items: p.borrow().keys().collect(), idx: 0 },
+            HeapObj::Set(s) => {
+                let mut items: Vec<Val> = s.borrow().iter().cloned().collect();
+                self.sort_set_items(&mut items);
+                IterFrame::Seq { items, idx: 0 }
+            },
+            HeapObj::Str(s) => {
+                let s = s.clone();
+                let items = self.str_to_char_vals(&s)?;
+                IterFrame::Seq { items, idx: 0 }
+            },
+            HeapObj::Bytes(b) => {
+                // for-loop over bytes yields ints, matching `iter()` and
+                // indexing semantics.
+                let items: Vec<Val> = b.iter().map(|&byte| Val::int(byte as i64)).collect();
+                IterFrame::Seq { items, idx: 0 }
+            },
+            HeapObj::Coroutine(..) => return Ok(IterFrame::Coroutine(obj)),
+            _ => return Err(VmErr::TypeMsg(s!("'", str self.type_name(obj), "' object is not iterable"))),
+        })
+    }
+
+    pub(crate) fn exec_unpack_seq(&mut self, expected: usize) -> Result<(), VmErr> {
+        let obj = self.pop()?;
+        if !obj.is_heap() { return Err(cold_type("cannot unpack non-sequence")); }
+        let items: Vec<Val> = match self.heap.get(obj) {
+            HeapObj::List(v) => v.borrow().clone(),
+            HeapObj::Tuple(v) => v.clone(),
+            HeapObj::Str(s) => {
+                let s = s.clone();
+                let out = self.str_to_char_vals(&s)?;
+                if out.len() > expected {
+                    return Err(cold_value("too many values to unpack"));
+                } else if out.len() < expected {
+                    return Err(cold_value("not enough values to unpack"));
+                }
+                out
+            },
+            _ => return Err(cold_type("cannot unpack non-sequence")),
+        };
+        if items.len() > expected {
+            return Err(cold_value("too many values to unpack"));
+        } else if items.len() < expected {
+            return Err(cold_value("not enough values to unpack"));
+        }
+        for item in items.into_iter().rev() { self.push(item); }
+        Ok(())
+    }
+
+    /* Pick the first defined Phi source; if both are undef fall back to None. */
+    pub(crate) fn exec_phi(op: u16, rip: usize, phi_map: &[usize], slots: &mut [Val], phi_sources: &[(u16, u16)]) {
+        let (ia, ib) = phi_sources[phi_map[rip]];
+        let a = slots[ia as usize];
+        let val = if !a.is_undef() { a }
+                  else { let b = slots[ib as usize]; if !b.is_undef() { b } else { Val::none() } };
+        slots[op as usize] = val;
+    }
+}
