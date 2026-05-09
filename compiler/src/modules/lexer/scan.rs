@@ -57,6 +57,23 @@ impl<'a> Scanner<'a> {
     fn scan_digits(&mut self)   {
         self.scan_while(|b| BYTE_CLASS[b as usize] & DIGIT != 0 || b == b'_');
     }
+
+    // Numeric literal underscore rules: must be between digits — no leading,
+    // trailing, or consecutive '_'. Empty body only allowed past a decimal dot.
+    fn check_digits(&mut self, start: usize, end: usize, allow_empty: bool) {
+        if start == end {
+            if !allow_empty {
+                self.report(start, end, "missing digits in numeric literal");
+            }
+            return;
+        }
+        let s = &self.src[start..end];
+        if s[0] == b'_' || s[s.len() - 1] == b'_' {
+            self.report(start, end, "invalid '_' in numeric literal");
+        } else if s.windows(2).any(|w| w == [b'_', b'_']) {
+            self.report(start, end, "consecutive '_' in numeric literal");
+        }
+    }
     fn scan_hex_digits(&mut self) {
         self.scan_while(|b| b.is_ascii_hexdigit() || b == b'_');
     }
@@ -81,7 +98,11 @@ impl<'a> Scanner<'a> {
             if self.pos < self.src.len() && matches!(self.src[self.pos], b'+' | b'-') {
                 self.pos += 1;
             }
+            let body_start = self.pos;
             self.scan_digits();
+            // Format specs reuse `e/E` (e.g. `.2e`); leave empty-exponent
+            // detection to the float parser instead of erroring at lex time.
+            self.check_digits(body_start, self.pos, true);
             true
         } else {
             false
@@ -91,25 +112,31 @@ impl<'a> Scanner<'a> {
     fn scan_number(&mut self, start: usize) -> TokenType {
         if self.src[start] == b'0' && self.pos < self.src.len() {
             match self.src[self.pos] {
-                b'x' | b'X' => { self.pos += 1; self.scan_hex_digits(); return TokenType::Int; }
-                b'o' | b'O' => { self.pos += 1; self.scan_oct_digits(); return TokenType::Int; }
-                b'b' | b'B' => { self.pos += 1; self.scan_bin_digits(); return TokenType::Int; }
+                b'x' | b'X' => { self.pos += 1; let b = self.pos; self.scan_hex_digits(); self.check_digits(b, self.pos, false); return TokenType::Int; }
+                b'o' | b'O' => { self.pos += 1; let b = self.pos; self.scan_oct_digits(); self.check_digits(b, self.pos, false); return TokenType::Int; }
+                b'b' | b'B' => { self.pos += 1; let b = self.pos; self.scan_bin_digits(); self.check_digits(b, self.pos, false); return TokenType::Int; }
                 _ => {}
             }
         }
         self.scan_digits();
+        self.check_digits(start, self.pos, false);
         let mut is_float = false;
         if self.pos < self.src.len() && self.src[self.pos] == b'.' && self.at(1) != Some(b'.') {
             is_float = true;
             self.pos += 1;
+            let frac_start = self.pos;
             self.scan_digits();
+            // Trailing dot like `5.` is valid; only validate non-empty fractions.
+            self.check_digits(frac_start, self.pos, true);
         }
         is_float |= self.scan_exponent();
         if is_float { TokenType::Float } else { TokenType::Int }
     }
 
     fn scan_dot_number(&mut self) -> TokenType {
+        let body_start = self.pos;
         self.scan_digits();
+        self.check_digits(body_start, self.pos, false);
         self.scan_exponent();
         TokenType::Float
     }

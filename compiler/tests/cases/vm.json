@@ -1481,10 +1481,11 @@
   {"src": "print(format(255, '#x'))", "output": ["0xff"]},
   {"src": "print(format('hi', '>10'))", "output": ["        hi"]},
 
-  {"src": "x = 1_\nprint(x)", "output": ["1"]},
-  {"src": "x = 1__2\nprint(x)", "output": ["12"]},
-  {"src": "x = 0x_1\nprint(x)", "output": ["1"]},
-  {"src": "x = 1e_5\nprint(x)", "output": ["100000.0"]},
+  {"src": "x = 1_\nprint(x)", "output": [], "error": "invalid '_'"},
+  {"src": "x = 1__2\nprint(x)", "output": [], "error": "consecutive '_'"},
+  {"src": "x = 0x_1\nprint(x)", "output": [], "error": "invalid '_'"},
+  {"src": "x = 1e_5\nprint(x)", "output": [], "error": "invalid '_'"},
+  {"src": "x = 0x", "output": [], "error": "missing digits"},
 
   {"src": "g = (i*2 for i in range(3))\nprint(type(g))", "output": ["<class 'list'>"]},
 

@@ -20,7 +20,13 @@ mod test {
         let cases: Vec<Case> = serde_json::from_str(include_str!("cases/vm.json")).expect("invalid JSON");
 
         for case in cases {
-            let (tokens, _) = lex(&case.src);
+            let (tokens, lex_errs) = lex(&case.src);
+            // If a case expects an error matching a lex diagnostic, it's handled here.
+            if !lex_errs.is_empty() {
+                if let Some(expected) = &case.error {
+                    if lex_errs.iter().any(|e| e.msg.contains(expected.as_str())) { continue; }
+                }
+            }
             let (chunk, _errors) = Parser::new(&case.src, tokens.into_iter()).parse();
             let mut vm = VM::new(&chunk);
             vm.input_buffer = case.input.clone();
@@ -51,7 +57,21 @@ mod test {
 
         for case in cases {
             let (tokens, lex_errs) = lex(&case.src);
-            assert!(lex_errs.is_empty(), "lex error on {:?}: {:?}", case.src, lex_errs.iter().map(|e| e.msg).collect::<Vec<_>>());
+            // Lex errors are surfaced as parse-time diagnostics; if a case expects
+            // an error matching one of them, treat it as handled and skip further work.
+            if !lex_errs.is_empty() {
+                if let Some(expected) = &case.error {
+                    assert!(
+                        lex_errs.iter().any(|e| e.msg.contains(expected.as_str())),
+                        "wrong lex error on {:?}: got {:?}, expected '{}'",
+                        case.src,
+                        lex_errs.iter().map(|e| e.msg).collect::<Vec<_>>(),
+                        expected
+                    );
+                    continue;
+                }
+                panic!("lex error on {:?}: {:?}", case.src, lex_errs.iter().map(|e| e.msg).collect::<Vec<_>>());
+            }
             let (chunk, errs) = Parser::new(&case.src, tokens.into_iter()).parse();
             if !errs.is_empty() {
                 match &case.error {
