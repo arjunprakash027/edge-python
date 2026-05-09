@@ -11,6 +11,12 @@ let wasmModule = null;
      • `host_fetch_bytes` for `packages.json` and integrity-checked URLs. */
 const fetchedSources = new Map();
 
+/* packages.json specs known to 404 — populated as BFS encounters missing
+   manifests, consulted before re-enqueuing across runs. Lives in worker
+   scope so a Run-button mash doesn't re-probe dead URLs every time.
+   Cleared by clearCache. */
+const knownMissing = new Set();
+
 /* IndexedDB persistence: lockfile (spec -> sha256-hex) and CAS (hash -> bytes).
    Lockfile is the auto-generated companion of the user's packages.json; CAS
    holds raw bytes content-addressed so two URLs serving identical content
@@ -20,6 +26,8 @@ const fetchedSources = new Map();
 const IDB_NAME = 'edgepython';
 const IDB_VER = 1;
 let idbPromise = null;
+let baseUrl = null;
+let entryDir = '';
 
 function openIdb() {
     if (idbPromise) return idbPromise;
@@ -131,10 +139,27 @@ async function fetchWithLockfile(spec, lockfile) {
     }
     let resp;
     try {
-        const url = spec.includes('://') ? spec : new URL(spec, self.location.href).toString();
+        // spec is the canonical name the parser sees (e.g. './lib/format.py');
+        // entryDir is the URL prefix where the project physically lives
+        // (e.g. 'runtime/'). Keep them separate: register/lookup uses spec,
+        // fetch uses entryDir + spec.
+        const path = (spec.includes('://') || spec.startsWith('/')) ? spec : entryDir + spec;
+        const url = path.includes('://')
+            ? path
+            : new URL(path, baseUrl ?? self.location.href).toString();
         resp = await fetch(url);
-    } catch { return null; }
-    if (!resp.ok) return null;
+        } catch (e) {
+            console.warn(`fetch failed for '${spec}':`, e);
+            return null;
+        }
+        if (!resp.ok) {
+            if (resp.status === 404 && spec.endsWith('packages.json')) {
+                knownMissing.add(spec);
+            } else {
+                console.warn(`${resp.status} for '${spec}' at ${resp.url}`);
+            }
+            return null;
+        }
     const bytes = new Uint8Array(await resp.arrayBuffer());
     const hash = await sha256Hex(bytes);
     if (expected && expected !== hash) {
@@ -280,11 +305,11 @@ async function bfsPrefetch(rootSrc, exports, lockfile) {
     const decoder = new TextDecoder();
     const visited = new Set();
     const queue = [];
-    // Root script lives at the worker URL's directory; its quoted imports
-    // anchor BFS, plus a sibling packages.json so bare-name imports in the
-    // entry resolve via walk-up.
+    // Root script's quoted imports anchor BFS in their canonical form
+    // (no entryDir prefix — the parser sees them that way too). The URL
+    // prefix for physical fetch is applied inside fetchWithLockfile.
     for (const q of scanStringImports(rootSrc)) queue.push(q);
-    queue.push('packages.json');
+    if (!knownMissing.has('packages.json')) queue.push('packages.json');
 
     while (queue.length) {
         const spec = queue.shift();
@@ -329,7 +354,8 @@ async function bfsPrefetch(rootSrc, exports, lockfile) {
             // Native modules don't carry transitive Python imports, but
             // they CAN carry sibling packages.json (e.g. for bundled
             // companions). Try opportunistically.
-            queue.push(dirOf(spec) + 'packages.json');
+            const wasmManifest = dirOf(spec) + 'packages.json';
+            if (!knownMissing.has(wasmManifest)) queue.push(wasmManifest);
             continue;
         }
 
@@ -346,7 +372,8 @@ async function bfsPrefetch(rootSrc, exports, lockfile) {
         for (const q of scanStringImports(decoder.decode(bytes))) {
             queue.push(joinRel(dir, q));
         }
-        queue.push(dir + 'packages.json');
+        const pyManifest = dir + 'packages.json';
+        if (!knownMissing.has(pyManifest)) queue.push(pyManifest);
     }
 }
 
@@ -357,11 +384,13 @@ const handlers = {
        upstream change that would otherwise be hidden behind cached bytes. */
     clearCache: async () => {
         fetchedSources.clear();
+        knownMissing.clear();
         await idbClear('cas');
         await idbClear('lockfile');
     },
 
-    load: async ({ url, opts }) => {
+    load: async ({ url, opts, baseUrl: b }) => {
+        if (b) baseUrl = b;
         try {
             const t0 = performance.now();
             // Compile without instantiating to allow multiple runs from the same module.
@@ -372,8 +401,11 @@ const handlers = {
         }
     },
 
-    run: async ({ src }) => {
+    run: async ({ src, baseUrl: b, entryDir: e = '' }) => {
+        if (b) baseUrl = b;
+        entryDir = e;   // fresh per run; overrides previous value even if empty
         const srcBytes = new TextEncoder().encode(src);
+
         if (srcBytes.length > source_size) {
             self.postMessage({ type: 'result', out: `Error: Source exceeds ${source_size} bytes` });
             return;

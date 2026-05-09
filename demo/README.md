@@ -29,16 +29,25 @@ Then open http://localhost:8000 in your browser.
 ### Project Structure
 
 ```bash
-├── index.html
-├── main.js
-├── packages.json
-├── README.md
-├── static
-│   └── {resource}.svg
-├── style.css
 ├── tailwind.config.js
 ├── version.json
-└── worker.js
+├── index.html
+├── README.md
+├── css
+│   └── style.css
+├── js
+│   ├── edge.js
+│   ├── main.js
+│   └── worker.js
+├── runtime
+│   ├── lib
+│   │   └── format.py
+│   └── perceptron.py
+└── static
+    ├── album.svg
+    ├── favicon.svg
+    ├── github.svg
+    └── play.svg
 ```
 
 ### License

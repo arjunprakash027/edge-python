@@ -4,7 +4,10 @@ import { CodeJar } from 'https://esm.sh/codejar@4';
 
 const MAX_LINES = 99;
 const TAB_SIZE = 4;
-const EXAMPLE_FILE = "example.py"
+const ENTRY_PATH = "runtime/perceptron.py";
+const ENTRY_DIR = ENTRY_PATH.includes('/')
+    ? ENTRY_PATH.slice(0, ENTRY_PATH.lastIndexOf('/') + 1)
+    : '';
 const DEV = !['demo.edgepython.com'].includes(location.hostname);
 const FETCH_OPTS = DEV ? { cache: 'no-store' } : undefined;
 
@@ -98,7 +101,7 @@ const Highlighter = (() => {
 // Worker
 
 const PythonWorker = (() => {
-    const worker = new Worker('./worker.js');
+    const worker = new Worker('./js/worker.js');
 
     /* Single source of truth for "runtime busy". Gates BOTH the button click
        and Ctrl+Enter; without it, holding Ctrl+Enter queues parallel runs
@@ -110,7 +113,10 @@ const PythonWorker = (() => {
     const resolveUrl = async () => {
         const ver = await fetch('./version.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : {}).catch(() => ({}));
         const bust = ver.v ? `?v=${ver.v}` : '';
-        return DEV ? `https://demo.edgepython.com/compiler_lib.wasm${bust}` : `./compiler_lib.wasm${bust}`;
+        const path = DEV
+            ? `https://demo.edgepython.com/compiler_lib.wasm${bust}`
+            : `./compiler_lib.wasm${bust}`;
+        return new URL(path, location.href).toString();
     };
 
     const onMsg = {
@@ -129,14 +135,19 @@ const PythonWorker = (() => {
     return {
         load: async () => {
             ok('Loading WASM...');
-            worker.postMessage({ type: 'load', url: await resolveUrl(), opts: FETCH_OPTS ?? {} });
+            worker.postMessage({
+                type: 'load',
+                url: await resolveUrl(),
+                opts: FETCH_OPTS ?? {},
+                baseUrl: location.href,
+            });
         },
         run: (src) => {
             if (busy) return;
             setBusy(true);
             ok('Running...');
             el.term.textContent = '';
-            worker.postMessage({ type: 'run', src });
+            worker.postMessage({ type: 'run', src, baseUrl: location.href, entryDir: ENTRY_DIR });
         },
     };
 })();
@@ -319,15 +330,12 @@ el.btn.addEventListener('click', () => PythonWorker.run(Editor.getCode()));
 loadIcons();
 PythonWorker.load();
 
-fetch(`./${EXAMPLE_FILE}`, FETCH_OPTS ?? {}).then(r => {
+fetch(`./${ENTRY_PATH}`, FETCH_OPTS ?? {}).then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.text();
     }).then(code => {
-        // Normalize CRLF/CR to LF — `<div id="ed">` uses white-space: pre, which
-        // preserves stray `\r` chars and renders them as visible glyphs in some
-        // browsers (showing up as phantom trailing whitespace).
         Editor.setCode(code.replace(/\r\n?/g, '\n'));
     }).catch(() => {
-        console.warn(`${EXAMPLE_FILE} could not be loaded, using default code.`);
+        console.warn(`${ENTRY_PATH} could not be loaded, using default code.`);
     }
 );
