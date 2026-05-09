@@ -51,7 +51,7 @@ pub fn plugin_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
             }
             FnArg::Receiver(_) => {
                 return TokenStream::from(quote! {
-                    compile_error!("#[edge] does not support methods (`self` parameter)");
+                    compile_error!("#[plugin_fn] does not support methods (`self` parameter)");
                 });
             }
         }
