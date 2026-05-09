@@ -82,25 +82,25 @@ Mark-and-sweep with roots: operand stack, with-stack, pending yields, event queu
 ├── Cargo.toml
 ├── README.md
 ├── src
-│   ├── abi.rs                  Sealed WASM ABI (op codes, tags, ErrorKind, HandleTable)
-│   ├── lib.rs                  Crate root; gates `main/` to wasm32
-│   ├── main                    WASM bridge (wasm32-only)
-│   │   ├── mod.rs              Statics, allocator, panic handler, accessors
-│   │   ├── exports.rs          WASM exports the JS shim drives (run, register_*)
-│   │   ├── abi_bridge.rs       host_edge_op + dispatch_* + edge_encode/decode
-│   │   ├── resolver.rs         WasmHostResolver: walk-up + native bridge
-│   │   └── errors.rs           VmErr <-> ErrorKind translation
+│   ├── abi.rs
+│   ├── lib.rs
+│   ├── main
+│   │   ├── mod.rs
+│   │   ├── exports.rs
+│   │   ├── abi_bridge.rs
+│   │   ├── resolver.rs
+│   │   └── errors.rs
 │   └── modules
-│       ├── fstr.rs             Numeric formatter + s!/push!/err! string macros
-│       ├── fx.rs               FxHasher with per-map seed (HashDoS-safe)
-│       ├── sha256.rs           In-tree FIPS 180-4 SHA-256 (integrity fragments)
+│       ├── fstr.rs
+│       ├── fx.rs
+│       ├── sha256.rs
 │       ├── lexer
 │       │   ├── mod.rs
 │       │   ├── scan.rs
-│       │   └── tables.rs       LUT byte-class tables
+│       │   └── tables.rs
 │       ├── packages
-│       │   ├── mod.rs          Resolver, walk-up, import_module dispatch
-│       │   └── manifest.rs     In-tree JSON parser for packages.json
+│       │   ├── mod.rs
+│       │   └── manifest.rs
 │       ├── parser
 │       │   ├── mod.rs
 │       │   ├── stmt.rs
@@ -108,34 +108,34 @@ Mark-and-sweep with roots: operand stack, with-stack, pending yields, event queu
 │       │   ├── control.rs
 │       │   ├── literals.rs
 │       │   ├── imports.rs
-│       │   └── types.rs        Instruction, OpCode, SSAChunk, Value
+│       │   └── types.rs
 │       └── vm
-│           ├── mod.rs          VM struct + with_limits constructor
-│           ├── dispatch.rs     Hot loop + exec + exec_fast + exec_call_method
-│           ├── init.rs         build_function_table + run + init_modules
-│           ├── helpers.rs      Stack ops, iter helpers, accessors
-│           ├── gc.rs           Mark-and-sweep collector roots
+│           ├── mod.rs
+│           ├── dispatch.rs
+│           ├── init.rs
+│           ├── helpers.rs
+│           ├── gc.rs
 │           ├── ops.rs
-│           ├── optimizer.rs    Constant fold + dead-code compaction
-│           ├── cache.rs        Inline cache + template memoization
+│           ├── optimizer.rs
+│           ├── cache.rs
 │           ├── types
-│           │   ├── mod.rs      Val + HeapObj + HeapPool + DictMap + NativeFnId
-│           │   ├── err.rs      VmErr + render + cold_* error ctors
-│           │   ├── coro.rs     CoroState, CoroutineHandle, CallFrame, IterFrame
-│           │   ├── math.rs     Pure-Rust f64 math (no_std-compatible)
-│           │   └── eq.rs       eq_vals_with_heap, eq_seq, eq_dict
+│           │   ├── mod.rs
+│           │   ├── err.rs
+│           │   ├── coro.rs
+│           │   ├── math.rs
+│           │   └── eq.rs
 │           ├── builtins
-│           │   ├── mod.rs      Submodule glue + EXC_PARENTS + matches_exc_class
-│           │   ├── numeric.rs  abs/round/min/max/sum/pow/divmod/bin/oct/hex/...
-│           │   ├── sequence.rs range/sorted/reversed/zip/iter/next/map/filter/...
-│           │   ├── container.rs list/tuple/set/frozenset/dict/bytes constructors
-│           │   ├── conversion.rs str/bool/type
-│           │   ├── io.rs       print/input/format
-│           │   ├── attr.rs     getattr/setattr/delattr/hasattr/vars/globals/locals
-│           │   ├── identity.rs repr/callable/id/hash/isinstance
-│           │   ├── index.rs    get_item/store_item/del_item/slice
-│           │   ├── bytes_helpers.rs bytes_fromhex/int_from_bytes/int_to_bytes/import_module
-│           │   └── async_ops.rs run/sleep/gather/with_timeout/cancel/receive
+│           │   ├── mod.rs
+│           │   ├── numeric.rs
+│           │   ├── sequence.rs
+│           │   ├── container.rs
+│           │   ├── conversion.rs
+│           │   ├── io.rs
+│           │   ├── attr.rs
+│           │   ├── identity.rs
+│           │   ├── index.rs
+│           │   ├── bytes_helpers.rs
+│           │   └── async_ops.rs
 │           └── handlers
 │               ├── mod.rs
 │               ├── arith.rs
