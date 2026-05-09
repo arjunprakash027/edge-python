@@ -1,0 +1,44 @@
+Branch: replace-fmtbuf-with-string
+Tech debt: D44 — FmtBuf truncates silently and uses from_utf8_unchecked.
+
+================================================================================
+Commit 1: drop FmtBuf in favour of plain String
+================================================================================
+File: compiler/src/modules/fstr.rs
+
+What was wrong:
+  format_general formatted floats into a 32-byte stack buffer with two
+  hazards:
+
+  1. write_str clamped to `(self.len + bytes.len()).min(self.buf.len())`,
+     silently dropping any overflow. f64::Display normally fits, but
+     non-finite paths (subnormal denormals near MIN_POSITIVE, certain
+     "{:?}"-via-Display future changes) could overflow without surfacing
+     an error.
+  2. as_str() called core::str::from_utf8_unchecked on the partially
+     filled buffer. The truncation in #1 is byte-aligned, not UTF-8
+     aware, so a future change that piped a multi-byte char through
+     here would produce UB at the seam.
+
+  Both hazards exist purely as a micro-optimisation: avoid the
+  String allocation. f64 formatting already runs the Rust fmt machinery
+  (which itself allocates indirectly via the float printing
+  implementation), so saving one tiny String alloc was never the
+  bottleneck.
+
+Fix:
+  Removed the FmtBuf struct entirely. format_general now uses
+    let mut out = alloc::string::String::with_capacity(32);
+    let _ = write!(&mut out, "{}", f);
+    out
+  with `use core::fmt::Write` brought into scope locally. The 32-byte
+  preallocation matches the previous stack budget so the allocator hits
+  zero realloc on the common case. write! into a String is infallible,
+  so the `let _ =` is preserved (the Result is purely structural).
+
+  No more silent truncation, no more from_utf8_unchecked.
+
+Documentation:
+  No .md docs reference FmtBuf or the format_general internals.
+
+Tests: cargo test -> 6/6 passed.
