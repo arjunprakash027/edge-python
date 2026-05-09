@@ -37,8 +37,22 @@ A ~3,000-alloc perceptron run pays ~600 ms; bumping cuts it to ~50 grows.
 #[global_allocator]
 static A: AssumeSingleThreaded<LeakingAllocator> = unsafe { AssumeSingleThreaded::new(LeakingAllocator::new()) };
 
+/* Best-effort panic-to-stash: the host's edge_take_error then sees a typed
+   message instead of an opaque WASM trap. If the format allocation itself
+   re-enters this handler we fall through to unreachable(); the host trap
+   behaviour is unchanged from the previous bare implementation. */
 #[panic_handler]
-fn panic(_: &core::panic::PanicInfo) -> ! { core::arch::wasm32::unreachable() }
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    let msg = alloc::format!("internal panic: {}", info.message());
+    unsafe {
+        let p = core::ptr::addr_of_mut!(ERROR_STASH);
+        if (*p).is_none() { *p = Some(ErrorStash::new()); }
+        if let Some(stash) = (*p).as_mut() {
+            stash.set(crate::abi::ErrorKind::Runtime as u32, msg);
+        }
+    }
+    core::arch::wasm32::unreachable()
+}
 
 pub(super) const SZ: usize = 1 << 20;
 #[allow(non_upper_case_globals)]
