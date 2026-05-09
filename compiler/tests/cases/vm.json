@@ -1507,7 +1507,8 @@
   {"src": "s = {[1, 2]}", "output": [], "error": "unhashable type"},
   {"src": "d = {[1]: 'v'}", "output": [], "error": "unhashable type"},
 
-  {"src": "try:\n    raise RuntimeError('x') from ValueError('y')\nexcept RuntimeError:\n    print('caught')", "output": [], "error": "ValueError"},
+  {"src": "try:\n    raise RuntimeError('x') from ValueError('y')\nexcept RuntimeError:\n    print('caught')", "output": ["caught"]},
+  {"src": "try:\n    raise RuntimeError('inner')\nexcept Exception as e:\n    print('got', e)", "output": ["got inner"]},
 
   {"src": "print(tuple('abc'))", "output": ["('a', 'b', 'c')"]},
   {"src": "print(tuple(range(3)))", "output": ["(0, 1, 2)"]},
@@ -1551,5 +1552,5 @@
 
   {"src": "class A:\n    def m(self):\n        return 'A'\nclass B(A):\n    def m(self):\n        return super().m() + 'B'\nprint(B().m())", "output": [], "error": "name 'super' is not defined"},
 
-  {"src": "try:\n    raise RuntimeError('inner')\nexcept Exception as e:\n    print('got', e)", "output": [], "error": "RuntimeError"}
+  {"src": "class A: pass", "output": []}
 ]

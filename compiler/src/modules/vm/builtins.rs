@@ -3,6 +3,40 @@ use crate::s;
 use super::VM;
 use super::types::*;
 
+/* Static parent map for built-in exception types. Walked by matches_exc_class
+   so `except Exception` catches RuntimeError, ValueError, etc. — paradigm
+   keeps user classes flat; only the standard exception tree is encoded here. */
+const EXC_PARENTS: &[(&str, &str)] = &[
+    ("RuntimeError",        "Exception"),
+    ("ValueError",          "Exception"),
+    ("TypeError",           "Exception"),
+    ("KeyError",            "Exception"),
+    ("IndexError",          "Exception"),
+    ("AttributeError",      "Exception"),
+    ("ZeroDivisionError",   "Exception"),
+    ("OverflowError",       "Exception"),
+    ("NameError",           "Exception"),
+    ("StopIteration",       "Exception"),
+    ("StopAsyncIteration",  "Exception"),
+    ("NotImplementedError", "RuntimeError"),
+    ("RecursionError",      "RuntimeError"),
+    ("MemoryError",         "Exception"),
+    ("TimeoutError",        "Exception"),
+    ("CancelledError",      "Exception"),
+    ("Exception",           "BaseException"),
+];
+
+pub(super) fn matches_exc_class(actual: &str, expected: &str) -> bool {
+    let mut cur = actual;
+    loop {
+        if cur == expected { return true; }
+        match EXC_PARENTS.iter().find(|(c, _)| *c == cur) {
+            Some(&(_, p)) => cur = p,
+            None => return false,
+        }
+    }
+}
+
 use core::cell::RefCell;
 use alloc::{string::{String, ToString}, vec::Vec, vec, rc::Rc};
 use crate::modules::fx::FxHashSet as HashSet;
@@ -403,11 +437,16 @@ impl<'a> VM<'a> {
             if !t.is_heap() {
                 return Err(VmErr::Type("isinstance() arg 2 must be a type or tuple of types"));
             }
+            let exc_match = |name: &str| -> bool {
+                obj_type_name.as_deref()
+                    .map(|n| matches_exc_class(n, name))
+                    .unwrap_or(false)
+            };
             match heap.get(t) {
                 HeapObj::Type(name) => Ok(
-                    name == obj_ty
+                    matches_exc_class(obj_ty, name)
                     || (obj_ty == "bool" && name == "int")
-                    || obj_type_name.as_deref() == Some(name.as_str())
+                    || exc_match(name)
                 ),
                 HeapObj::NativeFn(id) => {
                     let name = id.name();
