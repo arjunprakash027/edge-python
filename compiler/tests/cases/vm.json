@@ -1500,9 +1500,11 @@
   {"src": "print(type(...))", "output": ["<class 'str'>"]},
   {"src": "print(... == '...')", "output": ["True"]},
 
-  {"src": "d = {}\nd[1] = 'a'\nd[1.0] = 'b'\nprint(len(d))", "output": ["2"]},
+  {"src": "d = {}\nd[1] = 'a'\nd[1.0] = 'b'\nprint(len(d))\nprint(d[1])", "output": ["1", "b"]},
 
-  {"src": "d = {}\nd[[1,2]] = 'v'\nprint(d)", "output": ["{[1, 2]: 'v'}"]},
+  {"src": "d = {}\nd[[1,2]] = 'v'", "output": [], "error": "unhashable type"},
+  {"src": "s = {[1, 2]}", "output": [], "error": "unhashable type"},
+  {"src": "d = {[1]: 'v'}", "output": [], "error": "unhashable type"},
 
   {"src": "try:\n    raise RuntimeError('x') from ValueError('y')\nexcept RuntimeError:\n    print('caught')", "output": [], "error": "ValueError"},
 

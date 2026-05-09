@@ -66,14 +66,25 @@ const TAG_HEAP: u64 = QNAN | 4;
 pub struct Val(pub(crate) u64);
 
 impl PartialEq for Val {
-    #[inline] fn eq(&self, o: &Self) -> bool { self.0 == o.0 }
+    #[inline] fn eq(&self, o: &Self) -> bool {
+        if self.0 == o.0 { return true; }
+        // Numeric unification mirrors Hash so dicts/sets see 1 == 1.0 as one key.
+        if self.is_int()   && o.is_float() { return (self.as_int() as f64) == o.as_float(); }
+        if self.is_float() && o.is_int()   { return self.as_float() == (o.as_int() as f64); }
+        false
+    }
 }
 impl Eq for Val {}
 
 impl core::hash::Hash for Val {
     #[inline]
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
+        // Numeric unification: int and float that are value-equal must hash
+        // equal so dict/set treat 1 and 1.0 as the same key (CPython parity).
+        // 47-bit ints fit losslessly in f64, so funnel both through f64 bits.
+        if self.is_int()        { (self.as_int() as f64).to_bits().hash(state); }
+        else if self.is_float() { self.as_float().to_bits().hash(state); }
+        else                    { self.0.hash(state); }
     }
 }
 

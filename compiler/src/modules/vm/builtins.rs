@@ -519,6 +519,7 @@ impl<'a> VM<'a> {
 
     pub fn build_set(&mut self, op: u16) -> Result<(), VmErr> {
         let items = self.pop_n(op as usize)?;
+        for v in &items { self.require_hashable(*v)?; }
         let val = self.alloc_set(items)?;
         self.push(val); Ok(())
     }
@@ -691,6 +692,20 @@ impl<'a> VM<'a> {
         }
     }
 
+    /* Reject mutable types (list/dict/set) used as dict/set keys — CPython
+       parity. Called wherever a Val crosses into a hash-keyed container. */
+    pub(super) fn require_hashable(&self, v: Val) -> Result<(), VmErr> {
+        if v.is_heap() {
+            match self.heap.get(v) {
+                HeapObj::List(_) => return Err(cold_type("unhashable type: 'list'")),
+                HeapObj::Dict(_) => return Err(cold_type("unhashable type: 'dict'")),
+                HeapObj::Set(_)  => return Err(cold_type("unhashable type: 'set'")),
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
     pub fn store_item(&mut self) -> Result<(), VmErr> {
         let value = self.pop()?;
         let idx_val = self.pop()?;
@@ -703,6 +718,10 @@ impl<'a> VM<'a> {
         {
             let new_items = self.extract_iter(value, false)?;
             return self.store_slice(cont, start, stop, step, new_items);
+        }
+        // Reject mutable keys before borrowing the container mutably below.
+        if matches!(self.heap.get(cont), HeapObj::Dict(_)) {
+            self.require_hashable(idx_val)?;
         }
         match self.heap.get_mut(cont) {
             HeapObj::List(v) => {

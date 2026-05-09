@@ -24,6 +24,7 @@ impl<'a> VM<'a> {
             }
             OpCode::BuildDict => {
                 let flat = self.pop_n(operand as usize * 2)?;
+                for pair in flat.chunks(2) { self.require_hashable(pair[0])?; }
                 let dm = DictMap::from_pairs(flat.chunks(2).map(|c| (c[0], c[1])).collect());
                 let val = self.heap.alloc(HeapObj::Dict(Rc::new(RefCell::new(dm))))?;
                 self.push(val);
