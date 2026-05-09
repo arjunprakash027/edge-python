@@ -1479,5 +1479,68 @@
   {"src": "print(format(42, '05d'))", "output": ["00042"]},
   {"src": "print(format(3.14159, '.2f'))", "output": ["3.14"]},
   {"src": "print(format(255, '#x'))", "output": ["0xff"]},
-  {"src": "print(format('hi', '>10'))", "output": ["        hi"]}
+  {"src": "print(format('hi', '>10'))", "output": ["        hi"]},
+
+  {"src": "x = 1_\nprint(x)", "output": ["1"]},
+  {"src": "x = 1__2\nprint(x)", "output": ["12"]},
+  {"src": "x = 0x_1\nprint(x)", "output": ["1"]},
+  {"src": "x = 1e_5\nprint(x)", "output": ["100000.0"]},
+
+  {"src": "g = (i*2 for i in range(3))\nprint(type(g))", "output": ["<class 'list'>"]},
+
+  {"src": "def f(a, *, b):\n    return a + b\nprint(f(1, b=2))", "output": ["3"]},
+
+  {"src": "def f(): pass\nprint(f.__annotations__)", "output": [], "error": "AttributeError"},
+
+  {"src": "print(len('\\012'))", "output": ["3"]},
+
+  {"src": "print(type(...))", "output": ["<class 'str'>"]},
+  {"src": "print(... == '...')", "output": ["True"]},
+
+  {"src": "d = {}\nd[1] = 'a'\nd[1.0] = 'b'\nprint(len(d))", "output": ["2"]},
+
+  {"src": "d = {}\nd[[1,2]] = 'v'\nprint(d)", "output": ["{[1, 2]: 'v'}"]},
+
+  {"src": "try:\n    raise RuntimeError('x') from ValueError('y')\nexcept RuntimeError:\n    print('caught')", "output": [], "error": "ValueError"},
+
+  {"src": "print(tuple('abc'))", "output": [], "error": "tuple() argument must be iterable"},
+  {"src": "print(set(range(3)))", "output": [], "error": "set() argument must be iterable"},
+  {"src": "x=[1]\nx.extend(range(3))", "output": [], "error": "extend() argument must be iterable"},
+  {"src": "d={}\nd.update(a=1)", "output": [], "error": "no keyword arguments"},
+  {"src": "s={1,2}\ns.remove(99)", "output": [], "error": "ValueError"},
+
+  {"src": "print('ñ'.center(5, '*'))", "output": ["*ñ**"]},
+  {"src": "print('ñ'.zfill(3))", "output": ["0ñ"]},
+  {"src": "print('αβ'.center(6, '-'))", "output": ["-αβ-"]},
+
+  {"src": "x = reversed('abc')\nprint(type(x))", "output": ["<class 'list'>"]},
+
+  {"src": "(5).bit_length()", "output": [], "error": "AttributeError"},
+  {"src": "(1.5).is_integer()", "output": [], "error": "AttributeError"},
+  {"src": "print(int_to_bytes(255, 2, 'big'))", "output": ["b'\\x00\\xff'"]},
+  {"src": "print(int_from_bytes(b'\\xff\\x00', 'big'))", "output": ["65280"]},
+
+  {"src": "d={'a':1,'b':2}\nk=d.keys()\nd['c']=3\nprint(list(k))", "output": ["['a', 'b']"]},
+
+  {"src": "print(str(float('nan')))", "output": ["NaN"]},
+  {"src": "print(repr(float('nan')))", "output": ["NaN"]},
+
+  {"src": "print(f'{3.14:.2e}')", "output": [], "error": "unknown format type"},
+  {"src": "print(f'{0.5:%}')", "output": [], "error": "unknown format type"},
+
+  {"src": "def g():\n    yield 1\ngen = g()\nnext(gen)\ngen.send(99)", "output": [], "error": "AttributeError"},
+
+  {"src": "import asyncio", "output": [], "error": "asyncio"},
+
+  {"src": "print(2 ** 47)", "output": [], "error": "OverflowError"},
+
+  {"src": "@deco\nclass A: pass", "output": [], "error": "expected '('"},
+
+  {"src": "class A:\n    def __add__(self, o):\n        return 'magic'\nprint(A() + A())", "output": [], "error": "unsupported operand"},
+
+  {"src": "class CM:\n    def __enter__(self):\n        print('enter')\n        return self\n    def __exit__(self, *a):\n        print('exit')\nwith CM() as c:\n    print('body')", "output": ["body"]},
+
+  {"src": "class A:\n    def m(self):\n        return 'A'\nclass B(A):\n    def m(self):\n        return super().m() + 'B'\nprint(B().m())", "output": [], "error": "name 'super' is not defined"},
+
+  {"src": "try:\n    raise RuntimeError('inner')\nexcept Exception as e:\n    print('got', e)", "output": [], "error": "RuntimeError"}
 ]

@@ -198,7 +198,11 @@ impl<'a> Scanner<'a> {
                     pos += 2;
                 }
                 b'{' => {
-                    if self.fstring_stack.len() >= MAX_FSTRING_DEPTH { /* depth guard */ }
+                    if self.fstring_stack.len() >= MAX_FSTRING_DEPTH {
+                        self.report(pos, pos + 1, "f-string nesting depth exceeds maximum (200)");
+                        self.pos = pos + 1;
+                        return;
+                    }
                     self.pending.push((TokenType::Lbrace, self.line, pos, pos + 1));
                     if pos > self.pos {
                         self.pending.push((TokenType::FstringMiddle, self.line, body_start, pos));
@@ -210,6 +214,13 @@ impl<'a> Scanner<'a> {
                 b'\n' => { self.line += 1; pos += 1; }
                 _ => pos += 1,
             }
+        }
+        // Reached EOF without closing — synthesise End so parser sees a
+        // balanced f-string structure and report the unterminated literal.
+        self.report(self.pos, pos, "unterminated f-string literal");
+        self.pending.push((TokenType::FstringEnd, self.line, pos, pos));
+        if pos > self.pos {
+            self.pending.push((TokenType::FstringMiddle, self.line, body_start, pos));
         }
         self.pos = pos;
     }
@@ -266,6 +277,10 @@ impl<'a> Scanner<'a> {
                 while self.indent_stack.last().is_some_and(|&t| t > level) {
                     self.indent_stack.pop();
                     self.pending.push((TokenType::Dedent, self.line, line_pos, line_pos));
+                }
+                // After popping, the new top must equal `level` exactly.
+                if *self.indent_stack.last().unwrap_or(&0) != level {
+                    self.report(self.pos, line_pos, "unindent does not match any outer indentation level");
                 }
                 self.pending.push((TokenType::Newline, current_line, start, self.pos));
             }
@@ -442,13 +457,19 @@ impl<'a> Scanner<'a> {
         // Single character: table dispatch
         self.pos += 1;
         let idx = if b < 128 { SINGLE_TOK[b as usize] } else { 0 };
+        // Index 0 means the byte has no operator slot — report and skip
+        // instead of emitting a stray Endmarker that truncates the stream.
+        if idx == 0 {
+            self.report(start, self.pos, "unexpected character");
+            return self.next_token();
+        }
         let kind = SINGLE_MAP[idx as usize];
 
         match kind {
-            | TokenType::Lpar 
-            | TokenType::Lsqb 
+            | TokenType::Lpar
+            | TokenType::Lsqb
             | TokenType::Lbrace => self.nesting += 1,
-            | TokenType::Rpar 
+            | TokenType::Rpar
             | TokenType::Rsqb => self.nesting = self.nesting.saturating_sub(1),
             _ => {},
         }

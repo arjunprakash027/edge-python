@@ -62,6 +62,8 @@ pub fn lex(source: &str) -> (Vec<Token>, Vec<LexError>) {
     let bytes = source.as_bytes();
     let len = source.len();
     let mut scanner = Scanner::new(bytes);
+    // Skip leading UTF-8 BOM so it doesn't fuse into the first identifier.
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) { scanner.pos = 3; }
 
     if len > MAX_SOURCE_SIZE {
         scanner.errors.push(LexError {
@@ -77,6 +79,10 @@ pub fn lex(source: &str) -> (Vec<Token>, Vec<LexError>) {
     let mut raw: Vec<(TokenType, usize, usize, usize)> = Vec::new();
     while let Some(t) = scanner.next_token() {
         raw.push(t);
+    }
+    // Drain dangling indents at EOF so blocks always close cleanly.
+    while scanner.indent_stack.pop().is_some() {
+        raw.push((TokenType::Dedent, scanner.line, len, len));
     }
     raw.push((TokenType::Endmarker, scanner.line, len, len));
 

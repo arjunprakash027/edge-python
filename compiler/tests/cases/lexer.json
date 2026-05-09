@@ -644,7 +644,28 @@
     "tokens": ["Name", "Equal", "Int", "Endmarker"]
   },
   {
-    "src": "π = 3", 
+    "src": "π = 3",
     "tokens": ["Name", "Equal", "Int", "Endmarker"]
+  },
+
+  {
+    "src": "x $ y",
+    "tokens": ["Name", "Name", "Endmarker"]
+  },
+  {
+    "src": "f'{x",
+    "tokens": ["FstringStart", "Lbrace", "Name", "Endmarker"]
+  },
+  {
+    "src": "if True:\n    pass",
+    "tokens": ["If", "True", "Colon", "Newline", "Indent", "Pass", "Dedent", "Endmarker"]
+  },
+  {
+    "src": "if True:\n    if True:\n        pass\n  x = 1",
+    "tokens": ["If", "True", "Colon", "Newline", "Indent", "If", "True", "Colon", "Newline", "Indent", "Pass", "Newline", "Dedent", "Dedent", "Name", "Equal", "Int", "Endmarker"]
+  },
+  {
+    "src": "﻿x",
+    "tokens": ["Name", "Endmarker"]
   }
 ]
