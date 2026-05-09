@@ -3,6 +3,7 @@ pub(crate) mod data;
 pub(crate) mod format;
 pub(crate) mod function;
 pub(crate) mod methods;
+mod methods_helpers;
 
 pub(super) use crate::modules::vm::{
     VM, Val, VmErr, HeapObj, DictMap, cache, ops,

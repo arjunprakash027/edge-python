@@ -1,0 +1,195 @@
+use core::cell::RefCell;
+use alloc::{rc::Rc, string::String, vec::Vec};
+use crate::modules::fx::FxHashSet as HashSet;
+
+use super::super::VM;
+use super::super::types::*;
+
+impl<'a> VM<'a> {
+
+    /* Heap-alloc `s` and push the resulting Val. Used by ~10 builtins
+       (str / repr / chr / format / ...) that produce string results. */
+    pub(in crate::modules::vm::builtins) fn alloc_and_push_str(&mut self, s: String) -> Result<(), VmErr> {
+        let v = self.heap.alloc(HeapObj::Str(s))?;
+        self.push(v); Ok(())
+    }
+
+    /* Allocate a List from items and push. Centralises the
+       Rc::new(RefCell::new(items)) construction inlined ~15 times. */
+    pub(crate) fn alloc_list(&mut self, items: Vec<Val>) -> Result<Val, VmErr> {
+        self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(items))))
+    }
+
+    /* Allocate a List, push it, return Ok. */
+    pub(crate) fn alloc_and_push_list(&mut self, items: Vec<Val>) -> Result<(), VmErr> {
+        let v = self.alloc_list(items)?;
+        self.push(v); Ok(())
+    }
+
+    /* Allocate a Set from a Vec (deduping by Val's bit-eq), push, return
+       Ok. Mirrors `alloc_and_push_list`. Used by `set` methods that yield
+       a fresh set value (copy, union, intersection, difference, etc.). */
+    pub(crate) fn alloc_and_push_set(&mut self, items: Vec<Val>) -> Result<(), VmErr> {
+        let v = self.alloc_set(items)?;
+        self.push(v); Ok(())
+    }
+
+    /* Allocate a Dict from a DictMap and push. */
+    pub(crate) fn alloc_and_push_dict(&mut self, dm: DictMap) -> Result<(), VmErr> {
+        let v = self.heap.alloc(HeapObj::Dict(Rc::new(RefCell::new(dm))))?;
+        self.push(v); Ok(())
+    }
+
+    /* Allocate a Tuple and push. */
+    pub(crate) fn alloc_and_push_tuple(&mut self, items: Vec<Val>) -> Result<(), VmErr> {
+        let v = self.heap.alloc(HeapObj::Tuple(items))?;
+        self.push(v); Ok(())
+    }
+
+    fn alloc_set(&mut self, items: Vec<Val>) -> Result<Val, VmErr> {
+        let mut set = HashSet::with_capacity_and_hasher(items.len(), Default::default());
+        for v in items { set.insert(v); }
+        self.heap.alloc(HeapObj::Set(Rc::new(RefCell::new(set))))
+    }
+
+    pub fn build_set(&mut self, op: u16) -> Result<(), VmErr> {
+        let items = self.pop_n(op as usize)?;
+        for v in &items { self.require_hashable(*v)?; }
+        let val = self.alloc_set(items)?;
+        self.push(val); Ok(())
+    }
+
+    pub fn build_slice(&mut self, op: u16) -> Result<(), VmErr> {
+        let step = if op == 3 { self.pop()? } else { Val::none() };
+        let stop = self.pop()?;
+        let start = self.pop()?;
+        let val = self.heap.alloc(HeapObj::Slice(start, stop, step))?;
+        self.push(val); Ok(())
+    }
+
+    pub fn unpack_ex(&mut self, op: u16) -> Result<(), VmErr> {
+        let obj = self.pop()?;
+        if !obj.is_heap() { return Err(cold_type("cannot unpack non-iterable")); }
+        let items: Vec<Val> = match self.heap.get(obj) {
+            HeapObj::List(v) => v.borrow().clone(),
+            HeapObj::Tuple(v) => v.clone(),
+            _ => return Err(cold_type("cannot unpack non-iterable")),
+        };
+        let before = (op >> 8) as usize;
+        let after = (op & 0xFF) as usize;
+        if items.len() < before + after {
+            return Err(cold_value("not enough values to unpack"));
+        }
+        let mid = items.len() - after;
+        for &v in items[mid..].iter().rev() { self.push(v); }
+        let star = self.alloc_list(items[before..mid].to_vec())?;
+        self.push(star);
+        for &v in items[..before].iter().rev() { self.push(v); }
+        Ok(())
+    }
+
+    pub fn call_dict(&mut self, op: u16) -> Result<(), VmErr> {
+        let dm = if op == 0 {
+            DictMap::new()
+        } else {
+            let args = self.pop_n((op as usize) * 2)?;
+            let mut dm = DictMap::with_capacity(op as usize);
+            for pair in args.chunks(2) { dm.insert(pair[0], pair[1]); }
+            dm
+        };
+        self.alloc_and_push_dict(dm)
+    }
+
+    pub fn call_set(&mut self, op: u16) -> Result<(), VmErr> {
+        if op == 0 {
+            let val = self.alloc_set(Vec::new())?;
+            self.push(val);
+        } else {
+            let o = self.pop()?;
+            let src = self.extract_iter(o, true)?;
+            let val = self.alloc_set(src)?;
+            self.push(val);
+        }
+        Ok(())
+    }
+
+    /* frozenset() | frozenset(iter) — construct an immutable, hashable
+       set from an iterable. Without args returns the empty frozenset. */
+    pub fn call_frozenset(&mut self, argc: u16) -> Result<(), VmErr> {
+        let args = self.pop_n(argc as usize)?;
+        let items: Vec<Val> = match args.len() {
+            0 => Vec::new(),
+            1 => self.iter_to_vec_general(args[0])?,
+            _ => return Err(cold_type("frozenset() takes 0 or 1 argument")),
+        };
+        let mut s = HashSet::with_capacity_and_hasher(items.len(), Default::default());
+        for v in items { s.insert(v); }
+        let v = self.heap.alloc(HeapObj::FrozenSet(Rc::new(s)))?;
+        self.push(v); Ok(())
+    }
+
+    /* `bytes()` constructor — three forms, mirroring Python:
+         bytes()                    -> empty bytes
+         bytes(n)        if int     -> n zero bytes
+         bytes(iter)     if iter    -> bytes of those ints, each in 0..=255
+         bytes(s, "utf-8")          -> encode str s with the given encoding
+       Encodings recognised: "utf-8", "utf8", "ascii". Anything else errors
+       so silent encoding mismatches don't slip through. */
+    pub fn call_bytes(&mut self, argc: u16) -> Result<(), VmErr> {
+        let args = self.pop_n(argc as usize)?;
+        let buf: Vec<u8> = match args.len() {
+            0 => Vec::new(),
+            1 => {
+                let a = args[0];
+                if a.is_int() {
+                    let n = a.as_int();
+                    if n < 0 { return Err(cold_value("negative count")); }
+                    alloc::vec![0u8; n as usize]
+                } else if a.is_heap() {
+                    if let HeapObj::Bytes(b) = self.heap.get(a) {
+                        b.clone()
+                    } else {
+                        let items = self.iter_to_vec_general(a)?;
+                        let mut out = Vec::with_capacity(items.len());
+                        for v in items {
+                            if !v.is_int() {
+                                return Err(cold_type("bytes() iterable must contain ints"));
+                            }
+                            let n = v.as_int();
+                            if !(0..=255).contains(&n) {
+                                return Err(cold_value("bytes must be in range(0, 256)"));
+                            }
+                            out.push(n as u8);
+                        }
+                        out
+                    }
+                } else {
+                    return Err(cold_type("bytes() requires an int, an iterable of ints, or (str, encoding)"));
+                }
+            }
+            2 => {
+                // bytes(s, "utf-8") — string encoding form.
+                let (s, enc) = (args[0], args[1]);
+                let HeapObj::Str(text) = self.heap.get(s).clone() else {
+                    return Err(cold_type("bytes() first argument must be a string when encoding is given"));
+                };
+                let HeapObj::Str(encoding) = self.heap.get(enc) else {
+                    return Err(cold_type("bytes() encoding must be a string"));
+                };
+                match encoding.as_str() {
+                    "utf-8" | "utf8" => text.into_bytes(),
+                    "ascii" => {
+                        if !text.is_ascii() {
+                            return Err(cold_value("'ascii' codec can't encode non-ASCII characters"));
+                        }
+                        text.into_bytes()
+                    }
+                    _ => return Err(cold_value("unsupported encoding (expected 'utf-8' or 'ascii')")),
+                }
+            }
+            _ => return Err(cold_type("bytes() takes at most 2 arguments")),
+        };
+        let v = self.heap.alloc(HeapObj::Bytes(buf))?;
+        self.push(v); Ok(())
+    }
+}

@@ -1,6 +1,16 @@
-use alloc::{string::String, vec::Vec, vec, rc::Rc};
+use alloc::{rc::Rc, string::String, vec, vec::Vec};
 use core::cell::RefCell;
 use crate::modules::fx::{FxHashMap as HashMap, FxHashSet as HashSet};
+
+pub mod coro;
+pub mod eq;
+pub mod err;
+pub mod math;
+
+pub use coro::*;
+pub use eq::*;
+pub use err::*;
+pub use math::*;
 
 /* Per-execution resource caps: max recursion depth, op budget, heap quota. */
 pub struct Limits { pub calls: usize, pub ops: usize, pub heap: usize }
@@ -80,7 +90,7 @@ impl core::hash::Hash for Val {
     #[inline]
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         // Numeric unification: int and float that are value-equal must hash
-        // equal so dict/set treat 1 and 1.0 as the same key (CPython parity).
+        // equal so dict/set treat 1 and 1.0 as the same key.
         // 47-bit ints fit losslessly in f64, so funnel both through f64 bits.
         if self.is_int()        { (self.as_int() as f64).to_bits().hash(state); }
         else if self.is_float() { self.as_float().to_bits().hash(state); }
@@ -127,10 +137,7 @@ impl Val {
     }
 
     #[inline(always)] pub fn as_float(&self) -> f64  { f64::from_bits(self.0) }
-    /* Public accessors for wire-format marshalling (FFI / WASM loader / SDK).
-       The 64-bit payload is the canonical NaN-boxed representation; treating
-       it as an opaque transport word lets non-host code round-trip values
-       without depending on the private field. */
+    /* Public accessors for wire-format marshalling (FFI / WASM loader / SDK). */
     #[inline(always)] pub fn raw(&self) -> u64 { self.0 }
     #[inline(always)] pub fn from_raw(u: u64) -> Self { Self(u) }
     #[inline(always)] pub fn as_int(&self) -> i64  {
@@ -152,9 +159,7 @@ pub enum HeapObj {
     Dict(Rc<RefCell<DictMap>>),
     Set(Rc<RefCell<HashSet<Val>>>),
     /* Immutable, hashable counterpart of Set. Built once via the
-       `frozenset(iter)` builtin and then read-only — no add/remove/clear
-       methods exposed. Hashable so it can live in dict keys and other
-       sets. Equality is by element membership (same as Set). */
+       `frozenset(iter)` builtin and then read-only. */
     FrozenSet(Rc<HashSet<Val>>),
     Tuple(Vec<Val>),
     Func(usize, Vec<Val>, Vec<(usize, Val)>),
@@ -163,12 +168,8 @@ pub enum HeapObj {
     // True ellipsis singleton, distinct from any string `...`.
     Ellipsis,
     Type(String),
-    /* Constructed exception value: `ValueError("bad")` builds one via the
-       Type-as-callable path. Carries the type name (for `except` matching
-       and `type(e).__name__`) and the constructor args (exposed via `.args`
-       as a tuple). Distinct from Type so `isinstance(e, ValueError)` and
-       `type(e)` give the right answers without confusing the bare class
-       object with an instance of it. */
+    /* Constructed exception value with type name + constructor args
+       (exposed via `.args` as a tuple). */
     ExcInstance(String, Vec<Val>),
     BoundMethod(Val, BuiltinMethodId),
     NativeFn(NativeFnId),
@@ -177,14 +178,9 @@ pub enum HeapObj {
     BoundUserMethod(Val, Val),
     Coroutine(usize, Vec<Val>, Vec<Val>, usize, Vec<IterFrame>),
     /* `import m` materialises this. Attribute access (`m.x`) goes through
-       LoadAttr; calls (`m.x(...)`) fuse via CallMethod. The attrs vector
-       carries one entry per exported name, in declaration order. */
+       LoadAttr; calls (`m.x(...)`) fuse via CallMethod. */
     Module(String, Vec<(String, Val)>),
-    /* A native binding lifted to a first-class callable. Created by
-       LoadExtern when a Module needs to expose an extern as an attr; also
-       returned directly when LoadAttr resolves to an extern. The dispatch
-       path mirrors CallExtern but reads the function pointer from the heap
-       object instead of the chunk's extern_table. */
+    /* A native binding lifted to a first-class callable. */
     Extern(ExternFn),
 }
 
@@ -299,8 +295,7 @@ impl DictMap {
 }
 
 /* Visit every `Val` field reachable from `obj` exactly once. Single source
-   of truth for the GC's traversal schema — adding a new HeapObj variant only
-   requires adding an arm here, not editing 6+ scattered match cascades. */
+   of truth for the GC's traversal schema. */
 pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
     match obj {
         HeapObj::Tuple(items)         => for &v in items { f(v); },
@@ -491,7 +486,7 @@ impl HeapPool {
             .as_mut()
             .expect("garbage collector invariant violated: live Val references a freed heap slot (mut)")
     }
-    
+
 
     /* Stable per-type tag used by the inline cache to specialise binops.
        Returns 0 for unknown / freed values. */
@@ -527,309 +522,8 @@ impl HeapPool {
     }
 }
 
-// Equality on Val/heap objects.
-
-pub(super) fn eq_seq(a: &[Val], b: &[Val], eq: impl Fn(Val,Val)->bool) -> bool {
-    a.len() == b.len() && a.iter().zip(b).all(|(x,y)| eq(*x,*y))
-}
-pub(super) fn eq_dict(a: &DictMap, b: &DictMap, eq: impl Fn(Val,Val)->bool) -> bool {
-    a.len() == b.len() && a.iter().all(|(k,v)| b.get(&k).is_some_and(|&v2| eq(v,v2)))
-}
-
-pub fn eq_vals_with_heap(a: Val, b: Val, heap: &HeapPool) -> bool {
-    if !a.is_heap() || !b.is_heap() {
-        if a.is_int() && b.is_int() { return a.as_int() == b.as_int(); }
-        if a.is_float() && b.is_float() { return a.as_float() == b.as_float(); }
-        if a.is_int() && b.is_float() { return (a.as_int() as f64) == b.as_float(); }
-        if a.is_float() && b.is_int() { return a.as_float() == (b.as_int() as f64); }
-        return a.0 == b.0;
-    }
-
-    match (heap.get(a), heap.get(b)) {
-        (HeapObj::Str(x), HeapObj::Str(y)) => x == y,
-        (HeapObj::Bytes(x), HeapObj::Bytes(y)) => x == y,
-        (HeapObj::Tuple(x), HeapObj::Tuple(y)) => eq_seq(x, y, |a,b| eq_vals_with_heap(a, b, heap)),
-        (HeapObj::List(x), HeapObj::List(y)) => eq_seq(&x.borrow(), &y.borrow(), |a,b| eq_vals_with_heap(a, b, heap)),
-        (HeapObj::Set(x), HeapObj::Set(y)) => *x.borrow() == *y.borrow(),
-        (HeapObj::FrozenSet(x), HeapObj::FrozenSet(y)) => **x == **y,
-        (HeapObj::Set(x), HeapObj::FrozenSet(y)) => *x.borrow() == **y,
-        (HeapObj::FrozenSet(x), HeapObj::Set(y)) => **x == *y.borrow(),
-        (HeapObj::Dict(x), HeapObj::Dict(y)) => eq_dict(&x.borrow(), &y.borrow(), |a,b| eq_vals_with_heap(a, b, heap)),
-        // Cross-type comparisons fall through to false. Notably `bytes == str`
-        // is False in Python, even when the bytes are valid UTF-8 of the str.
-        _ => false,
-    }
-}
-
-/* Runtime errors. Static-string variants avoid alloc on the hot error path;
-   *Msg / Name / Attribute / Raised variants carry dynamic text so the user
-   sees the actual offending name or object type instead of a generic
-   "attribute not found". */
-#[derive(Debug, Clone)]
-pub enum VmErr {
-    CallDepth, Heap, Budget, ZeroDiv, Overflow,
-    Name(String),
-    Type(&'static str),
-    TypeMsg(String),
-    Value(&'static str),
-    Runtime(&'static str),
-    Attribute(String),
-    Raised(String),
-}
-
-impl VmErr {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::CallDepth => "RecursionError: max depth",
-            Self::Heap => "MemoryError: heap limit",
-            Self::Budget => "RuntimeError: budget exceeded",
-            Self::ZeroDiv => "ZeroDivisionError: division by zero",
-            Self::Overflow => "OverflowError: integer too large for 47-bit Val",
-            Self::Type(s) => s,
-            Self::Value(s) => s,
-            Self::Runtime(s) => s,
-            Self::TypeMsg(_) => "TypeError",
-            Self::Attribute(_) => "AttributeError",
-            Self::Name(_) => "NameError",
-            Self::Raised(_) => "Exception",
-        }
-    }
-
-    pub fn render(&self) -> alloc::string::String {
-        use crate::s;
-        match self {
-            Self::Name(n) => s!("NameError: name '", str n, "' is not defined"),
-            Self::Raised(m) => s!("Exception: ", str m),
-            Self::Type(m) => s!("TypeError: ", str m),
-            Self::TypeMsg(m) => s!("TypeError: ", str m),
-            Self::Value(m) => s!("ValueError: ", str m),
-            Self::Runtime(m) => s!("RuntimeError: ", str m),
-            Self::Attribute(m) => s!("AttributeError: ", str m),
-            other => alloc::string::String::from(other.as_str()),
-        }
-    }
-
-    /* Same message as render(), but anchored at a source byte offset so the
-       parser's Diagnostic renderer adds the rustc-style line/caret preview.
-       Falls back to plain render() when no position is known (pre-parse env
-       errors or VM-setup faults before the first instruction). */
-    pub fn render_at(&self, src: &str, byte_pos: Option<usize>, path: Option<&str>) -> alloc::string::String {
-        let Some(pos) = byte_pos else { return self.render(); };
-        crate::modules::parser::Diagnostic { start: pos, end: pos, msg: self.render() }
-            .render(src, path)
-    }
-
-    /* Multi-frame traceback. The error site renders first as `error: ...`
-       with a rustc-style source preview; each entry in `frames` appends a
-       `note: called from <fname>` block walking outward from the innermost
-       call to the entry chunk. `frames` is given innermost-first (most
-       recent caller closest to index 0); the renderer reverses to outermost
-       so the chain reads top-down like CPython's traceback.
-
-       `error_src` / `error_path` correspond to the chunk where the exception
-       was raised; each frame carries its own caller's source so the chain
-       traverses module boundaries without losing context. */
-    pub fn render_traceback(
-        &self,
-        error_src: &str,
-        error_byte_pos: Option<usize>,
-        error_path: Option<&str>,
-        frames: &[CallFrame],
-        function_names: &[alloc::string::String],
-    ) -> alloc::string::String {
-        let mut out = self.render_at(error_src, error_byte_pos, error_path);
-        // Frames are pushed innermost-first as the error propagates up; render
-        // outermost-first so the chain reads "outermost called inner called
-        // innermost" — easier to follow than the reverse.
-        for f in frames.iter().rev() {
-            let fname = function_names.get(f.fi)
-                .map(|s| s.as_str()).unwrap_or("<anonymous>");
-            let pos = f.call_byte_pos as usize;
-            let path: Option<&str> = if f.caller_path.is_empty() { None } else { Some(f.caller_path.as_str()) };
-            let note = crate::modules::parser::Diagnostic {
-                start: pos, end: pos,
-                msg: alloc::format!("called from {}()", fname),
-            }.render(f.caller_source.as_str(), path);
-            // Diagnostic prefixes "error:" by convention; rewrite to "note:"
-            // for the chained frames so the topmost line stays the only red.
-            let note = note.replacen("error:", "note:", 1);
-            out.push('\n');
-            out.push_str(&note);
-        }
-        out
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-impl core::fmt::Display for VmErr {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str(&self.render())
-    }
-}
-
-/* Cooperative scheduler state for one coroutine living in `vm.scheduler`.
-   The scheduler steps each Ready handle once per round-robin pass, swaps
-   it to Sleeping/Done/Errored/Cancelled depending on what happened, and
-   ends the run when the target handle leaves the Ready/Sleeping pool. */
-#[derive(Clone, Debug)]
-pub enum CoroState {
-    /// Resumable on the next scheduler tick.
-    Ready,
-    /// Suspended until `until_ns` (per `vm.time_hook`). When all live
-    /// handles are Sleeping the scheduler advances the clock to the
-    /// minimum `until_ns` rather than spinning.
-    Sleeping(u64),
-    /// Resumed-on-next-tick state used while a `cancel()` request is
-    /// pending: the next resume injects a `CancelledError` raise into the
-    /// coroutine instead of advancing it normally.
-    CancelPending,
-    /// Coroutine returned with this Val.
-    Done(Val),
-    /// Coroutine raised an exception. Stored verbatim so `gather` /
-    /// `with_timeout` can propagate it to the caller.
-    Errored(VmErr),
-    /// Coroutine was cancelled and its CancelledError was already
-    /// observed (or it never ran). Returns `None` to gather()s peers.
-    Cancelled,
-}
-
-#[derive(Clone, Debug)]
-pub struct CoroutineHandle {
-    /// The Coroutine HeapObj Val passed by the user.
-    pub coro: Val,
-    pub state: CoroState,
-}
-
-/* One snapshot of a user-function call site, pushed when `exec_call` enters
-   a HeapObj::Func and popped on return/error. Carries everything the
-   traceback renderer needs without requiring a chunk lookup at error time:
-     - `fi`: index into `vm.function_names` for the called function's name
-     - `call_byte_pos`: byte offset of the Call opcode in the *caller's*
-       source (set from `caller_chunk.resolve_call(rip)` then falling back
-       to `resolve(rip)` for stmt-level)
-     - `caller_source` / `caller_path`: shared Arc clones of the caller's
-       chunk metadata so render walks each frame without holding a borrow
-       on the live chunk pointers. */
-#[derive(Clone, Debug)]
-pub struct CallFrame {
-    pub fi: usize,
-    pub call_byte_pos: u32,
-    pub caller_source: alloc::sync::Arc<alloc::string::String>,
-    pub caller_path: alloc::sync::Arc<alloc::string::String>,
-}
-
-/* Iterator state for ForIter. Consumed one item at a time. */
-#[derive(Clone, Debug)]
-pub enum IterFrame {
-    Seq { items: Vec<Val>, idx: usize },
-    Range { cur: i64, end: i64, step: i64 },
-    Coroutine(Val),
-}
-
-impl IterFrame {
-    pub fn next_item(&mut self) -> Option<Val> {
-        match self {
-            Self::Coroutine(_) => None,
-            Self::Seq { items, idx } => {
-                if *idx < items.len() { let v = items[*idx]; *idx += 1; Some(v) } else { None }
-            }
-            Self::Range { cur, end, step } => {
-                let done = if *step > 0 { *cur >= *end } else { *cur <= *end };
-                if done { None } else { let v = *cur; *cur += *step; Some(Val::int(v)) }
-            }
-        }
-    }
-}
-
-// Pure-Rust f64 math (no libm, works under no_std / WASM).
-
-#[inline]
-pub fn fpowi(mut base: f64, exp: i32) -> f64 {
-    if exp == 0 { return 1.0; }
-    let neg = exp < 0;
-    let mut e = (exp as i64).unsigned_abs() as u32;
-    let mut r = 1.0;
-    while e > 0 { if e & 1 != 0 { r *= base; } base *= base; e >>= 1; }
-    if neg { 1.0 / r } else { r }
-}
-
-#[inline]
-pub fn fround(x: f64) -> f64 {
-    let i = x as i64;
-    let t = i as f64;
-    let d = x - t;
-    if d > 0.5 { t + 1.0 }
-    else if d < -0.5 { t - 1.0 }
-    else if d == 0.5 { if i % 2 == 0 { t } else { t + 1.0 } }
-    else if d == -0.5 { if i % 2 == 0 { t } else { t - 1.0 } }
-    else { t }
-}
-
-pub fn fln(x: f64) -> f64 {
-    let bits = f64::to_bits(x);
-    let exp = ((bits >> 52) & 0x7FF) as i64 - 1023;
-    let m = f64::from_bits((bits & 0x000F_FFFF_FFFF_FFFF) | 0x3FF0_0000_0000_0000);
-    let t = (m - 1.0) / (m + 1.0); let t2 = t * t;
-    2.0 * t * (1.0 + t2 * (1.0/3.0 + t2 * (1.0/5.0 + t2 * (1.0/7.0 + t2 / 9.0)))) + exp as f64 * core::f64::consts::LN_2
-}
-
-pub fn fexp(x: f64) -> f64 {
-    if x > 709.0 { return f64::INFINITY; }
-    if x < -709.0 { return 0.0; }
-    let k = (x * core::f64::consts::LOG2_E) as i64;
-    let r = x - k as f64 * core::f64::consts::LN_2;
-    let e = 1.0 + r * (1.0 + r * (0.5 + r * (1.0/6.0 + r * (1.0/24.0 + r * (1.0/120.0 + r / 720.0)))));
-    f64::from_bits(((k + 1023) as u64) << 52) * e
-}
-
-#[inline]
-pub fn fpowf(base: f64, exp: f64) -> f64 {
-    let ei = exp as i32;
-    if (ei as f64) == exp { return fpowi(base, ei); }
-    if base <= 0.0 {
-        if base == 0.0 { return if exp > 0.0 { 0.0 } else { f64::INFINITY }; }
-        return f64::NAN;
-    }
-    fexp(exp * fln(base))
-}
-
-/* Out-of-line error constructors keep the hot dispatch loop linear in
-   the icache; #[cold] + #[inline(never)] push them off the fast path. */
-#[cold] #[inline(never)] pub fn cold_heap() -> VmErr { VmErr::Heap }
-#[cold] #[inline(never)] pub fn cold_budget() -> VmErr { VmErr::Budget }
-#[cold] #[inline(never)] pub fn cold_depth() -> VmErr { VmErr::CallDepth }
-#[cold] #[inline(never)] pub fn cold_type(m: &'static str) -> VmErr { VmErr::Type(m) }
-#[cold] #[inline(never)] pub fn cold_value(m: &'static str) -> VmErr { VmErr::Value(m) }
-#[cold] #[inline(never)] pub fn cold_runtime(m: &'static str) -> VmErr { VmErr::Runtime(m) }
-#[cold] #[inline(never)] pub fn cold_overflow() -> VmErr { VmErr::Overflow }
-
 /* Single-write SSA store after register coalescing. */
 #[inline(always)]
 pub fn p_store_ssa(slots: &mut [Val], slot: usize, v: Val) {
     slots[slot] = v;
 }
-
-#[inline]
-pub fn ffloor(x: f64) -> f64 {
-    let i = x as i64 as f64;
-    if x < i { i - 1.0 } else { i }
-}
-
-#[inline]
-pub fn fabs(x: f64) -> f64 {
-    f64::from_bits(f64::to_bits(x) & 0x7FFF_FFFF_FFFF_FFFF)
-}
-
-#[inline]
-pub fn ftrunc(x: f64) -> f64 {
-    if x >= 0.0 { ffloor(x) } else { -ffloor(-x) }
-}
-
-#[inline]
-pub fn fsignum(x: f64) -> f64 {
-    if x > 0.0 { 1.0 } else if x < 0.0 { -1.0 } else { 0.0 }
-}
-
-#[inline]
-pub fn flog10(x: f64) -> f64 { fln(x) / core::f64::consts::LN_10 }
-
