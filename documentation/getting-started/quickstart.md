@@ -25,7 +25,7 @@ cargo wasm
 # -> target/wasm32-unknown-unknown/release/compiler_lib.wasm
 ```
 
-There is no native CLI binary — `compiler_lib.wasm` is the release artifact, and `compiler/src/main.rs` is gated to `wasm32`. The host runtime owns I/O, network, and module fetching: the guest exposes one entry point (`run`) and calls back through `js_print`, `js_fetch_bytes`, and `js_call_native`. This boundary is what keeps Edge Python sandboxed by construction.
+There is no native CLI binary — `compiler_lib.wasm` is the release artifact, and `compiler/src/main/` is gated to `wasm32`. The host runtime owns I/O, network, and module fetching: the guest exposes one entry point (`run`) and calls back through `js_print`, `js_fetch_bytes`, and `js_call_native`. This boundary is what keeps Edge Python sandboxed by construction.
 
 ## Your first program
 

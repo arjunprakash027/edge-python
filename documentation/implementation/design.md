@@ -82,7 +82,12 @@ The heap is a `Vec<HeapSlot>` arena with a free list (capped at 524,288 slots an
 compiler/src/
  ├── lib.rs
  ├── abi.rs       # sealed WASM ABI v1: ops, tags, ErrorKind, HandleTable
- ├── main.rs      # WASM orchestration: parser/VM lifecycle + JS imports (wasm32-only)
+ ├── main/        # WASM orchestration: parser/VM lifecycle + JS imports (wasm32-only)
+ │   ├── mod.rs
+ │   ├── exports.rs      # WASM exports the JS shim drives
+ │   ├── abi_bridge.rs   # host_edge_op + dispatch_*
+ │   ├── resolver.rs     # walk-up packages.json + native bridge closure
+ │   └── errors.rs
  └── modules/
      ├── fstr.rs       # numeric formatter + s!/push!/err! string macros
      ├── fx.rs         # FxHasher + per-map seeded FxBuildHasher
@@ -103,19 +108,40 @@ compiler/src/
      │   ├── imports.rs
      │   └── types.rs
      └── vm/
-         ├── mod.rs
+         ├── mod.rs        # VM struct + with_limits constructor
+         ├── dispatch.rs   # hot loop + exec + exec_call_method
+         ├── init.rs       # build_function_table + run + init_modules
+         ├── helpers.rs    # stack ops, iter helpers, accessors
+         ├── gc.rs         # mark-and-sweep roots
          ├── ops.rs
-         ├── types.rs
          ├── optimizer.rs
          ├── cache.rs
-         ├── builtins.rs
+         ├── types/
+         │   ├── mod.rs    # Val + HeapObj + HeapPool + DictMap + NativeFnId
+         │   ├── err.rs    # VmErr + render + cold_* error ctors
+         │   ├── coro.rs   # CoroState, CoroutineHandle, CallFrame, IterFrame
+         │   ├── math.rs   # pure-Rust f64 math (no_std-compatible)
+         │   └── eq.rs
+         ├── builtins/
+         │   ├── mod.rs
+         │   ├── numeric.rs
+         │   ├── sequence.rs
+         │   ├── container.rs
+         │   ├── conversion.rs
+         │   ├── io.rs
+         │   ├── attr.rs
+         │   ├── identity.rs
+         │   ├── index.rs
+         │   ├── bytes_helpers.rs
+         │   └── async_ops.rs
          └── handlers/
              ├── mod.rs
              ├── arith.rs
              ├── data.rs
              ├── format.rs
              ├── function.rs
-             └── methods.rs
+             ├── methods.rs
+             └── methods_helpers.rs
 ```
 
 ## Capabilities

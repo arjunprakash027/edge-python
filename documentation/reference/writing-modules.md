@@ -152,7 +152,7 @@ impl Resolver for AppResolver {
 }
 ```
 
-Plug `AppResolver` into your parser entry point (replicate `compiler_lib`'s `main.rs` pattern, or call `Parser::with_resolver` directly for native binaries).
+Plug `AppResolver` into your parser entry point (replicate the bridge pattern in `compiler_lib`'s `main/`, or call `Parser::with_resolver` directly for native binaries).
 
 Build and use:
 

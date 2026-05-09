@@ -335,7 +335,7 @@ The reference browser shim is `demo/worker.js`. WASI hosts and Rust embedders mi
 
 - **Refcounted handles.** The guest must release every handle it creates via `edge_encode` or `edge_op` except the one it returns through `*out`. Argv handles are released by the host.
 - **`edge_decode` only handles primitives.** For `list`, `dict`, `set`, instances, etc., use `edge_op` (e.g. `Call recv "items"`, `GetItem recv idx`).
-- **Reentrance is supported.** A guest's `edge_op` runs while the Edge Python VM is paused on the script's `CallExtern`. Method dispatch routes through the same `methods.rs` table the language uses internally — adding a method there makes it visible to existing modules without recompiling them.
+- **Reentrance is supported.** A guest's `edge_op` runs while the Edge Python VM is paused on the script's `CallExtern`. Method dispatch routes through the same `vm/handlers/methods.rs` table the language uses internally — adding a method there makes it visible to existing modules without recompiling them.
 - **Error-as-status, not panic.** Returning `1` from a guest function does NOT abort the host. The host pulls the error and raises it as a typed Python exception in the script.
 - **Memory ownership.** The host doesn't read the guest's linear memory except to copy in/out at well-defined points. Anything the guest allocates internally (its own pools, caches, embedded blobs) is private; the host never touches it.
 

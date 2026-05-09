@@ -22,7 +22,7 @@ What this leaves is a small, fast, deterministic core: 47-bit inline integers + 
 * **Lexer**: Hand-written, LUT-driven scanner (`modules/lexer/{mod,scan,tables}.rs`) over Python 3.13 token kinds. Tokens are `(start, end, kind)` offsets into the source buffer; no string copies during lexing. Indentation tracked as INDENT/DEDENT pairs against an explicit stack; UTF-8 BOM stripped.
 * **Parser**: Single-pass, Pratt precedence climbing (`modules/parser/`). Emits SSA-versioned bytecode directly (`x` -> `x_1`, `x_2`, ...) with explicit `Phi` opcodes at control-flow joins. No intermediate AST.
 * **Optimizer**: One peephole pass (`modules/vm/optimizer.rs`): constant folding over adjacent literal arithmetic / comparison / unary operands, Phi-noop elimination, and dead-instruction compaction with jump-operand remapping. Deliberately leaves `LoadName` alone to preserve the inline-cache slot.
-* **VM**: Stack-based interpreter (`modules/vm/mod.rs`) over `Vec<Instruction>`, where each `Instruction` is `(opcode: OpCode, operand: u16)`. Dispatch is a flat `match` on the opcode (Rust lowers it to a jump table). The hot path is split across handler modules (`handlers/{arith,data,format,function,methods,mod}.rs`). `LoadAttr + Call(0)` is fused into a `CallMethod` / `CallMethodArgs` super-instruction at first execution and cached per call site.
+* **VM**: Stack-based interpreter over `Vec<Instruction>`, where each `Instruction` is `(opcode: OpCode, operand: u16)`. The hot loop lives in `modules/vm/dispatch.rs` as a flat `match` on the opcode (Rust lowers it to a jump table); the VM struct and constructor live in `modules/vm/mod.rs`, with `init.rs` / `helpers.rs` / `gc.rs` covering module init, stack/iter primitives, and the collector. The hot path is split across handler modules (`handlers/{arith,data,format,function,methods,mod}.rs`). `LoadAttr + Call(0)` is fused into a `CallMethod` / `CallMethodArgs` super-instruction at first execution and cached per call site.
 * **Inline Caching**: Per-instruction type-recording cache (`modules/vm/cache.rs`) for arithmetic and comparisons. After 4 stable hits the IC promotes the slot to a typed `FastOp` (`AddInt`, `AddFloat`, `LtFloat`, `EqStr`, ...); the fast path keeps a type-tag guard so a miss falls back to the generic handler.
 * **Template Memoization**: Pure functions called with the same arguments return a cached result after 2 hits, bypassing full execution. Functions are tagged impure on first observed side effect (`StoreItem`, `StoreAttr`, `print`, `input`, `raise`, `yield`).
 * **Memory**: NaN-boxed 64-bit `Val` (47-bit signed inline int, IEEE-754 float, bool, None, 28-bit heap index). Heap is an arena of `HeapObj` slots managed by a mark-and-sweep GC. Strings and bytes ≤ 128 bytes are interned. **Integers are a hard 47 bits** (±140,737,488,355,327); overflow raises `OverflowError`. There is no bignum fallback — this is paradigm-level, not a TODO.
@@ -83,19 +83,24 @@ Mark-and-sweep with roots: operand stack, with-stack, pending yields, event queu
 ├── README.md
 ├── src
 │   ├── abi.rs                  Sealed WASM ABI (op codes, tags, ErrorKind, HandleTable)
-│   ├── lib.rs                  Crate root; gates main.rs to wasm32
-│   ├── main.rs                 WASM bridge / orchestration (not a CLI)
+│   ├── lib.rs                  Crate root; gates `main/` to wasm32
+│   ├── main                    WASM bridge (wasm32-only)
+│   │   ├── mod.rs              Statics, allocator, panic handler, accessors
+│   │   ├── exports.rs          WASM exports the JS shim drives (run, register_*)
+│   │   ├── abi_bridge.rs       host_edge_op + dispatch_* + edge_encode/decode
+│   │   ├── resolver.rs         WasmHostResolver: walk-up + native bridge
+│   │   └── errors.rs           VmErr <-> ErrorKind translation
 │   └── modules
 │       ├── fstr.rs             Numeric formatter + s!/push!/err! string macros
 │       ├── fx.rs               FxHasher with per-map seed (HashDoS-safe)
-│       ├── sha256.rs           Hand-rolled FIPS 180-4 SHA-256 (integrity fragments)
+│       ├── sha256.rs           In-tree FIPS 180-4 SHA-256 (integrity fragments)
 │       ├── lexer
 │       │   ├── mod.rs
 │       │   ├── scan.rs
 │       │   └── tables.rs       LUT byte-class tables
 │       ├── packages
 │       │   ├── mod.rs          Resolver, walk-up, import_module dispatch
-│       │   └── manifest.rs     Hand-rolled JSON parser for packages.json
+│       │   └── manifest.rs     In-tree JSON parser for packages.json
 │       ├── parser
 │       │   ├── mod.rs
 │       │   ├── stmt.rs
@@ -105,19 +110,40 @@ Mark-and-sweep with roots: operand stack, with-stack, pending yields, event queu
 │       │   ├── imports.rs
 │       │   └── types.rs        Instruction, OpCode, SSAChunk, Value
 │       └── vm
-│           ├── mod.rs          Hot dispatch loop
+│           ├── mod.rs          VM struct + with_limits constructor
+│           ├── dispatch.rs     Hot loop + exec + exec_fast + exec_call_method
+│           ├── init.rs         build_function_table + run + init_modules
+│           ├── helpers.rs      Stack ops, iter helpers, accessors
+│           ├── gc.rs           Mark-and-sweep collector roots
 │           ├── ops.rs
-│           ├── types.rs        Val, HeapObj, HeapPool, Limits
 │           ├── optimizer.rs    Constant fold + dead-code compaction
 │           ├── cache.rs        Inline cache + template memoization
-│           ├── builtins.rs
+│           ├── types
+│           │   ├── mod.rs      Val + HeapObj + HeapPool + DictMap + NativeFnId
+│           │   ├── err.rs      VmErr + render + cold_* error ctors
+│           │   ├── coro.rs     CoroState, CoroutineHandle, CallFrame, IterFrame
+│           │   ├── math.rs     Pure-Rust f64 math (no_std-compatible)
+│           │   └── eq.rs       eq_vals_with_heap, eq_seq, eq_dict
+│           ├── builtins
+│           │   ├── mod.rs      Submodule glue + EXC_PARENTS + matches_exc_class
+│           │   ├── numeric.rs  abs/round/min/max/sum/pow/divmod/bin/oct/hex/...
+│           │   ├── sequence.rs range/sorted/reversed/zip/iter/next/map/filter/...
+│           │   ├── container.rs list/tuple/set/frozenset/dict/bytes constructors
+│           │   ├── conversion.rs str/bool/type
+│           │   ├── io.rs       print/input/format
+│           │   ├── attr.rs     getattr/setattr/delattr/hasattr/vars/globals/locals
+│           │   ├── identity.rs repr/callable/id/hash/isinstance
+│           │   ├── index.rs    get_item/store_item/del_item/slice
+│           │   ├── bytes_helpers.rs bytes_fromhex/int_from_bytes/int_to_bytes/import_module
+│           │   └── async_ops.rs run/sleep/gather/with_timeout/cancel/receive
 │           └── handlers
 │               ├── mod.rs
 │               ├── arith.rs
 │               ├── data.rs
 │               ├── format.rs
 │               ├── function.rs
-│               └── methods.rs
+│               ├── methods.rs
+│               └── methods_helpers.rs
 └── tests
     ├── cases
     │   ├── lexer.json
