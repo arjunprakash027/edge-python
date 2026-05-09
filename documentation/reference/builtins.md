@@ -3,7 +3,7 @@ title: "Built-in functions"
 description: "Every built-in function in Edge Python with examples and outputs."
 ---
 
-Edge Python ships with 50 built-in functions. They're first-class values: pass them around, store them in containers, alias them.
+Edge Python ships with 52 built-in functions. They're first-class values: pass them around, store them in containers, alias them.
 
 ```python
 # All built-ins are real values
@@ -623,6 +623,39 @@ True
 True
 False
 ```
+
+### globals, locals
+
+`globals()` returns a fresh dict snapshot of the module-level bindings: every name registered as a builtin or type, plus every top-level user assignment. `locals()` returns a fresh dict of the current frame's bindings — function locals when called inside a function, the same set as `globals()` when called at module level (with builtins filtered).
+
+```python
+x = 100
+y = 200
+
+def add(a, b):
+    return a + b
+
+g = globals()
+print(g['x'] + g['y'])
+
+# Dynamic dispatch by name
+fn = globals()['add']
+print(fn(3, 4))
+
+def f():
+    a = 1
+    b = 2
+    return locals()
+print(f())
+```
+
+```text Output
+300
+7
+{'a': 1, 'b': 2}
+```
+
+The dicts are copies — mutating them does not change the VM's bindings.
 
 ### setattr, delattr
 

@@ -188,6 +188,7 @@ pub enum NativeFnId {
     Receive, Map, Filter, Iter, Bytes, ImportModule, Slice, Vars,
     Gather, WithTimeout, Cancel,
     BytesFromHex, IntFromBytes, IntToBytes, FrozenSet,
+    Globals, Locals,
 }
 
 impl NativeFnId {
@@ -205,6 +206,7 @@ impl NativeFnId {
             "slice", "vars",
             "gather", "with_timeout", "cancel",
             "bytes_fromhex", "int_from_bytes", "int_to_bytes", "frozenset",
+            "globals", "locals",
         ];
         NAMES[self as usize]
     }

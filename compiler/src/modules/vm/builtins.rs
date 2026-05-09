@@ -1062,6 +1062,103 @@ impl<'a> VM<'a> {
         Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")))
     }
 
+    /* globals() — module-level bindings as a dict. Combines the VM's
+       `globals` HashMap (builtins, types, module references) with the
+       entry-chunk slots (user-defined top-level names, which live in
+       chunk slots rather than the globals map). Returned dict is a
+       *copy* — mutating it does not change the VM. */
+    pub fn call_globals(
+        &mut self, chunk: &crate::modules::parser::SSAChunk, slots: &[Val],
+    ) -> Result<(), VmErr> {
+        // Builtin/type/module pairs from self.globals, deduped to bare names.
+        let mut out: crate::modules::fx::FxHashMap<String, Val> =
+            crate::modules::fx::FxHashMap::default();
+        for (k, v) in self.globals.iter() {
+            // Drop SSA-mirrors (`x_0`, `x_1`); keep canonical bare name.
+            if let Some((bare, suf)) = k.rsplit_once('_')
+                && suf.chars().all(|c| c.is_ascii_digit())
+            {
+                out.entry(bare.to_string()).or_insert(*v);
+                continue;
+            }
+            out.insert(k.clone(), *v);
+        }
+        // Walk the entry chunk's slots. When we're already in the entry
+        // frame, `chunk == self.chunk` and `slots` is exactly its slot
+        // array. From inside a function, the entry slots live at the
+        // bottom of `live_slots`.
+        let (entry_chunk, entry_slots): (&crate::modules::parser::SSAChunk, &[Val]) =
+            if core::ptr::eq(chunk as *const _, self.chunk as *const _) {
+                (chunk, slots)
+            } else {
+                let n = self.chunk.names.len().min(self.live_slots.len());
+                (self.chunk, &self.live_slots[..n])
+            };
+        for (i, name) in entry_chunk.names.iter().enumerate() {
+            if name.starts_with('#') { continue; }
+            let v = match entry_slots.get(i) {
+                Some(v) if !v.is_undef() => *v,
+                _ => continue,
+            };
+            let bare = match name.rfind('_') {
+                Some(p) if name[p + 1..].chars().all(|c| c.is_ascii_digit()) =>
+                    name[..p].to_string(),
+                _ => name.clone(),
+            };
+            // User assignment overrides the builtin entry of the same name.
+            out.insert(bare, v);
+        }
+        let mut dm = DictMap::with_capacity(out.len());
+        for (k, v) in out {
+            let key = self.heap.alloc(HeapObj::Str(k))?;
+            dm.insert(key, v);
+        }
+        self.alloc_and_push_dict(dm)
+    }
+
+    /* locals() — current frame's local bindings as a dict. Walks the
+       caller-supplied chunk.names + slots, deduping multiple SSA
+       versions of the same name (`x_0`, `x_1`, ...) by keeping the
+       highest-version live value. Filters out:
+         - synthetic slots (leading `#`, e.g. `#match0`)
+         - builtins that haven't been rebound in this frame (the slot
+           still holds the same Val as the global registration). */
+    pub fn call_locals(
+        &mut self, chunk: &crate::modules::parser::SSAChunk, slots: &[Val],
+    ) -> Result<(), VmErr> {
+        // Map bare-name -> (best version, val) so we keep only the latest.
+        let mut latest: crate::modules::fx::FxHashMap<String, (i64, Val)> =
+            crate::modules::fx::FxHashMap::default();
+        for (i, name) in chunk.names.iter().enumerate() {
+            let v = match slots.get(i) {
+                Some(v) if !v.is_undef() => *v,
+                _ => continue,
+            };
+            // Synthetic slots (`#match0`, `#match_item0`) are matcher
+            // scratch — never user-visible.
+            if name.starts_with('#') { continue; }
+            // Strip SSA version suffix.
+            let (bare, ver) = match name.rfind('_') {
+                Some(p) if name[p + 1..].chars().all(|c| c.is_ascii_digit()) =>
+                    (&name[..p], name[p + 1..].parse::<i64>().unwrap_or(0)),
+                _ => (name.as_str(), 0),
+            };
+            // Skip unmodified builtins: if the global registration for this
+            // name points at the *same* Val we'd return, the user never
+            // rebound it locally — exclude from locals().
+            if let Some(&gv) = self.globals.get(bare)
+                && gv.0 == v.0 { continue; }
+            let entry = latest.entry(bare.to_string()).or_insert((-1, Val::undef()));
+            if ver > entry.0 { *entry = (ver, v); }
+        }
+        let mut dm = DictMap::with_capacity(latest.len());
+        for (name, (_, v)) in latest {
+            let key = self.heap.alloc(HeapObj::Str(name))?;
+            dm.insert(key, v);
+        }
+        self.alloc_and_push_dict(dm)
+    }
+
     /* frozenset() | frozenset(iter) — construct an immutable, hashable
        set from an iterable. Without args returns the empty frozenset. */
     pub fn call_frozenset(&mut self, argc: u16) -> Result<(), VmErr> {

@@ -555,6 +555,7 @@ impl<'a> VM<'a> {
             NativeFnId::Gather, NativeFnId::WithTimeout, NativeFnId::Cancel,
             NativeFnId::BytesFromHex, NativeFnId::IntFromBytes,
             NativeFnId::IntToBytes, NativeFnId::FrozenSet,
+            NativeFnId::Globals, NativeFnId::Locals,
         ];
         for &id in builtin_fns {
             if let Ok(v) = vm.heap.alloc(HeapObj::NativeFn(id)) {

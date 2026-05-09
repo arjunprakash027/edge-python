@@ -580,6 +580,7 @@ impl<'a> VM<'a> {
             BytesFromHex => Some(1),
             IntFromBytes => Some(2),
             IntToBytes => Some(3),
+            Globals | Locals => Some(0),
             Bytes => None,  // 0/1/2-arg: bytes() | bytes(n|iter) | bytes(str, "utf-8")
             Slice => None,  // 1/2/3-arg
             Gather => None, // variadic
@@ -665,6 +666,8 @@ impl<'a> VM<'a> {
             IntFromBytes => self.call_int_from_bytes(),
             IntToBytes => self.call_int_to_bytes(),
             FrozenSet => self.call_frozenset(argc),
+            Globals => self.call_globals(chunk, slots),
+            Locals => self.call_locals(chunk, slots),
         }
     }
 }
