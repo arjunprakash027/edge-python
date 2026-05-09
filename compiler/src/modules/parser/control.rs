@@ -9,7 +9,7 @@ use alloc::{vec, vec::Vec, string::ToString};
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
-    /* if / elif / else with SSA Phi at branch joins. */
+    /* if/elif/else compiler; emits JumpIfFalse/Jump and patches branch join targets */
 
     pub(super) fn if_stmt(&mut self) {
         self.advance();
@@ -52,21 +52,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* match/case: full pattern matcher.
-
-       Supports: literals, capture variables (`case x:`), `_` wildcard,
-       OR patterns (`case 1 | 2 | 3:`), guards (`case x if x > 0:`), and
-       sequence patterns (`case [a, b, *rest]:`). Mapping and class
-       patterns are not implemented — use chained `if/elif` for those.
-
-       Bytecode shape per case:
-         LoadName subj          ; subject onto stack for the matcher
-         <pattern emit>         ; consumes subject; on miss, jumps via fail_jumps
-         <guard emit>           ; optional; on false, jumps via fail_jumps
-         <body>
-         Jump end
-         <fail_jumps land here>
-    */
+    /* match/case: literals, captures, wildcards, OR, guards, sequences; emits subject-load + pattern + guard + Jump-end. */
     pub(super) fn match_stmt(&mut self) {
         self.advance();
         self.expr();
@@ -86,8 +72,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             let mut fail_jumps: Vec<usize> = Vec::new();
             self.parse_pattern(subj, &mut fail_jumps);
 
-            // Optional guard. The pattern's fail_jumps and the guard's jump
-            // share the same landing pad: fall through to the next case.
+            // Guard fail joins pattern fails; both land at the next case.
             if self.eat_if(TokenType::If) {
                 self.expr();
                 self.chunk.emit(OpCode::JumpIfFalse, 0);
@@ -108,16 +93,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         for pos in end_jumps { self.patch(pos); }
     }
 
-    /* Recursive pattern parser. Emits matcher bytecode for one pattern,
-       extending `fail_jumps` with every JumpIfFalse / Jump that should
-       branch to the case-fail label. The subject is reloaded from `subj`
-       at the top of the matcher; the matcher consumes it (success path)
-       or jumps to fail (mismatch). */
+    /* Emits bytecode for one pattern; appends case-fail jumps to fail_jumps; reloads subject from subj. */
     pub(super) fn parse_pattern(&mut self, subj: u16, fail_jumps: &mut Vec<usize>) {
-        // OR pattern: parse one alternative, then while peek `|` parse more.
-        // Each alt has its own success-jump that lands at the post-OR point.
+        // OR pattern: each alt gets a success-jump landing past all alts.
         let alt_start = self.chunk.instructions.len();
-        let _ = alt_start; // kept for symmetry; alts are linked via fail_jumps below
+        let _ = alt_start; // unused; alts link via fail_jumps.
 
         let mut alts: Vec<Vec<usize>> = Vec::new();
         let mut succ_jumps: Vec<usize> = Vec::new();
@@ -125,16 +105,15 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         loop {
             let mut this_alt_fails: Vec<usize> = Vec::new();
             self.parse_simple_pattern(subj, &mut this_alt_fails);
-            // Match: jump past remaining alts (ahead).
+            // On match: jump past remaining alts.
             self.chunk.emit(OpCode::Jump, 0);
             succ_jumps.push(self.chunk.instructions.len() - 1);
-            // Mismatch: rewire this alt's fails to land at the next alt
-            // (here). Don't propagate to the case-fail until the LAST alt.
+            // On mismatch: redirect fails to next alt; only last alt propagates to case-fail.
             alts.push(this_alt_fails);
             if !matches!(self.peek(), Some(TokenType::Vbar)) {
                 break;
             }
-            // Land previous alt's fails here.
+            // Previous alt's fails land at next alt entry.
             let here = self.chunk.instructions.len();
             for j in alts.last_mut().unwrap().drain(..) {
                 let target = here as u16;
@@ -143,24 +122,23 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             self.advance(); // consume |
         }
 
-        // Last alt's fails are the case-fails (no further alts to try).
+        // Last alt's fails become the case-fail exits.
         if let Some(last) = alts.last_mut() {
             fail_jumps.append(last);
         }
 
-        // Patch all success jumps to land here (post-OR).
+        // All success jumps land here, past the OR.
         for j in succ_jumps { self.patch(j); }
     }
 
-    /* One alternative within a pattern (no `|`). Dispatches by leading
-       token kind. Captures bind via `StoreName` against the subject. */
+    /* Dispatches single pattern alternative by token: wildcard, capture (StoreName), or literal equality. */
     fn parse_simple_pattern(&mut self, subj: u16, fail_jumps: &mut Vec<usize>) {
         match self.peek() {
-            // `_` wildcard — always succeeds, no binding.
+            // Wildcard: always succeeds, no binding.
             Some(TokenType::Underscore) => { self.advance(); }
-            // `[ ... ]` sequence pattern.
+            // Sequence pattern.
             Some(TokenType::Lsqb) => { self.parse_sequence_pattern(subj, fail_jumps); }
-            // Bare identifier — capture: bind subject to name, always succeed.
+            // Capture: bind subject to name, always succeeds.
             Some(TokenType::Name) => {
                 let t = self.advance();
                 let name = self.lexeme(&t).to_string();
@@ -169,11 +147,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 let i = self.push_ssa_name(&name, ver);
                 self.chunk.emit(OpCode::StoreName, i);
             }
-            // Anything else (literal / parenthesised expr): equality test
-            // against the subject. Use a precedence above bitwise-or so the
-            // pattern `1 | 2 | 3` is consumed by the OR loop in
-            // `parse_pattern` rather than as a single `1 | 2 | 3`
-            // bitwise-or expression.
+            // Literal/expr: equality-test against subject; precedence > bitwise-or keeps `1|2|3` as OR pattern.
             _ => {
                 self.chunk.emit(OpCode::LoadName, subj);
                 self.expr_bp(11);
@@ -184,38 +158,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* `[a, b, c]` and `[a, *rest, c]` sequence patterns. Each item is a
-       full pattern (literal, capture, _, OR, ...). Length-checks the
-       subject, then materialises subj[i] into a fresh slot so the item
-       pattern can recurse via parse_simple_pattern.
-
-       Star patterns capture the middle slice into a list and may name it
-       (`*rest`) or wildcard (`*_`). At most one star per sequence. */
+    /* Sequence pattern: length-checks subject, indexes items into fresh slots; star captures middle slice. */
     fn parse_sequence_pattern(&mut self, subj: u16, fail_jumps: &mut Vec<usize>) {
-        self.advance(); // [
-        // Each item is a (star?, start_token_position) — the actual pattern
-        // bytecode is emitted lazily after we know the indices.
-        let item_positions: Vec<bool> = Vec::new(); // star flag per item
-        // Phase 1: count the items + locate the star (if any) by peeking at
-        // the token stream and skipping past each item via parse_simple_pattern
-        // is wrong (it would emit bytecode). Instead, parse the patterns
-        // into temporary slot expressions by recording where each item begins
-        // in the source and re-parsing later. Simpler: emit the equality /
-        // capture inline against subj[i] in a single forward pass.
-        let _ = item_positions;
+        self.advance(); // consume `[`
 
-        // Track items as we go: emit length check first, then per-item
-        // bytecode that reads subj[i] (or the star slice) into a sub-subject
-        // and recursively runs the item pattern. To keep things linear we
-        // actually do TWO passes by buffering the parser position.
-        //
-        // Implementation: count items in a token-only pass (no bytecode),
-        // then walk again emitting the per-index bytecode. We achieve the
-        // first pass by peeking: lookahead until matching `]`, counting
-        // commas at depth 0 and detecting one `*`.
+        // Two-pass: scan counts items/star; second pass emits bytecode.
+        let _ = Vec::<bool>::new(); // remove item_positions entirely, it's dead
 
-        // First pass: scan ahead for item count + star index, save the
-        // tokens we consumed so we can re-feed them.
+        // Pass 1: buffer tokens to count items and locate the star.
         let mut buffered: Vec<crate::modules::lexer::Token> = Vec::new();
         let mut depth: i32 = 0;
         let mut commas = 0;
@@ -252,7 +202,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 "multiple stars in sequence pattern");
         }
 
-        // Length check: == item_count if no star, >= item_count - 1 if star.
+        // Length check: exact without star, >= (count-1) with star.
         let len_min = if star_count > 0 { item_count - 1 } else { item_count };
         self.chunk.emit(OpCode::LoadName, subj);
         self.chunk.emit(OpCode::CallLen, 0);
@@ -263,12 +213,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.chunk.emit(OpCode::JumpIfFalse, 0);
         fail_jumps.push(self.chunk.instructions.len() - 1);
 
-        // Phase 2: re-feed buffered tokens through a sub-parser-like state.
-        // Easiest: create an iterator from buffered and swap with self.tokens
-        // for the duration of the item walk. The lexer Token type is plain
-        // data so this is mechanical.
+        // Pass 2: walk buffered tokens, emitting per-item bytecode.
         let saved: Vec<crate::modules::lexer::Token> = buffered;
-        // Iterator over saved tokens that we can `peek/advance` against.
         let mut idx = 0usize;
         let total = saved.len();
 
@@ -276,14 +222,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let item_ver = self.increment_version("#match_item");
         let item_subj = self.chunk.push_name(&s!("#match_item", int item_ver));
 
-        // Walk items: each item ends at the next top-level Comma (or EOF).
+        // Walk items; split on top-level commas.
         let mut item_idx: i64 = 0;
         let mut star_idx_seen: Option<i64> = None;
         while idx < total {
-            // Detect star prefix.
+            // Check for star prefix.
             let is_star = matches!(saved.get(idx), Some(t) if t.kind == TokenType::Star);
             if is_star { idx += 1; }
-            // Find end of this item (next Comma at depth 0 or EOF).
+            // Find item end: next depth-0 comma or EOF.
             let item_start = idx;
             let mut d: i32 = 0;
             while idx < total {
@@ -294,16 +240,13 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 idx += 1;
             }
             let item_end = idx;
-            // Skip the comma if any.
+            // Consume trailing comma.
             if idx < total && saved[idx].kind == TokenType::Comma { idx += 1; }
 
-            // Compute the source-side index for this element. Without a star,
-            // it's simply `item_idx`. With a star, prefix items use positive
-            // indices, the star itself binds a slice, suffix items use
-            // negative indices.
+            // Index: positive before star, star gets slice, negative after.
             if is_star {
                 star_idx_seen = Some(item_idx);
-                // Build subj[item_idx : len(subj) - (item_count - item_idx - 1)]
+                // Slice: subj[item_idx : len-suffix]
                 let suffix = (item_count as i64) - item_idx - 1;
                 self.chunk.emit(OpCode::LoadName, subj);
                 let cs = self.chunk.push_const(super::types::Value::Int(item_idx));
@@ -319,7 +262,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.chunk.emit(OpCode::CallList, 0);
                 self.chunk.emit(OpCode::StoreName, item_subj);
             } else {
-                // Source index: positive before star, negative after.
+                // Negative index for items after the star.
                 let physical_idx: i64 = if star_idx_seen.is_some() {
                     -((item_count as i64) - item_idx)
                 } else {
@@ -332,14 +275,10 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.chunk.emit(OpCode::StoreName, item_subj);
             }
 
-            // Item pattern dispatch by token shape: wildcard, capture, or
-            // literal-equality. Nested sequence/OR patterns aren't supported
-            // inside another sequence — keeps the matcher linear and
-            // sidesteps having to swap parser token streams. Use chained
-            // ifs/match for those rare nested cases.
+            // Dispatch: wildcard, capture, or literal. No nested sequences; use if/match instead.
             let toks = &saved[item_start..item_end];
             if toks.is_empty() || (toks.len() == 1 && toks[0].kind == TokenType::Underscore) {
-                // wildcard — drop the item_subj we just stored.
+                // Wildcard: discard stored item_subj.
             } else if toks.len() == 1 && toks[0].kind == TokenType::Name {
                 let name = self.source[toks[0].start..toks[0].end].to_string();
                 if name != "_" {
@@ -349,11 +288,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     self.chunk.emit(OpCode::StoreName, ni);
                 }
             } else {
-                // Literal (or compound expression). Emit by replaying the
-                // tokens through a small expr scanner. Supported: Int,
-                // Float, Str, True, False, None, Minus+Number, parenthesised
-                // expressions of the same. Anything else lands in the
-                // generic `unsupported pattern` error path.
+                // Literal: replay tokens; supports Int/Float/Str/Bool/None/negation; else error.
                 let mut pos = 0;
                 let mut neg = false;
                 if pos < toks.len() && toks[pos].kind == TokenType::Minus { neg = true; pos += 1; }
@@ -595,18 +530,13 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
         self.eat(TokenType::Colon);
         self.compile_block();
-        // One ExitWith per SetupWith — paired 1:1 on unwind.
+        // Paired ExitWith for each SetupWith.
         for _ in 0..cm_count {
             self.chunk.emit(OpCode::ExitWith, operand);
         }
     }
 
-    /* `import name` and `from <spec> import names` — both delegate to
-       `imports.rs`, which calls the injected Resolver and either inlines code
-       module functions or registers natives in the chunk's extern_table.
-       Module resolution is compile-time only: no Import/ImportFrom opcodes
-       reach the VM. See `imports.rs` for the resolution logic and
-       `crate::modules::packages` for the public Resolver API. */
+    /* Delegates to imports.rs; compile-time only — no import opcodes reach the VM. */
 
     pub(super) fn import_stmt(&mut self) {
         self.do_import_stmt();
