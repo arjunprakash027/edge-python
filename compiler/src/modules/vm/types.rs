@@ -174,6 +174,7 @@ pub enum NativeFnId {
     Bin, Oct, Hex, Divmod, Pow, Repr, Reversed, Callable, Id,
     Hash, Format, GetAttr, HasAttr, SetAttr, DelAttr, Next, Run, Sleep,
     Receive, Map, Filter, Iter, Bytes, ImportModule, Slice, Vars,
+    Gather, WithTimeout, Cancel,
 }
 
 impl NativeFnId {
@@ -189,6 +190,7 @@ impl NativeFnId {
             "next", "run", "sleep",
             "receive", "map", "filter", "iter", "bytes", "import_module",
             "slice", "vars",
+            "gather", "with_timeout", "cancel",
         ];
         NAMES[self as usize]
     }

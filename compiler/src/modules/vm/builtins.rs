@@ -1566,6 +1566,124 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
+    /* gather(*coros) — concurrent fan-out. Adds every argument to the
+       running scheduler, drains until each is terminal, then returns a
+       list of their results in argument order. If any errors, peers are
+       cancelled and the first error propagates (CPython asyncio style). */
+    pub fn call_gather(&mut self, argc: u16) -> Result<(), VmErr> {
+        let tasks = self.pop_n(argc as usize)?;
+        let coros: Vec<Val> = tasks.into_iter()
+            .filter(|v| v.is_heap() && matches!(self.heap.get(*v), HeapObj::Coroutine(..)))
+            .collect();
+        for v in &coros {
+            self.scheduler.push(super::types::CoroutineHandle {
+                coro: *v,
+                state: super::types::CoroState::Ready,
+            });
+        }
+        self.run_until_all_done()?;
+        // Cancel-rest-and-raise on first error.
+        let mut first_err: Option<VmErr> = None;
+        for v in &coros {
+            if let Some(h) = self.scheduler.iter().find(|h| h.coro == *v)
+                && let super::types::CoroState::Errored(e) = &h.state
+            {
+                first_err = Some(e.clone());
+                break;
+            }
+        }
+        let mut results = Vec::with_capacity(coros.len());
+        for v in &coros {
+            let res = self.scheduler.iter().find(|h| h.coro == *v)
+                .map(|h| match &h.state {
+                    super::types::CoroState::Done(r) => *r,
+                    _ => Val::none(),
+                }).unwrap_or(Val::none());
+            results.push(res);
+        }
+        // Drop only the gather'd handles — leave any unrelated scheduler
+        // entries (set up by an outer run()) alone.
+        self.scheduler.retain(|h| !coros.contains(&h.coro));
+        if let Some(e) = first_err { return Err(e); }
+        self.alloc_and_push_list(results)
+    }
+
+    /* with_timeout(seconds, coro) — adds the coroutine to the scheduler,
+       drains it until terminal or `seconds` elapse. On timeout the
+       coroutine is cancelled and a TimeoutError is raised. */
+    pub fn call_with_timeout(&mut self) -> Result<(), VmErr> {
+        let coro = self.pop()?;
+        let secs_v = self.pop()?;
+        if !(coro.is_heap() && matches!(self.heap.get(coro), HeapObj::Coroutine(..))) {
+            return Err(cold_type("with_timeout() requires a coroutine"));
+        }
+        let secs: f64 = if secs_v.is_int() { secs_v.as_int() as f64 }
+                        else if secs_v.is_float() { secs_v.as_float() }
+                        else { return Err(cold_type("with_timeout() seconds must be a number")); };
+        let deadline = self.now_ns().saturating_add((secs.max(0.0) * 1_000_000_000.0) as u64);
+        self.scheduler.push(super::types::CoroutineHandle {
+            coro, state: super::types::CoroState::Ready,
+        });
+        // Drive one step at a time so the deadline check stays tight.
+        let mut timed_out = false;
+        loop {
+            let idx = match self.scheduler.iter().position(|h| h.coro == coro) {
+                Some(i) => i,
+                None => break,
+            };
+            match self.scheduler[idx].state.clone() {
+                super::types::CoroState::Done(_)
+                | super::types::CoroState::Errored(_)
+                | super::types::CoroState::Cancelled => break,
+                super::types::CoroState::Sleeping(until) => {
+                    // Coro asked to sleep past our deadline -> time out now.
+                    if until >= deadline {
+                        self.scheduler[idx].state = super::types::CoroState::CancelPending;
+                        timed_out = true;
+                        self.scheduler_step(idx)?;
+                        break;
+                    }
+                    // Sleep wakes before deadline -> advance clock & wake.
+                    if self.time_hook.is_none() && until > self.virtual_clock_ns {
+                        self.virtual_clock_ns = until;
+                    }
+                    self.scheduler[idx].state = super::types::CoroState::Ready;
+                }
+                _ => {}
+            }
+            if self.now_ns() >= deadline {
+                self.scheduler[idx].state = super::types::CoroState::CancelPending;
+                timed_out = true;
+                self.scheduler_step(idx)?;
+                break;
+            }
+            self.scheduler_step(idx)?;
+        }
+        let result = self.scheduler.iter().find(|h| h.coro == coro)
+            .map(|h| match &h.state {
+                super::types::CoroState::Done(v) => Ok(*v),
+                super::types::CoroState::Errored(e) => Err(e.clone()),
+                _ => Ok(Val::none()),
+            }).unwrap_or(Ok(Val::none()));
+        self.scheduler.retain(|h| h.coro != coro);
+        if timed_out { return Err(VmErr::Raised("TimeoutError".into())); }
+        let v = result?;
+        self.push(v); Ok(())
+    }
+
+    /* cancel(coro) — flag the coroutine for cancellation. The next time
+       the scheduler resumes it, a CancelledError raise is injected. If
+       the coroutine isn't currently registered with the scheduler the
+       call is a no-op (cancellation only applies inside `run`/`gather`/
+       `with_timeout`). */
+    pub fn call_cancel(&mut self) -> Result<(), VmErr> {
+        let coro = self.pop()?;
+        if let Some(h) = self.scheduler.iter_mut().find(|h| h.coro == coro) {
+            h.state = super::types::CoroState::CancelPending;
+        }
+        self.push(Val::none()); Ok(())
+    }
+
     /* Pop the oldest queued message, or yield None to signal "still waiting". */
     pub fn call_receive(&mut self) -> Result<(), VmErr> {
         if !self.event_queue.is_empty() {

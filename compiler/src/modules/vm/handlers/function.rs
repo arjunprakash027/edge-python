@@ -560,8 +560,11 @@ impl<'a> VM<'a> {
             | Iter => Some(1),
             Divmod | IsInstance | HasAttr | Map | Filter | DelAttr => Some(2),
             SetAttr => Some(3),
+            WithTimeout => Some(2),
+            Cancel => Some(1),
             Bytes => None,  // 0/1/2-arg: bytes() | bytes(n|iter) | bytes(str, "utf-8")
             Slice => None,  // 1/2/3-arg
+            Gather => None, // variadic
             Vars => Some(1),
             ImportModule => Some(1),
             _ => None,
@@ -636,6 +639,9 @@ impl<'a> VM<'a> {
             SetAttr => self.call_setattr(),
             DelAttr => self.call_delattr(),
             ImportModule => self.call_import_module(),
+            Gather => self.call_gather(argc),
+            WithTimeout => self.call_with_timeout(),
+            Cancel => self.call_cancel(),
         }
     }
 }
