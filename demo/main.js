@@ -201,7 +201,7 @@ const Editor = (() => {
                 const { inStr, isF } = stringCtx(text, caret);
                 // Inside a normal string we don't auto-close anything; inside an f-string we still want `{` -> `{}` for expressions.
                 if (inStr && !(isF && key === '{')) return null;
-                // Triple-quote opening: "" + " → """""" (or '' + ' → '''''')
+                // Triple-quote opening: "" + " -> """""" (or '' + ' -> '''''')
                 if ((key === '"' || key === "'") && caret >= 2 && text[caret - 2] === key && text[caret - 1] === key) {
                     return {
                         text: text.slice(0, caret - 2) + key.repeat(6) + text.slice(caret),

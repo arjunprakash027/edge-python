@@ -5,7 +5,7 @@ description: "Cooperative coroutines, sleep, gather, with_timeout, cancel."
 
 Edge Python supports cooperative concurrency via `async def` coroutines and the `await` / `yield` keywords. There is **no preemption**: a coroutine runs until it explicitly yields, sleeps, awaits, or returns. The scheduler runs on a single OS thread; concurrency is by interleaving, not parallelism.
 
-There is **no `asyncio` module**. The async primitives — `run`, `sleep`, `gather`, `with_timeout`, `cancel`, `receive` — are top-level builtins. Edge Python's scheduler is direct enough that wrapping it in a module-shaped namespace would be ceremony for its own sake.
+There is **no `asyncio` module**. The async primitives — `run`, `sleep`, `gather`, `with_timeout`, `cancel`, `receive` — are top-level builtins. The scheduler is direct enough that wrapping it in a module-shaped namespace would add no semantic value.
 
 ```python
 import asyncio       # ModuleNotFoundError — there is no asyncio

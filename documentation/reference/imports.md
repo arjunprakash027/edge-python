@@ -3,7 +3,7 @@ title: "Imports"
 description: "Importing modules in Edge Python: syntax, resolution, and the two module flavors."
 ---
 
-Edge Python supports `import`, `from <spec> import <names>`, and `from <spec> import *` with a key difference from CPython: **module resolution happens at compile time, not at runtime**. The VM never learns what a module is — by the time bytecode runs, every import has been flattened into a sequence of bytecode that materialises the module's exports.
+Edge Python supports `import`, `from <spec> import <names>`, and `from <spec> import *`. **Module resolution happens at compile time, not at runtime**: the VM never learns what a module is — by the time bytecode runs, every import has been flattened into a sequence of bytecode that materialises the module's exports.
 
 ## The two flavors
 
@@ -26,7 +26,7 @@ from "./lib/helpers.py" import slugify
 from "https://example.com/utils.py" import normalize
 from "https://example.com/math.wasm" import add
 
-# Aliases work as in CPython
+# Aliases via `as`
 from math import sqrt as root
 from utils import normalize as n
 
@@ -71,7 +71,7 @@ Bare-name imports resolve through an import map declared in your project's `pack
 The schema is small and strict:
 
 - The top-level value must be a JSON object. Empty `{}` is valid.
-- `imports` (optional): object mapping alias → spec string.
+- `imports` (optional): object mapping alias -> spec string.
 - `extends` (optional): string naming a directory whose `packages.json` is consulted when an alias isn't found locally.
 - Unknown top-level keys are silently ignored (forward-compatible).
 - Booleans, numbers, and arrays at any level are rejected.
@@ -181,7 +181,7 @@ The browser worker auto-generates a **lockfile** and a **content-addressed cache
 | File | Who writes it | Purpose |
 |---|---|---|
 | `packages.json` | the user | declares aliases (the manifest) |
-| `packages.lock.json` (logical, in IDB) | the worker | records every fetched spec → SHA-256 hash |
+| `packages.lock.json` (logical, in IDB) | the worker | records every fetched spec -> SHA-256 hash |
 | `cas/<hash>` (per blob, in IDB) | the worker | bytes content-addressed by SHA-256 |
 
 ### What runs do
@@ -204,7 +204,7 @@ This is the same primitive as inline `#sha256-...` integrity, applied automatica
 
 ### Other hosts
 
-WASI hosts and Rust embedders make their own caching choices: the `Resolver` trait sees only `(spec → Resolved)` and `(spec → bytes via fetch_bytes)`. A CLI host typically pairs `packages.lock.json` next to `packages.json` (commitable to git) with `~/.cache/edgepython/sha256/` for the CAS, mirroring Cargo's split between project lockfile and shared registry cache. The browser worker uses IDB instead because that's where persistent storage lives in the browser.
+WASI hosts and Rust embedders make their own caching choices: the `Resolver` trait sees only `(spec -> Resolved)` and `(spec -> bytes via fetch_bytes)`. A CLI host typically pairs `packages.lock.json` next to `packages.json` (commitable to git) with `~/.cache/edgepython/sha256/` for the CAS, mirroring Cargo's split between project lockfile and shared registry cache. The browser worker uses IDB instead because that's where persistent storage lives in the browser.
 
 ## Sandbox
 

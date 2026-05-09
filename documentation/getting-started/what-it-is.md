@@ -3,9 +3,9 @@ title: "What Edge Python is"
 description: "A functional subset of Python 3.13, compiled to bytecode and run on a sandboxed VM."
 ---
 
-Edge Python is a compiler and stack VM for a **functional subset of CPython 3.13 syntax**. It targets edge computing: deterministic execution, hard sandbox limits, no I/O surface beyond `print`, and a release size around 130 KB compiled to WebAssembly.
+Edge Python is a compiler and stack VM for a **functional subset of Python 3.13 syntax**. It targets edge computing: deterministic execution, hard sandbox limits, no I/O surface beyond `print`, and a release size around 130 KB compiled to WebAssembly.
 
-The compiler is a single-pass pipeline — a hand-written lexer, a Pratt-style parser that emits SSA-tagged bytecode with constant folding, and a stack VM with NaN-boxed 64-bit values, inline caches that promote hot opcodes to type-specialised fast paths, and template memoisation for pure calls. Mark-and-sweep garbage collection runs against an arena heap. The whole compiler ships as one `cdylib` with `hashbrown` and `itoa` as the only production dependencies.
+The compiler is a single-pass pipeline — a hand-written lexer, a Pratt-style parser that emits SSA-tagged bytecode with constant folding, and a stack VM with NaN-boxed 64-bit values, inline caches that promote hot opcodes to type-specialised fast paths, and template memoisation for pure calls. Mark-and-sweep garbage collection runs against an arena heap. The whole compiler is distributed as one `cdylib` with `hashbrown` and `itoa` as the only production dependencies.
 
 The language reads like Python because it parses Python's syntax. It runs differently because what it executes is curated.
 
@@ -47,7 +47,7 @@ A functional core gives Edge Python:
 
 - **A smaller binary**: the entire compiler and VM fit in ~130 KB of WebAssembly.
 - **A faster interpreter**: no method resolution overhead. Built-ins are first-class `NativeFn` values; user functions are `(params, body, defaults, captures)` tuples. Hot opcodes promote to type-specialised fast paths (`AddInt`, `LtInt`, `EqStr`, etc.) after four cache hits.
-- **Aggressive memoisation**: pure functions get their results cached after two hits with the same arguments. Most functional code is pure by construction, so this catches a lot of the cost.
+- **Aggressive memoisation**: pure functions get their results cached after two hits with the same arguments. Most functional code is pure by construction, so this eliminates a substantial fraction of redundant computation.
 - **Easier sandboxing**: with no protocol dispatch and no stdlib, the attack surface is the fixed built-in set.
 
 ## Sandbox guarantees
@@ -63,7 +63,7 @@ Hitting any limit raises a recoverable `RuntimeError` / `MemoryError` / `Recursi
 
 ## Where it runs
 
-Edge Python ships as a single `.wasm` artifact (`compiler_lib.wasm`, ~130 KB). It runs anywhere WebAssembly does:
+Edge Python is distributed as a single `.wasm` artifact (`compiler_lib.wasm`, ~130 KB). It runs anywhere WebAssembly does:
 
 - **Browser**: served alongside the [`edge.js`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/demo/edge.js) shim, which bridges `print()` and module imports across the WASM ↔ JS boundary.
 - **Server / edge runtimes**: Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute, Spin, etc. The host runtime owns I/O, fetching, and module loading.

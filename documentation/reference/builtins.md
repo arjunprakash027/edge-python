@@ -3,7 +3,7 @@ title: "Built-in functions"
 description: "Every built-in function in Edge Python with examples and outputs."
 ---
 
-Edge Python ships with 60 built-in functions. They're first-class values: pass them around, store them in containers, alias them.
+Edge Python provides 60 built-in functions. They are first-class values: pass them as arguments, store them in containers, alias them.
 
 ```python
 # All built-ins are real values
@@ -19,7 +19,7 @@ p("aliased")
 aliased
 ```
 
-Edge Python is functional-first. CPython introspection helpers (`eval`, `exec`, `compile`, `dir`, `ascii`, `help`, `__import__`, `breakpoint`, `open`, `issubclass`) are intentionally absent — the static-import contract and the lack of a writable global module table make them either impossible or paradigm-noise. Class-machinery builtins (`super`, `staticmethod`, `classmethod`, `property`) are also omitted; classes are flat state containers, behavior reuse is via free functions.
+Edge Python is functional-first. Introspection helpers (`eval`, `exec`, `compile`, `dir`, `ascii`, `help`, `__import__`, `breakpoint`, `open`, `issubclass`) are intentionally absent — the static-import contract and the lack of a writable global module table make them either impossible to implement or inconsistent with the paradigm. Class-machinery builtins (`super`, `staticmethod`, `classmethod`, `property`) are also omitted; classes are flat state containers, behavior reuse is via free functions.
 
 ## Output
 
@@ -311,7 +311,7 @@ print(sorted("hello"))
 
 ### reversed
 
-Returns a **list** of elements in reverse order — eager, not a lazy iterator. For strings, the result is a list of length-1 strings (CPython yields a `<reversed object>`); for finite inputs the two are operationally identical.
+Returns a **list** of elements in reverse order — eager, not a lazy iterator. For strings, the result is a list of length-1 strings; for finite inputs this is operationally equivalent to a lazy iterator.
 
 ```python
 print(reversed([1, 2, 3]))
@@ -446,16 +446,16 @@ handle("dev",  req)
 
 The candidate modules **must be imported statically** somewhere — `import_module` is a runtime *lookup*, not a runtime *fetch*. This preserves the lockfile and integrity guarantees: every module the script can ever reach is known and verified at compile time. Calling `import_module(name)` where `name` was never imported raises `NameError`; calling it on a non-module global (e.g. a builtin function) raises `TypeError`.
 
-If you want truly dynamic loading patterns from CPython (`importlib.import_module`, `__import__`), they don't exist here by design — the static-import + runtime-dispatch shape above replaces them.
+Truly dynamic loading patterns (`importlib.import_module`, `__import__`) do not exist here by design — the static-import + runtime-dispatch shape above replaces them.
 
 ### bytes
 
 Four forms:
 
-- `bytes()` → empty `bytes`
-- `bytes(n)` where `n` is an int → `n` zero bytes
-- `bytes(iterable)` of ints in `0..=255` → bytes with those values
-- `bytes(s, encoding)` where `s` is a `str` → encoded bytes (`"utf-8"`, `"utf8"`, or `"ascii"` only — anything else raises `ValueError`)
+- `bytes()` -> empty `bytes`
+- `bytes(n)` where `n` is an int -> `n` zero bytes
+- `bytes(iterable)` of ints in `0..=255` -> bytes with those values
+- `bytes(s, encoding)` where `s` is a `str` -> encoded bytes (`"utf-8"`, `"utf8"`, or `"ascii"` only — anything else raises `ValueError`)
 
 ```python
 print(bytes())
@@ -477,7 +477,7 @@ See [Bytes](/language/data-types#bytes) in the data-types reference for the lite
 
 Edge Python exposes these as **free functions** rather than int/bytes methods. The functional-first paradigm prefers free functions over bound methods on primitive types — there are no `int` or `float` methods at all (no `(5).bit_length()`, no `(255).to_bytes(2, 'big')`).
 
-- `bytes_fromhex(s)` — parse a hex string into bytes. Whitespace inside is ignored; non-hex characters raise `ValueError`. Equivalent to CPython's `bytes.fromhex`.
+- `bytes_fromhex(s)` — parse a hex string into bytes. Whitespace inside is ignored; non-hex characters raise `ValueError`.
 - `int_from_bytes(b, order)` — `order` is `"big"` or `"little"`. Unsigned only — the high bit is **never** treated as a sign bit.
 - `int_to_bytes(n, length, order)` — `n` must be non-negative, `length` ≤ 8 (47-bit `Val` cap means anything wider would lose precision anyway). Raises `OverflowError` if `n` doesn't fit.
 
@@ -744,7 +744,7 @@ print(xs[slice(0, 5, 2)])
 
 ### vars
 
-`vars(instance)` returns a snapshot of the instance's attribute dict. `vars(module)` returns a dict of the module's exported names. **Only instances and modules are accepted** — there is no no-arg form (CPython's `vars()` returning local frame is omitted; use `locals()` instead).
+`vars(instance)` returns a snapshot of the instance's attribute dict. `vars(module)` returns a dict of the module's exported names. **Only instances and modules are accepted** — there is no no-arg form returning the local frame; use `locals()` instead.
 
 ```python
 class P:
@@ -839,8 +839,8 @@ timed out
 | `set`             | 0 or 1     | from any iterable                          |
 | `frozenset`       | 0 or 1     | immutable set                              |
 | `dict`            | variadic   | kwargs and/or single mapping               |
-| `chr`             | 1          | int → 1-char string (full Unicode)         |
-| `ord`             | 1          | length-1 string → int                      |
+| `chr`             | 1          | int -> 1-char string (full Unicode)         |
+| `ord`             | 1          | length-1 string -> int                      |
 | `len`             | 1          | element count (str = code points)          |
 | `range`           | 1, 2, or 3 | lazy integer sequence                      |
 | `sorted`          | 1          | new sorted list; no `key=` / `reverse=`    |
@@ -869,13 +869,13 @@ timed out
 | `locals`          | 0          | snapshot dict of current frame             |
 | `slice`           | 1, 2, or 3 | reusable slice object                      |
 | `bytes`           | 0, 1, or 2 | empty / size / iterable / `(s, encoding)`  |
-| `bytes_fromhex`   | 1          | parse hex string → bytes                   |
-| `int_from_bytes`  | 2          | bytes + `"big"`/`"little"` → int           |
-| `int_to_bytes`    | 3          | int + length (≤8) + order → bytes          |
+| `bytes_fromhex`   | 1          | parse hex string -> bytes                   |
+| `int_from_bytes`  | 2          | bytes + `"big"`/`"little"` -> int           |
+| `int_to_bytes`    | 3          | int + length (≤8) + order -> bytes          |
 | `import_module`   | 1          | runtime lookup of statically-imported module |
 | `run`             | variadic   | drive scheduler until first arg done       |
 | `sleep`           | 1          | yield then resume after seconds            |
 | `gather`          | variadic   | concurrent fan-out; first error cancels peers |
-| `with_timeout`    | 2          | `seconds, coro` → result or `TimeoutError` |
+| `with_timeout`    | 2          | `seconds, coro` -> result or `TimeoutError` |
 | `cancel`          | 1          | mark coroutine cancel-pending              |
 | `receive`         | 0          | pop oldest queued host message             |

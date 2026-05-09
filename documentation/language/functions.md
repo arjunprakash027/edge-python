@@ -324,8 +324,8 @@ True False
 <Note>
 Pure functions called repeatedly with the same arguments are automatically
 memoized after two hits. The VM detects purity (no I/O, no mutation, no
-raise, no yield) and caches results in a per-function template table. You
-write naive recursion; the runtime handles caching for you.
+raise, no yield) and caches results in a per-function template table.
+Naive recursion runs at memoized cost without source-level changes.
 </Note>
 
 ## Generators
@@ -383,7 +383,7 @@ print(list(nums()))
 <Note>
 Generators are one-way: producer to consumer. `gen.send(value)`,
 `gen.throw(exc)`, and `gen.close()` are not exposed — bidirectional
-communication is a procedural pattern that fights the functional
+communication is a procedural pattern inconsistent with the functional
 paradigm. For task coordination with bidirectional flow, use the
 cooperative scheduler (`run` / `sleep` / `gather`) and pass values
 through arguments and return values.

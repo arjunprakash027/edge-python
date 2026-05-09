@@ -64,12 +64,12 @@ Build and use:
 
 ```bash
 cargo build --release --target wasm32-unknown-unknown
-# → target/wasm32-unknown-unknown/release/my_edge_mod.wasm
+# -> target/wasm32-unknown-unknown/release/my_edge_mod.wasm
 ```
 
 ```python
 from "./my_edge_mod.wasm" import add
-print(add(2, 3))   # → 5
+print(add(2, 3))   # -> 5
 ```
 
 Full encoding tables and language-specific snippets (C, Zig, AssemblyScript) live in [WASM module ABI](/reference/wasm-abi).
@@ -163,7 +163,7 @@ cargo build --release --target wasm32-unknown-unknown -p embedder
 
 ```python
 from text import upper
-print(upper("hello"))   # → HELLO
+print(upper("hello"))   # -> HELLO
 ```
 
 ### Type cookbook (in-process only)
@@ -192,10 +192,10 @@ heap.alloc(HeapObj::Str("hi".into()))               // heap-allocated str
 heap.alloc(HeapObj::List(std::rc::Rc::new(std::cell::RefCell::new(vec![Val::int(1), Val::int(2)]))))
 heap.alloc(HeapObj::Tuple(vec![Val::int(1), Val::bool(true)]))
 
-// Errors → surface in scripts as the corresponding Python exception class
-Err(VmErr::Type("expected str"))                    // → TypeError
-Err(VmErr::Value("empty separator"))                // → ValueError
-Err(VmErr::Runtime("network unavailable"))          // → RuntimeError
+// Errors -> surface in scripts as the corresponding Python exception class
+Err(VmErr::Type("expected str"))                    // -> TypeError
+Err(VmErr::Value("empty separator"))                // -> ValueError
+Err(VmErr::Runtime("network unavailable"))          // -> RuntimeError
 Err(VmErr::TypeMsg(format!("got {:?}", v)))         // dynamically formatted
 ```
 

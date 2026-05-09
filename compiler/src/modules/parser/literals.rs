@@ -472,7 +472,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         // Register the body's free names in the parent's chunk so the parent's
         // MakeFunction captures them, propagating the chain and giving nested
         // defs access to grandparent (and higher) vars. Mirrors `parse_lambda`;
-        // without this loop, `def A → def B → def C` where C references A's
+        // without this loop, `def A -> def B -> def C` where C references A's
         // var fails with NameError because B never captured it.
         let param_slots: crate::modules::fx::FxHashSet<String> = params.iter()
             .map(|p| s!(str p.trim_start_matches(['*', '~']), "_0")).collect();

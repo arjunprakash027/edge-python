@@ -24,7 +24,7 @@ pub static BYTE_CLASS: [u8; 256] = {
     t
 };
 
-/* Single-char operator dispatch: byte → index into SINGLE_MAP. */
+/* Single-char operator dispatch: byte -> index into SINGLE_MAP. */
 pub static SINGLE_TOK: [u8; 128] = {
     let mut t = [0u8; 128];
     t[b'(' as usize] = 1; t[b')' as usize] = 2;
@@ -42,7 +42,7 @@ pub static SINGLE_TOK: [u8; 128] = {
     t
 };
 
-/* SINGLE_TOK index → TokenType. Index 0 = not an operator. */
+/* SINGLE_TOK index -> TokenType. Index 0 = not an operator. */
 pub const SINGLE_MAP: [TokenType; 24] = [
     TokenType::Endmarker, // 0 = not found
     TokenType::Lpar, TokenType::Rpar, TokenType::Lsqb, // 1-3
@@ -170,7 +170,7 @@ pub fn utf8_char_len(first: u8) -> usize {
     }
 }
 
-/* Reverse lookup for diagnostics: TokenType → quoted display name. */
+/* Reverse lookup for diagnostics: TokenType -> quoted display name. */
 pub const fn token_to_str(kind: &TokenType) -> &'static str {
     match kind {
         // Keywords

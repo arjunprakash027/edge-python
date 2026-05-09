@@ -1,6 +1,6 @@
 ## Edge Python Demo
 
-Run Edge Python — a functional subset of CPython 3.13 syntax — directly in the browser. Edge Python is a single-pass SSA bytecode compiler with adaptive inline caching and pure-function template memoization, written in Rust and compiled to WebAssembly.
+Run Edge Python — a functional subset of Python 3.13 syntax — directly in the browser. Edge Python is a single-pass SSA bytecode compiler with adaptive inline caching and pure-function template memoization, written in Rust and compiled to WebAssembly.
 
 * **Demo:** *[demo.edgepython.com](https://demo.edgepython.com/)*
 * **Docs:** *[edgepython.com](https://edgepython.com/)*

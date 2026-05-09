@@ -134,13 +134,13 @@ pub struct VM<'a> {
        handler entry. None means "the raise was a Type or string — bind the
        Type from globals as before". */
     pub(crate) pending_exc_val: Option<Val>,
-    /* spec → Module Val map populated by `init_modules` before user
+    /* spec -> Module Val map populated by `init_modules` before user
        bytecode runs. Both `OpCode::LoadModule` and the `import_module()`
        builtin look up here. Each unique spec across the chunk tree
        compiles once + initialises once + has one Module Val — modules
        are true singletons, not per-importer copies. */
     pub(crate) module_table: HashMap<String, Val>,
-    /* `fi → module spec`. Tracks which module a function lives in so
+    /* `fi -> module spec`. Tracks which module a function lives in so
        the call-site free-load fallback resolves bare-name references
        against the function's OWN module's bindings instead of the
        global namespace. Cross-module name collisions (`a.helper` vs
@@ -184,9 +184,9 @@ impl<'a> VM<'a> {
        captures may be overwritten) from "calling a closure created elsewhere"
        (closure semantics — captures must stick):
 
-         function_parents[fi]      → fi of the def that emitted MakeFunction
+         function_parents[fi]      -> fi of the def that emitted MakeFunction
                                      for `fi`, None for module-level defs
-         body_to_fi[body_chunk_ptr]→ fi whose body that chunk is, used to
+         body_to_fi[body_chunk_ptr]-> fi whose body that chunk is, used to
                                      resolve the caller's own fi at call time
 
        Together they let `exec_call` answer: "is the caller the lexical
@@ -1060,7 +1060,7 @@ impl<'a> VM<'a> {
             }
             OpCode::LoadConst => {
                 // Constants are pre-materialised at exec entry, so this is a
-                // single bounds-checked index instead of a Value→Val conversion.
+                // single bounds-checked index instead of a Value->Val conversion.
                 let v = *consts.get(op as usize)
                     .ok_or(cold_runtime("constant index out of bounds"))?;
                 self.push(v);
@@ -1253,7 +1253,7 @@ impl<'a> VM<'a> {
             }
 
             OpCode::BuildModule => {
-                /* Stack on entry, top→bottom: module-name, then `op` pairs of
+                /* Stack on entry, top->bottom: module-name, then `op` pairs of
                    (attr_name_str, attr_value). Build the attr vec preserving
                    declaration order (innermost-first when popped). */
                 let total = (op as usize) * 2 + 1;

@@ -216,8 +216,8 @@ impl<'a> VM<'a> {
             HeapObj::Module(name, _) => s!("<module '", str name, "'>"),
             HeapObj::Extern(f) => s!("<extern function ", str &f.name, ">"),
             HeapObj::ExcInstance(name, args) => {
-                // Mirror CPython: `repr(ValueError("x"))` → "ValueError('x')",
-                // `str(ValueError("x"))` → "x". display() is the str() form
+                // Mirror CPython: `repr(ValueError("x"))` -> "ValueError('x')",
+                // `str(ValueError("x"))` -> "x". display() is the str() form
                 // here; `repr(...)` is handled by formatting overrides if any.
                 if args.len() == 1 {
                     self.display(args[0])

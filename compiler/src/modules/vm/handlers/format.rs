@@ -10,7 +10,7 @@
      g/G    — general (Rust default for floats)
      %      — percentage (multiply by 100, append '%')
      s      — string (only valid for str values)
-     c      — int → unicode codepoint
+     c      — int -> unicode codepoint
 
    Layout features:
      fill+align (`<`, `>`, `^`)

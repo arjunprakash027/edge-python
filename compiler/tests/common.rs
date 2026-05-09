@@ -279,7 +279,7 @@ fn boom(_: &mut HeapPool, _args: &[Val]) -> Result<Val, VmErr> {
     Err(VmErr::Runtime("boom from extern"))
 }
 
-/* Pure: f64 → f64. Verifies that Val's float wire format round-trips through
+/* Pure: f64 -> f64. Verifies that Val's float wire format round-trips through
    an extern call without coercion to int. */
 fn double_f(_: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
     if args.len() != 1 || !args[0].is_float() {
@@ -288,7 +288,7 @@ fn double_f(_: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
     Ok(Val::float(args[0].as_float() * 2.0))
 }
 
-/* Pure: bool → bool. Asserts that bool tags survive the extern dispatch. */
+/* Pure: bool -> bool. Asserts that bool tags survive the extern dispatch. */
 fn negate(_: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
     if args.len() != 1 || !args[0].is_bool() {
         return Err(VmErr::Type("negate: expected one bool arg"));
@@ -296,7 +296,7 @@ fn negate(_: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
     Ok(Val::bool(!args[0].as_bool()))
 }
 
-/* Pure: bool, int → int. Mixes types to confirm per-arg decode is correct. */
+/* Pure: bool, int -> int. Mixes types to confirm per-arg decode is correct. */
 fn pick(_: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
     if args.len() != 3 || !args[0].is_bool() || !args[1].is_int() || !args[2].is_int() {
         return Err(VmErr::Type("pick: expected (bool, int, int)"));

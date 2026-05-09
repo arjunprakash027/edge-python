@@ -1,6 +1,6 @@
 # Edge Python
 
-A compact, single-pass SSA-style bytecode compiler and stack VM for a functional subset of CPython 3.13 syntax. Hand-written lexer, Pratt-precedence parser that emits bytecode directly (no AST), and a threaded-code interpreter with per-instruction inline caching, super-instruction fusion, and pure-function template memoization. Built for deterministic execution in sandboxed and embedded environments (≈ 130 KB WASM release).
+A compact, single-pass SSA-style bytecode compiler and stack VM for a functional subset of Python 3.13 syntax. Hand-written lexer, Pratt-precedence parser that emits bytecode directly (no AST), and a threaded-code interpreter with per-instruction inline caching, super-instruction fusion, and pure-function template memoization. Built for deterministic execution in sandboxed and embedded environments (≈ 130 KB WASM release).
 
 * **Demo:** [demo.edgepython.com](https://demo.edgepython.com/)
 * **Docs:** [edgepython.com](https://edgepython.com/)
@@ -19,8 +19,8 @@ What this leaves is a small, fast, deterministic core: 47-bit inline integers + 
 
 ## 2. Architecture
 
-* **Lexer**: Hand-written, LUT-driven scanner (`modules/lexer/{mod,scan,tables}.rs`) over CPython 3.13 token kinds. Tokens are `(start, end, kind)` offsets into the source buffer; no string copies during lexing. Indentation tracked as INDENT/DEDENT pairs against an explicit stack; UTF-8 BOM stripped.
-* **Parser**: Single-pass, Pratt precedence climbing (`modules/parser/`). Emits SSA-versioned bytecode directly (`x` → `x_1`, `x_2`, ...) with explicit `Phi` opcodes at control-flow joins. No intermediate AST.
+* **Lexer**: Hand-written, LUT-driven scanner (`modules/lexer/{mod,scan,tables}.rs`) over Python 3.13 token kinds. Tokens are `(start, end, kind)` offsets into the source buffer; no string copies during lexing. Indentation tracked as INDENT/DEDENT pairs against an explicit stack; UTF-8 BOM stripped.
+* **Parser**: Single-pass, Pratt precedence climbing (`modules/parser/`). Emits SSA-versioned bytecode directly (`x` -> `x_1`, `x_2`, ...) with explicit `Phi` opcodes at control-flow joins. No intermediate AST.
 * **Optimizer**: One peephole pass (`modules/vm/optimizer.rs`): constant folding over adjacent literal arithmetic / comparison / unary operands, Phi-noop elimination, and dead-instruction compaction with jump-operand remapping. Deliberately leaves `LoadName` alone to preserve the inline-cache slot.
 * **VM**: Stack-based interpreter (`modules/vm/mod.rs`) over `Vec<Instruction>`, where each `Instruction` is `(opcode: OpCode, operand: u16)`. Dispatch is a flat `match` on the opcode (Rust lowers it to a jump table). The hot path is split across handler modules (`handlers/{arith,data,format,function,methods,mod}.rs`). `LoadAttr + Call(0)` is fused into a `CallMethod` / `CallMethodArgs` super-instruction at first execution and cached per call site.
 * **Inline Caching**: Per-instruction type-recording cache (`modules/vm/cache.rs`) for arithmetic and comparisons. After 4 stable hits the IC promotes the slot to a typed `FastOp` (`AddInt`, `AddFloat`, `LtFloat`, `EqStr`, ...); the fast path keeps a type-tag guard so a miss falls back to the generic handler.
@@ -50,7 +50,7 @@ What the compiler intentionally does *not* do:
 * **Threaded operands** keep dispatch as a flat `match` over a typed enum rather than `(u16 opcode, u16 operand)` tuples. The Rust compiler lowers this to a jump table; this is *token-threading*, not direct-threading (computed-goto is unavailable in safe Rust).
 * **Inline caching** records operand type tags per instruction and promotes to a typed `FastOp` after 4 stable hits. The fast path still re-checks types as a deopt guard; on a guard miss the cache invalidates and falls back to the generic handler.
 * **Template memoization** caches pure-function results keyed by argument tuple. Functions are marked impure if they touch the heap (`StoreItem`, `StoreAttr`), do I/O (`CallPrint`, `CallInput`), raise, or yield — which fits a functional core well, where most user functions are pure.
-* **No JIT.** Edge Python stays single-tier and pure Rust. Method JITs need per-arch stencils; trace JITs duplicate the execution model and complicate the GC contract. Single-tier loses on hot loops but is small, portable across `x86_64` / `aarch64` / `wasm32`, and trivial to embed.
+* **No JIT.** Edge Python stays single-tier and pure Rust. Method JITs require per-architecture stencils; trace JITs duplicate the execution model and complicate the GC contract. Single-tier dispatch is slower on hot loops but remains compact, portable across `x86_64` / `aarch64` / `wasm32`, and straightforward to embed.
 
 ---
 
@@ -137,9 +137,9 @@ Mark-and-sweep with roots: operand stack, with-stack, pending yields, event queu
 ## 8. Quick Start
 
 ```bash
-# Build the release WebAssembly module — the only artifact this crate ships.
+# Build the release WebAssembly module — the only artifact this crate distributes.
 cargo wasm
-# → target/wasm32-unknown-unknown/release/compiler_lib.wasm
+# -> target/wasm32-unknown-unknown/release/compiler_lib.wasm
 
 # Run the host-side test suite (lexer, parser, VM, packages JSON cases).
 cargo test --release

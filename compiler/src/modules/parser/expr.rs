@@ -366,7 +366,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* `lambda params: expr` → fresh chunk with Return, emit MakeFunction. */
+    /* `lambda params: expr` -> fresh chunk with Return, emit MakeFunction. */
     pub(super) fn parse_lambda(&mut self) {
         let mut params = Vec::new();
         let mut defaults = 0u16;

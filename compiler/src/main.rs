@@ -632,7 +632,7 @@ mod runtime {
                 return Err(VmErr::Attribute(s!(
                     "instance has no attribute '", str name, "'")));
             }
-            // Builtin method → BoundMethod.
+            // Builtin method -> BoundMethod.
             let ty = vm.type_name(recv);
             if let Some(mid) = lookup_method(ty, name) {
                 return vm.heap.alloc(HeapObj::BoundMethod(recv, mid));
@@ -690,7 +690,7 @@ mod runtime {
         let idx = args[0];
         let value = args[1];
         with_recv("edge_op set_item: invalid receiver handle", recv_h, |vm, recv| {
-            // store_item pops top→bottom as (value, idx, container), so
+            // store_item pops top->bottom as (value, idx, container), so
             // push in the matching order.
             vm.push(recv);
             vm.push(idx);

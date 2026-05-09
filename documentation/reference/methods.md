@@ -3,7 +3,7 @@ title: "Methods"
 description: "Built-in methods on strings, bytes, lists, dicts, and sets."
 ---
 
-Edge Python ships built-in methods on `str`, `bytes`, `list`, `dict`, and `set`. The set is curated — it covers the day-to-day shape of CPython's API and stops short of the long tail. Methods that aren't here are intentional omissions documented under each section.
+Edge Python provides built-in methods on `str`, `bytes`, `list`, `dict`, and `set`. The set is curated to cover common operations; rarely used variants are omitted. Methods that aren't here are intentional omissions documented under each section.
 
 There are **no methods on `int`, `float`, or `tuple`** — primitive types stay dispatch-free. `(5).bit_length()`, `(255).to_bytes(...)`, `(3.14).is_integer()`, `(1, 2).count(1)`, `(1, 2).index(2)` all raise `AttributeError`. For ints, use the [`int_from_bytes` / `int_to_bytes`](/reference/builtins#bytes_fromhex-int_from_bytes-int_to_bytes) free functions; for tuple element counting, use `sum(1 for x in t if x == v)` or convert to a list first.
 
@@ -277,7 +277,7 @@ print(xs)
 
 ### Views
 
-`keys`, `values`, and `items` return **concrete `list` snapshots**, not live views. Mutating the dict afterwards does not affect a previously captured snapshot — and that is intentional. CPython's live views ARE shared mutable state, exactly the anti-pattern functional code avoids; an immutable snapshot is more aligned with Edge Python's paradigm.
+`keys`, `values`, and `items` return **concrete `list` snapshots**, not live views. Mutating the dict afterwards does not affect a previously captured snapshot — and that is intentional. Live views constitute shared mutable state, which conflicts with the functional paradigm; an immutable snapshot guarantees the captured collection cannot mutate underneath the consumer.
 
 ```python
 d = {"a": 1, "b": 2, "c": 3}
@@ -357,7 +357,7 @@ print(d)
 
 ### Mutation
 
-`remove` raises `KeyError` when the element is absent (CPython parity); `discard` is the silent variant. `pop` removes an arbitrary element and raises `ValueError` on an empty set. `update` accepts any iterable.
+`remove` raises `KeyError` when the element is absent; `discard` is the silent variant. `pop` removes an arbitrary element and raises `ValueError` on an empty set. `update` accepts any iterable.
 
 ```python
 s = {1, 2, 3}
@@ -365,7 +365,7 @@ s = {1, 2, 3}
 s.add(4)
 print(s)
 
-s.remove(2)        # raises KeyError if absent (CPython parity)
+s.remove(2)        # raises KeyError if absent
 s.discard(99)      # silently ignores absent values
 print(s)
 
@@ -423,7 +423,7 @@ Comparison operators between sets follow subset / superset semantics, not total 
 print({1, 2} <  {1, 2, 3})   # proper subset
 print({1, 2} <= {1, 2})      # subset
 print({1, 2} >= {1})         # superset
-print({1, 2} <= {2, 3})      # disjoint sides → False
+print({1, 2} <= {2, 3})      # disjoint sides -> False
 ```
 
 ```text Output

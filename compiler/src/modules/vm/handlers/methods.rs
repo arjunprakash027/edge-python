@@ -231,11 +231,11 @@ impl<'a> VM<'a> {
 }
 
 /* Generates the BuiltinMethodId enum, name lookup, dispatcher, AND the
-   (type, attr) → BuiltinMethodId resolver in one go. Each row:
+   (type, attr) -> BuiltinMethodId resolver in one go. Each row:
    (Variant, "name", category, |vm, recv, pos| body).
    Category `mutating` auto-emits mark_impure() on success.
-   Receiver type is derived from the variant prefix: Str* → "str",
-   List* → "list", Dict* → "dict". Add new prefixes to `lookup_method` if
+   Receiver type is derived from the variant prefix: Str* -> "str",
+   List* -> "list", Dict* -> "dict". Add new prefixes to `lookup_method` if
    you introduce methods on a new receiver type. */
 macro_rules! define_methods {
     ( $( ($variant:ident, $name:literal, $cat:ident, |$vm:ident, $recv:ident, $pos:ident| $body:block) ),* $(,)? ) => {

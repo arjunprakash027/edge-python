@@ -62,13 +62,13 @@
  *
  *   `abi` is the host-internal, VM-agnostic half of the contract: it
  *   owns the sealed numeric values (Op / Tag / ErrorKind), the handle
- *   table (refcounted u32 → u64 Val bits), the error stash, and the
+ *   table (refcounted u32 -> u64 Val bits), the error stash, and the
  *   primitive codec for None / Bool / Int / Float / Bytes.
  *
  *   `main.rs` is the WASM orchestration that injects this module as a
  *   dependency: it owns the WasmHostResolver, the parser/VM lifecycle,
  *   the JS imports (js_print / js_call_native / js_fetch_bytes), and
- *   the VM-coupled dispatch (Op::Call → method lookup, etc.). The split
+ *   the VM-coupled dispatch (Op::Call -> method lookup, etc.). The split
  *   keeps the contract free of VM-specific churn — extending the
  *   parser, retiring opcodes from the VM, or swapping out the heap
  *   layout never requires touching this file.
@@ -167,7 +167,7 @@ struct HandleSlot {
     rc: u32,
 }
 
-/// Refcounted mapping `u32 → u64` (host-side Val bits). Process-wide;
+/// Refcounted mapping `u32 -> u64` (host-side Val bits). Process-wide;
 /// the host typically holds a single instance for the lifetime of a
 /// script run and clears it via `reset_modules()`.
 pub struct HandleTable {

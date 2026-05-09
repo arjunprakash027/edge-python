@@ -1488,10 +1488,10 @@ impl<'a> VM<'a> {
     }
 
     /* `bytes()` constructor — three forms, mirroring Python:
-         bytes()                    → empty bytes
-         bytes(n)        if int     → n zero bytes
-         bytes(iter)     if iter    → bytes of those ints, each in 0..=255
-         bytes(s, "utf-8")          → encode str s with the given encoding
+         bytes()                    -> empty bytes
+         bytes(n)        if int     -> n zero bytes
+         bytes(iter)     if iter    -> bytes of those ints, each in 0..=255
+         bytes(s, "utf-8")          -> encode str s with the given encoding
        Encodings recognised: "utf-8", "utf8", "ascii". Anything else errors
        so silent encoding mismatches don't slip through. */
     pub fn call_bytes(&mut self, argc: u16) -> Result<(), VmErr> {

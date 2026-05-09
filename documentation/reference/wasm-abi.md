@@ -94,14 +94,14 @@ Stash an error so the host sees it after the guest returns `1` from its export. 
 
 | Op | Value | Meaning |
 |---|---|---|
-| `Call` | 0 | `recv.<name>(args...)` → handle |
-| `GetAttr` | 1 | `recv.<name>` → handle |
-| `SetAttr` | 2 | `recv.<name> = args[0]` → handle (None) |
-| `GetItem` | 3 | `recv[args[0]]` → handle |
-| `SetItem` | 4 | `recv[args[0]] = args[1]` → handle (None) |
-| `Len` | 5 | `len(recv)` → handle (Int) |
-| `Iter` | 6 | `iter(recv)` → handle (iterator List) |
-| `IterNext` | 7 | `next(iter)` → handle, or `1`+`StopIteration` on end |
+| `Call` | 0 | `recv.<name>(args...)` -> handle |
+| `GetAttr` | 1 | `recv.<name>` -> handle |
+| `SetAttr` | 2 | `recv.<name> = args[0]` -> handle (None) |
+| `GetItem` | 3 | `recv[args[0]]` -> handle |
+| `SetItem` | 4 | `recv[args[0]] = args[1]` -> handle (None) |
+| `Len` | 5 | `len(recv)` -> handle (Int) |
+| `Iter` | 6 | `iter(recv)` -> handle (iterator List) |
+| `IterNext` | 7 | `next(iter)` -> handle, or `1`+`StopIteration` on end |
 
 All eight ops are wired in v1. The host's `Op::Iter` materialises the receiver into a List handle (set is sorted via `vm.sort_set_items`; dict yields keys; str splits to single-char strings); `Op::IterNext` advances that handle. Values `8..u32::MAX` are reserved for future ops — old hosts return `1` with `kind=Runtime` for unknown ops.
 
@@ -113,7 +113,7 @@ All eight ops are wired in v1. The host's `Op::Iter` materialises the receiver i
 | Bool  | 1 | 1 byte (0/1) |
 | Int   | 2 | 8 bytes little-endian i64 |
 | Float | 3 | 8 bytes IEEE 754 little-endian |
-| Bytes | 4 | UTF-8 → `str`; non-UTF-8 → `bytes` |
+| Bytes | 4 | UTF-8 -> `str`; non-UTF-8 -> `bytes` |
 
 Composite values (list, dict, set, instance, callable, iterator) are **not** encodable. Construct them through `edge_op(Call, type_handle, ...)` and operate via the indexing ops.
 
@@ -131,7 +131,7 @@ Composite values (list, dict, set, instance, callable, iterator) are **not** enc
 
 ## Worked example — recommended Rust path with `edge-pdk`
 
-The `edge-pdk` crate (in this repo at `edge-pdk/`) ships the
+The `edge-pdk` crate (in this repo at `edge-pdk/`) provides the
 `#[plugin_fn]` proc macro that expands to wire-conformant exports.
 Authors write normal Rust:
 
@@ -189,7 +189,7 @@ Build:
 
 ```bash
 cargo build --release --target wasm32-unknown-unknown -p slugify-mod
-# → target/wasm32-unknown-unknown/release/slugify_mod.wasm   (~74 KB stripped)
+# -> target/wasm32-unknown-unknown/release/slugify_mod.wasm   (~74 KB stripped)
 ```
 
 Use it from a script:
@@ -197,14 +197,14 @@ Use it from a script:
 ```python
 from "./slugify_mod.wasm" import slugify, repeat_n, sum_ints
 
-print(slugify("Hello World"))     # → hello-world
-print(repeat_n("ha", 3))          # → hahaha
-print(sum_ints([1, 2, 3, 4]))     # → 10
+print(slugify("Hello World"))     # -> hello-world
+print(repeat_n("ha", 3))          # -> hahaha
+print(sum_ints([1, 2, 3, 4]))     # -> 10
 
 try:
     print(repeat_n("nope", -1))
 except ValueError as e:
-    print("caught:", e)           # → caught: repeat count must be non-negative
+    print("caught:", e)           # -> caught: repeat count must be non-negative
 ```
 
 ## Worked example — raw, no SDK
@@ -292,7 +292,7 @@ strip = true
 
 ```bash
 cargo build --release --target wasm32-unknown-unknown
-# → target/wasm32-unknown-unknown/release/slugify_mod.wasm   (~1-2 KB)
+# -> target/wasm32-unknown-unknown/release/slugify_mod.wasm   (~1-2 KB)
 ```
 
 ### Use it from an Edge Python script
@@ -300,8 +300,8 @@ cargo build --release --target wasm32-unknown-unknown
 ```python
 from "https://example.com/slugify.wasm" import slugify
 
-print(slugify("Hello World"))    # → hello-world
-print(slugify("ABC 123"))        # → abc-123
+print(slugify("Hello World"))    # -> hello-world
+print(slugify("ABC 123"))        # -> abc-123
 ```
 
 Or via `packages.json`:
@@ -331,7 +331,7 @@ When the host (browser shim, WASI runtime, Rust embedder) sees `from "<url>" imp
 
 The reference browser shim is `demo/worker.js`. WASI hosts and Rust embedders mirror the same shape against their own runtime.
 
-## Constraints and gotchas
+## Constraints and caveats
 
 - **Refcounted handles.** The guest must release every handle it creates via `edge_encode` or `edge_op` except the one it returns through `*out`. Argv handles are released by the host.
 - **`edge_decode` only handles primitives.** For `list`, `dict`, `set`, instances, etc., use `edge_op` (e.g. `Call recv "items"`, `GetItem recv idx`).
@@ -341,7 +341,7 @@ The reference browser shim is `demo/worker.js`. WASI hosts and Rust embedders mi
 
 ## Author conveniences (community-maintained)
 
-The Edge Python project ships only this spec. The reference Rust author layer is the **`edge-pdk`** crate (Plugin Development Kit), bundled in this repo at `edge-pdk/` and intended to be published independently. It provides:
+The Edge Python project distributes only this specification. The reference Rust author layer is the **`edge-pdk`** crate (Plugin Development Kit), bundled in this repo at `edge-pdk/` and intended to be published independently. It provides:
 
 - `#[plugin_fn]` proc macro that turns a typed Rust function into a wire-conformant export.
 - `FromValue` / `IntoValue` traits with primitive impls (`i64`, `f64`, `bool`, `String`, `&str`, `Option<T>`, `Handle`).
@@ -359,7 +359,7 @@ fn slugify(s: String) -> String {
 }
 ```
 
-The macro emits the boilerplate seen in the worked example above. Authors who don't want a toolchain hand-roll the boilerplate (~25 lines for the first function, ~5 lines per additional).
+The macro emits the boilerplate seen in the worked example above. Authors who don't want a toolchain write the boilerplate manually (~25 lines for the first function, ~5 lines per additional).
 
 Per the project's policy, similar community PDKs exist for Zig (`edge-pdk-zig`), AssemblyScript (`edge-pdk-as`), and C (`edge-pdk.h`) without coordinated releases — each tracks the sealed wire spec on its own cadence.
 

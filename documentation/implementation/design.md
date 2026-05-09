@@ -7,7 +7,7 @@ description: "Compiler architecture, dispatch model, and runtime layout."
 
 Edge Python is a compact bytecode compiler and stack VM for a functional-first subset of Python 3.13. The release build is approximately 130 KB on `wasm32-unknown-unknown` with `panic=abort`, `opt-level=z`, `lto=true`, and `codegen-units=1`. The codebase is organised as a hand-written LUT-driven lexer, a single-pass Pratt parser that emits SSA-versioned bytecode directly, a peephole optimiser for constant folding, and a token-threaded interpreter with two layers of adaptive specialisation on top.
 
-There is no AST and no IR: bytecode is the only intermediate representation between source and execution. The whole compiler is roughly 10,300 lines of Rust; production dependencies are `hashbrown` and `itoa` (SHA-256 is hand-rolled). The WASM build adds `lol_alloc` for a single-threaded leaking bump allocator.
+There is no AST and no IR: bytecode is the only intermediate representation between source and execution. The whole compiler is roughly 10,300 lines of Rust; production dependencies are `hashbrown` and `itoa` (SHA-256 is implemented in-tree). The WASM build adds `lol_alloc` for a single-threaded leaking bump allocator.
 
 Classes are state containers, not the primary abstraction. Inheritance, descriptor protocols, `super()`, `__slots__`, and dunder dispatch (other than `__init__`) are intentionally omitted to keep the VM small and the dispatch loop fast.
 
@@ -86,14 +86,14 @@ compiler/src/
  └── modules/
      ├── fstr.rs       # numeric formatter + s!/push!/err! string macros
      ├── fx.rs         # FxHasher + per-map seeded FxBuildHasher
-     ├── sha256.rs     # hand-rolled FIPS 180-4 SHA-256 (used by integrity)
+     ├── sha256.rs     # in-tree FIPS 180-4 SHA-256 (used by integrity)
      ├── lexer/
      │   ├── mod.rs
      │   ├── scan.rs
      │   └── tables.rs
      ├── packages/
      │   ├── mod.rs
-     │   └── manifest.rs  # hand-rolled JSON parser for packages.json
+     │   └── manifest.rs  # in-tree JSON parser for packages.json
      ├── parser/
      │   ├── mod.rs
      │   ├── stmt.rs

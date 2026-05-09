@@ -123,7 +123,7 @@ Raised as `VmErr`. Most are catchable with `try` / `except`.
 
 #### Exception hierarchy
 
-The standard exception classes form a flat tree rooted at `BaseException → Exception`. `except` clauses walk parent links, so `except Exception` catches `RuntimeError`, `ValueError`, `KeyError`, etc., and `except RuntimeError` catches `RecursionError` and `NotImplementedError`.
+The standard exception classes form a flat tree rooted at `BaseException -> Exception`. `except` clauses walk parent links, so `except Exception` catches `RuntimeError`, `ValueError`, `KeyError`, etc., and `except RuntimeError` catches `RecursionError` and `NotImplementedError`.
 
 ```python
 try:
@@ -193,7 +193,7 @@ except RuntimeError as e:
     print("import:", e)
 ```
 
-These exist for syntactic compatibility — your code can be lifted from CPython without parsing failing — but the VM rejects them when reached. If you need code reuse, use higher-order functions.
+These exist for syntactic compatibility — Python source can be loaded without parse errors — but the VM rejects them when reached. For code reuse, use higher-order functions.
 
 ## Determinism
 

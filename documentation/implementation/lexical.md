@@ -111,7 +111,7 @@ Triple-quoted f-strings (`f"""..."""`) follow the same structure with newlines e
 
 ## Indentation
 
-Edge Python uses CPython's INDENT/DEDENT model. The scanner tracks a stack of column counts and emits structural tokens at line boundaries:
+Edge Python uses an INDENT/DEDENT model. The scanner tracks a stack of column counts and emits structural tokens at line boundaries:
 
 | Situation                          | Tokens emitted                                    |
 |------------------------------------|---------------------------------------------------|
@@ -129,7 +129,7 @@ At end-of-file the lexer drains any remaining levels off `indent_stack` so every
 
 ## Soft-keyword disambiguation
 
-Only `type` is a true soft keyword. `match` and `case` are emitted as **hard** keywords because in Edge Python they only appear at statement start, so the syntactic ambiguity that motivates soft-keyword treatment in CPython doesn't arise here.
+Only `type` is a true soft keyword. `match` and `case` are emitted as **hard** keywords because in Edge Python they only appear at statement start, so the syntactic ambiguity that motivates soft-keyword treatment does not arise here.
 
 The `type` keyword would collide with the `type()` builtin and with attributes named `type`, so it stays soft. The lexer resolves the ambiguity by peeking at the *next* token:
 

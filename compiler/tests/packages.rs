@@ -6,7 +6,7 @@
      * `output`  — expected stdout lines (printed via `print()`)
      * `error`   — substring expected in the parse/run error (optional)
      * `input`   — lines fed to `input()` (optional)
-     * `modules` — map of module spec → { native: [...] } | { code: "..." }
+     * `modules` — map of module spec -> { native: [...] } | { code: "..." }
                    The runner builds a TestResolver from this map: native
                    names are looked up in `crate::common::test_native`; code
                    sources are stored verbatim and parsed by the importer.

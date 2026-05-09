@@ -57,7 +57,7 @@ pub fn constant_fold(chunk: &mut SSAChunk) {
             if dead[ip] || ins.opcode != OpCode::Phi { continue; }
             let phi_idx = chunk.phi_map[ip];
             let Some(&(a, b)) = chunk.phi_sources.get(phi_idx) else { continue };
-            // Both sources and dest collapsed to the same canonical slot →
+            // Both sources and dest collapsed to the same canonical slot ->
             // `slots[X] = slots[X]`, safely removable.
             if a == b && a == ins.operand {
                 dead[ip] = true;

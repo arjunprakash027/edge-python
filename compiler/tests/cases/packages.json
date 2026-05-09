@@ -68,7 +68,7 @@
     "modules": { "m": { "code": "def label(p):\n    return 'yes' if p == 1 else 'no'\n\ndef report(p):\n    return label(p)" } }
   },
   {
-    "_comment": "multi-level chain a → b → c → d through the same module",
+    "_comment": "multi-level chain a -> b -> c -> d through the same module",
     "src": "from m import a\nprint(a())",
     "output": ["d"],
     "modules": { "m": { "code": "def d():\n    return 'd'\n\ndef c():\n    return d()\n\ndef b():\n    return c()\n\ndef a():\n    return b()" } }
@@ -150,19 +150,19 @@
 
   {
     "_section": "Resolver and parser-time errors (with span checks where useful)",
-    "_comment": "no manifest declares the bare name → diagnostic mentions both the spec and the missing manifest, span covers the spec exactly",
+    "_comment": "no manifest declares the bare name -> diagnostic mentions both the spec and the missing manifest, span covers the spec exactly",
     "src": "from missing import x\nprint(x)",
     "error": "no packages.json above '' declares 'missing'",
     "error_span_covers": "missing"
   },
   {
-    "_comment": "module exists but has no such export → mentions both",
+    "_comment": "module exists but has no such export -> mentions both",
     "src": "from m import nope\nprint(nope())",
     "modules": { "m": { "native": ["add"] } },
     "error": "has no export 'nope'"
   },
   {
-    "_comment": "code module fails to parse → host's import surfaces the inner error",
+    "_comment": "code module fails to parse -> host's import surfaces the inner error",
     "src": "from u import bad\nprint(bad())",
     "modules": { "u": { "code": "def x(:" } },
     "error": "module 'u' parse error"
@@ -212,13 +212,13 @@
 
   {
     "_section": "Native typed marshalling — non-i64 wire types round-trip cleanly",
-    "_comment": "f64 → f64 across the extern dispatch; no coercion to int",
+    "_comment": "f64 -> f64 across the extern dispatch; no coercion to int",
     "src": "from m import double_f\nprint(double_f(2.5))",
     "output": ["5.0"],
     "modules": { "m": { "native": ["double_f"] } }
   },
   {
-    "_comment": "bool → bool",
+    "_comment": "bool -> bool",
     "src": "from m import negate\nprint(negate(True))\nprint(negate(False))",
     "output": ["False", "True"],
     "modules": { "m": { "native": ["negate"] } }
@@ -323,7 +323,7 @@
 
   {
     "_section": "Transitive imports — root-only packages.json",
-    "_comment": "main → lib/a.py → lib/b.py via an alias declared only in root aliases. Sub-resolver shares state, so b_alias resolves correctly when lib/a.py asks for it.",
+    "_comment": "main -> lib/a.py -> lib/b.py via an alias declared only in root aliases. Sub-resolver shares state, so b_alias resolves correctly when lib/a.py asks for it.",
     "src": "from a_mod import handler\nprint(handler(3))",
     "output": ["b:6"],
     "modules": {
@@ -333,7 +333,7 @@
     "aliases": { "a_mod": "a_mod", "b_alias": "b_mod" }
   },
   {
-    "_comment": "diamond import: main → a → c, main → b → c. c's source must parse only once (the cache dedups), so its top-level side effect runs once and both paths see identical bindings.",
+    "_comment": "diamond import: main -> a -> c, main -> b -> c. c's source must parse only once (the cache dedups), so its top-level side effect runs once and both paths see identical bindings.",
     "src": "from a import f\nfrom b import g\nprint(f())\nprint(g())",
     "output": ["a:42", "b:42"],
     "modules": {
@@ -508,7 +508,7 @@
     }
   },
   {
-    "_comment": "No manifest anywhere on the walk-up path → error names the searched-from dir so the user knows where to drop a packages.json.",
+    "_comment": "No manifest anywhere on the walk-up path -> error names the searched-from dir so the user knows where to drop a packages.json.",
     "src": "from \"./lib/a.py\" import run\nprint(run())",
     "modules": {
       "./lib/a.py": { "code": "from utils import slug\n\ndef run():\n    return slug('x')" }
@@ -543,7 +543,7 @@
     "error": "circular extends chain"
   },
   {
-    "_comment": "Multi-level walk-up: bare name in lib/sub/x.py walks lib/sub/ → lib/ → \"\" before finding the declaring manifest at the root.",
+    "_comment": "Multi-level walk-up: bare name in lib/sub/x.py walks lib/sub/ -> lib/ -> \"\" before finding the declaring manifest at the root.",
     "src": "from \"./lib/sub/x.py\" import f\nprint(f())",
     "output": ["root-helper"],
     "modules": {

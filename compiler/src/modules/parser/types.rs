@@ -37,7 +37,7 @@ pub enum OpCode {
     LoadModule,
 }
 
-// Python builtin name → (specialised OpCode, leaves_value_on_stack).
+// Python builtin name -> (specialised OpCode, leaves_value_on_stack).
 pub(super) fn builtin(name: &str) -> Option<(OpCode, bool)> {
     match name {
         "len" => Some((OpCode::CallLen, true)),

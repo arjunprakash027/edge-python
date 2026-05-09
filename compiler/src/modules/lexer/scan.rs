@@ -396,7 +396,7 @@ impl<'a> Scanner<'a> {
             // Bytes literal: b/B prefix (with optional r/R for raw bytes).
             // Same scanning machinery as strings — escapes are decoded
             // later in the parser, where bytes-specific rules apply
-            // (`\xHH` → single byte; non-ASCII source bytes preserved
+            // (`\xHH` -> single byte; non-ASCII source bytes preserved
             // verbatim instead of being UTF-8 validated).
             if is_bytes_prefix(slice)
                 && let Some(&q) = self.src.get(self.pos)

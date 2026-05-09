@@ -1,8 +1,8 @@
 # Edge Python
 
-A compact, single-pass SSA bytecode compiler and stack VM for a functional subset of CPython 3.13 syntax. Hand-written lexer, Pratt parser that emits bytecode directly, and a threaded-code interpreter with per-instruction inline caching and pure-function memoization.
+A compact, single-pass SSA bytecode compiler and stack VM for a functional subset of Python 3.13 syntax. Hand-written lexer, Pratt parser that emits bytecode directly, and a threaded-code interpreter with per-instruction inline caching and pure-function memoization.
 
-Edge Python ships as a WebAssembly module — `compiler.wasm`, ~130 KB. It runs anywhere WebAssembly runs: browsers, Cloudflare Workers, Fastly Compute, Wasmtime, Wasmer, Spin. Sandboxed by construction; no native release artifact.
+Edge Python is distributed as a WebAssembly module — `compiler.wasm`, ~130 KB. It runs anywhere WebAssembly runs: browsers, Cloudflare Workers, Fastly Compute, Wasmtime, Wasmer, Spin. Sandboxed by construction; no native release artifact.
 
 - **Demo:** [demo.edgepython.com](https://demo.edgepython.com/)
 - **Docs:** [edgepython.com](https://edgepython.com/)
@@ -17,7 +17,7 @@ Cargo.toml                  Workspace manifest (members + shared profile)
 
 compiler/                   Rust crate `edge-python`: lexer, parser, optimizer,
                             VM, packages module. Compiles to compiler_lib.wasm
-                            (the only artifact the project ships).
+                            (the only artifact the project distributes).
 
 demo/                       Browser playground (HTML + WASM + Web Worker)
 documentation/              Mintlify documentation source
@@ -27,7 +27,7 @@ documentation/              Mintlify documentation source
 Common commands (from anywhere in the repo):
 
 ```bash
-cargo wasm                  # release WebAssembly artifact (the shipping product)
+cargo wasm                  # release WebAssembly artifact (the distributed product)
 cargo build --release       # host artifacts (.rlib + cdylib) for Rust embedders
 cargo test --release        # full test suite
 ```
@@ -38,7 +38,7 @@ Native modules come in two flavors: `.wasm` binaries any host can load by URL (p
 
 ### Browser
 
-Two files: the WASM module + a thin JS loader that ships in this repo at [`demo/edge.js`](demo/edge.js). Consumers don't write any JavaScript — they include both files and use the `EdgePython` class:
+Two files: the WASM module + a thin JS loader included in this repo at [`demo/edge.js`](demo/edge.js). Consumers do not write any JavaScript — they include both files and use the `EdgePython` class:
 
 ```html
 <script type="module">
@@ -59,13 +59,13 @@ Two files: the WASM module + a thin JS loader that ships in this repo at [`demo/
 </script>
 ```
 
-The shim handles all the WASM ↔ JS plumbing: pre-fetching imports, registering modules with the WASM runtime, dispatching native calls back into JS, decoding `print()` output. **Why a JS shim is unavoidable in browsers:** the WebAssembly sandbox doesn't expose network or filesystem to the WASM module — every external resource has to come through a host-side bridge, and in browsers that bridge is JavaScript. Edge Python's brand of "no JS for the user" is preserved by shipping the bridge as part of the official distribution; you include `edge.js` the same way you'd include any WASM library's loader (Pyodide, sql.js, etc.).
+The shim handles the WASM ↔ JS plumbing: pre-fetching imports, registering modules with the WASM runtime, dispatching native calls back into JS, and decoding `print()` output. **The JS shim is necessary in browsers:** the WebAssembly sandbox does not expose network or filesystem to the WASM module — every external resource must come through a host-side bridge, and in browsers that bridge is JavaScript. Edge Python's "no JS for the user" principle is preserved by distributing the bridge as part of the official release; `edge.js` is included the same way as any WASM library's loader (Pyodide, sql.js, etc.).
 
 Build the WASM yourself:
 
 ```bash
 cargo wasm
-# → target/wasm32-unknown-unknown/release/compiler_lib.wasm  (~390 KB unstripped)
+# -> target/wasm32-unknown-unknown/release/compiler_lib.wasm  (~390 KB unstripped)
 
 # Optional: optimize with wasm-opt
 wasm-opt -Oz target/.../compiler_lib.wasm -o compiler_lib.opt.wasm

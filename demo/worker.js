@@ -7,11 +7,11 @@ let wasmModule = null;
    `./lib/helpers.py`, matching the bridge resolver's join_relative output).
    Survives across runs in worker scope; cleared by `clearCache` and by
    IDB-CAS invalidation. Feeds two consumers:
-     • `register_code_module` for `.py` files → REGISTRY (parser).
+     • `register_code_module` for `.py` files -> REGISTRY (parser).
      • `js_fetch_bytes` for `packages.json` and integrity-checked URLs. */
 const fetchedSources = new Map();
 
-/* IndexedDB persistence: lockfile (spec → sha256-hex) and CAS (hash → bytes).
+/* IndexedDB persistence: lockfile (spec -> sha256-hex) and CAS (hash -> bytes).
    Lockfile is the auto-generated companion of the user's packages.json; CAS
    holds raw bytes content-addressed so two URLs serving identical content
    share storage and the integrity primitive doubles as cache validation.

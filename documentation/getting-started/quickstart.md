@@ -5,7 +5,7 @@ description: "Run your first Edge Python program in under a minute."
 
 ## Run it
 
-Edge Python ships as a WebAssembly module. The fastest way to try it is the playground — no install, runs entirely client-side via WebAssembly.
+Edge Python is distributed as a WebAssembly module. The fastest way to try it is the playground — no install, runs entirely client-side via WebAssembly.
 
 [Open the playground ->](https://demo.edgepython.com)
 
@@ -22,10 +22,10 @@ Build the WASM yourself:
 git clone https://github.com/dylan-sutton-chavez/edge-python
 cd edge-python/compiler
 cargo wasm
-# → target/wasm32-unknown-unknown/release/compiler_lib.wasm
+# -> target/wasm32-unknown-unknown/release/compiler_lib.wasm
 ```
 
-There is no native CLI binary — `compiler_lib.wasm` is the shipping artifact, and `compiler/src/main.rs` is gated to `wasm32`. The host runtime owns I/O, network, and module fetching: the guest exposes one entry point (`run`) and calls back through `js_print`, `js_fetch_bytes`, and `js_call_native`. That's what keeps Edge Python sandboxed by construction.
+There is no native CLI binary — `compiler_lib.wasm` is the release artifact, and `compiler/src/main.rs` is gated to `wasm32`. The host runtime owns I/O, network, and module fetching: the guest exposes one entry point (`run`) and calls back through `js_print`, `js_fetch_bytes`, and `js_call_native`. This boundary is what keeps Edge Python sandboxed by construction.
 
 ## Your first program
 
@@ -44,7 +44,7 @@ Hello, edge!
 Hello, python!
 ```
 
-## A taste of the language
+## Language overview
 
 Edge Python is a functional subset of Python 3.13. Functions are first-class values; lambdas, currying, higher-order functions, and comprehensions are central. Classes exist as flat state containers — no inheritance, no `super()`, no dunder dispatch.
 
@@ -72,7 +72,7 @@ print(fib(20))
 6765
 ```
 
-## What's next
+## Next steps
 
 <CardGroup cols={2}>
   <Card title="What it is" icon="compass" href="/getting-started/what-it-is">

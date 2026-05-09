@@ -31,7 +31,7 @@ pub struct OpcodeCache {
     fused: Option<Vec<Instruction>>,
     /* Pre-materialised constant pool. Built once per chunk on first exec
        so LoadConst is a single indexed load instead of a per-iteration
-       Value→Val conversion (strings/bigints would heap-alloc). */
+       Value->Val conversion (strings/bigints would heap-alloc). */
     const_vals: Option<Vec<Val>>,
 }
 
@@ -198,9 +198,9 @@ impl Templates {
 
    Only fires when Call's operand is zero (no args, no kwargs). When the
    call has args, the parser interleaves them between LoadAttr and Call
-   (e.g. `x.foo(a)` → LoadAttr foo, LoadName a, Call(1)) and adjacent
+   (e.g. `x.foo(a)` -> LoadAttr foo, LoadName a, Call(1)) and adjacent
    LoadAttr+Call signals an attribute access in the LAST argument
-   position (e.g. `f(self.n)` → LoadName self, LoadAttr n, Call(1)) —
+   position (e.g. `f(self.n)` -> LoadName self, LoadAttr n, Call(1)) —
    fusing that mis-treats the arg expression as the call target. */
 fn fuse_method_calls(chunk: &SSAChunk) -> Vec<Instruction> {
     let src = &chunk.instructions;

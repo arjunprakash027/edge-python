@@ -201,7 +201,7 @@ self.with_fresh_chunk(|s| {
 });
 ```
 
-Free variables in the body — names that aren't parameters and don't have a local binding — are looked up in the outer chunk's name table. The `MakeFunction` opcode at runtime captures matching slots from the enclosing scope into the function's `captures` list (snapshotted at `MakeFunction` time — there are no cell objects). Nested `def` and `lambda` push their own free names back into their parent's name table, so each enclosing function captures whatever its descendants need; the chain propagates through any depth (e.g. `def A → def B → def C` where `C` references a var in `A`).
+Free variables in the body — names that aren't parameters and don't have a local binding — are looked up in the outer chunk's name table. The `MakeFunction` opcode at runtime captures matching slots from the enclosing scope into the function's `captures` list (snapshotted at `MakeFunction` time — there are no cell objects). Nested `def` and `lambda` push their own free names back into their parent's name table, so each enclosing function captures whatever its descendants need; the chain propagates through any depth (e.g. `def A -> def B -> def C` where `C` references a var in `A`).
 
 Parameters classify into three slot kinds: `Normal`, `Star` (`*args`), `DoubleStar` (`**kwargs`). The keyword-only marker `*` (lone `*` separator) prefixes following parameter names so they are matched by keyword only and never receive positional arguments. Defaults are stored in `HeapObj::Func.defaults` and applied to the last-N positional slots. Parameter annotations (`x: T`) and return annotations (`-> T`) are parsed and drained without affecting runtime; they are recorded in `chunk.annotations` for tooling use only.
 
@@ -209,7 +209,7 @@ After body compilation, `compile_body` inspects the body's instruction stream fo
 
 ## Type annotations
 
-Annotations are parsed for compatibility with CPython source but discarded for execution:
+Annotations are parsed for source compatibility but discarded at execution time:
 
 ```python
 counter: int = 0       # annotation 'int' parsed and stored, slot still gets 0
