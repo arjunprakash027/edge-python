@@ -33,7 +33,7 @@ pub fn format_value(v: Val, spec: &str, heap: &HeapPool) -> Result<String, &'sta
     apply(v, &parsed, heap)
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Spec {
     fill: char,
     align: Option<u8>,   // b'<' b'>' b'^' b'='
@@ -134,10 +134,40 @@ fn apply(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static str> {
             };
             Ok(pad_string(s, &truncated))
         }
-        b'd' | b'b' | b'o' | b'x' | b'X' => format_int(v, s, heap),
+        // `n` is locale-aware decimal in CPython; paradigm has no locale, so alias to `d`.
+        b'd' | b'b' | b'o' | b'x' | b'X' | b'n' => {
+            let mut s2 = s.clone();
+            if s2.ty == b'n' { s2.ty = b'd'; }
+            format_int(v, &s2, heap)
+        }
         b'f' | b'F' => format_float(v, s, s.ty, heap),
+        b'e' | b'E' | b'g' | b'G' => format_float(v, s, s.ty, heap),
+        b'%' => format_percent(v, s, heap),
+        b'c' => format_char(v, s),
         _ => Err("unknown format type"),
     }
+}
+
+fn format_percent(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static str> {
+    let f = require_float(v, heap)? * 100.0;
+    let prec = s.precision.unwrap_or(6);
+    let body = if f.is_nan() { "nan".to_string() }
+               else if f.is_infinite() { if f.is_sign_negative() { "-inf".into() } else { "inf".into() } }
+               else { fixed(f.abs(), prec) };
+    let sign_ch = sign_char(f.is_sign_negative() && !f.is_nan(), s.sign);
+    let mut left = String::new();
+    if let Some(c) = sign_ch { left.push(c); }
+    left.push_str(&body);
+    left.push('%');
+    Ok(pad_aligned(s, &left, sign_ch.map(|_| 1).unwrap_or(0)))
+}
+
+fn format_char(v: Val, s: &Spec) -> Result<String, &'static str> {
+    if !v.is_int() { return Err("'c' format spec requires an integer"); }
+    let i = v.as_int();
+    if !(0..=0x10FFFF).contains(&i) { return Err("'c' format spec arg out of range"); }
+    let ch = char::from_u32(i as u32).ok_or("'c' format spec arg not a valid char")?;
+    Ok(pad_string(s, &ch.to_string()))
 }
 
 fn format_int(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static str> {
@@ -179,6 +209,24 @@ fn format_float(v: Val, s: &Spec, ty: u8, heap: &HeapPool) -> Result<String, &'s
     let mag = f.abs();
     let body = match ty {
         b'f' | b'F' => fixed(mag, prec),
+        // Scientific and general formats fall back to Rust's f64 formatter.
+        // Custom round-half-to-even applies only to fixed; e/g use library defaults.
+        b'e' => format_with_e(mag, prec, false),
+        b'E' => format_with_e(mag, prec, true),
+        // `g/G` in CPython: pick `e` for very small/large, `f` otherwise.
+        b'g' | b'G' => {
+            let upper = ty == b'G';
+            let exp = if mag == 0.0 { 0 } else { mag.log10().floor() as i32 };
+            // CPython rule: -4 <= exp < precision uses fixed; else scientific.
+            let p = prec.max(1);
+            if exp < -4 || exp >= p as i32 {
+                format_with_e(mag, p.saturating_sub(1), upper)
+            } else {
+                let dec = (p as i32 - 1 - exp).max(0) as usize;
+                let out = fixed(mag, dec);
+                if upper { out.to_uppercase() } else { out }
+            }
+        }
         _ => unreachable!(),
     };
     let body = if s.thousands { add_thousands_float(&body) } else { body };
@@ -187,6 +235,22 @@ fn format_float(v: Val, s: &Spec, ty: u8, heap: &HeapPool) -> Result<String, &'s
     if let Some(c) = sign_ch { left.push(c); }
     left.push_str(&body);
     Ok(pad_aligned(s, &left, sign_ch.map(|_| 1).unwrap_or(0)))
+}
+
+fn format_with_e(mag: f64, prec: usize, upper: bool) -> String {
+    /* Rust's "{:.*e}" produces e.g. "3.14e0"; CPython expects "e+00". Re-pad
+       the exponent to at least two digits and inject the sign. */
+    let raw = alloc::format!("{:.*e}", prec, mag);
+    let (mant, exp_str) = raw.split_once('e').unwrap_or((raw.as_str(), "0"));
+    let (esign, edigs) = if let Some(rest) = exp_str.strip_prefix('-') { ('-', rest) }
+                         else { ('+', exp_str) };
+    let mut out = String::new();
+    out.push_str(mant);
+    out.push(if upper { 'E' } else { 'e' });
+    out.push(esign);
+    if edigs.len() < 2 { out.push('0'); }
+    out.push_str(edigs);
+    out
 }
 
 fn require_float(v: Val, _heap: &HeapPool) -> Result<f64, &'static str> {

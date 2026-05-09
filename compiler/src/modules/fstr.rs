@@ -1,7 +1,8 @@
 /* Format an f64 to a Python-display string (NaN, ±inf, ±0.0,
    whole-number floats with trailing ".0", else Rust's default). */
 pub fn format_f64(f: f64) -> alloc::string::String {
-    if f.is_nan() { return alloc::string::String::from("NaN"); }
+    // Lowercase per CPython repr/str semantics (was "NaN" — capitalised mismatch).
+    if f.is_nan() { return alloc::string::String::from("nan"); }
     if f == f64::INFINITY { return alloc::string::String::from("inf"); }
     if f == f64::NEG_INFINITY { return alloc::string::String::from("-inf"); }
     if f == 0.0 {

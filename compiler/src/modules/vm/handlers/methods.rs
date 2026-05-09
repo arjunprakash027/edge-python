@@ -921,7 +921,8 @@ define_methods! {
     (SetRemove, "remove", mutating, |vm, recv, pos| {
         check_arity(&pos, 1, 1, "remove takes 1 argument")?;
         set_mut(vm, recv, "remove: receiver is not a set", |set| {
-            if !set.remove(&pos[0]) { return Err(cold_value("element not found in set")); }
+            // CPython: KeyError, not ValueError.
+            if !set.remove(&pos[0]) { return Err(VmErr::Raised("KeyError".into())); }
             Ok(())
         })?;
         vm.push(Val::none()); Ok(())
