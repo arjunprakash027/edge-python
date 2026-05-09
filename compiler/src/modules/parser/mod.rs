@@ -66,6 +66,11 @@ pub struct Parser<'src, I: Iterator<Item = Token>> {
     pub(super) loop_kinds: Vec<bool>,
     pub(super) expr_depth: usize,
     pub(super) saw_newline: bool,
+    /* Set while parsing the expression inside an f-string brace (`{expr}`).
+       Disables the `=` -> assignment path in `name()` so `f"{x=}"` is
+       interpreted as the debug-self-doc form (echo `x=` + value) instead
+       of trying to parse `x = ...` as an assignment that reads `}`. */
+    pub(super) in_fstring_expr: bool,
     /* Every `(`, `[`, `{` consumed-but-not-yet-closed, with the error count at
        the time it opened. Lets us anchor "X was never closed" diagnostics at
        the opener (instead of at EOF where the cascade lands), and drop the
@@ -509,6 +514,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             loop_breaks: Vec::new(),
             loop_kinds: Vec::new(),
             saw_newline: false,
+            in_fstring_expr: false,
             expr_depth: 0,
             last_line: 0,
             last_end: 0,

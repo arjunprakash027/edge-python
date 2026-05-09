@@ -149,7 +149,8 @@ Both are in the built-in exception namespace and match `except` clauses normally
 - **No preemption.** A `while True: pass` inside a coroutine blocks the scheduler.
 - **Cancellation is silent.** `cancel(coro)` stops the coroutine; the body does not see `CancelledError`. Use `with_timeout` if you need deadline semantics that propagate as exceptions.
 - **No host event loop integration.** Edge Python's scheduler is in-process. Real I/O concurrency requires the host to expose async-shaped externs (e.g. `await fetch_json(url)` where `fetch_json` is a host function that queues a callback and yields).
-- **No async iteration.** `async for`, `async with`, async comprehensions are not supported. Use plain `for` over an iterable produced by an async function.
+- **`async for` / `async with`**: parsed but not async. The keywords are accepted to match Python syntax, but the runtime iterates / manages the context manager **synchronously** (no `__aiter__` / `__anext__` / `__aenter__` / `__aexit__` dispatch). Treat them as cosmetic markers; behaviour is identical to the sync forms.
+- **No async comprehensions.** `[x async for x in it]` is not supported.
 - **`receive()` is unbounded.** Without an external producer pushing into the event queue, `receive()` yields `None` forever. Pair with `with_timeout` if you need a deadline.
 
 ## Time capability

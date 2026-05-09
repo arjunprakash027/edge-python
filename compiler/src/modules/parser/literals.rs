@@ -208,13 +208,31 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             }
                 Some(TokenType::Lbrace) => {
                     self.advance();
+                    // Capture the byte span of the expression so `f"{expr=}"`
+                    // can echo `expr=` literally before its formatted value.
+                    let expr_start_byte = self.tokens.peek().map(|t| t.start).unwrap_or(0);
+                    let insn_start = self.chunk.instructions.len();
+                    let saved_in_fstring = self.in_fstring_expr;
+                    self.in_fstring_expr = true;
                     self.expr();
+                    self.in_fstring_expr = saved_in_fstring;
+                    let expr_end_byte = self.last_end;
                     /* Encoding for FormatValue operand:
                          bit 0       — has format-spec on stack
                          bits 1..=2  — conversion: 0 none, 1 !r, 2 !s, 3 !a
                        Mirrors CPython's `flags` byte in `FORMAT_VALUE`. Zero
                        operand still means "plain str()" — backwards-compatible. */
                     let mut flags = 0u16;
+                    // `=` debug-self-doc: `f"{expr=}"` expands to the literal
+                    // text `expr=` followed by the formatted value. Defaults
+                    // to `!r` conversion (CPython parity) when neither !r/!s/!a
+                    // nor :spec is supplied.
+                    let mut debug_prefix: Option<String> = None;
+                    if matches!(self.peek(), Some(TokenType::Equal)) {
+                        self.advance();
+                        let raw = &self.source[expr_start_byte..expr_end_byte];
+                        debug_prefix = Some(s!(str raw, "="));
+                    }
                     if matches!(self.peek(), Some(TokenType::Exclamation)) {
                         let bang = self.advance();
                         let conv_tok = self.advance();
@@ -229,6 +247,21 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                                 0
                             }
                         };
+                    }
+                    if debug_prefix.is_some() && (flags & 0b110) == 0 && !matches!(self.peek(), Some(TokenType::Colon)) {
+                        flags |= 1 << 1; // default !r when `=` has no explicit conv/spec
+                    }
+                    // Stitch the prefix in before the expression result. We
+                    // drain the just-emitted expression bytecode, emit the
+                    // literal const for `expr=`, then re-emit the drained
+                    // bytecode so the runtime stack ends up [prefix, value].
+                    if let Some(prefix) = debug_prefix.take() {
+                        let drained: Vec<Instruction> = self.chunk.instructions
+                            .drain(insn_start..)
+                            .collect();
+                        self.emit_const(Value::Str(prefix));
+                        parts += 1;
+                        self.chunk.instructions.extend(drained);
                     }
                     if matches!(self.peek(), Some(TokenType::Colon)) {
                         let colon = self.advance();

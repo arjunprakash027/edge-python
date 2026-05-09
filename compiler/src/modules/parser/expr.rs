@@ -246,7 +246,10 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     pub(super) fn name(&mut self, t: Token) {
         let name = self.lexeme(&t).to_string();
         match self.peek() {
-            Some(TokenType::Equal) => {
+            // Inside an f-string brace expression, `=` is the debug
+            // self-doc marker (`f"{x=}"`), not an assignment — let the
+            // f-string parser see it.
+            Some(TokenType::Equal) if !self.in_fstring_expr => {
                 self.assign(name.clone());
                 self.emit_load_ssa(name);
             }
