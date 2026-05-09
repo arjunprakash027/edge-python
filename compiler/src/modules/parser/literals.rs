@@ -411,7 +411,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     }
 
     /* Class header + body in a fresh chunk + MakeClass + StoreName. */
-    pub(super) fn class_def(&mut self) {
+    pub(super) fn class_def(&mut self) { self.class_def_with(0) }
+
+    pub(super) fn class_def_with(&mut self, decorators: u16) {
         // `class :` / `class (Foo):` etc. — push a non-syncing diagnostic
         // (the regular `eat(Colon)` below will pick up where we left off)
         // and synthesize a name so the body still parses. Without this,
@@ -439,6 +441,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let ci = self.chunk.classes.len() as u16;
         self.chunk.classes.push(body);
         self.chunk.emit(OpCode::MakeClass, ci);
+
+        // Decorators wrap the class object exactly like they wrap a function:
+        // each one Calls with the previous result on the stack.
+        for _ in 0..decorators {
+            let pos = self.last_end as u32;
+            self.chunk.emit(OpCode::Call, 1);
+            self.chunk.record_call_pos(pos);
+        }
 
         let ver = self.increment_version(&cname);
         let i = self.push_ssa_name(&cname, ver);

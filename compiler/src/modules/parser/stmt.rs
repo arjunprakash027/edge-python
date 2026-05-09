@@ -102,6 +102,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 if self.eat_if(TokenType::Async) {
                     self.advance();
                     self.func_def_inner(count, true);
+                } else if matches!(self.peek(), Some(TokenType::Class)) {
+                    self.advance();
+                    self.class_def_with(count);
                 } else {
                     self.advance();
                     self.func_def_inner(count, false);

@@ -1537,7 +1537,7 @@
 
   {"src": "print(2 ** 47)", "output": [], "error": "OverflowError"},
 
-  {"src": "@deco\nclass A: pass", "output": [], "error": "expected '('"},
+  {"src": "def deco(c):\n    print('decorated')\n    return c\n@deco\nclass A: pass", "output": ["decorated"]},
 
   {"src": "class A:\n    def __add__(self, o):\n        return 'magic'\nprint(A() + A())", "output": [], "error": "unsupported operand"},
 
