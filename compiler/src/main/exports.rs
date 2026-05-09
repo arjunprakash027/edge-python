@@ -23,6 +23,18 @@ pub unsafe extern "C" fn wasm_alloc(size: u32) -> *mut u8 {
     Box::into_raw(v.into_boxed_slice()) as *mut u8
 }
 
+/* Releases a buffer previously returned by `wasm_alloc`. The host MUST pass
+   the exact same `size` it requested; mismatched lengths reconstruct the
+   wrong Box layout. Calling with a null pointer or `size == 0` is a no-op. */
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wasm_free(ptr: *mut u8, size: u32) {
+    if ptr.is_null() || size == 0 { return; }
+    unsafe {
+        let slice = core::slice::from_raw_parts_mut(ptr, size as usize);
+        let _ = Box::from_raw(slice as *mut [u8]);
+    }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn register_code_module(
     spec_ptr: *const u8, spec_len: u32,
