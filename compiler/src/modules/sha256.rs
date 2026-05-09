@@ -1,11 +1,4 @@
-/* Hand-rolled SHA-256 used only by the parser to verify `#sha256-...`
-   fragments on URL imports. Algorithm is the canonical FIPS 180-4 form;
-   tested against the four published NIST vectors in `tests/sha256.rs`.
-
-   We hand-roll instead of pulling the `sha2` crate so the production
-   dependency tree stays at two crates (hashbrown + itoa). SHA-256 has
-   been frozen since 2001 — there is no upkeep cost to a 120-line
-   implementation that only needs to round-trip a fixed test set. */
+/* FIPS 180-4 SHA-256 for parser #sha256- fragment verification. Hand-rolled to keep deps at two crates. */
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -30,10 +23,7 @@ const H0: [u32; 8] = [
 pub fn sha256(input: &[u8]) -> [u8; 32] {
     let mut h = H0;
 
-    /* FIPS 180-4 padding: append 0x80, then zeros until len % 64 == 56,
-       then the original bit length as a big-endian u64. We allocate a
-       single Vec to hold the padded message and process its 64-byte
-       blocks in one pass. */
+    /* FIPS 180-4 padding: 0x80 + zeros to len%64==56 + big-endian bit length. */
     let mut buf: Vec<u8> = Vec::with_capacity(input.len() + 72);
     buf.extend_from_slice(input);
     buf.push(0x80);
@@ -87,7 +77,7 @@ pub fn sha256(input: &[u8]) -> [u8; 32] {
     out
 }
 
-/// Encode bytes as lowercase hex. 32-byte input produces 64-char output.
+// Encodes bytes as lowercase hex; 32 bytes -> 64 chars.
 pub fn hex_encode(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut s = String::with_capacity(bytes.len() * 2);
@@ -98,8 +88,7 @@ pub fn hex_encode(bytes: &[u8]) -> String {
     s
 }
 
-/// Decode a 64-char hex string into a 32-byte digest. Returns `None` if
-/// the length is wrong or any character is outside `[0-9a-fA-F]`.
+// Decodes 64-char hex into a 32-byte digest; None if wrong length or invalid chars.
 pub fn hex_decode_32(hex: &str) -> Option<[u8; 32]> {
     if hex.len() != 64 { return None; }
     let bytes = hex.as_bytes();
