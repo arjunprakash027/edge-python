@@ -134,8 +134,7 @@ pub fn is_fstring_prefix(s: &[u8]) -> bool {
     }
 }
 
-/* Regular string prefix: r, R, u, U (the b/B variants are handled by
-   `is_bytes_prefix` so the lexer can emit a distinct `Bytes` token). */
+/* Regular string prefix: r, R, u, U. The b/B variants live in `is_bytes_prefix` to emit a distinct `Bytes` token. */
 #[inline]
 pub fn is_string_prefix(s: &[u8]) -> bool {
     match s.len() {
@@ -144,9 +143,7 @@ pub fn is_string_prefix(s: &[u8]) -> bool {
     }
 }
 
-/* Bytes literal prefix: b, B, br, Br, bR, BR, rb, Rb, rB, RB. Returned
-   as `TokenType::Bytes` by the lexer so the parser can emit `Value::Bytes`
-   instead of `Value::Str`. */
+/* Bytes literal prefix: b, B, br, Br, bR, BR, rb, Rb, rB, RB. Emitted as `Bytes` so the parser produces `Value::Bytes`. */
 #[inline]
 pub fn is_bytes_prefix(s: &[u8]) -> bool {
     match s.len() {

@@ -10,16 +10,13 @@ const MAX_FSTRING_DEPTH: usize = 200;
 pub(super) struct Scanner<'a> {
     pub src: &'a [u8],
     pub pos: usize,
-    // LIFO queue: tokens emitted by complex states (newline/dedent, f-string)
-    // that produce more than one token per source position.
+    /* LIFO queue for states that emit multiple tokens per source position (newline/dedent, f-string).2 */
     pub pending: Vec<(TokenType,usize,usize,usize)>,
     pub indent_stack: Vec<usize>,
     pub nesting: u32,
     pub line: usize,
     pub fstring_stack: Vec<(u8, bool, usize, u32)>,
-    /* Lex-time diagnostics (unterminated strings, mixed indent, etc.).
-       Surfaced to the caller alongside tokens so the parser can fold them
-       into its own error stream and the user sees one coherent report. */
+    /* Lex-time diagnostics surfaced alongside tokens so the parser folds them into a single coherent error report. */
     pub errors: Vec<LexError>,
 }
 
@@ -58,8 +55,7 @@ impl<'a> Scanner<'a> {
         self.scan_while(|b| BYTE_CLASS[b as usize] & DIGIT != 0 || b == b'_');
     }
 
-    // Numeric literal underscore rules: must be between digits — no leading,
-    // trailing, or consecutive '_'. Empty body only allowed past a decimal dot.
+    /* Underscores must sit between digits: no leading, trailing, or consecutive. Empty body only valid after a decimal dot. */
     fn check_digits(&mut self, start: usize, end: usize, allow_empty: bool) {
         if start == end {
             if !allow_empty {
@@ -100,8 +96,7 @@ impl<'a> Scanner<'a> {
             }
             let body_start = self.pos;
             self.scan_digits();
-            // Format specs reuse `e/E` (e.g. `.2e`); leave empty-exponent
-            // detection to the float parser instead of erroring at lex time.
+            /* Format specs reuse `e/E` (e.g. `.2e`); leave empty-exponent detection to the float parser instead of erroring at lex time. */
             self.check_digits(body_start, self.pos, true);
             true
         } else {
@@ -158,8 +153,7 @@ impl<'a> Scanner<'a> {
             if b == quote { self.pos += 1; return; }
             if b == b'\\' && self.at(1).is_some() { self.pos += 1; }
             if b == b'\n' {
-                // Unterminated single-line string: anchor at the opener so the
-                // user sees `^` on the offending quote, not at end-of-line.
+                /* Anchor unterminated-string error at the opener so `^` lands on the quote, not end-of-line. */
                 self.report(start, start + 1, "unterminated string literal");
                 return;
             }
@@ -242,8 +236,7 @@ impl<'a> Scanner<'a> {
                 _ => pos += 1,
             }
         }
-        // Reached EOF without closing — synthesise End so parser sees a
-        // balanced f-string structure and report the unterminated literal.
+        /* Synthesise End on EOF so the parser sees a balanced structure, then report the unterminated literal. */
         self.report(self.pos, pos, "unterminated f-string literal");
         self.pending.push((TokenType::FstringEnd, self.line, pos, pos));
         if pos > self.pos {
@@ -338,8 +331,7 @@ impl<'a> Scanner<'a> {
         self.pos = end;
     }
 
-    /* Main dispatch: drains pending queue, then routes each byte via
-       BYTE_CLASS / SINGLE_TOK lookups. */
+    /* Main dispatch: drains pending queue, then routes each byte via BYTE_CLASS / SINGLE_TOK lookups. */
     pub fn next_token(&mut self) -> Option<(TokenType, usize, usize, usize)> {
         if let Some(tok) = self.pending.pop() {
             return Some(tok);
@@ -393,11 +385,7 @@ impl<'a> Scanner<'a> {
                 return Some((TokenType::String, line_at_start, start, self.pos));
             }
 
-            // Bytes literal: b/B prefix (with optional r/R for raw bytes).
-            // Same scanning machinery as strings — escapes are decoded
-            // later in the parser, where bytes-specific rules apply
-            // (`\xHH` -> single byte; non-ASCII source bytes preserved
-            // verbatim instead of being UTF-8 validated).
+            /* Bytes literal (b/B, optional r/R for raw): scans like a string, the parser decodes bytes-specific escapes later. */
             if is_bytes_prefix(slice)
                 && let Some(&q) = self.src.get(self.pos)
                 && (q == b'"' || q == b'\'')
@@ -484,8 +472,7 @@ impl<'a> Scanner<'a> {
         // Single character: table dispatch
         self.pos += 1;
         let idx = if b < 128 { SINGLE_TOK[b as usize] } else { 0 };
-        // Index 0 means the byte has no operator slot — report and skip
-        // instead of emitting a stray Endmarker that truncates the stream.
+        /* Index 0 means no operator slot: report and skip instead of emitting a stray Endmarker that truncates the stream. */
         if idx == 0 {
             self.report(start, self.pos, "unexpected character");
             return self.next_token();

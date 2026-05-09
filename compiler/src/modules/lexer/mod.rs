@@ -16,9 +16,7 @@ pub struct Token {
     pub end: usize,
 }
 
-/* Lex-time diagnostic. Carries a `&'static str` message — every lexer error
-   is one of a small fixed set, so heap-allocating strings would be wasteful.
-   Callers convert to a richer Diagnostic at the parser boundary. */
+/* Lex-time diagnostic. Static message since errors are a fixed set; parser boundary upgrades it to a richer Diagnostic. */
 #[derive(Debug)]
 pub struct LexError {
     pub start: usize,
@@ -53,16 +51,12 @@ pub enum TokenType {
     Comment, Newline, Indent, Dedent, Nl, Endmarker,
 }
 
-/* Parser-ready token list with indentation already handled. match/case/type
-   are hard keywords; the only soft-keyword path remaining is `_` (wildcard
-   in match patterns vs. plain identifier elsewhere). Returns the token
-   vector alongside any lex-time diagnostics so the caller can fold them
-   into the parser's error stream. */
+/* Parser-ready tokens with indentation handled. Returns lex diagnostics alongside so the caller folds them into the parser's error stream. */
 pub fn lex(source: &str) -> (Vec<Token>, Vec<LexError>) {
     let bytes = source.as_bytes();
     let len = source.len();
     let mut scanner = Scanner::new(bytes);
-    // Skip leading UTF-8 BOM so it doesn't fuse into the first identifier.
+    // Skip UTF-8 BOM so it doesn't fuse into the first identifier.
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) { scanner.pos = 3; }
 
     if len > MAX_SOURCE_SIZE {
@@ -93,10 +87,7 @@ pub fn lex(source: &str) -> (Vec<Token>, Vec<LexError>) {
         if ended { break; }
         if tok == TokenType::Endmarker { ended = true; }
 
-        // `type` is the lone surviving soft keyword. `match`/`case` are now
-        // hard keywords because `match` / `case` only appear at statement
-        // start in Edge Python. `type` would collide with the `type()` builtin
-        // and with attributes named `type`, so it stays soft.
+        /* `type` is the lone soft keyword: stays soft to avoid colliding with the `type()` builtin and attributes named `type`. */
         let is_soft = matches!(tok, TokenType::Type);
         let next_demotes = matches!(
             raw.get(i + 1),
