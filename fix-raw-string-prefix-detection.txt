@@ -1,0 +1,32 @@
+Branch: fix-raw-string-prefix-detection
+Tech debt: D1 — is_raw scans entire lexeme instead of prefix only.
+
+================================================================================
+Commit 1: fix raw string prefix detection
+================================================================================
+File: compiler/src/modules/parser/types.rs
+
+What was wrong:
+  parse_string  (line 360): `let is_raw = s.contains('r') || s.contains('R');`
+  parse_bytes_literal (line 373): same pattern.
+
+  s is the full lexeme (prefix + quotes + body). `contains('r')` therefore
+  scans the body too. Any non-raw u-string or b-string whose body contains
+  the letter 'r' or 'R' was silently treated as raw, so escapes like \n, \t,
+  \xHH were preserved verbatim.
+
+  Concrete example: u"hello\nworld" -> body contains no 'r', escape works.
+  But u"forward\n" -> body contains 'r' inside "forward", is_raw=true,
+  the literal kept the backslash-n unescaped.
+
+  Documentation in implementation/lexical.md already states that the prefix
+  is recognised before the opening quote, so docs were already correct; only
+  the implementation diverged.
+
+Fix:
+  Introduced has_raw_prefix(s) which reads bytes only up to the first quote
+  byte (`"` or `'`) and checks for r/R there. parse_string and
+  parse_bytes_literal now call has_raw_prefix, so detection matches the
+  language spec and the documentation.
+
+Tests: cargo test -> 6/6 passed.

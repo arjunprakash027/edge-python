@@ -355,9 +355,16 @@ impl Diagnostic {
     }
 }
 
+/* Scan only the prefix chars before the opening quote; the body itself may legally contain 'r'/'R'. */
+fn has_raw_prefix(s: &str) -> bool {
+    s.bytes()
+        .take_while(|b| !matches!(b, b'"' | b'\''))
+        .any(|b| matches!(b, b'r' | b'R'))
+}
+
 // Strip prefix + quotes and unescape (skipped for raw strings).
 pub(super) fn parse_string(s: &str) -> String {
-    let is_raw = s.contains('r') || s.contains('R');
+    let is_raw = has_raw_prefix(s);
     let s = s.trim_start_matches(|c: char| "bBrRuU".contains(c));
     let inner = if s.starts_with("\"\"\"") || s.starts_with("'''") {
         &s[3..s.len() - 3]
@@ -370,7 +377,7 @@ pub(super) fn parse_string(s: &str) -> String {
 /* Parses b"..." to raw bytes: non-ASCII pass through; \xHH=single byte; \u/\U/\N rejected. */
 pub(super) fn parse_bytes_literal(s: &str) -> alloc::vec::Vec<u8> {
     let bytes = s.as_bytes();
-    let is_raw = s.contains('r') || s.contains('R');
+    let is_raw = has_raw_prefix(s);
     // Skip b/B/r/R prefix chars.
     let mut i = 0;
     while i < bytes.len() && matches!(bytes[i], b'b' | b'B' | b'r' | b'R') {
