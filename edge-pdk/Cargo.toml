@@ -11,4 +11,4 @@ crate-type = ["rlib"]
 doctest = false
 
 [dependencies]
-macros = { path = "macros", version = "0.1.0" }
+edge-pdk-macros = { path = "macros", version = "0.1.0" }

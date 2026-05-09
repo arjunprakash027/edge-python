@@ -28,14 +28,14 @@
 //! }
 //! ```
 //!
-//! The `#[plugin_fn]` attribute lives in the internal `macros`
+//! The `#[plugin_fn]` attribute lives in the internal `edge-pdk-macros`
 //! sub-crate and is re-exported from here.
 
 #![cfg_attr(not(test), no_std)]
 
 extern crate alloc;
 
-pub use macros::plugin_fn;
+pub use edge_pdk_macros::plugin_fn;
 
 use alloc::{string::{String, ToString}, vec::Vec};
 
@@ -69,7 +69,7 @@ unsafe extern "C" {
 }
 
 /// Stash an error so the host sees it after the export returns 1.
-/// Used by the `#[edge]` macro when a user function returns Err(_).
+/// Used by the `#[plugin_fn]` macro when a user function returns Err(_).
 #[doc(hidden)]
 pub fn __stash_error(e: Error) {
     let kind = e.kind();
