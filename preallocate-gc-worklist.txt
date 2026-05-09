@@ -1,0 +1,43 @@
+Branch: preallocate-gc-worklist
+Tech debt: D33 — HeapPool::mark allocates a Vec on every call.
+
+================================================================================
+Commit 1: reuse the GC mark worklist across roots
+================================================================================
+File: compiler/src/modules/vm/types/mod.rs
+
+What was wrong:
+  HeapPool::mark started with `let mut worklist = vec![v.as_heap()];`
+  on every invocation. collect() (gc.rs) calls mark() once per root —
+  stack, with-stack, yields, event queue, current slots, live slots,
+  every slot template, every globals entry, every iter frame, every
+  opcode-cache constant pool, every active const pool, plus
+  templates.mark_all. For a busy program that's hundreds of
+  allocations every GC cycle.
+
+  Worse: the GC is running because the heap is under pressure. The
+  allocator we go to for the worklist is the same allocator we're
+  trying to relieve. On low-memory hosts (the WASM single-threaded
+  bump allocator) this can OOM the host while we're trying to free
+  memory.
+
+Fix:
+  Added a `mark_worklist: Vec<u32>` field to HeapPool, initialised in
+  HeapPool::new with a 64-slot capacity. mark() now reuses this Vec —
+  push/pop drain it cleanly back to length 0 (the loop exits when pop
+  returns None), so the next mark() inherits whatever capacity the
+  worst case grew to. The vector's allocation lives for the entire
+  HeapPool lifetime, not per-root.
+
+  The closure inside mark() needed `&mut mark_worklist` while the loop
+  body reads `slots`, so I split the &mut self via destructure
+    let HeapPool { slots, mark_worklist, .. } = self;
+  to give the closure independent field-level borrows.
+
+  Removed the now-unused `vec` macro import.
+
+Documentation:
+  GC docs (compiler/README.md, design.md) describe the algorithm and
+  roots, never the worklist representation. No doc updates required.
+
+Build & tests: cargo build -p edge-python -> ok (no warnings); cargo test -> 6/6 passed.

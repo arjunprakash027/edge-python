@@ -1,4 +1,4 @@
-use alloc::{rc::Rc, string::String, vec, vec::Vec};
+use alloc::{rc::Rc, string::String, vec::Vec};
 use core::cell::RefCell;
 use crate::util::fx::{FxHashMap as HashMap, FxHashSet as HashSet};
 
@@ -351,6 +351,10 @@ pub struct HeapPool {
     bytes_intern: HashMap<Vec<u8>, u32>,
     // Cached Ellipsis slot index so `... is ...` is True (singleton parity).
     ellipsis_idx: Option<u32>,
+    /* Reused across every mark() call; capacity grows once and stays put so
+       GC never allocates from the same allocator it might be running short
+       of. Cleared, not freed, between traversals. */
+    mark_worklist: Vec<u32>,
 }
 
 impl HeapPool {
@@ -365,6 +369,7 @@ impl HeapPool {
             strings: HashMap::default(),
             bytes_intern: HashMap::default(),
             ellipsis_idx: None,
+            mark_worklist: Vec::with_capacity(64),
         }
     }
 
@@ -410,14 +415,16 @@ impl HeapPool {
 
     pub fn mark(&mut self, v: Val) {
         if !v.is_heap() { return; }
-        let mut worklist = vec![v.as_heap()];
-        while let Some(idx) = worklist.pop() {
+        /* Split borrow: closure needs &mut mark_worklist while we read slots. */
+        let HeapPool { slots, mark_worklist, .. } = self;
+        mark_worklist.push(v.as_heap());
+        while let Some(idx) = mark_worklist.pop() {
             let idx = idx as usize;
-            if self.slots[idx].marked { continue; }
-            self.slots[idx].marked = true;
-            if let Some(obj) = &self.slots[idx].obj {
+            if slots[idx].marked { continue; }
+            slots[idx].marked = true;
+            if let Some(obj) = &slots[idx].obj {
                 for_each_val(obj, |val| {
-                    if val.is_heap() { worklist.push(val.as_heap()); }
+                    if val.is_heap() { mark_worklist.push(val.as_heap()); }
                 });
             }
         }
