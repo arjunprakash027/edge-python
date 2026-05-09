@@ -588,6 +588,12 @@
   {"src": "async def producer():\n    yield 1\n    yield 2\n    yield 3\nasync for v in producer():\n    print(v)", "output": ["1", "2", "3"]},
   {"src": "async def gen(n):\n    for i in range(n):\n        yield i * 10\nasync for v in gen(3):\n    print(v)", "output": ["0", "10", "20"]},
   {"src": "items = [1, 2, 3]\nasync with items as xs:\n    print(len(xs))", "output": ["3"]},
+
+  {"src": "async def squares(n):\n    for i in range(n):\n        yield i * i\nresult = []\nasync for v in squares(5):\n    result.append(v)\nprint(result)", "output": ["[0, 1, 4, 9, 16]"]},
+  {"src": "async def count():\n    yield 1\n    yield 2\n    yield 3\ng = count()\nasync for x in g:\n    print(x)", "output": ["1", "2", "3"]},
+  {"src": "async def empty():\n    if False:\n        yield 1\nasync for v in empty():\n    print('never')\nprint('done')", "output": ["done"]},
+  {"src": "async def gen():\n    yield 1\n    yield 2\nresult = list(gen())\nprint(result)", "output": ["[1, 2]"]},
+  {"src": "async def gen():\n    yield 10\n    yield 20\nfor v in gen():\n    print(v)", "output": ["10", "20"]},
   {"src": "class Box:\n    def __init__(self, v):\n        self.v = v\na = Box(1)\nb = Box(2)\nprint(a.v)\nprint(b.v)", "output": ["1", "2"]},
   {"src": "class Calc:\n    def __init__(self, base):\n        self.base = base\n    def add(self, n):\n        return self.base + n\nc = Calc(10)\nprint(c.add(5))\nprint(c.add(20))", "output": ["15", "30"]},
   {"src": "class Euler:\n    def __init__(self, n_terms):\n        self.accuracy = n_terms\n        self.terms = [1 / self._factorial(n) for n in range(self.accuracy)]\n        self.value = sum(self.terms)\n    def _factorial(self, n):\n        res = 1\n        for i in range(2, n + 1):\n            res *= i\n        return res\ne = Euler(10)\nprint(f\"Result: {e.value}\")", "output": ["Result: 2.7182815255731922"]},
