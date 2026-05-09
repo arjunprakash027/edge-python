@@ -1,0 +1,46 @@
+Branch: mark-val-from-raw-unsafe
+Tech debt: D11 (partial) — Val::from_raw was a safe public constructor for an unsafe contract.
+
+================================================================================
+Commit 1: mark Val::from_raw unsafe and document GC contract
+================================================================================
+File: compiler/src/modules/vm/types/mod.rs
+
+What was wrong:
+  Line 142 declared:
+
+    pub fn from_raw(u: u64) -> Self { Self(u) }
+
+  This is the public wire-format constructor for a Val. It accepted ANY
+  u64, including values that decode to Heap with an arbitrary 28-bit
+  index. HeapPool::get and HeapPool::get_mut then index into
+  `slots[v.as_heap() as usize]` and call `.expect(...)` if the slot is
+  free. The combined effect: an external caller passing a u64 they made
+  up panics the host process.
+
+  This is the second half of the broader D5 problem (HeapPool::get
+  panics on dangling references). The structural fix for D5 — return
+  Result instead of panicking — is a much larger refactor across every
+  call site. Marking the constructor unsafe at least pushes the
+  responsibility onto the wire-format caller, where it belongs, and
+  matches the documented intent that this Val came from `raw()` on the
+  same HeapPool.
+
+Fix:
+  Changed the signature to:
+
+    pub unsafe fn from_raw(u: u64) -> Self { Self(u) }
+
+  Added a /* # Safety */ doc block describing the invariant: the u64
+  must have come from Val::raw() on a Val whose heap slot is still
+  live in this HeapPool. No internal Rust call sites use Val::from_raw,
+  so the workspace builds and tests cleanly without further changes.
+
+  External consumers (FFI / WASM loaders / future SDKs) now have to
+  wrap the call in `unsafe { ... }`, which is the correct signal —
+  they were already taking on this responsibility implicitly.
+
+Documentation:
+  No .md docs reference Val::from_raw directly.
+
+Tests: cargo test -> 6/6 passed.
