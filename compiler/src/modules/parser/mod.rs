@@ -313,7 +313,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.lexeme(&t).to_string()
     }
 
-    /* Skips Newline/Nl/Comment; maps Endmarker→None; latches saw_newline for ternary detection. */
+    /* Skips Newline/Nl/Comment; maps Endmarker->None; latches saw_newline for ternary detection. */
     pub(super) fn peek(&mut self) -> Option<TokenType> {
         loop {
             match self.tokens.peek().map(|t| t.kind) {

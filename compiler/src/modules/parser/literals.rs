@@ -280,7 +280,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Dispatches call: print/range→dedicated opcodes; builtins→table; natives→CallExtern; else LoadName+Call. */
+    /* Dispatches call: print/range->dedicated opcodes; builtins->table; natives->CallExtern; else LoadName+Call. */
     pub(super) fn call(&mut self, name: String) -> bool {
         let call_pos = self.last_end as u32;
         if name == "print" {

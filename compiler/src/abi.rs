@@ -93,7 +93,7 @@ struct HandleSlot {
     rc: u32,
 }
 
-// Refcounted u32→u64 (Val bits) map; single instance per script run, cleared between runs.
+// Refcounted u32->u64 (Val bits) map; single instance per script run, cleared between runs.
 pub struct HandleTable {
     slots: Vec<HandleSlot>,
     free_list: Vec<u32>,

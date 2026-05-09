@@ -119,9 +119,9 @@ pub struct SSAChunk {
     pub phi_map: Vec<usize>,
     pub nonlocals: Vec<String>,
     pub(super) name_index: HashMap<String, u16>,
-    /* stmt ip→byte_offset map; binary-searched on error path; hot dispatch never touches it. */
+    /* stmt ip->byte_offset map; binary-searched on error path; hot dispatch never touches it. */
     pub stmt_pos: Vec<(u32, u32)>,
-    /* Call ip→byte_offset map; finer than stmt_pos; traceback caret lands under the call. */
+    /* Call ip->byte_offset map; finer than stmt_pos; traceback caret lands under the call. */
     pub call_byte_pos: Vec<(u32, u32)>,
     /* Source text; shared via Arc across sub-chunks. Empty for manually constructed chunks. */
     pub source: alloc::sync::Arc<alloc::string::String>,
@@ -135,7 +135,7 @@ pub struct SSAChunk {
 }
 
 impl SSAChunk {
-    /* Binary-searches stmt_pos to map ip→byte offset; statement-level precision. */
+    /* Binary-searches stmt_pos to map ip->byte offset; statement-level precision. */
     pub fn resolve(&self, ip: u32) -> Option<u32> {
         let i = self.stmt_pos.partition_point(|&(s, _)| s <= ip).checked_sub(1)?;
         Some(self.stmt_pos[i].1)
@@ -304,7 +304,7 @@ fn display_width(s: &str) -> usize {
 }
 
 impl Diagnostic {
-    /* Byte offset → (line, col), 1-indexed; col counts display cells for wide-char alignment. */
+    /* Byte offset -> (line, col), 1-indexed; col counts display cells for wide-char alignment. */
     fn line_col(src: &str, byte: usize) -> (usize, usize) {
         let byte = byte.min(src.len());
         let line = src[..byte].matches('\n').count() + 1;
