@@ -20,18 +20,18 @@ name = "tests"
 path = "tests/main.rs"
 
 [dependencies]
-hashbrown = { version = "0.17", default-features = false }
-itoa = "1"
+hashbrown = { workspace = true }
+itoa = { workspace = true }
 
 # WASM-only global allocator. Pulled into wasm32 builds automatically; absent
 # on host builds (where std's allocator is fine and `compiler.wasm` is just a
 # library artifact, not the runtime target).
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-lol_alloc = "0.4"
+lol_alloc = { workspace = true }
 
 # Test-only deps for the JSON-driven test runner. None of these are pulled
 # into the release `compiler.wasm`.
 [dev-dependencies]
-hashbrown = { version = "0.17", default-features = false, features = ["serde"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+hashbrown = { workspace = true, features = ["serde"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
