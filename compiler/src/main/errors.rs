@@ -5,18 +5,18 @@ use alloc::string::String;
 
 use super::error_stash;
 
-/* Map a VmErr into the ABI's typed ErrorKind + message. */
+/* VmErr classifier for the ABI boundary. */
 pub(super) fn err_to_kind(e: &VmErr) -> ErrorKind {
     match e {
         VmErr::Type(_) | VmErr::TypeMsg(_) => ErrorKind::Type,
-        VmErr::Value(_)                    => ErrorKind::Value,
-        VmErr::Runtime(_)                  => ErrorKind::Runtime,
+        VmErr::Value(_) => ErrorKind::Value,
+        VmErr::Runtime(_) => ErrorKind::Runtime,
         VmErr::Attribute(_) | VmErr::Name(_) => ErrorKind::Attribute,
         VmErr::Raised(s) => {
-            if s.starts_with("ValueError")      { ErrorKind::Value }
+            if s.starts_with("ValueError") { ErrorKind::Value }
             else if s.starts_with("IndexError") { ErrorKind::Index }
-            else if s.starts_with("KeyError")   { ErrorKind::Key }
-            else                                { ErrorKind::Runtime }
+            else if s.starts_with("KeyError") { ErrorKind::Key }
+            else { ErrorKind::Runtime }
         }
         _ => ErrorKind::Runtime,
     }

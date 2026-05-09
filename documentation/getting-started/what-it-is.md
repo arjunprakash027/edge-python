@@ -69,4 +69,4 @@ Edge Python is distributed as a single `.wasm` artifact (`compiler_lib.wasm`, ~1
 - **Server / edge runtimes**: Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute, Spin, etc. The host runtime owns I/O, fetching, and module loading.
 - **Embedded Rust apps**: load `compiler_lib.wasm` via your runtime of choice or, when `cargo`-linked, use the `compiler_lib` rlib directly.
 
-The same compiler and the same VM run everywhere. The only host-specific surface is one host import — `env.js_print(ptr, len)` — called on every `print()` for real-time streaming output.
+The same compiler and the same VM run everywhere. The only host-specific surface is one host import — `env.host_print(ptr, len)` — called on every `print()` for real-time streaming output.

@@ -221,7 +221,7 @@ pub(crate) fn binding_to_extern(b: &NativeBinding) -> crate::modules::vm::types:
     }
 }
 
-/* Light pre-scan for the WASM/JS host: walks the source line-by-line and
+/* Light pre-scan for the WASM host: walks the source line-by-line and
    collects every quoted module spec (the `"..."` after a `from`). Returns one
    spec per line. The host uses this to pre-fetch all URL-form imports in
    parallel before invoking the synchronous compile.

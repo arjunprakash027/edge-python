@@ -67,7 +67,7 @@
  *
  *   `main.rs` is the WASM orchestration that injects this module as a
  *   dependency: it owns the WasmHostResolver, the parser/VM lifecycle,
- *   the JS imports (js_print / js_call_native / js_fetch_bytes), and
+ *   the host imports (host_print / host_call_native / host_fetch_bytes), and
  *   the VM-coupled dispatch (Op::Call -> method lookup, etc.). The split
  *   keeps the contract free of VM-specific churn — extending the
  *   parser, retiring opcodes from the VM, or swapping out the heap

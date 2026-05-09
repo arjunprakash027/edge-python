@@ -8,7 +8,7 @@ let wasmModule = null;
    Survives across runs in worker scope; cleared by `clearCache` and by
    IDB-CAS invalidation. Feeds two consumers:
      • `register_code_module` for `.py` files -> REGISTRY (parser).
-     • `js_fetch_bytes` for `packages.json` and integrity-checked URLs. */
+     • `host_fetch_bytes` for `packages.json` and integrity-checked URLs. */
 const fetchedSources = new Map();
 
 /* IndexedDB persistence: lockfile (spec -> sha256-hex) and CAS (hash -> bytes).
@@ -148,7 +148,7 @@ async function fetchWithLockfile(spec, lockfile) {
 }
 
 /* BFS over the dependency graph. Each visited spec contributes:
-     • its bytes to fetchedSources (so js_fetch_bytes can serve them),
+     • its bytes to fetchedSources (so host_fetch_bytes can serve them),
      • either a register_code_module call (.py) or a recursive queue
        expansion (packages.json),
      • a queued sibling packages.json next to .py files (opportunistic —
@@ -159,7 +159,7 @@ async function fetchWithLockfile(spec, lockfile) {
    before queuing. */
 /* Native module dispatch table. JS owns the table; compiler.wasm refers
    to entries by their u32 id (assigned at register_native_module time).
-   Each entry holds a guest export function. js_call_native looks up by
+   Each entry holds a guest export function. host_call_native looks up by
    id and routes the call through the universal handle ABI. */
 const nativeTable = [];
 
@@ -267,7 +267,7 @@ async function instantiateNativeModule(spec, bytes, compilerExports) {
         if (typeof instance.exports[k] !== 'function') continue;
         names.push(k);
         const fn = instance.exports[k];
-        // Annotate the function with its guest's allocator so js_call_native
+        // Annotate the function with its guest's allocator so host_call_native
         // can stage argv without re-resolving the instance every call.
         fn.__edge_alloc = instance.exports.__edge_alloc;
         fn.__edge_memory = instance.exports.memory;
@@ -400,13 +400,13 @@ const handlers = {
             lockfile = new Map();   // private mode / IDB blocked: in-memory only
         }
 
-        // js_print streams output line-by-line as the VM executes; the
+        // host_print streams output line-by-line as the VM executes; the
         // shared `exports` reference lets the closures reach the same WASM
-        // memory the BFS pre-fetch wrote into. js_call_native is required
+        // memory the BFS pre-fetch wrote into. host_call_native is required
         // by the WASM ABI even for code-only modules, so a stub throws.
         let exports;
         const imports = { env: {
-            js_print: (ptr, len) => {
+            host_print: (ptr, len) => {
                 const line = new TextDecoder().decode(
                     new Uint8Array(exports.memory.buffer, ptr, len)
                 );
@@ -424,7 +424,7 @@ const handlers = {
             //   fn(argv: *const u32, argc: u32, out: *mut u32) -> i32
             // and are called with pointers in their OWN linear memory,
             // so this shim arranges that staging.
-            js_call_native: (id, argv_ptr, argc, out_ptr) => {
+            host_call_native: (id, argv_ptr, argc, out_ptr) => {
                 const fn = nativeTable[id];
                 if (!fn) throw new Error(`native id ${id} not registered`);
                 const guestAlloc = fn.__edge_alloc;
@@ -461,7 +461,7 @@ const handlers = {
             // breaks the lockfile contract. We compare against the
             // worker's lockfile entry for the spec; if the lockfile
             // disagrees with the parser's expectation, drift error.
-            js_fetch_bytes: (specPtr, specLen, hashPtr, outLenPtr) => {
+            host_fetch_bytes: (specPtr, specLen, hashPtr, outLenPtr) => {
                 const spec = new TextDecoder().decode(
                     new Uint8Array(exports.memory.buffer, specPtr, specLen)
                 );

@@ -2,13 +2,13 @@
  *
  * Single-file JS shim that consumers include alongside compiler_lib.wasm.
  * Wraps the WASM-side concerns the user shouldn't have to think about:
- *   1. Loading the WASM module and wiring up host imports (js_print,
- *      js_call_native, js_fetch_bytes).
+ *   1. Loading the WASM module and wiring up host imports (host_print,
+ *      host_call_native, host_fetch_bytes).
  *   2. Pre-fetching the script's imports and registering them with the WASM
  *      runtime (since the WASM compiler is sync and browser fetch is async).
  *   3. For .wasm modules: instantiating each separately, walking exports,
  *      and routing `from "url.wasm" import f` calls back into the right
- *      WebAssembly instance via js_call_native.
+ *      WebAssembly instance via host_call_native.
  *   4. Decoding `print()` output and surfacing parse / runtime errors.
  *
  * Modules can be `.py` source or `.wasm` binaries that follow the wire format
@@ -45,12 +45,12 @@ export class EdgePython {
         // Maps a callback id (assigned monotonically per .wasm-module export)
         // to a JS function that, when invoked with an array of BigInts,
         // returns a BigInt result. WASM-side native bindings dispatch through
-        // `js_call_native(id, ...)` which routes here.
+        // `host_call_native(id, ...)` which routes here.
         this.callbacks = [];
         // Per-spec module cache, persists across `run()` calls so the second
         // run of the same script reuses fetched bytes instead of re-hitting
         // the network. Each entry: `{ kind: 'code' | 'native', bytes: Uint8Array }`.
-        // The bytes also feed `js_fetch_bytes` for `#sha256-...` integrity
+        // The bytes also feed `host_fetch_bytes` for `#sha256-...` integrity
         // verification — same buffer, two consumers.
         this.cache = new Map();
         this.outputHandler = null;
@@ -68,9 +68,9 @@ export class EdgePython {
     static async create({ wasmUrl = './compiler_lib.wasm', imports = {} } = {}) {
         const ep = new EdgePython(imports);
         const env = {
-            js_print: (ptr, len) => ep._handlePrint(ptr, len),
-            js_call_native: (id, argsPtr, argsLen) => ep._handleNativeCall(id, argsPtr, argsLen),
-            js_fetch_bytes: (specPtr, specLen, hashPtr, outLenPtr) =>
+            host_print: (ptr, len) => ep._handlePrint(ptr, len),
+            host_call_native: (id, argsPtr, argsLen) => ep._handleNativeCall(id, argsPtr, argsLen),
+            host_fetch_bytes: (specPtr, specLen, hashPtr, outLenPtr) =>
                 ep._handleFetchBytes(specPtr, specLen, hashPtr, outLenPtr),
         };
         const wasm = await WebAssembly.instantiateStreaming(fetch(wasmUrl), { env });
@@ -215,7 +215,7 @@ export class EdgePython {
 
     /* Instantiate the .wasm module with the browser's WebAssembly engine,
      * walk every exported function, and register each as a callable id.
-     * When EdgePython invokes the binding, js_call_native routes back here
+     * When EdgePython invokes the binding, host_call_native routes back here
      * via `_handleNativeCall(id)` which calls into the right instance.
      * The wire format (each export takes/returns u64 NaN-boxed Vals) is
      * documented at /reference/wasm-abi. */

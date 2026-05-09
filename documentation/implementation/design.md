@@ -82,9 +82,9 @@ The heap is a `Vec<HeapSlot>` arena with a free list (capped at 524,288 slots an
 compiler/src/
  ├── lib.rs
  ├── abi.rs       # sealed WASM ABI v1: ops, tags, ErrorKind, HandleTable
- ├── main/        # WASM orchestration: parser/VM lifecycle + JS imports (wasm32-only)
+ ├── main/        # WASM orchestration: parser/VM lifecycle + host imports (wasm32-only)
  │   ├── mod.rs
- │   ├── exports.rs      # WASM exports the JS shim drives
+ │   ├── exports.rs      # WASM exports the host shim drives
  │   ├── abi_bridge.rs   # host_edge_op + dispatch_*
  │   ├── resolver.rs     # walk-up packages.json + native bridge closure
  │   └── errors.rs

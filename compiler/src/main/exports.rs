@@ -4,11 +4,7 @@ use crate::modules::vm::{VM, Limits};
 use alloc::{boxed::Box, string::{String, ToString}};
 use crate::s;
 
-use super::{
-    INP, INP_LEN, ModuleEntry, OUT, SRC, SZ,
-    error_stash, handles, registry, manifests,
-    write_out, stream_print,
-};
+use super::{INP, INP_LEN, ModuleEntry, OUT, SRC, SZ, error_stash, handles, registry, manifests, write_out, stream_print};
 use super::resolver::WasmHostResolver;
 
 #[unsafe(no_mangle)]
@@ -127,10 +123,7 @@ pub unsafe extern "C" fn run(len: usize) -> usize {
             unsafe { INP_LEN = 0; }
         }
 
-        // Publish the VM pointer so `host_edge_op` calls re-entered
-        // from a guest module can dispatch through this same VM.
-        // SAFETY: cleared before this scope returns; guests can only
-        // re-enter while vm.run() is on the stack.
+        // Publish VM for re-entrant host_edge_op; cleared on scope exit.
         let vm_ptr: *mut VM<'static> = (&mut vm as *mut VM<'_>).cast();
         unsafe { super::CURRENT_VM = vm_ptr; }
         let result = vm.run();

@@ -1,9 +1,3 @@
-# Workspace-wide cargo aliases. Available from any directory inside the
-# repo because cargo searches `.cargo/config.toml` walking up from CWD.
-#
-# `cargo wasm` builds the release WebAssembly artifact (the only product
-# Edge Python ships). `cargo build --release` (no alias) still produces
-# host artifacts (.rlib + host cdylib) for embedders linking compiler_lib
-# directly into a Rust app.
+# `cargo wasm` build edge-python release WebAssembly artifact.
 [alias]
 wasm = "build --release --target wasm32-unknown-unknown -p edge-python"
