@@ -502,8 +502,10 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         resolver: Box<dyn Resolver>,
         module_cache: alloc::rc::Rc<core::cell::RefCell<HashMap<String, alloc::rc::Rc<SSAChunk>>>>,
     ) -> Self {
-        let mut chunk = SSAChunk::default();
-        chunk.source = alloc::sync::Arc::new(source.into());
+        let chunk = SSAChunk {
+            source: alloc::sync::Arc::new(source.into()),
+            ..Default::default()
+        };
         Self {
             source,
             tokens: iter.peekable(),

@@ -550,8 +550,8 @@ define_methods! {
         check_arity(&pos, 0, 0, "splitlines takes no arguments")?;
         let s = recv_str(vm, recv)?;
         let mut parts: Vec<Val> = Vec::new();
-        for line in s.split_inclusive(|c: char| c == '\n' || c == '\r') {
-            let trimmed = line.trim_end_matches(|c: char| c == '\n' || c == '\r').to_string();
+        for line in s.split_inclusive(['\n', '\r']) {
+            let trimmed = line.trim_end_matches(['\n', '\r']).to_string();
             parts.push(vm.heap.alloc(HeapObj::Str(trimmed))?);
         }
         // split_inclusive does not yield an empty trailing chunk, but if the

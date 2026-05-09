@@ -145,7 +145,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
         // Last alt's fails are the case-fails (no further alts to try).
         if let Some(last) = alts.last_mut() {
-            fail_jumps.extend(last.drain(..));
+            fail_jumps.append(last);
         }
 
         // Patch all success jumps to land here (post-OR).
