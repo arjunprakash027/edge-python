@@ -402,6 +402,10 @@ pub(super) fn parse_bytes_literal(s: &str) -> alloc::vec::Vec<u8> {
             b'n' => { out.push(b'\n'); j += 2; }
             b't' => { out.push(b'\t'); j += 2; }
             b'r' => { out.push(b'\r'); j += 2; }
+            b'a' => { out.push(0x07); j += 2; }
+            b'b' => { out.push(0x08); j += 2; }
+            b'f' => { out.push(0x0C); j += 2; }
+            b'v' => { out.push(0x0B); j += 2; }
             b'\\' => { out.push(b'\\'); j += 2; }
             b'\'' => { out.push(b'\''); j += 2; }
             b'"' => { out.push(b'"'); j += 2; }
@@ -441,6 +445,10 @@ fn unescape(s: &str) -> String {
             Some('n') => out.push('\n'),
             Some('t') => out.push('\t'),
             Some('r') => out.push('\r'),
+            Some('a') => out.push('\u{07}'),
+            Some('b') => out.push('\u{08}'),
+            Some('f') => out.push('\u{0C}'),
+            Some('v') => out.push('\u{0B}'),
             Some('\\') => out.push('\\'),
             Some('\'') => out.push('\''),
             Some('"') => out.push('"'),
