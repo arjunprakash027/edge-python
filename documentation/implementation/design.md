@@ -89,7 +89,7 @@ compiler/src/
  │   ├── resolver.rs     # walk-up packages.json + native bridge closure
  │   └── errors.rs
  ├── util/         # Internal helpers shared across the compiler (not stdlib)
- │   ├── fstr.rs       # numeric formatter + s!/push!/err! string macros
+ │   ├── fstr.rs       # numeric formatter + s!/err! string macros
  │   ├── fx.rs         # FxHasher + per-map seeded FxBuildHasher
  │   └── sha256.rs     # in-tree FIPS 180-4 SHA-256 (used by integrity)
  └── modules/

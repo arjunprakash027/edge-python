@@ -34,16 +34,6 @@ fn format_general(f: f64) -> alloc::string::String {
 }
 
 #[macro_export]
-macro_rules! push {
-    ($s:ident, $v:literal) => { $s.push_str($v); };
-    ($s:ident, str $v:expr) => { $s.push_str($v); };
-    ($s:ident, int $v:expr) => {{ let mut b = itoa::Buffer::new(); $s.push_str(b.format($v)); }};
-    ($s:ident, float $v:expr) => { $s.push_str(&$crate::util::fstr::format_f64($v)); };
-    ($s:ident, char $v:expr) => { $s.push($v); };
-    ($s:ident, bool $v:expr) => { $s.push_str(if $v { "true" } else { "false" }); };
-}
-
-#[macro_export]
 macro_rules! s {
     (@b $s:ident;) => {};
     (@b $s:ident; $l:literal $(, $($r:tt)*)?) => { $s.push_str($l); $($crate::s!(@b $s; $($r)*);)? };

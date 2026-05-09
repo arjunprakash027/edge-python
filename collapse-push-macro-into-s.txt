@@ -1,0 +1,35 @@
+Branch: collapse-push-macro-into-s
+Tech debt: D43 — redundant push! macro alongside s!.
+
+================================================================================
+Commit 1: drop unused push macro
+================================================================================
+Files:
+  - compiler/src/modules/fstr.rs
+  - documentation/implementation/design.md
+
+What was wrong:
+  fstr.rs exported two #[macro_export] macros that covered the same
+  domain (no-alloc string formatting):
+    - push!(s, ...) — single fragment, six explicit type arms.
+    - s!(...) — multiple fragments via a recursive @b helper, same
+      type matrix.
+  Any new fragment kind (e.g. hex, dec_groups) had to be added in two
+  places, with mechanical drift risk. push! also lacked s!'s `cap:` form
+  and could not be chained.
+
+  Workspace-wide grep for `push!` returned zero call sites outside the
+  declaration itself. The macro was simply dead surface.
+
+Fix:
+  Removed the entire push! definition. s! remains the single string
+  builder. No call sites had to change.
+
+Documentation:
+  documentation/implementation/design.md line 92 listed
+  `# numeric formatter + s!/push!/err! string macros` for fstr.rs.
+  Updated to drop `push!/` so the inventory matches the file.
+
+  compiler/README.md only lists the file path; no macro names to drift.
+
+Tests: cargo test -> 6/6 passed.
