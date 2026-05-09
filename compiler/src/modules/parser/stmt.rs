@@ -9,13 +9,9 @@ use alloc::{string::{String, ToString}, vec};
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
-    /* Top-level statement dispatch. Returns whether the statement leaves a
-       value on the stack (callers Pop it before the next statement). */
+    /* Statement dispatch; returns true if a value is left on the stack for caller to PopTop. */
     pub(super) fn stmt(&mut self) -> bool {
-        // Snapshot the byte offset of the upcoming statement before any
-        // emit() runs. Recorded once per statement (every chunk — module,
-        // function body, class body — funnels through here) so SSAChunk::
-        // resolve() can map a runtime ip back to source for diagnostics.
+        // Record ip→source offset before any emit so resolve() can map ip to source.
         let ip = self.chunk.instructions.len() as u32;
         let pos = self.tokens.peek().map(|t| t.start as u32).unwrap_or(self.last_end as u32);
         self.chunk.stmt_pos.push((ip, pos));
@@ -49,12 +45,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             Some(TokenType::Yield) => {
                 self.advance();
                 if self.eat_if(TokenType::From) {
-                    // Lower `yield from <expr>` into a for-loop that re-yields
-                    // each value: GetIter pushes onto iter_stack, ForIter pulls
-                    // the next item, Yield re-yields it, PopTop discards the
-                    // (None) send value on resume, Jump back. LoadNone at the
-                    // end gives the expression a value (sub-generator return
-                    // value isn't tracked, so always None).
+                    // yield from: GetIter+ForIter+Yield loop; LoadNone at end (return value not tracked).
                     self.expr();
                     self.chunk.emit(OpCode::GetIter, 0);
                     let loop_start = self.chunk.instructions.len() as u16;
@@ -160,9 +151,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 loop {
                     let name = self.advance_text();
                     if self.eat_if(TokenType::Lsqb) {
-                        // del x[k] or del x[a:b]. For slices, parse the
-                        // start:stop[:step] form and emit BuildSlice so the
-                        // runtime DelItem sees a HeapObj::Slice as the index.
+                        // del x[k] or x[a:b]: BuildSlice so DelItem sees HeapObj::Slice.
                         self.emit_load_ssa(name);
                         let is_slice = matches!(self.peek(), Some(TokenType::Colon));
                         if is_slice {
@@ -219,9 +208,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 if self.loop_breaks.is_empty() {
                     self.error("'break' outside loop");
                 } else {
-                    // For-loops own an iter on iter_stack; pop it before
-                    // jumping out, otherwise the surrounding for-iter would
-                    // read the abandoned iterator.
+                    // For-loop: PopIter before break so iter_stack stays clean.
                     if let Some(true) = self.loop_kinds.last() {
                         self.chunk.emit(OpCode::PopIter, 0);
                     }
@@ -276,10 +263,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 let t = self.advance();
                 self.name_stmt(t)
             }
-            // Dangling Indent: a previous error left an orphaned indented
-            // block (e.g. malformed block header). Skip the entire block
-            // silently so we don't flag every line inside as "expected
-            // expression".
+            // Dangling Indent from a prior error: skip the entire block silently.
             Some(TokenType::Indent) => {
                 self.tokens.next();
                 let mut depth = 1u32;
@@ -293,19 +277,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 }
                 false
             }
-            // Stray Dedent reaching `stmt()` is always a recovery artifact —
-            // when a block header errors mid-parse, its `compile_block` may
-            // exit with `indented=false` and leave its matching Dedent in the
-            // stream. Skip silently instead of triggering "expected expression".
+            // Stray Dedent from error recovery: skip silently.
             Some(TokenType::Dedent) => {
                 self.tokens.next();
                 false
             }
             _ => {
                 self.expr();
-                // `expr:` at statement level is almost always a missing block
-                // keyword (if/while/for/def/class/...). Surface that hypothesis
-                // directly instead of "expected expression" anchored at the colon.
+                // `expr:` at statement level: suggest missing keyword instead of generic error.
                 if matches!(self.peek(), Some(TokenType::Colon)) {
                     let t = self.advance();
                     self.error_at(
@@ -318,7 +297,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Comma-separated `name [, name]*` after a `global`/`nonlocal` keyword. */
+    /* Emits Global/Nonlocal opcodes for a comma-separated name list. */
     pub(super) fn emit_name_list(&mut self, op: OpCode) {
         self.advance();
         loop {
@@ -332,9 +311,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     pub(super) fn compile_block(&mut self) { self.compile_block_inner(false); }
     pub(super) fn compile_block_body(&mut self) { self.compile_block_inner(true); }
 
-    /* Compile an indented statement sequence between Indent/Dedent.
-       is_body=true (function/lambda body) stops on a trailing return so
-       dead code after return doesn't emit unreachable ops. */
+    /* Compiles Indent/Dedent block; is_body=true stops after ReturnValue to skip dead code. */
     fn compile_block_inner(&mut self, is_body: bool) {
         let indented = self.eat_if(TokenType::Indent);
         loop {
@@ -357,14 +334,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Name-led statement: assignment, augmented op, attribute access,
-       indexing, call, or tuple unpacking. */
+    /* Name-led statement: assign, augmented-op, attr, index, call, or tuple unpack. */
     pub(super) fn name_stmt(&mut self, t: Token) -> bool {
         let name = self.lexeme(&t).to_string();
 
     if self.eat_if(TokenType::Colon) {
-        // Type annotation: `x: int = ...`. We parse and discard the annotation
-        // token stream — Edge Python is dynamically typed.
+        // Annotation: discard tokens up to `=`; Edge Python is dynamically typed.
         while !matches!(
             self.peek(),
             Some(TokenType::Equal | TokenType::Dedent | TokenType::Endmarker) | None
@@ -393,10 +368,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             Some(TokenType::Lsqb) => {
                 self.emit_load_ssa(name);
                 self.advance();
-                // Detect slice form (`xs[a:b]`): mirrors postfix_tail's
-                // subscript path so `xs[a:b] = iter` lowers to BuildSlice +
-                // StoreItem (the runtime store_item recognises HeapObj::Slice
-                // as a splice index).
+                // Slice form: BuildSlice+StoreItem; runtime recognises HeapObj::Slice as splice index.
                 let is_slice = matches!(self.peek(), Some(TokenType::Colon));
                 if is_slice { self.chunk.emit(OpCode::LoadNone, 0); }
                 else { self.expr(); }
@@ -447,6 +419,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 let t = self.advance();
                 let (attr_start, attr_end) = (t.start, t.end);
                 if self.eat_if(TokenType::Colon) {
+                    // Attribute annotation: discard tokens up to `=`.
                     while !matches!(
                         self.peek(),
                         Some(TokenType::Equal | TokenType::Dedent | TokenType::Endmarker) | None
@@ -558,8 +531,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             _ => {
                 self.emit_load_ssa(name);
                 self.expr_tails();
-                // Same heuristic as stmt's `_` arm: `expr:` at statement level
-                // means the user forgot a keyword like `if`/`while`/`for`.
+                // `expr:` heuristic: suggest missing keyword.
                 if matches!(self.peek(), Some(TokenType::Colon)) {
                     let t = self.advance();
                     self.error_at(
@@ -572,9 +544,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* `x[i] op= rhs` lowering: container and index are already on the stack;
-       Dup2 keeps them for the StoreItem after we compute `<x[i]> op rhs`.
-       Used by both `name[i] op= ...` and `name.attr[i] op= ...`. */
+    /* `x[i] op= rhs`: Dup2 preserves container+index; GetItem, apply op, StoreItem. */
     fn emit_augmented_subscript(&mut self, op: OpCode) {
         self.advance();
         self.chunk.emit(OpCode::Dup2, 0);

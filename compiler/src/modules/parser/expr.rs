@@ -10,7 +10,7 @@ use alloc::{string::ToString, vec::Vec, string::String};
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
-    /* Top-level expression entry: recursion guard + Pratt parser + ternary. */
+    /* Entry: recursion guard, Pratt parse, then optional ternary. */
     pub(super) fn expr(&mut self) {
         self.expr_depth += 1;
 
@@ -45,7 +45,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.infix_bp(0);
     }
 
-    /* Pratt parser: unary + infix operators with binding powers from binding_power. */
+    /* Pratt parser: unary prefix then infix loop via binding_power table. */
     pub(super) fn expr_bp(&mut self, min_bp: u8) {
         match self.peek() {
             Some(TokenType::Not) => {
@@ -166,7 +166,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Primary atoms: literals, names, numbers, strings, f-strings, containers. */
+    /* Atoms: literals, names, numbers, strings, f-strings, containers. */
     pub(super) fn parse_atom(&mut self) {
         let errs_before = self.errors.len();
         let t = self.advance();
@@ -181,10 +181,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.emit_const(Value::Str(s));
             }
             TokenType::Bytes => {
-                // Adjacent-literal concatenation matches Python: `b"a" b"b"`
-                // is one `b"ab"`. Mixing bytes + str literals is a SyntaxError
-                // in Python; we surface that the same way (the parser's
-                // generic dispatch path will see the wrong-token diagnostic).
+                // Adjacent bytes literals concat like Python; mixing with str surfaces a diagnostic.
                 let mut buf = parse_bytes_literal(self.lexeme(&t));
                 while matches!(self.peek(), Some(TokenType::Bytes)) {
                     let t = self.advance();
@@ -230,9 +227,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 }
             }
             TokenType::Lambda => self.parse_lambda(),
-            // Anchor at the consumed token so the caret points at the
-            // structural marker (newline, dedent, etc.) the user actually wrote.
-            // Skip if advance() already reported (orphan/mismatched closer).
+            // Caret at consumed token; skip if advance() already reported the error.
             _ => {
                 if self.errors.len() == errs_before {
                     self.error_at(t.start, t.end, "expected expression");
@@ -242,13 +237,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.postfix_tail();
     }
 
-    /* Name atom: assignment, walrus `:=`, call, or plain load. */
+    /* Name: assignment, walrus :=, call, or plain load. */
     pub(super) fn name(&mut self, t: Token) {
         let name = self.lexeme(&t).to_string();
         match self.peek() {
-            // Inside an f-string brace expression, `=` is the debug
-            // self-doc marker (`f"{x=}"`), not an assignment — let the
-            // f-string parser see it.
+            // In f-string context, `=` is the debug marker `f"{x=}"`, not assignment.
             Some(TokenType::Equal) if !self.in_fstring_expr => {
                 self.assign(name.clone());
                 self.emit_load_ssa(name);
@@ -291,7 +284,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Trailers after an atom: .attr, [i], [s:e], (args), chained. */
+    /* Postfix trailers: .attr, [i], [s:e], (args), chained. */
     pub(super) fn postfix_tail(&mut self) {
         loop {
             match self.peek() {
@@ -320,10 +313,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                         }
                         self.eat(TokenType::Rsqb);
                         self.chunk.emit(OpCode::BuildSlice, parts);
-                        // Slice assignment: `xs[a:b] = iterable`. The slice
-                        // value sits on the stack as the index for StoreItem;
-                        // the runtime detects HeapObj::Slice and replaces the
-                        // range with the RHS items.
+                        // Slice assignment: StoreItem with Slice index; runtime replaces the range.
                         if matches!(self.peek(), Some(TokenType::Equal)) {
                             self.advance();
                             self.expr();
@@ -349,12 +339,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     let t = self.advance();
                     let (start, end) = (t.start, t.end);
                     let idx = self.chunk.push_name(&self.source[start..end]);
-                    // LoadAttr stays adjacent to any following Call so
-                    // cache::fuse_method_calls can collapse them at exec time.
+                    // LoadAttr adjacent to Call lets fuse_method_calls collapse them.
                     self.chunk.emit(OpCode::LoadAttr, idx);
                 }
                 Some(TokenType::Lpar) => {
-                    // Call after any trailer (fns[0](x), f()(x), obj.attr[i](x)).
+                    // Call after any trailer.
                     let call_pos = self.last_end as u32;
                     let (pos, kw) = self.parse_args();
                     let encoded = ((kw & 0xFF) << 8) | (pos & 0xFF);
@@ -366,15 +355,13 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* `lambda params: expr` -> fresh chunk with Return, emit MakeFunction. */
+    /* lambda: fresh chunk, compiles body to Return, emits MakeFunction. */
     pub(super) fn parse_lambda(&mut self) {
         let mut params = Vec::new();
         let mut defaults = 0u16;
         if !matches!(self.peek(), Some(TokenType::Colon)) {
             loop {
-                // Mirror parse_params' prefix-detect so `lambda *args, **kw: ...`
-                // produces the same param names ("*args", "**kw") that the VM's
-                // ParamKind dispatcher recognizes.
+                // Match parse_params prefix detection so *args/**kw names align with ParamKind.
                 let prefix = if self.eat_if(TokenType::DoubleStar) { "**" }
                              else if self.eat_if(TokenType::Star)   { "*"  }
                              else { "" };

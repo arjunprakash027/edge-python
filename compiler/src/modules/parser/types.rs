@@ -22,18 +22,11 @@ pub enum OpCode {
     JumpIfFalseOrPop, JumpIfTrueOrPop, Dup, CallMethod, CallMethodArgs, CallAll, CallAny, CallBin,
     CallOct, CallHex, CallDivmod, CallPow, CallRepr, CallReversed, CallCallable, CallId, CallHash,
     PopIter, DelItem, CallExtern,
-    /* Push a heap-wrapped extern callable (`HeapObj::Extern`) onto the stack.
-       Operand is the index into the chunk's extern_table. Used by `import X`
-       (native) when building the module's attr table. */
+    /* Pushes HeapObj::Extern; operand indexes extern_table. Used by native `import X`. */
     LoadExtern,
-    /* Build a `HeapObj::Module` from the top of the stack and push it. The
-       stack on entry has, top-down: module-name string, then `operand`
-       (attr_name_str, attr_value) pairs. */
+    /* Builds HeapObj::Module from stack: name + operand (attr_name, attr_value) pairs. */
     BuildModule,
-    /* Push the Module Val for `chunk.imports[operand]` from the VM's
-       module_table. The module's top-level has already run during
-       `vm.init_modules()` before any user bytecode dispatches, so this
-       opcode is a constant-time lookup at runtime. */
+    /* Constant-time lookup of chunk.imports[operand] from vm.module_table. */
     LoadModule,
 }
 
@@ -51,8 +44,7 @@ pub(super) fn builtin(name: &str) -> Option<(OpCode, bool)> {
         "min" => Some((OpCode::CallMin, true)),
         "max" => Some((OpCode::CallMax, true)),
         "sum" => Some((OpCode::CallSum, true)),
-        // sorted accepts `key=` kwarg — falls through to the generic
-        // LoadName+Call path so kwargs reach dispatch_native intact.
+        // sorted: key= kwarg needs generic LoadName+Call path.
         "enumerate" => Some((OpCode::CallEnumerate, true)),
         "zip" => Some((OpCode::CallZip, true)),
         "list" => Some((OpCode::CallList, true)),
@@ -63,18 +55,18 @@ pub(super) fn builtin(name: &str) -> Option<(OpCode, bool)> {
         "isinstance" => Some((OpCode::CallIsInstance, true)),
         "chr" => Some((OpCode::CallChr, true)),
         "ord" => Some((OpCode::CallOrd, true)),
-        "all"      => Some((OpCode::CallAll, true)),
-        "any"      => Some((OpCode::CallAny, true)),
-        "bin"      => Some((OpCode::CallBin, true)),
-        "oct"      => Some((OpCode::CallOct, true)),
-        "hex"      => Some((OpCode::CallHex, true)),
-        "divmod"   => Some((OpCode::CallDivmod, true)),
-        "pow"      => Some((OpCode::CallPow, true)),
-        "repr"     => Some((OpCode::CallRepr, true)),
+        "all" => Some((OpCode::CallAll, true)),
+        "any" => Some((OpCode::CallAny, true)),
+        "bin" => Some((OpCode::CallBin, true)),
+        "oct" => Some((OpCode::CallOct, true)),
+        "hex" => Some((OpCode::CallHex, true)),
+        "divmod" => Some((OpCode::CallDivmod, true)),
+        "pow" => Some((OpCode::CallPow, true)),
+        "repr" => Some((OpCode::CallRepr, true)),
         "reversed" => Some((OpCode::CallReversed, true)),
         "callable" => Some((OpCode::CallCallable, true)),
-        "id"       => Some((OpCode::CallId, true)),
-        "hash"     => Some((OpCode::CallHash, true)),
+        "id" => Some((OpCode::CallId, true)),
+        "hash" => Some((OpCode::CallHash, true)),
         _ => None,
     }
 }
@@ -97,19 +89,7 @@ pub struct Instruction {
     pub operand: u16,
 }
 
-/* An imported module declared at parse time.
-
-   The whole chunk-tree carries these (entry + every function/class body
-   that hosts an `import` statement). At `vm.run()` start, the VM walks
-   the tree once, dedupes by spec, and runs each `Code` module's
-   top-level exactly once in dependency order — the resulting Module Val
-   is registered in `vm.module_table` keyed by spec. `OpCode::LoadModule`
-   then becomes a constant-time table lookup at runtime.
-
-   `Code` shares the parsed chunk via `Rc` so a module imported from many
-   files compiles once and lives once. `Native` carries already-resolved
-   bindings (no chunk to run; the Module Val is built from the function
-   table at init time). */
+/* Parse-time import entry. VM dedupes by spec at run() start, runs Code modules once; LoadModule is then O(1). Native skips execution; Module Val built from bindings. */
 #[derive(Clone)]
 pub struct ImportEntry {
     pub spec: alloc::string::String,
@@ -122,8 +102,7 @@ pub enum ImportKind {
     Native(Vec<crate::modules::vm::types::ExternFn>),
 }
 
-// Compiled SSA chunk: instructions + pools + Phi metadata + nested
-// functions/classes. One per module / function body / class body.
+// SSA chunk: instructions, constant/name pools, Phi metadata, nested functions/classes.
 #[derive(Default, Clone)]
 pub struct SSAChunk {
     pub instructions: Vec<Instruction>,
@@ -140,57 +119,29 @@ pub struct SSAChunk {
     pub phi_map: Vec<usize>,
     pub nonlocals: Vec<String>,
     pub(super) name_index: HashMap<String, u16>,
-    /* Statement-level source map: (ip_at_stmt_entry, byte_offset) sorted by ip.
-       Populated once per statement at parse time — granularity is enough for
-       runtime diagnostics (the renderer needs only a byte offset; the source
-       line and caret are derived from it). Lookup is binary search on the
-       cold error path; hot dispatch never touches this. */
+    /* stmt ip→byte_offset map; binary-searched on error path; hot dispatch never touches it. */
     pub stmt_pos: Vec<(u32, u32)>,
-    /* Call-site source map: (ip_of_call_instruction, byte_offset_in_source).
-       Populated only for Call/CallMethod/CallExtern emit sites — every other
-       instruction falls back to `stmt_pos` for byte resolution. The runtime
-       traceback renderer reads this to put the caret exactly under the call
-       expression instead of the statement start. Sorted by ip; binary-searched
-       on the cold error path. */
+    /* Call ip→byte_offset map; finer than stmt_pos; traceback caret lands under the call. */
     pub call_byte_pos: Vec<(u32, u32)>,
-    /* Source string this chunk was parsed from. Each module owns its own
-       Arc<String>; the entry chunk shares the host-supplied buffer. The
-       traceback renderer reaches for it via `vm.call_stack` when assembling
-       cross-module 'called from' frames. Empty by default for chunks built
-       outside the parser (test fixtures, manual SSAChunk::default()). */
+    /* Source text; shared via Arc across sub-chunks. Empty for manually constructed chunks. */
     pub source: alloc::sync::Arc<alloc::string::String>,
-    /* Display path for error rendering ('main.py', 'json_module.py', etc.).
-       Hosts can override via Parser::with_path; modules use their canonical
-       spec; the default empty string suppresses the file: prefix. */
+    /* Display path for tracebacks; empty string suppresses the file: prefix. */
     pub path: alloc::sync::Arc<alloc::string::String>,
-    /* External (native) functions resolved at parse time from `from <pkg> import <name>`.
-       `extern_table[i]` is the function for `CallExtern` operand `i << 8`; the lower
-       8 bits of the operand carry the argc. `extern_index` maps the local binding name
-       to its slot so the parser's call site can dispatch to `CallExtern` instead of
-       the generic `Call`. Per-chunk: each function body / class body has its own. */
+    /* Native bindings from `from <pkg> import`. CallExtern operand=(idx<<8)|argc; per-chunk. */
     pub extern_table: Vec<ExternFn>,
     pub(super) extern_index: HashMap<String, u16>,
-    /* Imports declared by this chunk (`import X`, `from X import name`,
-       `from X import *`). `OpCode::LoadModule` operands index into this
-       Vec. Each unique spec across the entire chunk tree (entry +
-       transitively imported modules) becomes one Module Val at VM init,
-       shared via the VM's module_table — no per-importer duplication. */
+    /* Chunk's import list; LoadModule operands index here; each spec becomes one Module Val at init. */
     pub imports: Vec<ImportEntry>,
 }
 
 impl SSAChunk {
-    /* Map a runtime ip back to a source byte offset via binary search on the
-       per-statement table. Returns the offset of the enclosing statement —
-       sub-statement precision isn't needed for runtime diagnostics. */
+    /* Binary-searches stmt_pos to map ip→byte offset; statement-level precision. */
     pub fn resolve(&self, ip: u32) -> Option<u32> {
         let i = self.stmt_pos.partition_point(|&(s, _)| s <= ip).checked_sub(1)?;
         Some(self.stmt_pos[i].1)
     }
 
-    /* Byte offset for the Call instruction at `ip`, with finer precision
-       than `resolve` (which only knows the enclosing statement). Returns
-       None if the parser did not record a call_byte_pos for this ip; callers
-       fall back to `resolve` for stmt-level precision. */
+    /* Finer than resolve(): returns call-site byte offset or None (caller falls back to resolve). */
     pub fn resolve_call(&self, ip: u32) -> Option<u32> {
         let i = self.call_byte_pos.partition_point(|&(s, _)| s < ip);
         let (recorded_ip, byte) = *self.call_byte_pos.get(i)?;
@@ -198,7 +149,7 @@ impl SSAChunk {
     }
 
     pub(super) fn emit(&mut self, op: OpCode, operand: u16) {
-        // Set overflow flag for post-parse diagnostic instead of panicking.
+        // Overflow: set flag for post-parse diagnostic rather than panic.
         if self.instructions.len() >= MAX_INSTRUCTIONS {
             self.overflow = true;
             return;
@@ -206,10 +157,7 @@ impl SSAChunk {
         self.instructions.push(Instruction { opcode: op, operand });
     }
 
-    /* Record (ip_just_emitted, byte_pos) for the most recent instruction so
-       the runtime traceback can put the caret exactly under the call. Sites
-       that emit non-call instructions skip this; the renderer falls back to
-       stmt_pos for them. */
+    /* Records (ip, byte_pos) for the last emitted call so traceback caret lands on it. */
     pub(super) fn record_call_pos(&mut self, byte_pos: u32) {
         if self.instructions.is_empty() { return; }
         let ip = (self.instructions.len() - 1) as u32;
@@ -235,13 +183,11 @@ impl SSAChunk {
         i
     }
 
-    /* Build SSA prev_slots chain, coalesce versions to a canonical root,
-       rewrite LoadName/StoreName/Del/Phi operands and Phi sources, and
-       build phi_map. Recurses into nested functions and classes. */
+    /* Builds prev_slots, coalesces SSA versions to canonical root, rewrites operands, builds phi_map. */
     pub fn finalize_prev_slots(&mut self) {
         let n = self.names.len();
 
-        // prev_slots[i] = name `i` with version-1, if any.
+        // prev_slots[i]: slot of name i at version-1, if any.
         let mut ps: Vec<Option<u16>> = vec![None; n];
         for (i, name) in self.names.iter().enumerate() {
             if let Some(pos) = name.rfind('_')
@@ -254,7 +200,7 @@ impl SSAChunk {
             }
         }
 
-        // Register coalescing: walk each chain to its root.
+        // Coalesce: walk each version chain to its root.
         let mut canonical: Vec<u16> = (0..n as u16).collect();
         for (i, item) in canonical.iter_mut().enumerate().take(n) {
             let mut root = i;
@@ -303,17 +249,13 @@ impl SSAChunk {
     }
 }
 
-// SSA version snapshots taken before/after branches to insert Phi nodes
-// at the join. `then` is None until mid_block runs.
+// SSA version snapshots for branch join; `then` is None until mid_block runs.
 pub(crate) struct JoinNode {
     pub(super) backup: HashMap<String, u32>,
     pub(super) then: Option<HashMap<String, u32>>,
 }
 
-/* Strip a trailing `_<digits>` SSA version suffix from a parser-emitted
-   name. Names like `model_0`, `x_3` come from Parser::ssa_name and are an
-   SSA-internal artifact — user-facing diagnostics must show the original
-   `model`/`x`. Returns the input unchanged if no version suffix is present. */
+/* Strips `_<digits>` SSA suffix for user-facing diagnostics; returns input unchanged if absent. */
 pub fn ssa_strip(name: &str) -> &str {
     if let Some(pos) = name.rfind('_')
         && pos + 1 < name.len()
@@ -325,21 +267,14 @@ pub fn ssa_strip(name: &str) -> &str {
     }
 }
 
-/* Production-style diagnostic. `start`/`end` are byte offsets into the
-   original source. Line/column are computed at render time so the parser
-   never has to track them, and they're always char-accurate (UTF-8 safe). */
+/* Diagnostic with byte offsets; line/col computed at render time (UTF-8 safe). */
 pub struct Diagnostic {
     pub start: usize,
     pub end: usize,
     pub msg: String,
 }
 
-/* Display width for a Unicode codepoint — 0 for combining marks / ZWJ /
-   variation selectors, 2 for CJK & common wide emoji blocks, 1 otherwise.
-   Approximation of Unicode Standard Annex #11 (East Asian Width); pulls in
-   only the ranges that overwhelmingly account for misalignment in normal
-   source code. Used so the caret in rustc-style diagnostics stays under the
-   span when the line contains CJK or emoji. */
+/* UAX#11 display width: 0=combining, 2=CJK/emoji, 1=other; keeps caret aligned in diagnostics. */
 const fn char_width(c: char) -> usize {
     let cp = c as u32;
     if matches!(cp,
@@ -369,9 +304,7 @@ fn display_width(s: &str) -> usize {
 }
 
 impl Diagnostic {
-    /* Convert a byte offset into (line, column), both 1-indexed.
-       Column counts terminal display cells (CJK = 2, combining = 0) so the
-       caret line aligns with the source line for users with wide characters. */
+    /* Byte offset → (line, col), 1-indexed; col counts display cells for wide-char alignment. */
     fn line_col(src: &str, byte: usize) -> (usize, usize) {
         let byte = byte.min(src.len());
         let line = src[..byte].matches('\n').count() + 1;
@@ -382,16 +315,7 @@ impl Diagnostic {
 }
 
 impl Diagnostic {
-    /* rustc-style multi-line render with source preview and caret:
-
-         error: <msg>
-            --> path:line:col
-             |
-           N | <source line>
-             |     ^^^
-
-       `path` is shown as `<input>` if None. The caret spans `start..end` (char-counted),
-       always at least one column. */
+    /* rustc-style render: error+arrow+source line+caret; path defaults to `<input>`. */
     pub fn render(&self, src: &str, path: Option<&str>) -> alloc::string::String {
         let path = path.unwrap_or("<input>");
         let s_off = self.start.min(src.len());
@@ -420,7 +344,7 @@ impl Diagnostic {
 }
 
 impl Diagnostic {
-    /* Compact one-line render: `path:line:col: msg`. No source preview. Used by tests. */
+    /* One-line render for tests: `path:line:col: msg`. */
     pub fn render_oneline(&self, src: &str, path: Option<&str>) -> alloc::string::String {
         use crate::s;
         let (line, col) = Self::line_col(src, self.start);
@@ -443,23 +367,16 @@ pub(super) fn parse_string(s: &str) -> String {
     if is_raw { inner.to_string() } else { unescape(inner) }
 }
 
-/* Parse a bytes literal `b"..."` / `rb"..."` to its raw byte content.
-   Different from `parse_string` in three ways:
-     1. Source bytes are read directly (not as Unicode chars), so
-        non-ASCII bytes pass through verbatim — this is the whole point
-        of `b""`, holding arbitrary octets.
-     2. `\xHH` produces a single byte 0..=255, not a code point.
-     3. `\u`/`\U`/`\N{}` escapes are rejected (Python's bytes literals
-        forbid them — fall through as literal `\u`, etc.). */
+/* Parses b"..." to raw bytes: non-ASCII pass through; \xHH=single byte; \u/\U/\N rejected. */
 pub(super) fn parse_bytes_literal(s: &str) -> alloc::vec::Vec<u8> {
     let bytes = s.as_bytes();
     let is_raw = s.contains('r') || s.contains('R');
-    // Skip the prefix (one or two ASCII chars: b, B, br, rb, etc.)
+    // Skip b/B/r/R prefix chars.
     let mut i = 0;
     while i < bytes.len() && matches!(bytes[i], b'b' | b'B' | b'r' | b'R') {
         i += 1;
     }
-    // Strip enclosing quotes — triple or single, matching parse_string.
+    // Strip triple or single quotes.
     let body = if bytes.len() >= i + 6
         && (bytes[i..i + 3] == *b"\"\"\"" || bytes[i..i + 3] == *b"'''")
     {
@@ -483,7 +400,7 @@ pub(super) fn parse_bytes_literal(s: &str) -> alloc::vec::Vec<u8> {
             b'"' => { out.push(b'"'); j += 2; }
             b'0' => { out.push(0); j += 2; }
             b'x' => {
-                // \xHH — exactly two hex digits.
+                // \xHH: exactly two hex digits.
                 if j + 3 < body.len() {
                     let hi = (body[j + 2] as char).to_digit(16);
                     let lo = (body[j + 3] as char).to_digit(16);
@@ -493,7 +410,7 @@ pub(super) fn parse_bytes_literal(s: &str) -> alloc::vec::Vec<u8> {
                         continue;
                     }
                 }
-                // Malformed: leave the backslash + 'x' verbatim.
+                // Malformed \x: emit verbatim.
                 out.push(b'\\'); out.push(b'x'); j += 2;
             }
             other => { out.push(b'\\'); out.push(other); j += 2; }
@@ -523,7 +440,7 @@ fn unescape(s: &str) -> String {
             Some('x') => out.push(take_hex(&mut chars, 2)),
             Some('u') => out.push(take_hex(&mut chars, 4)),
             Some('U') => out.push(take_hex(&mut chars, 8)),
-            // Octal escape: up to 3 digits 0-7, greedy, per CPython semantics.
+            // Octal: up to 3 digits, greedy (CPython semantics).
             Some(c @ '0'..='7') => {
                 let mut digits = String::from(c);
                 while digits.len() < 3 && matches!(chars.peek(), Some('0'..='7')) {
@@ -539,8 +456,7 @@ fn unescape(s: &str) -> String {
     out
 }
 
-// Built-in types pre-registered as `Type` heap objects in the global
-// scope at VM init.
+// Builtin types registered as Type heap objects at VM init.
 pub const BUILTIN_TYPES: &[&str] = &[
     "int", "float", "str", "bytes", "bool", "list",
     "tuple", "dict", "set", "range", "type", "NoneType",
@@ -553,4 +469,3 @@ pub const BUILTIN_TYPES: &[&str] = &[
     "AssertionError", "ArithmeticError", "LookupError",
     "CancelledError", "TimeoutError",
 ];
-

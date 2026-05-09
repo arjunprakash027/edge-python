@@ -11,10 +11,7 @@ use alloc::{string::{String, ToString}, vec::Vec};
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
-    /* `{}`: dict literal, set literal, dict-comp, or set-comp.
-       Always close via `eat(Rbrace)`: an unconditional `advance()` would
-       silently swallow whatever's there if `}` is missing, hiding the
-       unclosed-bracket error and leaving `bracket_stack` desynced. */
+    /* `{}`: dict/set literal or comprehension; always eat(Rbrace) to keep bracket_stack in sync. */
     pub(super) fn brace_literal(&mut self) {
         if matches!(self.peek(), Some(TokenType::Rbrace)) {
             self.advance();
@@ -68,8 +65,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* `[]`: list literal or list-comp. Same rationale as `brace_literal`:
-       always close via `eat(Rsqb)`. */
+    /* `[]`: list literal or list-comp; always eat(Rsqb) to keep bracket_stack in sync. */
     pub(super) fn list_literal(&mut self) {
         if matches!(self.peek(), Some(TokenType::Rsqb)) {
             self.advance();
@@ -96,8 +92,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Build the for/if scaffolding for a comprehension and reinject the
-       element body, rewriting SSA slot indices to the loop-bound versions. */
+    /* Emits for/if comprehension scaffolding; reinjcts body with loop-bound SSA slots. */
     pub(super) fn comprehension_loop(&mut self, elem_bodies: &[Vec<Instruction>], append_op: OpCode, versions_before: &HashMap<String, u32>) {
         let mut loop_starts: Vec<u16> = Vec::new();
         let mut for_iters: Vec<usize> = Vec::new();
@@ -138,8 +133,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             for_iters.push(fi);
         }
 
-        // Tiny mapping (typical size 1-5); linear scan beats HashMap and
-        // avoids monomorphizing a hash table for u16 keys.
+        // Linear scan: size 1-5 beats HashMap and avoids monomorphizing for u16 keys.
         let mut var_map: Vec<(u16, u16)> = Vec::new();
         for var in &all_vars {
             let old_ver = versions_before.get(var).copied().unwrap_or(0);
@@ -171,10 +165,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* F-string: alternates literal middles with `{expr[:spec]}` chunks
-       until FstringEnd; emits BuildString to concatenate. `fs_start`/`fs_end`
-       point at the opening `f"`/`f'` so we can anchor "f-string was never
-       closed" if the lexer hit EOF before producing FstringEnd. */
+    /* f-string: parses literal+expr chunks until FstringEnd; fs_start/fs_end anchor unclosed-string errors. */
     pub(super) fn fstring(&mut self, fs_start: usize, fs_end: usize) {
         let mut parts = 0u16;
         let mut got_end = false;
@@ -208,8 +199,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             }
                 Some(TokenType::Lbrace) => {
                     self.advance();
-                    // Capture the byte span of the expression so `f"{expr=}"`
-                    // can echo `expr=` literally before its formatted value.
+                    // Capture span for f"{expr=}" debug prefix.
                     let expr_start_byte = self.tokens.peek().map(|t| t.start).unwrap_or(0);
                     let insn_start = self.chunk.instructions.len();
                     let saved_in_fstring = self.in_fstring_expr;
@@ -217,16 +207,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     self.expr();
                     self.in_fstring_expr = saved_in_fstring;
                     let expr_end_byte = self.last_end;
-                    /* Encoding for FormatValue operand:
-                         bit 0       — has format-spec on stack
-                         bits 1..=2  — conversion: 0 none, 1 !r, 2 !s, 3 !a
-                       Mirrors CPython's `flags` byte in `FORMAT_VALUE`. Zero
-                       operand still means "plain str()" — backwards-compatible. */
+                    /* FormatValue operand: bit0=has-spec, bits1-2=conversion (0=none,1=!r,2=!s,3=!a). */
                     let mut flags = 0u16;
-                    // `=` debug-self-doc: `f"{expr=}"` expands to the literal
-                    // text `expr=` followed by the formatted value. Defaults
-                    // to `!r` conversion (CPython parity) when neither !r/!s/!a
-                    // nor :spec is supplied.
+                    // `=` debug: emits "expr=" prefix; defaults to !r when no conv/spec given.
                     let mut debug_prefix: Option<String> = None;
                     if matches!(self.peek(), Some(TokenType::Equal)) {
                         self.advance();
@@ -251,10 +234,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     if debug_prefix.is_some() && (flags & 0b110) == 0 && !matches!(self.peek(), Some(TokenType::Colon)) {
                         flags |= 1 << 1; // default !r when `=` has no explicit conv/spec
                     }
-                    // Stitch the prefix in before the expression result. We
-                    // drain the just-emitted expression bytecode, emit the
-                    // literal const for `expr=`, then re-emit the drained
-                    // bytecode so the runtime stack ends up [prefix, value].
+                    // Drain expr bytecode, emit prefix const, re-emit expr so stack=[prefix, value].
                     if let Some(prefix) = debug_prefix.take() {
                         let drained: Vec<Instruction> = self.chunk.instructions
                             .drain(insn_start..)
@@ -300,10 +280,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Dispatches `name(args)`: print/range get dedicated opcodes; other
-       builtins map via the `builtin()` table; imported native bindings emit
-       `CallExtern` (operand = (extern_idx << 8) | argc); rest fall through to
-       the generic `LoadName + Call`. */
+    /* Dispatches call: print/range→dedicated opcodes; builtins→table; natives→CallExtern; else LoadName+Call. */
     pub(super) fn call(&mut self, name: String) -> bool {
         let call_pos = self.last_end as u32;
         if name == "print" {
@@ -325,10 +302,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             return leaves_value;
         }
 
-        // Imported native binding: skip the heap allocation that LoadName/Call
-        // would do and emit a direct CallExtern. The 16-bit operand packs
-        // (extern_idx << 8) | argc — 256 externs per chunk and 256 positional
-        // args, both well above realistic ceilings.
+        // Native: emit CallExtern with operand=(extern_idx<<8)|argc, skipping LoadName heap alloc.
         if let Some(&extern_idx) = self.chunk.extern_index.get(&name) {
             let (pos, _kw) = self.parse_args();
             let encoded = (extern_idx << 8) | (pos & 0xFF);
@@ -410,15 +384,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         (pos, kw)
     }
 
-    /* Class header + body in a fresh chunk + MakeClass + StoreName. */
+    /* class: compiles body into fresh chunk, emits MakeClass+decorators+StoreName. */
     pub(super) fn class_def(&mut self) { self.class_def_with(0) }
 
     pub(super) fn class_def_with(&mut self, decorators: u16) {
-        // `class :` / `class (Foo):` etc. — push a non-syncing diagnostic
-        // (the regular `eat(Colon)` below will pick up where we left off)
-        // and synthesize a name so the body still parses. Without this,
-        // advance_text would swallow the colon as the class name and produce
-        // a misleading cascade.
+        // Missing name: non-syncing diagnostic + synthetic name so body still parses.
         let cname = if matches!(self.peek(), Some(TokenType::Name)) {
             self.advance_text()
         } else {
@@ -442,8 +412,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.chunk.classes.push(body);
         self.chunk.emit(OpCode::MakeClass, ci);
 
-        // Decorators wrap the class object exactly like they wrap a function:
-        // each one Calls with the previous result on the stack.
+        // Each decorator Calls with the previous result, same as for functions.
         for _ in 0..decorators {
             let pos = self.last_end as u32;
             self.chunk.emit(OpCode::Call, 1);
@@ -455,11 +424,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.chunk.emit(OpCode::StoreName, i);
     }
 
-    /* `def` (sync or async): parse signature, compile body, emit
-       MakeFunction / MakeCoroutine, apply decorators, then StoreName. */
+    /* def/async def: parses signature, compiles body, emits MakeFunction/MakeCoroutine+decorators+StoreName. */
     pub(super) fn func_def_inner(&mut self, decorators: u16, is_async: bool) {
-        // `def (...)` / `def :` — same treatment as class_def: non-syncing
-        // diagnostic + synthetic name so signature + body still parse.
+        // Missing name: non-syncing diagnostic + synthetic name so signature+body still parse.
         let fname = if matches!(self.peek(), Some(TokenType::Name)) {
             self.advance_text()
         } else {
@@ -469,11 +436,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let (params, defaults) = self.parse_params();
         let body = self.compile_body(&params);
 
-        // Register the body's free names in the parent's chunk so the parent's
-        // MakeFunction captures them, propagating the chain and giving nested
-        // defs access to grandparent (and higher) vars. Mirrors `parse_lambda`;
-        // without this loop, `def A -> def B -> def C` where C references A's
-        // var fails with NameError because B never captured it.
+        // Propagate free names to parent chunk so nested defs capture grandparent vars.
         let param_slots: crate::modules::fx::FxHashSet<String> = params.iter()
             .map(|p| s!(str p.trim_start_matches(['*', '~']), "_0")).collect();
         for name in &body.names {
@@ -499,12 +462,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     }
 
     pub(super) fn parse_params(&mut self) -> (Vec<String>, u16) {
-        // Bail out early on `def name:` (no parens). The synthetic-name path
-        // in `func_def_inner` lands here with peek() == Colon; without this
-        // guard we'd swallow the colon as the `(` and then chase a phantom
-        // `)` to EOF. Eat the trailing `:` ourselves so compile_body's
-        // block lexer starts at Indent — otherwise the body parses the
-        // colon as a statement and emits "expected expression".
+        // No `(`: diagnostic, consume `:` so compile_body starts at Indent correctly.
         if !matches!(self.peek(), Some(TokenType::Lpar)) {
             self.diag_at_peek("expected '('");
             self.eat_if(TokenType::Colon);
@@ -513,19 +471,16 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.advance();
         let mut params = Vec::new();
         let mut defaults = 0u16;
-        // Once we cross a lone `*` separator, every subsequent positional
-        // becomes keyword-only and gets a `~` prefix in its param name.
+        // Lone `*` flips kw_only; subsequent params get `~` prefix.
         let mut kw_only = false;
-        // Also break on `Rarrow`: drain_annotation surfaces it when it ran past
-        // a malformed annotation, and from here it means "params are over,
-        // return type follows" — eat(Rpar) below will anchor at the unclosed `(`.
+        // Break on Rarrow: signals end of params (return type follows).
         while !matches!(self.peek(), Some(TokenType::Rpar | TokenType::Rarrow) | None) {
             if self.eat_if(TokenType::Slash) {
                 self.eat_if(TokenType::Comma);
                 continue;
             }
             if self.eat_if(TokenType::Star) {
-                // Lone `*` (no name) flips kw-only mode for what follows.
+                // Lone `*`: flip kw-only, no param emitted.
                 if matches!(self.peek(), Some(TokenType::Comma | TokenType::Rpar)) {
                     self.eat_if(TokenType::Comma);
                     kw_only = true;
@@ -562,14 +517,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         (params, defaults)
     }
 
-    /* Eat a parameter / variable annotation. Tracks its OWN bracket depth and
-       uses `advance_raw` so the parser's structural `bracket_stack` stays
-       clean — otherwise an unclosed annotation like `tuple[float | int,` would
-       leave a stray `Lsqb` on the stack and confuse downstream `eat(Rpar)`.
-       Breaks unconditionally on `Rarrow`: return-type arrow can't appear
-       inside an annotation, so it reliably signals "we drifted past the
-       annotation"; without this guard, depth would pin at 1 forever and the
-       drain would silently consume the rest of the module. */
+    /* Drains annotation via advance_raw (keeps bracket_stack clean); breaks on Rarrow to avoid infinite drain. */
     pub(super) fn drain_annotation(&mut self) {
         if self.eat_if(TokenType::Colon) {
             let mut depth = 0u32;
@@ -615,8 +563,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             | OpCode::RaiseFrom
             | OpCode::Yield
         ));
-        // Pre-compute is_generator once so exec_call avoids an O(n_instructions)
-        // scan per call.
+        // Pre-compute is_generator to avoid O(n) scan per exec_call.
         body.is_generator = body.instructions.iter().any(|i| matches!(
             i.opcode,
             OpCode::Yield

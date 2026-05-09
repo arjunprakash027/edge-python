@@ -1,9 +1,6 @@
-/* Compile-time import resolution.
-
-   Both `import X` and `from X import names` enter here. For Native modules,
-   bindings are appended to chunk.extern_table; the call site emits CallExtern.
-   For Code modules, requested functions and their same-module dependencies
-   are inlined as MakeFunction + StoreName pairs in the parent chunk. */
+/* 
+Compile-time import: Native binds to extern_table (CallExtern); Code inlines MakeFunction+StoreName. 
+*/
 
 use crate::s;
 
@@ -18,10 +15,7 @@ use alloc::{string::{String, ToString}, vec::Vec};
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
-    /* `import name [as alias][, ...]`. Bare `import` only — no dotted module
-       paths and no string-form spec (those belong on `from`). The module is
-       materialised as a `HeapObj::Module` value bound under the alias, so
-       `name.attr` and `name.attr(...)` resolve at runtime. */
+    /* `import name [as alias]`: resolves and binds module as HeapObj::Module under alias. */
     pub(super) fn do_import_stmt(&mut self) {
         self.advance(); // 'import'
         loop {
@@ -36,10 +30,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* `from <spec> import <name>[ as <alias>][, ...]` or `from <spec>
-       import *`. The spec is either a quoted string ("https://...",
-       "./utils.py") or a bare identifier (resolver-looked-up). Star binds
-       every export of the module under its bare name, mirroring CPython. */
+    /* `from <spec> import names|*`: spec is URL, path, or bare name; star binds all exports. */
     pub(super) fn do_from_stmt(&mut self) {
         self.advance(); // 'from'
         let (spec, spec_span) = self.read_module_spec();
@@ -61,9 +52,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.resolve_and_bind_named(&spec, spec_span, names);
     }
 
-    /* Read a module spec: either a quoted string literal (URL / path) or a
-       dotted bare name. Returns `(spec, span)` so callers can attach
-       diagnostics to the spec's source position. */
+    /* Reads a quoted or dotted spec; returns (spec, span) for diagnostics. */
     fn read_module_spec(&mut self) -> (String, (usize, usize)) {
         if matches!(self.peek(), Some(TokenType::String)) {
             let t = self.advance();
@@ -84,19 +73,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Verify the spec's `#sha256-...` fragment (if any) and resolve. The
-       parser is the trust boundary for module bytes: every URL import that
-       declares an integrity hash is checked HERE before the resolver hands
-       back a `Resolved`, so a host that lies about hashes can't sneak past.
-       Returns the URL stripped of the fragment so downstream uses
-       (`child()`, error messages, module names) see clean URLs. */
+    /* Verifies #sha256 fragment then resolves; parser re-hashes bytes as defence-in-depth. Returns clean URL. */
     fn resolve_with_integrity(&mut self, spec: &str) -> Result<(String, Resolved), String> {
         let (url, expected) = parse_integrity(spec)?;
         if let Some(hash) = expected {
-            // Pass the expected hash to the host so its lockfile / cache
-            // can verify on its side too. The parser still re-hashes the
-            // returned bytes as a defence-in-depth check — a misbehaving
-            // host that returns wrong content gets caught here.
+            // Host verifies its side; parser re-hashes as defence-in-depth.
             let bytes = self.resolver.fetch_bytes(url, Some(hash))?;
             let computed = sha256(&bytes);
             if computed != hash {
@@ -110,18 +91,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         Ok((url.to_string(), resolved))
     }
 
-    /* Parse a code module's source if not already cached, return the
-       shared `Rc<SSAChunk>`. Only path-shaped specs (containing `/` or
-       `://`) are cached: their canonical form equals the spec string,
-       so the cache key is unambiguous. Bare names like `db` resolve
-       differently depending on the importer's nested `packages.json`
-       — caching by `db` would conflate two unrelated modules. The VM
-       still treats the resulting chunks as singletons (same Rc on both
-       cache hit and miss; module_table dedupes by canonical spec from
-       `chunk.imports`). */
-    fn parse_or_get_cached(
-        &mut self, spec: &str, src: &str, span: (usize, usize),
-    ) -> Option<alloc::rc::Rc<SSAChunk>> {
+    /* Parses or returns cached SSAChunk. Only path/URL specs cached; bare names skipped to avoid cross-manifest collisions. */
+    fn parse_or_get_cached(&mut self, spec: &str, src: &str, span: (usize, usize)) -> Option<alloc::rc::Rc<SSAChunk>> {
         let cache_safe = spec.contains('/') || spec.contains("://");
         if cache_safe
             && let Some(cached) = self.module_cache.borrow().get(spec).cloned()
@@ -135,8 +106,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             self.resolver.child(spec),
             self.module_cache.clone(),
         );
-        // Tag the sub-chunk with the module's spec so tracebacks render the
-        // correct path ('json_module.py' rather than '<module>').
+        // Set path so tracebacks show the module file, not '<module>'.
         sub_parser.chunk.path = alloc::sync::Arc::new(spec.to_string());
         for e in lex_errs {
             sub_parser.errors.push(Diagnostic {
@@ -156,11 +126,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         Some(rc)
     }
 
-    /* Add an import to this chunk's import list, deduplicating by spec.
-       Returns the index — the operand for `OpCode::LoadModule`. The VM
-       walks the union of every chunk's imports at run() start and inits
-       each unique spec exactly once, so a redundant entry is just a
-       redundant index, not a redundant init. */
+    /* Registers import deduped by spec; returns LoadModule operand index. */
     fn register_import(&mut self, spec: &str, kind: ImportKind) -> u16 {
         if let Some(i) = self.chunk.imports.iter().position(|e| e.spec == spec) {
             return i as u16;
@@ -173,9 +139,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         i
     }
 
-    /* Walk a parsed module's top-level instructions and collect every
-       public bare name it stores (StoreName, MakeFunction's name slot).
-       Used by `from M import *` to enumerate exports at compile time. */
+    /* Collects public top-level names from StoreName/MakeFunction; used by import-star. */
     fn module_public_exports(sub: &SSAChunk) -> Vec<String> {
         let mut exports: Vec<String> = Vec::new();
         let mut seen: FxHashSet<String> = FxHashSet::default();
@@ -196,10 +160,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         exports
     }
 
-    /* `from X import a, b, c` — register X in this chunk's imports and
-       emit `LoadModule + LoadAttr + StoreName` per requested name. For
-       Native modules, the bindings are also pushed into `extern_table`
-       so call sites can keep using the fast `CallExtern` path. */
+    /* Named import: registers module, emits LoadModule+LoadAttr+StoreName; Native also populates extern_table. */
     fn resolve_and_bind_named(&mut self, spec: &str, span: (usize, usize), names: Vec<(String, String)>) {
         let (_url, resolved) = match self.resolve_with_integrity(spec) {
             Ok(r) => r,
@@ -211,8 +172,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         };
         match resolved {
             Resolved::Native { bindings, .. } => {
-                // Validate every requested name exists; populate fast-path
-                // extern table for direct CallExtern dispatch.
+                // Validate names exist and push into extern_table for CallExtern.
                 for (name, alias) in &names {
                     let Some(b) = bindings.iter().find(|b| b.name == *name) else {
                         self.error_at(span.0, span.1,
@@ -223,10 +183,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     self.chunk.extern_table.push(binding_to_extern(b));
                     self.chunk.extern_index.insert(alias.clone(), idx);
                 }
-                // Also register the module so `import_module()` and any
-                // first-class reference to the module value can resolve.
-                let externs: Vec<crate::modules::vm::types::ExternFn> =
-                    bindings.iter().map(binding_to_extern).collect();
+                // Register module for first-class module-value resolution.
+                let externs: Vec<crate::modules::vm::types::ExternFn> = bindings.iter().map(binding_to_extern).collect();
                 let _ = self.register_import(&url, ImportKind::Native(externs));
             }
             Resolved::Code { src, canonical } => {
@@ -251,10 +209,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* `import X` — register X in this chunk's imports and emit
-       `LoadModule + StoreName alias`. The Module Val itself is built
-       once at VM init from the registered chunk; every importer that
-       does `import X` ends up with the SAME Val (true singleton). */
+    /* `import X`: registers module, emits LoadModule+StoreName; VM builds a singleton Val at init. */
     fn resolve_and_bind_all(&mut self, spec: &str, span: (usize, usize), alias: &str) {
         let (_url, resolved) = match self.resolve_with_integrity(spec) {
             Ok(r) => r,
@@ -277,10 +232,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.chunk.emit(OpCode::StoreName, alias_slot);
     }
 
-    /* `from X import *` — bind every public export under its bare name.
-       For Native: pushes each binding into `extern_index` for fast call.
-       For Code: scans the module's parsed top-level for stored public
-       names and emits LoadModule + LoadAttr + StoreName per name. */
+    /* Star import: Native fills extern_index; Code scans top-level and emits LoadModule+LoadAttr+StoreName per export. */
     fn resolve_and_bind_star(&mut self, spec: &str, span: (usize, usize)) {
         let (_url, resolved) = match self.resolve_with_integrity(spec) {
             Ok(r) => r,
@@ -314,4 +266,3 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     }
 
 }
-

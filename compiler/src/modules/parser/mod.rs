@@ -16,7 +16,7 @@ use crate::modules::packages::{Resolver, NoopResolver};
 use alloc::{boxed::Box, string::{String, ToString}, vec::Vec};
 use core::iter::Peekable;
 
-// Bracket diagnostic helpers — keep human-readable strings out of the hot path.
+// Bracket diagnostic strings kept out of the hot path.
 #[inline]
 pub(super) const fn open_str(k: TokenType) -> &'static str {
     match k {
@@ -53,44 +53,25 @@ pub struct Parser<'src, I: Iterator<Item = Token>> {
     pub(super) join_stack: Vec<JoinNode>,
     pub(super) loop_starts: Vec<u16>,
     pub(super) last_line: usize,
-    /* End offset of the last advance()'d token. Lets diagnostics anchor at
-       end-of-previous-line when the next significant token lives on a later
-       line — the common "missing `:` at end of header" case where peek()
-       has already skipped a Newline so the offending position is no longer
-       in the token stream. */
+    /* Last token's end offset; anchors diagnostics when peek() already skipped a Newline. */
     pub(super) last_end: usize,
     pub(super) loop_breaks: Vec<Vec<usize>>,
-    // Parallel to loop_starts/loop_breaks: true for `for` loops (which push
-    // an iter on iter_stack), false for `while`. Lets `break` emit PopIter
-    // only when escaping a for-loop, so nested for/while combinations work.
+    // true=for (PopIter on break), false=while; parallels loop_starts/loop_breaks.
     pub(super) loop_kinds: Vec<bool>,
     pub(super) expr_depth: usize,
     pub(super) saw_newline: bool,
-    /* Set while parsing the expression inside an f-string brace (`{expr}`).
-       Disables the `=` -> assignment path in `name()` so `f"{x=}"` is
-       interpreted as the debug-self-doc form (echo `x=` + value) instead
-       of trying to parse `x = ...` as an assignment that reads `}`. */
+    /* True inside f-string brace expr; disables `=` assignment so `f"{x=}"` parses as debug form. */
     pub(super) in_fstring_expr: bool,
-    /* Every `(`, `[`, `{` consumed-but-not-yet-closed, with the error count at
-       the time it opened. Lets us anchor "X was never closed" diagnostics at
-       the opener (instead of at EOF where the cascade lands), and drop the
-       in-bracket cascade since those errors are downstream consequences. */
+    /* Unclosed brackets with error count at open; anchors "never closed" and drops cascade errors. */
     pub(super) bracket_stack: Vec<(TokenType, usize, usize, usize)>,
     pub errors: Vec<Diagnostic>,
-    /* Host-injected module resolver. Defaults to `NoopResolver`, which rejects
-       every spec — keeps existing call sites that don't pass a resolver
-       working unchanged (any `from X import ...` they encounter becomes a
-       parse-time diagnostic). Construct with `with_resolver` to opt in. */
+    /* Host resolver; defaults to NoopResolver so import-free call sites work unchanged. */
     pub(super) resolver: Box<dyn Resolver>,
-    /* Shared cache of parsed module chunks, keyed by canonical spec.
-       Sub-parsers spawned during import resolution inherit the same `Rc`
-       so a module imported from N files lex+parses exactly once. The
-       Module Val that all importers reference at runtime is also a true
-       singleton — built once by `vm.init_modules` from this same chunk. */
+    /* Shared module cache; sub-parsers inherit same Rc so each spec parses exactly once. */
     pub(super) module_cache: alloc::rc::Rc<core::cell::RefCell<HashMap<String, alloc::rc::Rc<SSAChunk>>>>,
 }
 
-// SSA versioning: track and emit version-suffixed names.
+// SSA versioning helpers: version tracking and suffixed name emission.
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     pub(super) fn current_version(&self, name: &str) -> u32 {
@@ -145,15 +126,10 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     pub(super) fn with_fresh_chunk(&mut self, f: impl FnOnce(&mut Self)) -> SSAChunk {
         let saved_chunk = core::mem::take(&mut self.chunk);
         let saved_ver = self.ssa_versions.clone();
-        // Inherit imported externs into the nested chunk so a `def` body can
-        // call natives that the enclosing scope imported. Indices stay stable
-        // (1:1 copy) so the body's CallExtern operand resolves correctly into
-        // its OWN extern_table at runtime. The body may add more externs
-        // afterwards (its own `from X import ...`); those don't leak back up.
+        // Copy parent externs so nested def bodies can call imported natives; extras don't leak up.
         self.chunk.extern_table = saved_chunk.extern_table.clone();
         self.chunk.extern_index = saved_chunk.extern_index.clone();
-        // Inherit source/path so nested function bodies render with the same
-        // file context as their enclosing module in tracebacks.
+        // Inherit source/path for consistent traceback file context.
         self.chunk.source = saved_chunk.source.clone();
         self.chunk.path = saved_chunk.path.clone();
         f(self);
@@ -164,7 +140,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     }
 }
 
-// SSA join points: enter/mid/commit emit Phi at control-flow merges.
+// SSA join points: Phi emission at control-flow merges.
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     pub(super) fn enter_block(&mut self) {
@@ -176,7 +152,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
     pub(super) fn mid_block(&mut self) {
         let Some(j) = self.join_stack.last_mut() else { return };
-        // Snapshot then-branch before overwriting with else baseline.
+        // Save then-branch versions before restoring else baseline.
         j.then = Some(self.ssa_versions.clone());
         let mut restored = j.backup.clone();
         for (name, &v) in &self.ssa_versions {
@@ -200,8 +176,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             .chain(b.keys())
             .filter(|name| a.get(*name).unwrap_or(&0) != b.get(*name).unwrap_or(&0))
             .collect();
-        // sort: deterministic Phi order regardless of HashMap iteration.
-        // dedup: chain() may yield duplicates if both branches define the same var.
+        // Sort for deterministic Phi order; dedup chain() duplicates from shared vars.
         divergent.sort();
         divergent.dedup();
 
@@ -222,13 +197,10 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     }
 }
 
-// Token-stream utilities: advance/peek/eat + diagnostics.
+// Token-stream utilities: advance, peek, eat, diagnostics.
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
-    /* Raw advance: same fallback to Endmarker, but bypasses bracket_stack
-       tracking. Reserved for recovery-style consumers (drain_annotation,
-       panic-mode sync, etc.) that have their own bracket-balance bookkeeping
-       and shouldn't pollute the parser's structural stack. */
+    /* Advance without bracket_stack tracking; for recovery consumers with their own balance bookkeeping. */
     pub(super) fn advance_raw(&mut self) -> Token {
         let tok = self.tokens.next().unwrap_or(Token {
             kind: TokenType::Endmarker,
@@ -256,12 +228,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     TokenType::Rsqb => TokenType::Lsqb,
                     _ => TokenType::Lbrace,
                 };
-                /* Walk the stack to find the matching opener. Anything sitting
-                   above it is unclosed — surface those with their own
-                   "X was never closed" anchored at the offender, then pop the
-                   matching opener. If no match is in the stack at all, the
-                   closer mismatches the innermost opener (or is orphan) and
-                   we report accordingly without desyncing further. */
+                /* Find matching opener; report unclosed brackets above it; handle orphan closers. */
                 if let Some(idx) = self.bracket_stack.iter().rposition(|&(k, _, _, _)| k == want_open) {
                     while self.bracket_stack.len() > idx + 1 {
                         let (k, st, en, ov) = self.bracket_stack.pop().unwrap();
@@ -292,12 +259,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         tok
     }
 
-    /* Push a Diagnostic at peek's position WITHOUT panic-mode sync. For
-       use when the caller wants to report a missing/wrong token but keep
-       the surrounding parser flow intact (e.g. `class :` where a synthetic
-       name lets `eat(Colon)` and the body parse normally). Anchors at
-       end-of-prev-line when peek crossed a newline, mirroring `eat()`'s
-       behavior. */
+    /* Non-syncing diagnostic at peek; used when flow must continue (e.g. missing class name). */
     pub(super) fn diag_at_peek(&mut self, msg: &str) {
         let n = self.source.len();
         let (start, end) = match self.tokens.peek() {
@@ -308,9 +270,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.errors.push(Diagnostic { start, end, msg: msg.to_string() });
     }
 
-    /* Push a Diagnostic anchored at the next token's span (or at end-of-source
-       if we ran past EOF) and panic-mode sync to the next statement boundary
-       so we can keep reporting downstream errors. */
+    /* Diagnostic at next token + panic-mode sync to next statement boundary. */
     pub(super) fn error(&mut self, msg: &str) {
         let n = self.source.len();
         let (start, end) = self.tokens.peek()
@@ -319,16 +279,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.error_at(start, end, msg);
     }
 
-    /* Same as `error` but anchored at the caller-provided span. Use when
-       a parser has already consumed the offending token and wants the
-       diagnostic to point at it (not at whatever comes next).
-
-       Panic-mode sync: stop at statement boundaries (Newline/Dedent/Endmarker).
-       When inside one or more open brackets, also stop at Comma or the
-       matching close bracket of our current nesting level so we can resume
-       parsing the next argument/element. We track nested openers/closers
-       internally so a `)` inside `range(epochs)` doesn't terminate sync that
-       started inside an outer unclosed `(`. */
+    /* Diagnostic at caller span + panic-mode sync; stops at statement boundary or bracket close. */
     pub(super) fn error_at(&mut self, start: usize, end: usize, msg: &str) {
         self.errors.push(Diagnostic { start, end, msg: msg.to_string() });
         let in_brackets = !self.bracket_stack.is_empty();
@@ -362,11 +313,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.lexeme(&t).to_string()
     }
 
-    /* Surface user-visible tokens. Skips Newline (latching `saw_newline`),
-       Nl, Comment. Treats Endmarker as None so `at_end()` and "loop while
-       not closer/None" patterns terminate cleanly without explicit Endmarker
-       checks at every site. The raw iterator (`self.tokens.peek()`) still
-       sees Endmarker for diagnostic anchoring in `error()` / `eat()`. */
+    /* Skips Newline/Nl/Comment; maps Endmarker→None; latches saw_newline for ternary detection. */
     pub(super) fn peek(&mut self) -> Option<TokenType> {
         loop {
             match self.tokens.peek().map(|t| t.kind) {
@@ -385,14 +332,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.chunk.instructions[pos].operand = self.chunk.instructions.len() as u16;
     }
 
-    /* Consume `kind` or push a diagnostic with a friendly description of
-       what was actually found (lexeme for normal tokens, kind label for
-       synthetic Endmarker / structural tokens, and "EOF" past end).
-
-       Special path for close brackets at EOF: anchor at the matching opener
-       on `bracket_stack` and drop any cascade errors that piled up inside
-       the unclosed bracket — those are downstream consequences of the same
-       unclosed-bracket bug and only confuse the user. */
+    /* Consumes kind or emits diagnostic; for missing closers anchors at opener and drops cascade. */
     pub(super) fn eat(&mut self, kind: TokenType) {
         if matches!(self.peek(), Some(k) if k == kind) {
             self.advance();
@@ -400,19 +340,13 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
         if matches!(kind, TokenType::Rpar | TokenType::Rsqb | TokenType::Rbrace) {
             let peeked = self.tokens.peek().map(|t| t.kind);
-            // Different closer in stream — silently bail; advance() will fire a
-            // "X does not match Y" / "Y was never closed" when the wrong closer
-            // is consumed up the call chain. Avoids a redundant generic error.
+            // Wrong closer: bail silently; advance() will report the mismatch.
             if matches!(peeked, Some(TokenType::Rpar | TokenType::Rsqb | TokenType::Rbrace))
                 && peeked != Some(kind)
             {
                 return;
             }
-            // Whenever the matching opener sits at the top of the stack and we
-            // can't produce its closer, anchor at the opener — this catches
-            // both EOF and mid-stream cases (e.g. a `[` followed by a newline
-            // is "lost" because Nl is suppressed inside brackets, so the
-            // generic fallback would point at the next-line token instead).
+            // Missing closer: anchor diagnostic at the opener, not at the next-line token.
             let want_open = match kind {
                 TokenType::Rpar => TokenType::Lpar,
                 TokenType::Rsqb => TokenType::Lsqb,
@@ -443,13 +377,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             None => "EOF".to_string(),
         };
         let msg = s!("expected ", str kind.as_str(), ", got ", str &label);
-        // Anchor at end-of-previous-line when the next significant token is
-        // on a later line than the last consumed one. peek() has already
-        // swallowed the Newline, so the offending position no longer exists
-        // in the token stream — without this, the caret lands on the next
-        // line's first token (e.g. `Indent`) which is misleading for the
-        // user. Most common case: missing `:` at the end of an `if/for/def`
-        // header.
+        // Token on later line: anchor at end-of-prev-line (common case: missing `:` in header).
         if let Some(t) = self.tokens.peek()
             && t.line > self.last_line
             && self.last_end > 0
@@ -471,37 +399,28 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     }
 }
 
-// Constructor and entry point.
+// Parser constructors and parse entry point.
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     pub fn new(source: &'src str, iter: I) -> Self {
         Self::with_resolver(source, iter, Box::new(NoopResolver))
     }
 
-    /* Construct a parser with an explicit module resolver. Hosts that want to
-       support `from X import names` pass their own `Resolver` here. The trait
-       lives in `crate::modules::packages`. */
+    /* Parser with explicit resolver; required for `from X import` support. */
     pub fn with_resolver(source: &'src str, iter: I, resolver: Box<dyn Resolver>) -> Self {
         Self::with_shared_cache(source, iter, resolver,
             alloc::rc::Rc::new(core::cell::RefCell::new(HashMap::default())))
     }
 
-    /* Same as `with_resolver` but tags the chunk with a display path used by
-       the runtime traceback renderer (`<File "main.py", line ...>`). */
+    /* Like with_resolver but sets chunk path for traceback display. */
     pub fn with_path(source: &'src str, iter: I, resolver: Box<dyn Resolver>, path: &str) -> Self {
         let mut p = Self::with_resolver(source, iter, resolver);
         p.chunk.path = alloc::sync::Arc::new(path.into());
         p
     }
 
-    /* Sub-parsers share the entry's module cache so each canonical spec
-       parses exactly once across the whole compilation unit. */
-    pub(crate) fn with_shared_cache(
-        source: &'src str,
-        iter: I,
-        resolver: Box<dyn Resolver>,
-        module_cache: alloc::rc::Rc<core::cell::RefCell<HashMap<String, alloc::rc::Rc<SSAChunk>>>>,
-    ) -> Self {
+    /* Shared-cache constructor; sub-parsers inherit it so each spec parses once. */
+    pub(crate) fn with_shared_cache(source: &'src str,iter: I,resolver: Box<dyn Resolver>, module_cache: alloc::rc::Rc<core::cell::RefCell<HashMap<String, alloc::rc::Rc<SSAChunk>>>>) -> Self {
         let chunk = SSAChunk {
             source: alloc::sync::Arc::new(source.into()),
             ..Default::default()
@@ -533,8 +452,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             if self.at_end() { break; }
 
             let produced_value = self.stmt();
-            // Always pop expression-statement results: the implicit ReturnValue
-            // at chunk end returns Val::none() if the stack is empty.
+            // Pop expression-statement results; chunk's implicit ReturnValue expects empty stack.
             if produced_value { self.chunk.emit(OpCode::PopTop, 0); }
         }
 
@@ -547,8 +465,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
 
         if !self.errors.is_empty() {
-            // Wipe ALL bytecode side-state so finalize_prev_slots doesn't
-            // index `canonical` (built from `names`) with stale phi sources.
+            // Clear bytecode state so finalize_prev_slots doesn't use stale phi sources.
             self.chunk.instructions.clear();
             self.chunk.constants.clear();
             self.chunk.names.clear();
