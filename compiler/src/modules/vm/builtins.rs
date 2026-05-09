@@ -1185,7 +1185,7 @@ impl<'a> VM<'a> {
             _ => return Err(cold_type("bytes_fromhex() argument must be a string")),
         };
         let cleaned: String = s.chars().filter(|c| !c.is_ascii_whitespace()).collect();
-        if cleaned.len() % 2 != 0 {
+        if !cleaned.len().is_multiple_of(2) {
             return Err(cold_value("non-hexadecimal number or odd length"));
         }
         let mut out = Vec::with_capacity(cleaned.len() / 2);
@@ -1703,9 +1703,8 @@ impl<'a> VM<'a> {
                 match &h.state {
                     super::types::CoroState::Ready => { next_ready = Some(i); break; }
                     super::types::CoroState::CancelPending => { next_ready = Some(i); break; }
-                    super::types::CoroState::Sleeping(w) => {
-                        if min_wake.map_or(true, |m| *w < m) { min_wake = Some(*w); }
-                    }
+                    super::types::CoroState::Sleeping(w)
+                        if min_wake.is_none_or(|m| *w < m) => { min_wake = Some(*w); }
                     _ => {}
                 }
             }
