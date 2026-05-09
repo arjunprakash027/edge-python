@@ -81,6 +81,7 @@ impl<'a> VM<'a> {
             HeapObj::Coroutine(..) => true,
             HeapObj::Module(..) => true,
             HeapObj::Extern(_) => true,
+            HeapObj::ExcInstance(..) => true,
         }
     }
 
@@ -159,6 +160,7 @@ impl<'a> VM<'a> {
             HeapObj::Coroutine(..) => "coroutine",
             HeapObj::Module(..) => "module",
             HeapObj::Extern(_) => "builtin_function_or_method",
+            HeapObj::ExcInstance(..) => "exception",
         }}
     }
 
@@ -209,6 +211,21 @@ impl<'a> VM<'a> {
             HeapObj::Coroutine(..) => "<coroutine>".into(),
             HeapObj::Module(name, _) => s!("<module '", str name, "'>"),
             HeapObj::Extern(f) => s!("<extern function ", str &f.name, ">"),
+            HeapObj::ExcInstance(name, args) => {
+                // Mirror CPython: `repr(ValueError("x"))` → "ValueError('x')",
+                // `str(ValueError("x"))` → "x". display() is the str() form
+                // here; `repr(...)` is handled by formatting overrides if any.
+                if args.len() == 1 {
+                    self.display(args[0])
+                } else if args.is_empty() {
+                    name.clone()
+                } else {
+                    let mut o = s!(cap: 32; str name, "(");
+                    self.append_reprs(&mut o, args.iter());
+                    o.push(')');
+                    o
+                }
+            }
             HeapObj::Set(s) => {
                 let mut items: Vec<Val> = s.borrow().iter().cloned().collect();
                 if items.is_empty() { return "set()".into(); }

@@ -391,9 +391,14 @@ impl<'a> VM<'a> {
         let (arg2, obj) = (self.pop()?, self.pop()?);
         let obj_ty = self.type_name(obj);
 
-        // For exception matching: when `obj` is a Type itself, compare names.
+        // For exception matching: when `obj` is a Type itself or an
+        // ExcInstance, compare names against the asserted type.
         let obj_type_name: Option<String> = if obj.is_heap() {
-            if let HeapObj::Type(n) = self.heap.get(obj) { Some(n.clone()) } else { None }
+            match self.heap.get(obj) {
+                HeapObj::Type(n) => Some(n.clone()),
+                HeapObj::ExcInstance(n, _) => Some(n.clone()),
+                _ => None,
+            }
         } else { None };
 
         let check_one = |t: Val, heap: &HeapPool| -> Result<bool, VmErr> {

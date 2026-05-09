@@ -166,6 +166,21 @@ impl<'a> VM<'a> {
             return Ok(());
         }
 
+        // Calling a builtin Type: build an ExcInstance carrying the type name
+        // and args. Used for `raise ValueError("msg")` and friends; `e.args`
+        // exposes the args tuple. Conversion-style types (int/float/...) are
+        // routed through specialised opcodes by the parser, so this path is
+        // overwhelmingly hit by exception construction in practice.
+        if let HeapObj::Type(name) = self.heap.get(callee) {
+            let name = name.clone();
+            if !kw_flat.is_empty() {
+                return Err(cold_type("exception class takes no keyword arguments"));
+            }
+            let exc = self.heap.alloc(HeapObj::ExcInstance(name, positional))?;
+            self.push(exc);
+            return Ok(());
+        }
+
         // Calling a class: create an instance and run __init__ if defined.
         if let HeapObj::Class(_, methods) = self.heap.get(callee) {
             let methods = methods.clone();

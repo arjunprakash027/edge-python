@@ -145,6 +145,13 @@ pub enum HeapObj {
     Range(i64, i64, i64),
     Slice(Val, Val, Val),
     Type(String),
+    /* Constructed exception value: `ValueError("bad")` builds one via the
+       Type-as-callable path. Carries the type name (for `except` matching
+       and `type(e).__name__`) and the constructor args (exposed via `.args`
+       as a tuple). Distinct from Type so `isinstance(e, ValueError)` and
+       `type(e)` give the right answers without confusing the bare class
+       object with an instance of it. */
+    ExcInstance(String, Vec<Val>),
     BoundMethod(Val, BuiltinMethodId),
     NativeFn(NativeFnId),
     Class(String, Vec<(String, Val)>),
@@ -300,6 +307,7 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
             for &(_, v) in captures { f(v); }
         }
         HeapObj::Module(_, attrs) => for (_, v) in attrs { f(*v); },
+        HeapObj::ExcInstance(_, args) => for &v in args { f(v); },
         // Variants without Val payloads (Str, Bytes, Type, NativeFn,
         // Range, Extern) — terminal, nothing to trace.
         HeapObj::Str(_) | HeapObj::Bytes(_)
@@ -471,6 +479,7 @@ impl HeapPool {
                 Some(HeapObj::Module(..)) => 20,
                 Some(HeapObj::Extern(_)) => 21,
                 Some(HeapObj::Bytes(_)) => 22,
+                Some(HeapObj::ExcInstance(..)) => 24,
                 None => 0,
             }
         } else { 0 }

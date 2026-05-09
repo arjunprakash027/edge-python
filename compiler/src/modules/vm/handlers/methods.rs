@@ -161,6 +161,23 @@ impl<'a> VM<'a> {
                     "module '", str mod_name, "' has no attribute '", str bare, "'")));
             }
 
+        // ExcInstance attribute lookup: `e.args` returns the constructor
+        // args as a tuple. Anything else falls through to the generic
+        // `'exception' object has no attribute …` error.
+        if obj.is_heap()
+            && let HeapObj::ExcInstance(_, args) = self.heap.get(obj) {
+                let bare = crate::modules::parser::ssa_strip(name);
+                if bare == "args" {
+                    let args = args.clone();
+                    let v = self.heap.alloc(HeapObj::Tuple(args))?;
+                    self.push(v);
+                    return Ok(());
+                }
+                let ty = self.type_name(obj);
+                return Err(VmErr::Attribute(s!(
+                    "'", str ty, "' object has no attribute '", str bare, "'")));
+            }
+
         // Class attribute lookup: `MyClass.method` returns the unbound
         // function directly (no `self` prepended). Useful for class-as-namespace
         // patterns and for accessing class-level constants.

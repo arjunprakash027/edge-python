@@ -128,6 +128,12 @@ pub struct VM<'a> {
        scheduler can move the handle to Sleeping(until_ns). Cleared after
        each scheduler step; None means "yield once and stay Ready". */
     pub(crate) pending_sleep_until_ns: Option<u64>,
+    /* When a `raise X("msg")` lifts an `ExcInstance`, we stash the Val here
+       so the matching `except X as e` handler can bind the actual instance
+       (instead of the bare Type class object). Cleared on every successful
+       handler entry. None means "the raise was a Type or string — bind the
+       Type from globals as before". */
+    pub(crate) pending_exc_val: Option<Val>,
     /* spec → Module Val map populated by `init_modules` before user
        bytecode runs. Both `OpCode::LoadModule` and the `import_module()`
        builtin look up here. Each unique spec across the chunk tree
@@ -390,6 +396,7 @@ impl<'a> VM<'a> {
             error_byte_pos: None,
             pending_call_byte_pos: None,
             pending_sleep_until_ns: None,
+            pending_exc_val: None,
             module_table: HashMap::default(),
             fn_module: Vec::new(),
             function_names: Vec::new(),
@@ -871,7 +878,14 @@ impl<'a> VM<'a> {
                                 VmErr::Runtime(_)  => "RuntimeError".into(),
                                 VmErr::Raised(s)   => s.clone(),
                             };
-                            let exc = if let Some(&type_val) = self.globals.get(&msg) {
+                            // Prefer the pending ExcInstance Val (built by
+                            // `raise X("msg")`) so `except X as e` binds the
+                            // actual instance — `e.args` then works. Fall
+                            // back to the Type from globals for bare-name
+                            // raises and to a fresh Str for ad-hoc messages.
+                            let exc = if let Some(v) = self.pending_exc_val.take() {
+                                v
+                            } else if let Some(&type_val) = self.globals.get(&msg) {
                                 type_val
                             } else {
                                 self.heap.alloc(HeapObj::Str(msg))?
