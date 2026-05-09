@@ -1,0 +1,47 @@
+Branch: centralize-src-buffer-read
+Tech debt: D17 / D62 — extract_imports and run duplicated SRC reading with divergent error handling.
+
+================================================================================
+Commit 1: extract read_src helper for SRC buffer
+================================================================================
+File: compiler/src/main/exports.rs
+
+What was wrong:
+  Both extern "C" entry points opened the host-owned SRC buffer with the
+  same five-line preamble:
+
+    let len = len.min(SZ);
+    let src = match core::str::from_utf8(unsafe {
+        core::slice::from_raw_parts(core::ptr::addr_of!(SRC) as *const u8, len)
+    }) {
+        Ok(s) => s,
+        Err(_) => ...
+    };
+
+  The cap-and-validate logic was identical, but the error paths
+  diverged: extract_imports silently returned write_out(""), while run
+  formatted "input rejected: invalid utf-8 at byte N". Adding a third
+  caller would have spawned a third dialect of the same boundary check.
+
+Fix:
+  Introduced a single private helper:
+
+    unsafe fn read_src(len: usize) -> Result<&'static str, Utf8Error>
+
+  that performs the cap-and-validate once and returns the &'static str
+  view (SRC is `static`, so the slice's lifetime is genuinely 'static).
+
+  Both callers now match on the Result and decide how to surface the
+  failure: extract_imports keeps its silent-empty contract, run keeps
+  its user-facing error. The behaviour is byte-identical to before;
+  only the duplication is gone.
+
+  A new caller now has one place to look and one decision to make
+  ("silent or formatted error?"), not five duplicated lines to copy.
+
+Documentation:
+  No .md docs describe the boundary handling at this granularity (the
+  mentions of `run()` in design.md / language docs refer to Python's
+  builtin `run()`, not the WASM export). No doc updates required.
+
+Build & tests: cargo build -p edge-python -> ok; cargo test -> 6/6 passed.

@@ -68,12 +68,20 @@ pub unsafe extern "C" fn reset_modules() {
     error_stash().clear();
 }
 
+/* Reads up to SZ bytes from the host-owned SRC buffer and validates UTF-8.
+   `len` is capped so the slice never extends past the buffer; callers decide
+   how to surface a UTF-8 failure (silent vs. user-facing error). */
+unsafe fn read_src(len: usize) -> Result<&'static str, core::str::Utf8Error> {
+    let len = len.min(SZ);
+    let bytes = unsafe {
+        core::slice::from_raw_parts(core::ptr::addr_of!(SRC) as *const u8, len)
+    };
+    core::str::from_utf8(bytes)
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn extract_imports(len: usize) -> usize {
-    let len = len.min(SZ);
-    let src = match core::str::from_utf8(unsafe {
-        core::slice::from_raw_parts(core::ptr::addr_of!(SRC) as *const u8, len)
-    }) {
+    let src = match unsafe { read_src(len) } {
         Ok(s) => s,
         Err(_) => return unsafe { write_out("") },
     };
@@ -84,10 +92,7 @@ pub unsafe extern "C" fn extract_imports(len: usize) -> usize {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn run(len: usize) -> usize {
-    let len = len.min(SZ);
-    let src = match core::str::from_utf8(unsafe {
-        core::slice::from_raw_parts(core::ptr::addr_of!(SRC) as *const u8, len)
-    }) {
+    let src = match unsafe { read_src(len) } {
         Ok(s) => s,
         Err(e) => return unsafe {
             write_out(&s!("input rejected: invalid utf-8 at byte ", int e.valid_up_to()))
