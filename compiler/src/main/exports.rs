@@ -133,9 +133,12 @@ pub unsafe extern "C" fn run(len: usize) -> usize {
         vm.strict_input = true;
         let inp_len = unsafe { INP_LEN };
         if inp_len > 0 {
-            let inp = unsafe { core::str::from_utf8_unchecked(
+            /* Host-supplied buffer; validate UTF-8 to keep the FFI boundary safe.
+               Invalid bytes degrade to an empty input rather than UB. */
+            let bytes = unsafe {
                 core::slice::from_raw_parts(core::ptr::addr_of!(INP) as *const u8, inp_len)
-            )};
+            };
+            let inp = core::str::from_utf8(bytes).unwrap_or("");
             vm.input_buffer = inp.split('\n').map(alloc::string::String::from).collect();
             unsafe { INP_LEN = 0; }
         }

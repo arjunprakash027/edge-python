@@ -1,0 +1,36 @@
+Branch: validate-utf8-on-host-input
+Tech debt: D3 — from_utf8_unchecked on host-controlled INP buffer is UB if the host writes non-UTF-8 bytes.
+
+================================================================================
+Commit 1: validate utf-8 on host input buffer
+================================================================================
+File: compiler/src/main/exports.rs
+
+What was wrong:
+  Lines 117-124 read INP (a host-written byte buffer) and constructed a
+  &str via core::str::from_utf8_unchecked. Nothing in the wasm-abi spec
+  forces the host to validate UTF-8 before writing INP, so a buggy or
+  hostile host that writes a non-UTF-8 byte sequence triggered immediate
+  undefined behaviour: every downstream &str method (split, chars, len)
+  becomes UB on a non-UTF-8 buffer, even before the parse output is ever
+  inspected.
+
+  This is a pure boundary-validation gap. The cost of from_utf8 vs
+  from_utf8_unchecked is one linear scan over the buffer — negligible
+  next to compile + run.
+
+Fix:
+  Replaced the unchecked construction with core::str::from_utf8(bytes)
+  and degraded invalid input to an empty &str via .unwrap_or("").
+  Behaviour for valid UTF-8 is identical; invalid bytes now produce an
+  empty input_buffer instead of UB. Added a /* ... */ comment in the
+  lexer/parser style explaining the boundary intent.
+
+  Companion debt D2 (the *mut VM<'static> lifetime laundering five lines
+  below) is structural and lives on its own branch; not touched here.
+
+Documentation:
+  reference/builtins.md only mentions input() at the language level; no
+  UB or boundary discussion to update.
+
+Tests: cargo test -> 6/6 passed.
