@@ -1,0 +1,46 @@
+Branch: handle-len-via-raii
+Tech debt: D57 — Handle::len() decodes then manually edge_releases, leaking on any future ? between the two calls.
+
+================================================================================
+Commit 1: route handle release through Drop in Handle::len
+================================================================================
+File: edge-pdk/src/lib.rs
+
+What was wrong:
+  Handle::len had this pattern at lines 459-461:
+
+    let v = i64::from_handle(out)?;
+    unsafe { edge_release(out); }
+    Ok(v)
+
+  This is correct today only because i64::from_handle currently cannot
+  short-circuit between `out` and the manual release. But:
+
+  1. The rest of the impl block uses Handle::from_raw(out) which lets
+     Drop run edge_release automatically. len() is the only outlier.
+  2. If a maintainer adds another `?`-returning step between decode and
+     release — e.g. validating range, attaching a span — the handle
+     leaks silently.
+  3. The `unsafe` block at the call site exposes raw FFI in API code
+     that has a perfectly good RAII alternative one struct away.
+
+Fix:
+  Replaced the manual decode+release with:
+
+    let h = Handle::from_raw(out);
+    i64::from_handle(h.raw())
+
+  Now Drop owns the release on every exit path (success, ?-propagation,
+  panic). No `unsafe`. The behaviour is identical for all current
+  callers.
+
+  A short /* ... */ comment in the lexer/parser style records *why* the
+  rewrite — a future ? would have leaked.
+
+Documentation:
+  reference/wasm-abi.md describes edge_release at the ABI level (owned
+  vs. borrowed handles, manual release rules in raw FFI examples). It
+  does not describe the high-level Handle wrapper's RAII contract, so
+  no doc changes are required.
+
+Build & tests: cargo build -p edge-pdk -> ok; cargo test -> 6/6 passed.

@@ -525,8 +525,9 @@ impl Handle {
             )
         };
         if r != 0 { return Err(last_error()); }
-        let v = i64::from_handle(out)?;
-        unsafe { edge_release(out); }
-        Ok(v)
+        /* Wrap into a Handle so Drop releases on every exit path, including
+           the `?` from a future from_handle that fails between decode and release. */
+        let h = Handle::from_raw(out);
+        i64::from_handle(h.raw())
     }
 }
