@@ -523,7 +523,15 @@ fn unescape(s: &str) -> String {
             Some('x') => out.push(take_hex(&mut chars, 2)),
             Some('u') => out.push(take_hex(&mut chars, 4)),
             Some('U') => out.push(take_hex(&mut chars, 8)),
-            Some('0') => out.push('\0'),
+            // Octal escape: up to 3 digits 0-7, greedy, per CPython semantics.
+            Some(c @ '0'..='7') => {
+                let mut digits = String::from(c);
+                while digits.len() < 3 && matches!(chars.peek(), Some('0'..='7')) {
+                    digits.push(chars.next().unwrap());
+                }
+                let code = u32::from_str_radix(&digits, 8).unwrap_or(0);
+                out.push(char::from_u32(code).unwrap_or('\u{FFFD}'));
+            }
             Some(c) => { out.push('\\'); out.push(c); }
             None => out.push('\\'),
         }

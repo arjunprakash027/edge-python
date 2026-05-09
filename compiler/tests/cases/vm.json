@@ -1493,7 +1493,9 @@
 
   {"src": "def f(): pass\nprint(f.__annotations__)", "output": [], "error": "AttributeError"},
 
-  {"src": "print(len('\\012'))", "output": ["3"]},
+  {"src": "print(len('\\012'))", "output": ["1"]},
+  {"src": "print(ord('\\101'))", "output": ["65"]},
+  {"src": "print(ord('\\0'))", "output": ["0"]},
 
   {"src": "print(type(...))", "output": ["<class 'str'>"]},
   {"src": "print(... == '...')", "output": ["True"]},
