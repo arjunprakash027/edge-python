@@ -18,7 +18,7 @@ pub enum OpCode {
     BuildSlice, MakeClass, SetupExcept, PopExcept, Raise, BitAnd, BitOr, BitXor,
     BitNot, Shl, Shr, In, NotIn, Is, IsNot, UnpackSequence, BuildTuple, SetupWith, ExitWith, Yield,
     Del, Assert, Global, Nonlocal, UnpackArgs, ListAppend, SetAdd, MapAdd, BuildSet, RaiseFrom,
-    UnpackEx, LoadEllipsis, Await, MakeCoroutine, TypeAlias, StoreItem, Dup2,
+    UnpackEx, LoadEllipsis, Await, MakeCoroutine, StoreItem, Dup2,
     JumpIfFalseOrPop, JumpIfTrueOrPop, Dup, CallMethod, CallMethodArgs, CallAll, CallAny, CallBin,
     CallOct, CallHex, CallDivmod, CallPow, CallRepr, CallReversed, CallCallable, CallId, CallHash,
     PopIter, DelItem, CallExtern,
@@ -51,7 +51,8 @@ pub(super) fn builtin(name: &str) -> Option<(OpCode, bool)> {
         "min" => Some((OpCode::CallMin, true)),
         "max" => Some((OpCode::CallMax, true)),
         "sum" => Some((OpCode::CallSum, true)),
-        "sorted" => Some((OpCode::CallSorted, true)),
+        // sorted accepts `key=` kwarg — falls through to the generic
+        // LoadName+Call path so kwargs reach dispatch_native intact.
         "enumerate" => Some((OpCode::CallEnumerate, true)),
         "zip" => Some((OpCode::CallZip, true)),
         "list" => Some((OpCode::CallList, true)),
@@ -84,9 +85,7 @@ pub enum Value {
     Str(String),
     Bytes(alloc::vec::Vec<u8>),
     Int(i64),
-    BigInt(String),
     Float(f64),
-    Complex(f64, f64),
     Bool(bool),
     None,
 }
@@ -131,7 +130,6 @@ pub struct SSAChunk {
     pub constants: Vec<Value>,
     pub names: Vec<String>,
     pub functions: Vec<(Vec<String>, SSAChunk, u16, u16)>,
-    pub annotations: HashMap<String, String>,
     pub phi_sources: Vec<(u16, u16)>,
     pub classes: Vec<SSAChunk>,
     pub is_pure: bool,
@@ -148,6 +146,23 @@ pub struct SSAChunk {
        line and caret are derived from it). Lookup is binary search on the
        cold error path; hot dispatch never touches this. */
     pub stmt_pos: Vec<(u32, u32)>,
+    /* Call-site source map: (ip_of_call_instruction, byte_offset_in_source).
+       Populated only for Call/CallMethod/CallExtern emit sites — every other
+       instruction falls back to `stmt_pos` for byte resolution. The runtime
+       traceback renderer reads this to put the caret exactly under the call
+       expression instead of the statement start. Sorted by ip; binary-searched
+       on the cold error path. */
+    pub call_byte_pos: Vec<(u32, u32)>,
+    /* Source string this chunk was parsed from. Each module owns its own
+       Arc<String>; the entry chunk shares the host-supplied buffer. The
+       traceback renderer reaches for it via `vm.call_stack` when assembling
+       cross-module 'called from' frames. Empty by default for chunks built
+       outside the parser (test fixtures, manual SSAChunk::default()). */
+    pub source: alloc::sync::Arc<alloc::string::String>,
+    /* Display path for error rendering ('main.py', 'json_module.py', etc.).
+       Hosts can override via Parser::with_path; modules use their canonical
+       spec; the default empty string suppresses the file: prefix. */
+    pub path: alloc::sync::Arc<alloc::string::String>,
     /* External (native) functions resolved at parse time from `from <pkg> import <name>`.
        `extern_table[i]` is the function for `CallExtern` operand `i << 8`; the lower
        8 bits of the operand carry the argc. `extern_index` maps the local binding name
@@ -172,6 +187,16 @@ impl SSAChunk {
         Some(self.stmt_pos[i].1)
     }
 
+    /* Byte offset for the Call instruction at `ip`, with finer precision
+       than `resolve` (which only knows the enclosing statement). Returns
+       None if the parser did not record a call_byte_pos for this ip; callers
+       fall back to `resolve` for stmt-level precision. */
+    pub fn resolve_call(&self, ip: u32) -> Option<u32> {
+        let i = self.call_byte_pos.partition_point(|&(s, _)| s < ip);
+        let (recorded_ip, byte) = *self.call_byte_pos.get(i)?;
+        if recorded_ip == ip { Some(byte) } else { None }
+    }
+
     pub(super) fn emit(&mut self, op: OpCode, operand: u16) {
         // Set overflow flag for post-parse diagnostic instead of panicking.
         if self.instructions.len() >= MAX_INSTRUCTIONS {
@@ -179,6 +204,16 @@ impl SSAChunk {
             return;
         }
         self.instructions.push(Instruction { opcode: op, operand });
+    }
+
+    /* Record (ip_just_emitted, byte_pos) for the most recent instruction so
+       the runtime traceback can put the caret exactly under the call. Sites
+       that emit non-call instructions skip this; the renderer falls back to
+       stmt_pos for them. */
+    pub(super) fn record_call_pos(&mut self, byte_pos: u32) {
+        if self.instructions.is_empty() { return; }
+        let ip = (self.instructions.len() - 1) as u32;
+        self.call_byte_pos.push((ip, byte_pos));
     }
 
     pub(super) fn push_const(&mut self, v: Value) -> u16 {
@@ -499,7 +534,7 @@ fn unescape(s: &str) -> String {
 // Built-in types pre-registered as `Type` heap objects in the global
 // scope at VM init.
 pub const BUILTIN_TYPES: &[&str] = &[
-    "int", "float", "complex", "str", "bytes", "bool", "list",
+    "int", "float", "str", "bytes", "bool", "list",
     "tuple", "dict", "set", "range", "type", "NoneType",
     "Exception", "BaseException",
     "ValueError", "TypeError", "NameError", "KeyError",
@@ -508,5 +543,6 @@ pub const BUILTIN_TYPES: &[&str] = &[
     "RecursionError", "StopIteration", "NotImplementedError",
     "OSError", "IOError", "ImportError", "ModuleNotFoundError",
     "AssertionError", "ArithmeticError", "LookupError",
+    "CancelledError", "TimeoutError",
 ];
 

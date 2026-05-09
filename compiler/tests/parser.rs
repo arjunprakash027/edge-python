@@ -3,7 +3,6 @@ mod test {
 
     use compiler_lib::modules::lexer::lex;
     use compiler_lib::modules::parser::{Parser, Value, Diagnostic};
-    use compiler_lib::modules::fx::FxHashMap as HashMap;
 
     #[derive(serde::Deserialize)]
     struct Case {
@@ -11,7 +10,6 @@ mod test {
         constants: Vec<String>,
         names: Vec<String>,
         instructions: Vec<(String, u16)>,
-        annotations: HashMap<String, String>,
         #[serde(default)]
         functions: usize,
         #[serde(default)]
@@ -44,8 +42,6 @@ mod test {
                     Value::Float(f) => f.to_string(),
                     Value::Bool(b) => b.to_string(),
                     Value::None => "None".to_string(),
-                    Value::BigInt(s) => s.clone(),
-                    Value::Complex(re, im) => format!("complex({},{})", re, im),
                 })
                 .collect();
 
@@ -65,11 +61,6 @@ mod test {
             assert_eq!(
                 instructions, case.instructions,
                 "bytecode mismatch on: {:?}",
-                case.src
-            );
-            assert_eq!(
-                chunk.annotations, case.annotations,
-                "annotations mismatch on: {:?}",
                 case.src
             );
             assert_eq!(

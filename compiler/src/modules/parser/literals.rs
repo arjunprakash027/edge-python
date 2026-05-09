@@ -208,13 +208,31 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             }
                 Some(TokenType::Lbrace) => {
                     self.advance();
+                    // Capture the byte span of the expression so `f"{expr=}"`
+                    // can echo `expr=` literally before its formatted value.
+                    let expr_start_byte = self.tokens.peek().map(|t| t.start).unwrap_or(0);
+                    let insn_start = self.chunk.instructions.len();
+                    let saved_in_fstring = self.in_fstring_expr;
+                    self.in_fstring_expr = true;
                     self.expr();
+                    self.in_fstring_expr = saved_in_fstring;
+                    let expr_end_byte = self.last_end;
                     /* Encoding for FormatValue operand:
                          bit 0       — has format-spec on stack
                          bits 1..=2  — conversion: 0 none, 1 !r, 2 !s, 3 !a
                        Mirrors CPython's `flags` byte in `FORMAT_VALUE`. Zero
                        operand still means "plain str()" — backwards-compatible. */
                     let mut flags = 0u16;
+                    // `=` debug-self-doc: `f"{expr=}"` expands to the literal
+                    // text `expr=` followed by the formatted value. Defaults
+                    // to `!r` conversion (CPython parity) when neither !r/!s/!a
+                    // nor :spec is supplied.
+                    let mut debug_prefix: Option<String> = None;
+                    if matches!(self.peek(), Some(TokenType::Equal)) {
+                        self.advance();
+                        let raw = &self.source[expr_start_byte..expr_end_byte];
+                        debug_prefix = Some(s!(str raw, "="));
+                    }
                     if matches!(self.peek(), Some(TokenType::Exclamation)) {
                         let bang = self.advance();
                         let conv_tok = self.advance();
@@ -229,6 +247,21 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                                 0
                             }
                         };
+                    }
+                    if debug_prefix.is_some() && (flags & 0b110) == 0 && !matches!(self.peek(), Some(TokenType::Colon)) {
+                        flags |= 1 << 1; // default !r when `=` has no explicit conv/spec
+                    }
+                    // Stitch the prefix in before the expression result. We
+                    // drain the just-emitted expression bytecode, emit the
+                    // literal const for `expr=`, then re-emit the drained
+                    // bytecode so the runtime stack ends up [prefix, value].
+                    if let Some(prefix) = debug_prefix.take() {
+                        let drained: Vec<Instruction> = self.chunk.instructions
+                            .drain(insn_start..)
+                            .collect();
+                        self.emit_const(Value::Str(prefix));
+                        parts += 1;
+                        self.chunk.instructions.extend(drained);
                     }
                     if matches!(self.peek(), Some(TokenType::Colon)) {
                         let colon = self.advance();
@@ -272,9 +305,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
        `CallExtern` (operand = (extern_idx << 8) | argc); rest fall through to
        the generic `LoadName + Call`. */
     pub(super) fn call(&mut self, name: String) -> bool {
+        let call_pos = self.last_end as u32;
         if name == "print" {
             let (pos, kw) = self.parse_args();
             self.chunk.emit(OpCode::CallPrint, pos + kw);
+            self.chunk.record_call_pos(call_pos);
             return false;
         }
 
@@ -286,6 +321,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         if let Some((op, leaves_value)) = builtin(name.as_str()) {
             let (pos, kw) = self.parse_args();
             self.chunk.emit(op, pos + kw);
+            self.chunk.record_call_pos(call_pos);
             return leaves_value;
         }
 
@@ -297,6 +333,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             let (pos, _kw) = self.parse_args();
             let encoded = (extern_idx << 8) | (pos & 0xFF);
             self.chunk.emit(OpCode::CallExtern, encoded);
+            self.chunk.record_call_pos(call_pos);
             return true;
         }
 
@@ -305,10 +342,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let (pos, kw) = self.parse_args();
         let encoded = ((kw & 0xFF) << 8) | (pos & 0xFF);
         self.chunk.emit(OpCode::Call, encoded);
+        self.chunk.record_call_pos(call_pos);
         true
     }
 
     pub(super) fn call_range(&mut self) {
+        let call_pos = self.last_end as u32;
         self.advance();
         let mut argc = 0u16;
         while !matches!(self.peek(), Some(TokenType::Rpar) | None) {
@@ -318,6 +357,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
         self.eat(TokenType::Rpar);
         self.chunk.emit(OpCode::CallRange, argc);
+        self.chunk.record_call_pos(call_pos);
     }
 
     pub(super) fn parse_args(&mut self) -> (u16, u16) {
@@ -438,7 +478,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.chunk.emit(if is_async { OpCode::MakeCoroutine } else { OpCode::MakeFunction }, fi);
 
         for _ in 0..decorators {
+            let pos = self.last_end as u32;
             self.chunk.emit(OpCode::Call, 1);
+            self.chunk.record_call_pos(pos);
         }
 
         let ver = self.increment_version(&fname);

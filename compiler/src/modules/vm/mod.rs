@@ -119,6 +119,21 @@ pub struct VM<'a> {
        cleared on swallow / at run() entry; readable via error_pos() so the
        outer renderer can attach a Diagnostic-style caret. */
     pub(crate) error_byte_pos: Option<u32>,
+    /* Byte offset of the Call instruction currently being dispatched.
+       Snapshotted by the dispatch loop right before invoking
+       `handle_function` so `exec_call` can record it on the CallFrame
+       it pushes. Cleared after each call returns. */
+    pub(crate) pending_call_byte_pos: Option<u32>,
+    /* When `sleep(s)` yields, it stores the wakeup time here so the
+       scheduler can move the handle to Sleeping(until_ns). Cleared after
+       each scheduler step; None means "yield once and stay Ready". */
+    pub(crate) pending_sleep_until_ns: Option<u64>,
+    /* When a `raise X("msg")` lifts an `ExcInstance`, we stash the Val here
+       so the matching `except X as e` handler can bind the actual instance
+       (instead of the bare Type class object). Cleared on every successful
+       handler entry. None means "the raise was a Type or string — bind the
+       Type from globals as before". */
+    pub(crate) pending_exc_val: Option<Val>,
     /* spec → Module Val map populated by `init_modules` before user
        bytecode runs. Both `OpCode::LoadModule` and the `import_module()`
        builtin look up here. Each unique spec across the chunk tree
@@ -132,6 +147,29 @@ pub struct VM<'a> {
        `b.helper`) stay isolated — fixes a regression that the splice
        model handled via per-importer name mangling. */
     pub(crate) fn_module: Vec<Option<String>>,
+    /* Function-name registry parallel to `functions`. Populated when
+       `MakeFunction` runs (the next StoreName operand identifies the bind),
+       consulted by the multi-frame traceback renderer to fill the
+       `<fname>` placeholder in `note: called from <fname>()` lines. Empty
+       string entries are anonymous lambdas. */
+    pub(crate) function_names: Vec<String>,
+    /* Active call frames pushed/popped by exec_call on every user-function
+       entry and exit. Drained on error to feed the traceback renderer; the
+       innermost (most recent) call is at the end of the Vec. */
+    pub(crate) call_stack: Vec<crate::modules::vm::types::CallFrame>,
+    /* Cooperative scheduler for `run` / `gather` / `with_timeout`.
+       Empty between top-level invocations of `run`; each handle holds
+       a HeapObj::Coroutine Val plus its lifecycle state. */
+    pub(crate) scheduler: Vec<crate::modules::vm::types::CoroutineHandle>,
+    /* Host-installed wall-clock provider in nanoseconds. WASM hosts
+       wire this to `Date.now() * 1e6`; native hosts can use
+       `std::time::Instant`. None means the runtime falls back to a
+       single-yield sleep — tests stay deterministic without a clock. */
+    pub(crate) time_hook: Option<fn() -> u64>,
+    /* Internal monotonic counter used when `time_hook` is None: each
+       `sleep(s)` call moves it forward by `s * 1e9`, so coroutines still
+       wake in order even without a real clock. Resets at every `run()`. */
+    pub(crate) virtual_clock_ns: u64,
 }
 
 impl<'a> VM<'a> {
@@ -168,6 +206,13 @@ impl<'a> VM<'a> {
             self.function_parents.push(parent_fi);
             self.fn_module.push(module_spec.map(String::from));
             self.body_to_fi.insert(&desc.1 as *const _, global as usize);
+            // Resolve the function's bare name from its parent chunk: desc.3
+            // is the name slot index into chunk.names. ssa_strip drops the
+            // SSA version suffix so the traceback shows `f`, not `f_2`.
+            let name = chunk.names.get(desc.3 as usize)
+                .map(|n| crate::modules::parser::ssa_strip(n).to_string())
+                .unwrap_or_default();
+            self.function_names.push(name);
             indices.push(global);
             self.build_function_table(&desc.1, Some(global as usize), module_spec);
         }
@@ -349,8 +394,16 @@ impl<'a> VM<'a> {
             observed_impure: Vec::new(),
             exception_stack: Vec::new(),
             error_byte_pos: None,
+            pending_call_byte_pos: None,
+            pending_sleep_until_ns: None,
+            pending_exc_val: None,
             module_table: HashMap::default(),
             fn_module: Vec::new(),
+            function_names: Vec::new(),
+            call_stack: Vec::new(),
+            scheduler: Vec::new(),
+            time_hook: None,
+            virtual_clock_ns: 0,
             functions: Vec::new(),
             fn_index: Vec::new(),
             function_parents: Vec::new(),
@@ -493,10 +546,16 @@ impl<'a> VM<'a> {
             NativeFnId::All, NativeFnId::Any, NativeFnId::Bin, NativeFnId::Oct,
             NativeFnId::Hex, NativeFnId::Divmod, NativeFnId::Pow, NativeFnId::Repr,
             NativeFnId::Reversed, NativeFnId::Callable, NativeFnId::Id, NativeFnId::Hash,
-            NativeFnId::Format, NativeFnId::Ascii, NativeFnId::GetAttr, NativeFnId::HasAttr, NativeFnId::Next,
+            NativeFnId::Format, NativeFnId::GetAttr, NativeFnId::HasAttr,
+            NativeFnId::SetAttr, NativeFnId::DelAttr, NativeFnId::Next,
             NativeFnId::Run, NativeFnId::Sleep, NativeFnId::Receive,
             NativeFnId::Map, NativeFnId::Filter, NativeFnId::Iter,
-            NativeFnId::Bytes, NativeFnId::ImportModule, NativeFnId::Complex,
+            NativeFnId::Bytes, NativeFnId::ImportModule,
+            NativeFnId::Slice, NativeFnId::Vars,
+            NativeFnId::Gather, NativeFnId::WithTimeout, NativeFnId::Cancel,
+            NativeFnId::BytesFromHex, NativeFnId::IntFromBytes,
+            NativeFnId::IntToBytes, NativeFnId::FrozenSet,
+            NativeFnId::Globals, NativeFnId::Locals,
         ];
         for &id in builtin_fns {
             if let Ok(v) = vm.heap.alloc(HeapObj::NativeFn(id)) {
@@ -583,6 +642,17 @@ impl<'a> VM<'a> {
        run() succeeded / hasn't been called. Renderers turn this into the
        fancy `--> path:line:col` form via parser::Diagnostic. */
     pub fn error_pos(&self) -> Option<usize> { self.error_byte_pos.map(|p| p as usize) }
+    pub fn call_stack_frames(&self) -> &[crate::modules::vm::types::CallFrame] { &self.call_stack }
+    pub fn function_names_ref(&self) -> &[String] { &self.function_names }
+    /// Install a host-provided wall-clock function returning nanoseconds.
+    /// Without one, `sleep` advances a virtual clock so coroutines still
+    /// interleave deterministically but no real wait happens.
+    pub fn set_time_hook(&mut self, hook: fn() -> u64) {
+        self.time_hook = Some(hook);
+    }
+    pub(crate) fn now_ns(&self) -> u64 {
+        match self.time_hook { Some(h) => h(), None => self.virtual_clock_ns }
+    }
 
     /* Mark all reachable roots and sweep. mark() is a no-op on non-heap
        values, so undef/None/int/float/bool slots are free to scan. */
@@ -728,7 +798,7 @@ impl<'a> VM<'a> {
             .unwrap_or_else(|| OpcodeCache::new(chunk));
         cache.ensure_fused(chunk);
         // Pre-materialise the constant pool here (not in OpcodeCache::new)
-        // because Str/BigInt allocate into the live HeapPool.
+        // because Str allocates into the live HeapPool.
         if let Err(e) = cache.ensure_const_vals(chunk, &mut self.heap) {
             self.opcode_caches.insert(key, cache);
             return Err(e);
@@ -790,11 +860,16 @@ impl<'a> VM<'a> {
                             self.pending_pos_delta = 0;
                             self.pending_kw_delta  = 0;
                             self.error_byte_pos    = None;
+                            // Caught exception: discard the partial traceback
+                            // so a later unhandled error doesn't carry stale
+                            // frames from the swallowed one.
+                            self.call_stack.clear();
                             // Cold path: allocate-once String for the lookup
                             // key. `Raised` carries the user-supplied class
                             // name so `except <Type>` can match it.
                             let msg: alloc::string::String = match &e {
                                 VmErr::ZeroDiv     => "ZeroDivisionError".into(),
+                                VmErr::Overflow    => "OverflowError".into(),
                                 VmErr::Type(_)     => "TypeError".into(),
                                 VmErr::TypeMsg(_)  => "TypeError".into(),
                                 VmErr::Value(_)    => "ValueError".into(),
@@ -806,7 +881,14 @@ impl<'a> VM<'a> {
                                 VmErr::Runtime(_)  => "RuntimeError".into(),
                                 VmErr::Raised(s)   => s.clone(),
                             };
-                            let exc = if let Some(&type_val) = self.globals.get(&msg) {
+                            // Prefer the pending ExcInstance Val (built by
+                            // `raise X("msg")`) so `except X as e` binds the
+                            // actual instance — `e.args` then works. Fall
+                            // back to the Type from globals for bare-name
+                            // raises and to a fresh Str for ad-hoc messages.
+                            let exc = if let Some(v) = self.pending_exc_val.take() {
+                                v
+                            } else if let Some(&type_val) = self.globals.get(&msg) {
                                 type_val
                             } else {
                                 self.heap.alloc(HeapObj::Str(msg))?
@@ -870,6 +952,28 @@ impl<'a> VM<'a> {
                 let mod_name = mod_name.clone();
                 return Err(VmErr::Attribute(s!(
                     "module '", str &mod_name, "' has no attribute '", str bare, "'")));
+            }
+
+        // Class.method(args): direct method call on the class object,
+        // without prepending self. Mirrors the LoadAttr Class arm.
+        if obj.is_heap()
+            && let HeapObj::Class(_, members) = self.heap.get(obj) {
+                let bare = ssa_strip(name);
+                if let Some((_, mv)) = members.iter().find(|(n, _)| n == bare) {
+                    let mv = *mv;
+                    self.push(mv);
+                    for a in &positional { self.push(*a); }
+                    for a in &kw_flat   { self.push(*a); }
+                    let argc = positional.len() as u16;
+                    let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
+                    return self.exec_call(encoded, chunk, slots);
+                }
+                let cls_name = match self.heap.get(obj) {
+                    HeapObj::Class(n, _) => n.clone(),
+                    _ => alloc::string::String::new(),
+                };
+                return Err(VmErr::Attribute(s!(
+                    "type object '", str &cls_name, "' has no attribute '", str bare, "'")));
             }
 
         // User-defined method on Instance: call with self prepended.
@@ -1037,6 +1141,11 @@ impl<'a> VM<'a> {
             | OpCode::CallHex | OpCode::CallDivmod | OpCode::CallPow | OpCode::CallRepr
             | OpCode::CallReversed | OpCode::CallCallable | OpCode::CallId | OpCode::CallHash
             | OpCode::CallExtern => {
+                // Snapshot the byte_pos of this call site so exec_call can
+                // record it on the new CallFrame. Prefer call_byte_pos
+                // (instr-level) and fall back to the enclosing statement.
+                self.pending_call_byte_pos = chunk.resolve_call(rip as u32)
+                    .or_else(|| chunk.resolve(rip as u32));
                 self.handle_function(ins.opcode, op, chunk, slots)?;
             }
 
@@ -1080,12 +1189,23 @@ impl<'a> VM<'a> {
                 let body = &chunk.classes[ci];
                 let mut class_slots = self.fill_builtins(&body.names);
                 self.exec(body, &mut class_slots)?;
+                // Collect every defined slot as a class member: methods (Func),
+                // class-level constants (`Status.IDLE = 0`), and any other Val
+                // produced by class-body execution. Lets `MyClass.method()`
+                // call methods directly (no self) and `MyClass.CONST` work as
+                // a namespace-style read.
                 let mut methods: Vec<(alloc::string::String, Val)> = Vec::new();
                 for (i, name) in body.names.iter().enumerate() {
                     if let Some(&v) = class_slots.get(i)
-                        && !v.is_undef() && v.is_heap()
-                        && matches!(self.heap.get(v), HeapObj::Func(..)) {
+                        && !v.is_undef() {
                             let base = ssa_strip(name);
+                            // Builtin globals also live in class_slots (filled
+                            // by fill_builtins). Skip them so `MyClass.print`
+                            // doesn't shadow the global builtin.
+                            let is_builtin_shadow = v.is_heap()
+                                && matches!(self.heap.get(v), HeapObj::NativeFn(_))
+                                && self.globals.get(base).copied() == Some(v);
+                            if is_builtin_shadow { continue; }
                             if !methods.iter().any(|(n, _)| n == base) {
                                 methods.push((base.to_string(), v));
                             }
@@ -1191,7 +1311,6 @@ impl<'a> VM<'a> {
                 self.push(a); self.push(b); self.push(a); self.push(b);
             }
             OpCode::Assert | OpCode::Del | OpCode::Global | OpCode::Nonlocal
-            | OpCode::TypeAlias
             | OpCode::Raise | OpCode::RaiseFrom | OpCode::Await => {
                 self.handle_side(opcode, operand, slots)?;
             }

@@ -72,7 +72,7 @@ impl<'a> Scanner<'a> {
         self.src.get(self.pos + offset).copied()
     }
 
-    // Numbers: decimal, hex, octal, binary, float, complex.
+    // Numbers: decimal, hex, octal, binary, float.
 
     #[inline]
     fn scan_exponent(&mut self) -> bool {
@@ -91,9 +91,9 @@ impl<'a> Scanner<'a> {
     fn scan_number(&mut self, start: usize) -> TokenType {
         if self.src[start] == b'0' && self.pos < self.src.len() {
             match self.src[self.pos] {
-                b'x' | b'X' => { self.pos += 1; self.scan_hex_digits(); return self.maybe_complex(TokenType::Int); }
-                b'o' | b'O' => { self.pos += 1; self.scan_oct_digits(); return self.maybe_complex(TokenType::Int); }
-                b'b' | b'B' => { self.pos += 1; self.scan_bin_digits(); return self.maybe_complex(TokenType::Int); }
+                b'x' | b'X' => { self.pos += 1; self.scan_hex_digits(); return TokenType::Int; }
+                b'o' | b'O' => { self.pos += 1; self.scan_oct_digits(); return TokenType::Int; }
+                b'b' | b'B' => { self.pos += 1; self.scan_bin_digits(); return TokenType::Int; }
                 _ => {}
             }
         }
@@ -105,20 +105,13 @@ impl<'a> Scanner<'a> {
             self.scan_digits();
         }
         is_float |= self.scan_exponent();
-        self.maybe_complex(if is_float { TokenType::Float } else { TokenType::Int })
+        if is_float { TokenType::Float } else { TokenType::Int }
     }
 
     fn scan_dot_number(&mut self) -> TokenType {
         self.scan_digits();
         self.scan_exponent();
-        self.maybe_complex(TokenType::Float)
-    }
-
-    #[inline]
-    fn maybe_complex(&mut self, base: TokenType) -> TokenType {
-        if self.pos < self.src.len() && matches!(self.src[self.pos], b'j' | b'J') {
-            self.pos += 1; TokenType::Complex
-        } else { base }
+        TokenType::Float
     }
 
     // Strings: single, double, triple-quoted (escape-aware).

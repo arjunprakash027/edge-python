@@ -166,6 +166,21 @@ impl<'a> VM<'a> {
             return Ok(());
         }
 
+        // Calling a builtin Type: build an ExcInstance carrying the type name
+        // and args. Used for `raise ValueError("msg")` and friends; `e.args`
+        // exposes the args tuple. Conversion-style types (int/float/...) are
+        // routed through specialised opcodes by the parser, so this path is
+        // overwhelmingly hit by exception construction in practice.
+        if let HeapObj::Type(name) = self.heap.get(callee) {
+            let name = name.clone();
+            if !kw_flat.is_empty() {
+                return Err(cold_type("exception class takes no keyword arguments"));
+            }
+            let exc = self.heap.alloc(HeapObj::ExcInstance(name, positional))?;
+            self.push(exc);
+            return Ok(());
+        }
+
         // Calling a class: create an instance and run __init__ if defined.
         if let HeapObj::Class(_, methods) = self.heap.get(callee) {
             let methods = methods.clone();
@@ -427,11 +442,29 @@ impl<'a> VM<'a> {
         let snap = self.live_slots.len();
         self.live_slots.extend_from_slice(slots);
 
+        // Push a CallFrame so the multi-frame traceback renderer can show
+        // this call's source line if the body errors. The frame snapshots
+        // the caller's chunk source/path so render works without holding a
+        // borrow on the live chunk pointers.
+        let call_byte_pos = self.pending_call_byte_pos.take().unwrap_or(0);
+        self.call_stack.push(super::super::types::CallFrame {
+            fi,
+            call_byte_pos,
+            caller_source: chunk.source.clone(),
+            caller_path: chunk.path.clone(),
+        });
+
         self.observed_impure.push(false);
         let exec_result = self.exec(body, &mut fn_slots);
         let callee_impure = self.observed_impure.pop().unwrap_or(true);
         self.live_slots.truncate(snap);
         self.depth -= 1;
+        // On success the frame is popped; on error we leave it in place so
+        // the renderer can walk the chain. The error catch in dispatch is
+        // responsible for clearing the stack on swallowed exceptions.
+        if exec_result.is_ok() {
+            self.call_stack.pop();
+        }
 
         // Back-propagate `nonlocal` writes to the caller's matching slots.
         let nl_table = &self.nonlocal_tables[fi];
@@ -506,23 +539,53 @@ impl<'a> VM<'a> {
         positional: Vec<Val>, kw: Vec<Val>,
         chunk: &SSAChunk, slots: &mut [Val],
     ) -> Result<(), VmErr> {
+        use super::super::types::NativeFnId::*;
+
+        // sorted() is the one builtin that accepts keyword arguments
+        // (`sorted(xs, key=fn)`). Pull the key out of kw_flat (Vec of
+        // alternating name/value) before the generic "no kwargs" check.
+        let mut sort_key: Option<Val> = None;
+        let kw = if id == Sorted {
+            let mut leftover: Vec<Val> = Vec::new();
+            for chunk_pair in kw.chunks(2) {
+                let (name_v, val_v) = (chunk_pair[0], chunk_pair[1]);
+                let is_key = name_v.is_heap()
+                    && matches!(self.heap.get(name_v), HeapObj::Str(s) if s == "key");
+                if is_key {
+                    sort_key = Some(val_v);
+                } else {
+                    leftover.push(name_v);
+                    leftover.push(val_v);
+                }
+            }
+            leftover
+        } else { kw };
+
         if !kw.is_empty() {
             return Err(cold_type("native function takes no keyword arguments"));
         }
         let argc = positional.len() as u16;
-
-        use super::super::types::NativeFnId::*;
 
         // Pre-validate fixed arity to keep the stack clean on error.
         let expected: Option<u16> = match id {
             Input | Receive => Some(0),
             Len | Abs | Str | Int | Float | Bool | Type | Chr | Ord
             | Sorted | Enumerate | List | Tuple | Bin | Oct | Hex
-            | Repr | Reversed | Callable | Id | Hash | Ascii | Next | Sleep
+            | Repr | Reversed | Callable | Id | Hash | Next | Sleep
             | Iter => Some(1),
-            Divmod | IsInstance | HasAttr | Map | Filter => Some(2),
+            Divmod | IsInstance | HasAttr | Map | Filter | DelAttr => Some(2),
+            SetAttr => Some(3),
+            WithTimeout => Some(2),
+            Cancel => Some(1),
+            BytesFromHex => Some(1),
+            IntFromBytes => Some(2),
+            IntToBytes => Some(3),
+            Globals | Locals => Some(0),
             Bytes => None,  // 0/1/2-arg: bytes() | bytes(n|iter) | bytes(str, "utf-8")
-            Complex => None, // 0/1/2-arg: complex() | complex(real) | complex(real, imag)
+            Slice => None,  // 1/2/3-arg
+            Gather => None, // variadic
+            FrozenSet => None, // 0/1-arg
+            Vars => Some(1),
             ImportModule => Some(1),
             _ => None,
         };
@@ -568,7 +631,7 @@ impl<'a> VM<'a> {
             Type => self.call_type(),
             Chr => self.call_chr(),
             Ord => self.call_ord(),
-            Sorted => self.call_sorted(),
+            Sorted => self.call_sorted_with_key(sort_key, chunk, slots),
             Enumerate => self.call_enumerate(),
             List => self.call_list(),
             Tuple => self.call_tuple(),
@@ -580,7 +643,6 @@ impl<'a> VM<'a> {
             Callable => self.call_callable(),
             Id => self.call_id(),
             Hash => self.call_hash(),
-            Ascii => self.call_ascii(),
             Divmod => self.call_divmod(),
             IsInstance => self.call_isinstance(),
             HasAttr => self.call_hasattr(),
@@ -592,8 +654,20 @@ impl<'a> VM<'a> {
             Filter => self.call_filter(chunk, slots),
             Iter => self.call_iter(),
             Bytes => self.call_bytes(argc),
-            Complex => self.call_complex(argc),
+            Slice => self.call_slice(argc),
+            Vars => self.call_vars(),
+            SetAttr => self.call_setattr(),
+            DelAttr => self.call_delattr(),
             ImportModule => self.call_import_module(),
+            Gather => self.call_gather(argc),
+            WithTimeout => self.call_with_timeout(),
+            Cancel => self.call_cancel(),
+            BytesFromHex => self.call_bytes_fromhex(),
+            IntFromBytes => self.call_int_from_bytes(),
+            IntToBytes => self.call_int_to_bytes(),
+            FrozenSet => self.call_frozenset(argc),
+            Globals => self.call_globals(chunk, slots),
+            Locals => self.call_locals(chunk, slots),
         }
     }
 }

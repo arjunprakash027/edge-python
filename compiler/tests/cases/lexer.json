@@ -180,15 +180,7 @@
     "tokens": ["Float", "Endmarker"]
   },
   {
-    "src": "3j", 
-    "tokens": ["Complex", "Endmarker"]
-  },
-  {
-    "src": "2.5J", 
-    "tokens": ["Complex", "Endmarker"]
-  },
-  {
-    "src": "'hello'", 
+    "src": "'hello'",
     "tokens": ["String", "Endmarker"]
   },
   {
@@ -288,15 +280,15 @@
     "tokens": ["Def", "Name", "Lpar", "Rpar", "Colon", "Newline", "Indent", "If", "True", "Colon", "Newline", "Indent", "Pass", "Newline", "Dedent", "Dedent", "Endmarker"]
   },
   {
-    "src": "match = 5", 
-    "tokens": ["Name", "Equal", "Int", "Endmarker"]
+    "src": "match = 5",
+    "tokens": ["Match", "Equal", "Int", "Endmarker"]
   },
   {
-    "src": "case = True", 
-    "tokens": ["Name", "Equal", "True", "Endmarker"]
+    "src": "case = True",
+    "tokens": ["Case", "Equal", "True", "Endmarker"]
   },
   {
-    "src": "type = None", 
+    "src": "type = None",
     "tokens": ["Name", "Equal", "None", "Endmarker"]
   },
   {
@@ -528,15 +520,7 @@
     "tokens": ["Float", "Endmarker"]
   },
   {
-    "src": "0j", 
-    "tokens": ["Complex", "Endmarker"]
-  },
-  {
-    "src": "3.14j", 
-    "tokens": ["Complex", "Endmarker"]
-  },
-  {
-    "src": "\"double\"", 
+    "src": "\"double\"",
     "tokens": ["String", "Endmarker"]
   },
   {

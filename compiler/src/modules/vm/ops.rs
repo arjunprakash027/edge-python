@@ -6,47 +6,6 @@ use crate::modules::parser::types::OpCode;
 use alloc::{string::String, vec::Vec, rc::Rc};
 use core::cell::RefCell;
 
-/* Render an f64 the way CPython renders the components of a complex
-   number: whole-number floats drop the trailing `.0` (so `2.0+3.0j`
-   prints `2+3j`), zero keeps its sign bit, NaN / inf use the standard
-   names. Distinct from `format_f64`, which always keeps `.0`. */
-fn format_complex_part(f: f64) -> String {
-    if f == 0.0 {
-        return if f.is_sign_negative() { "-0".into() } else { "0".into() };
-    }
-    const I64_UPPER: f64 = i64::MAX as f64;
-    if f.is_finite() && f >= (i64::MIN as f64) && f < I64_UPPER && f == (f as i64) as f64 {
-        let mut b = itoa::Buffer::new();
-        return b.format(f as i64).into();
-    }
-    crate::modules::fstr::format_f64(f)
-}
-
-/* Format `re + im*j` Python-style: when `re` is +0.0 the real part is
-   omitted (`3j`); otherwise the full parenthesised form is used with the
-   sign taken from `im`'s sign bit so `(2-3j)` stays `(2-3j)` and
-   `complex(2, -0.0)` prints `(2-0j)`. */
-fn format_complex(re: f64, im: f64) -> String {
-    if re == 0.0 && re.is_sign_positive() {
-        let mut s = format_complex_part(im);
-        s.push('j');
-        return s;
-    }
-    let mut s = String::with_capacity(16);
-    s.push('(');
-    s.push_str(&format_complex_part(re));
-    if im.is_sign_negative() && !im.is_nan() {
-        s.push('-');
-        s.push_str(&format_complex_part(-im));
-    } else {
-        s.push('+');
-        s.push_str(&format_complex_part(im));
-    }
-    s.push('j');
-    s.push(')');
-    s
-}
-
 /* Render a `bytes` value as `b'...'` with Python's repr conventions:
    printable ASCII verbatim, control / high-bit / quote / backslash as
    `\xHH` or named escape. Always uses single quotes and escapes embedded
@@ -106,11 +65,11 @@ impl<'a> VM<'a> {
         match self.heap.get(v) {
             HeapObj::Str(s) => !s.is_empty(),
             HeapObj::Bytes(b) => !b.is_empty(),
-            HeapObj::BigInt(b) => !b.is_zero(),
             HeapObj::List(l) => !l.borrow().is_empty(),
             HeapObj::Tuple(t) => !t.is_empty(),
             HeapObj::Dict(d) => !d.borrow().is_empty(),
             HeapObj::Set(s) => !s.borrow().is_empty(),
+            HeapObj::FrozenSet(s) => !s.is_empty(),
             HeapObj::Range(s,e,st) => if *st > 0 { s < e } else { s > e },
             HeapObj::Type(_) => true,
             HeapObj::Func(_, _, _) => true,
@@ -123,21 +82,19 @@ impl<'a> VM<'a> {
             HeapObj::Coroutine(..) => true,
             HeapObj::Module(..) => true,
             HeapObj::Extern(_) => true,
-            HeapObj::Complex(re, im) => *re != 0.0 || *im != 0.0,
+            HeapObj::ExcInstance(..) => true,
         }
     }
 
     pub fn bitwise_op(&mut self, a: Val, b: Val, op: impl Fn(i64, i64) -> i64) -> Result<Val, VmErr> {
-        if a.is_int() && b.is_int() {
-            return Ok(Val::int(op(a.as_int(), b.as_int())));
-        }
-        let ai = self.to_bigint(a)
-            .and_then(|b| b.to_i64_checked())
-            .ok_or(cold_type("bitwise op requires integer operands"))?;
-        let bi = self.to_bigint(b)
-            .and_then(|b| b.to_i64_checked())
-            .ok_or(cold_type("bitwise op requires integer operands"))?;
-        Ok(Val::int(op(ai, bi)))
+        let ai = if a.is_int() { a.as_int() }
+                 else if a.is_bool() { a.as_bool() as i64 }
+                 else { return Err(cold_type("bitwise op requires integer operands")); };
+        let bi = if b.is_int() { b.as_int() }
+                 else if b.is_bool() { b.as_bool() as i64 }
+                 else { return Err(cold_type("bitwise op requires integer operands")); };
+        let r = op(ai, bi);
+        Val::int_checked(r).ok_or(cold_overflow())
     }
 
     /* Set | Set, Set & Set, Set ^ Set. Caller has already verified both
@@ -188,10 +145,10 @@ impl<'a> VM<'a> {
         else { match self.heap.get(v) {
             HeapObj::Str(_) => "str",
             HeapObj::Bytes(_) => "bytes",
-            HeapObj::BigInt(_) => "int",
             HeapObj::List(_) => "list",
             HeapObj::Dict(_) => "dict",
             HeapObj::Set(_) => "set",
+            HeapObj::FrozenSet(_) => "frozenset",
             HeapObj::Tuple(_) => "tuple",
             HeapObj::Func(_, _, _) => "function",
             HeapObj::Type(_) => "type",
@@ -205,7 +162,7 @@ impl<'a> VM<'a> {
             HeapObj::Coroutine(..) => "coroutine",
             HeapObj::Module(..) => "module",
             HeapObj::Extern(_) => "builtin_function_or_method",
-            HeapObj::Complex(..) => "complex",
+            HeapObj::ExcInstance(..) => "exception",
         }}
     }
 
@@ -238,7 +195,6 @@ impl<'a> VM<'a> {
         match self.heap.get(v) {
             HeapObj::Str(s) => s.clone(),
             HeapObj::Bytes(b) => format_bytes(b),
-            HeapObj::BigInt(b) => b.to_decimal(),
             HeapObj::Type(name) => s!("<class '", str name, "'>"),
             HeapObj::Func(i,_,_) => s!("<function ", int *i),
             HeapObj::Slice(s,e,st) => s!("slice(", str &self.display(*s), ", ", str &self.display(*e), ", ", str &self.display(*st), ")"),
@@ -257,7 +213,21 @@ impl<'a> VM<'a> {
             HeapObj::Coroutine(..) => "<coroutine>".into(),
             HeapObj::Module(name, _) => s!("<module '", str name, "'>"),
             HeapObj::Extern(f) => s!("<extern function ", str &f.name, ">"),
-            HeapObj::Complex(re, im) => format_complex(*re, *im),
+            HeapObj::ExcInstance(name, args) => {
+                // Mirror CPython: `repr(ValueError("x"))` → "ValueError('x')",
+                // `str(ValueError("x"))` → "x". display() is the str() form
+                // here; `repr(...)` is handled by formatting overrides if any.
+                if args.len() == 1 {
+                    self.display(args[0])
+                } else if args.is_empty() {
+                    name.clone()
+                } else {
+                    let mut o = s!(cap: 32; str name, "(");
+                    self.append_reprs(&mut o, args.iter());
+                    o.push(')');
+                    o
+                }
+            }
             HeapObj::Set(s) => {
                 let mut items: Vec<Val> = s.borrow().iter().cloned().collect();
                 if items.is_empty() { return "set()".into(); }
@@ -266,6 +236,15 @@ impl<'a> VM<'a> {
                 out.push('{');
                 self.append_reprs(&mut out, items.iter());
                 out.push('}');
+                out
+            }
+            HeapObj::FrozenSet(s) => {
+                let mut items: Vec<Val> = s.iter().cloned().collect();
+                if items.is_empty() { return "frozenset()".into(); }
+                self.sort_set_items(&mut items);
+                let mut out = String::from("frozenset({");
+                self.append_reprs(&mut out, items.iter());
+                out.push_str("})");
                 out
             }
         }
@@ -298,9 +277,6 @@ impl<'a> VM<'a> {
         let b = if b.is_bool() { Val::int(b.as_bool() as i64) } else { b };
         if a.is_int() && b.is_int() { return Ok(a.as_int() < b.as_int()); }
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(af < bf); }
-        if let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b)) {
-            return Ok(ba.cmp(&bb) == core::cmp::Ordering::Less);
-        }
         if a.is_heap() && b.is_heap()
             && let (HeapObj::Str(x), HeapObj::Str(y)) = (self.heap.get(a), self.heap.get(b)) {
                 return Ok(x < y);
@@ -319,6 +295,7 @@ impl<'a> VM<'a> {
             HeapObj::Tuple(v) => v.iter().any(|x| eq_vals_with_heap(*x, item, &self.heap)),
             HeapObj::Dict(p) => p.borrow().contains_key(&item),
             HeapObj::Set(s) => s.borrow().iter().any(|x| eq_vals_with_heap(*x, item, &self.heap)),
+            HeapObj::FrozenSet(s) => s.iter().any(|x| eq_vals_with_heap(*x, item, &self.heap)),
             HeapObj::Str(s) => {
                 if item.is_heap() && let HeapObj::Str(sub) = self.heap.get(item) { return s.contains(sub.as_str()); }
                 false
@@ -328,20 +305,9 @@ impl<'a> VM<'a> {
     }
     pub fn add_vals(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
         if a.is_int() && b.is_int() {
-            return match a.as_int().checked_add(b.as_int()) {
-                Some(r) if (Val::INT_MIN..=Val::INT_MAX).contains(&r) => Ok(Val::int(r)),
-                Some(r) => self.heap.alloc(HeapObj::BigInt(BigInt::from_i64(r))),
-                None => self.i128_to_val(a.as_int() as i128 + b.as_int() as i128),
-            };
-        }
-        if self.is_complex(a) || self.is_complex(b) {
-            let ((ra, ia), (rb, ib)) = self.complex_pair(a, b, "+")?;
-            return self.alloc_complex(ra + rb, ia + ib);
+            return self.int_or_overflow(a.as_int().checked_add(b.as_int()));
         }
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(Val::float(af + bf)); }
-        if let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b)) {
-            return self.bigint_to_val(ba.add(&bb));
-        }
         if a.is_heap() && b.is_heap() {
             match (self.heap.get(a), self.heap.get(b)) {
                 (HeapObj::Str(sa), HeapObj::Str(sb)) => {
@@ -370,20 +336,9 @@ impl<'a> VM<'a> {
 
     pub fn sub_vals(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
         if a.is_int() && b.is_int() {
-            return match a.as_int().checked_sub(b.as_int()) {
-                Some(r) if (Val::INT_MIN..=Val::INT_MAX).contains(&r) => Ok(Val::int(r)),
-                Some(r) => self.heap.alloc(HeapObj::BigInt(BigInt::from_i64(r))),
-                None => self.i128_to_val(a.as_int() as i128 - b.as_int() as i128),
-            };
-        }
-        if self.is_complex(a) || self.is_complex(b) {
-            let ((ra, ia), (rb, ib)) = self.complex_pair(a, b, "-")?;
-            return self.alloc_complex(ra - rb, ia - ib);
+            return self.int_or_overflow(a.as_int().checked_sub(b.as_int()));
         }
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(Val::float(af - bf)); }
-        if let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b)) {
-            return self.bigint_to_val(ba.sub(&bb));
-        }
         // Set difference: `a - b` produces a fresh set with every element
         // of `a` not present in `b`. Mirror Python's `set.difference`.
         if a.is_heap() && b.is_heap()
@@ -409,21 +364,9 @@ impl<'a> VM<'a> {
 
     pub fn mul_vals(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
         if a.is_int() && b.is_int() {
-            return match a.as_int().checked_mul(b.as_int()) {
-                Some(r) if (Val::INT_MIN..=Val::INT_MAX).contains(&r) => Ok(Val::int(r)),
-                Some(r) => self.heap.alloc(HeapObj::BigInt(BigInt::from_i64(r))),
-                None => self.i128_to_val(a.as_int() as i128 * b.as_int() as i128),
-            };
-        }
-        if self.is_complex(a) || self.is_complex(b) {
-            let ((ra, ia), (rb, ib)) = self.complex_pair(a, b, "*")?;
-            // (ra + ia·j)(rb + ib·j) = (ra·rb − ia·ib) + (ra·ib + ia·rb)·j
-            return self.alloc_complex(ra * rb - ia * ib, ra * ib + ia * rb);
+            return self.int_or_overflow(a.as_int().checked_mul(b.as_int()));
         }
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(Val::float(af * bf)); }
-        if let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b)) {
-            return self.bigint_to_val(ba.mul(&bb));
-        }
         let (seq_val, count) = if a.is_heap() && b.is_int() { (a, b.as_int()) }
                 else if a.is_int() && b.is_heap() { (b, a.as_int()) }
                 else {
@@ -459,94 +402,36 @@ impl<'a> VM<'a> {
     }
 
     pub fn div_vals(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
-        if self.is_complex(a) || self.is_complex(b) {
-            let ((ra, ia), (rb, ib)) = self.complex_pair(a, b, "/")?;
-            let denom = rb * rb + ib * ib;
-            if denom == 0.0 { return Err(VmErr::ZeroDiv); }
-            // (ra + ia·j) / (rb + ib·j) = ((ra·rb + ia·ib) + (ia·rb − ra·ib)·j) / |b|²
-            return self.alloc_complex((ra * rb + ia * ib) / denom, (ia * rb - ra * ib) / denom);
-        }
         let bv = self.to_f64_coerce(b).map_err(|_| cold_type("'/' requires numeric operands"))?;
         if bv == 0.0 { return Err(VmErr::ZeroDiv); }
         let av = self.to_f64_coerce(a).map_err(|_| cold_type("'/' requires numeric operands"))?;
         Ok(Val::float(av / bv))
     }
 
-    pub(crate) fn to_bigint(&self, v: Val) -> Option<BigInt> {
-        if v.is_int() { return Some(BigInt::from_i64(v.as_int())); }
-        if v.is_heap()
-            && let HeapObj::BigInt(b) = self.heap.get(v) { return Some(b.clone()); }
-        None
-    }
-
-    pub(crate) fn bigint_to_val(&mut self, b: BigInt) -> Result<Val, VmErr> {
-        if let Some(i) = b.to_i64_checked()
-            && (Val::INT_MIN..=Val::INT_MAX).contains(&i) { return Ok(Val::int(i)); }
-        self.heap.alloc(HeapObj::BigInt(b))
+    /* Promote any int-like operand to a plain i64 for the integer fast-path.
+       Returns None for floats / heap objects so callers can fall through to
+       a typed-operand error. */
+    pub(crate) fn as_i64(&self, v: Val) -> Option<i64> {
+        if v.is_int() { Some(v.as_int()) }
+        else if v.is_bool() { Some(v.as_bool() as i64) }
+        else { None }
     }
 
     pub(crate) fn to_f64_coerce(&self, v: Val) -> Result<f64, VmErr> {
         if v.is_int() { return Ok(v.as_int() as f64); }
         if v.is_float() { return Ok(v.as_float()); }
-        if v.is_heap()
-            && let HeapObj::BigInt(b) = self.heap.get(v) { return Ok(b.to_f64()); }
+        if v.is_bool() { return Ok(v.as_bool() as i64 as f64); }
         Err(cold_type("numeric operand required"))
     }
 
-    /* True iff `v` is a Complex heap value. Used by binops to decide whether
-       to promote both sides through the complex path. */
+    /* Wrap a checked-arith result into a Val, or raise OverflowError. The
+       inner range check is ±2^47 because the NaN-boxed Val tag uses 47 bits
+       for the integer payload — values outside that range can't fit. */
     #[inline]
-    pub(crate) fn is_complex(&self, v: Val) -> bool {
-        v.is_heap() && matches!(self.heap.get(v), HeapObj::Complex(..))
-    }
-
-    /* Coerce any real-or-complex numeric to a (re, im) pair. BigInt loses
-       precision when its magnitude exceeds f64's mantissa; matches CPython's
-       behaviour for `int + complex` with very large ints. Returns None for
-       non-numeric values so callers can raise a typed operand error. */
-    #[inline]
-    pub(crate) fn to_complex_parts(&self, v: Val) -> Option<(f64, f64)> {
-        if v.is_int() { return Some((v.as_int() as f64, 0.0)); }
-        if v.is_float() { return Some((v.as_float(), 0.0)); }
-        if v.is_bool() { return Some((v.as_bool() as i64 as f64, 0.0)); }
-        if v.is_heap() {
-            match self.heap.get(v) {
-                HeapObj::Complex(r, i) => return Some((*r, *i)),
-                HeapObj::BigInt(b) => return Some((b.to_f64(), 0.0)),
-                _ => {}
-            }
+    pub(crate) fn int_or_overflow(&self, r: Option<i64>) -> Result<Val, VmErr> {
+        match r {
+            Some(i) if (Val::INT_MIN..=Val::INT_MAX).contains(&i) => Ok(Val::int(i)),
+            _ => Err(cold_overflow()),
         }
-        None
-    }
-
-    /* Allocate a Complex value. None'd inline since `add_vals` & friends call
-       it once per binop on the complex path. */
-    #[inline]
-    pub(crate) fn alloc_complex(&mut self, re: f64, im: f64) -> Result<Val, VmErr> {
-        self.heap.alloc(HeapObj::Complex(re, im))
-    }
-
-    /* Build the standard "unsupported operand type(s) for X" error for binops
-       where one side is Complex and the other isn't a numeric. */
-    fn complex_op_err(&self, a: Val, b: Val, op: &str) -> VmErr {
-        VmErr::TypeMsg(s!(
-            "unsupported operand type(s) for ", str op, ": '",
-            str self.type_name(a), "' and '", str self.type_name(b), "'"
-        ))
-    }
-
-    /* Promote both sides via to_complex_parts; error if either is non-numeric.
-       Encapsulates the boilerplate so add/sub/mul/div stay a single line. */
-    fn complex_pair(&self, a: Val, b: Val, op: &str) -> Result<((f64, f64), (f64, f64)), VmErr> {
-        let pa = self.to_complex_parts(a).ok_or_else(|| self.complex_op_err(a, b, op))?;
-        let pb = self.to_complex_parts(b).ok_or_else(|| self.complex_op_err(a, b, op))?;
-        Ok((pa, pb))
-    }
-
-    pub(crate) fn i128_to_val(&mut self, r: i128) -> Result<Val, VmErr> {
-        if r >= Val::INT_MIN as i128 && r <= Val::INT_MAX as i128 {
-            return Ok(Val::int(r as i64));
-        }
-        self.heap.alloc(HeapObj::BigInt(BigInt::from_i128(r)))
     }
 }

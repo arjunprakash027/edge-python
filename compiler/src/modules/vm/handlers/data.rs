@@ -145,15 +145,24 @@ impl<'a> VM<'a> {
                 if slot < slots.len() { slots[slot] = Val::undef(); }
             }
             OpCode::Global | OpCode::Nonlocal => self.mark_impure(),
-            OpCode::TypeAlias => { self.pop()?; }
             OpCode::Raise | OpCode::RaiseFrom => {
                 self.mark_impure();
                 let exc = self.pop()?;
-                // For Type values, carry the bare class name so `except X`
-                // can match it via the global type lookup in the dispatch
-                // exception path. Otherwise fall back to display().
-                let msg = if exc.is_heap() && let HeapObj::Type(n) = self.heap.get(exc) {
-                    n.clone()
+                // For ExcInstance, stash the Val so the `except as e` handler
+                // can bind the actual instance. For Type, msg is the bare
+                // class name (no instance to bind). For anything else, fall
+                // through to display().
+                self.pending_exc_val = None;
+                let msg = if exc.is_heap() {
+                    match self.heap.get(exc) {
+                        HeapObj::ExcInstance(n, _) => {
+                            let n = n.clone();
+                            self.pending_exc_val = Some(exc);
+                            n
+                        }
+                        HeapObj::Type(n) => n.clone(),
+                        _ => self.display(exc),
+                    }
                 } else {
                     self.display(exc)
                 };

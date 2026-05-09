@@ -101,6 +101,11 @@ print("a,b,c".split(","))
 print("hello world".split()) # any whitespace
 print(",".join(["a", "b", "c"]))
 print("hello".replace("l", "L"))
+print("foobar".removeprefix("foo"))
+print("foobar".removesuffix("bar"))
+print("a\nb\nc".splitlines())
+print("foo:bar:baz".partition(":"))
+print("foo:bar:baz".rpartition(":"))
 ```
 
 ```text Output
@@ -108,6 +113,11 @@ print("hello".replace("l", "L"))
 ['hello', 'world']
 a,b,c
 heLLo
+bar
+foo
+['a', 'b', 'c']
+('foo', ':', 'bar:baz')
+('foo:bar', ':', 'baz')
 ```
 
 ### Padding
@@ -373,6 +383,11 @@ False
 | `split`       | 0 or 1  | list of pieces                       |
 | `join`        | 1       | joined string                        |
 | `replace`     | 2       | new string with all replacements     |
+| `removeprefix`| 1       | strip leading prefix if present      |
+| `removesuffix`| 1       | strip trailing suffix if present     |
+| `splitlines`  | 0       | split on line separators             |
+| `partition`   | 1       | (head, sep, tail), sep at first hit  |
+| `rpartition`  | 1       | (head, sep, tail), sep at last hit   |
 | `center`      | 1 or 2  | padded copy                          |
 | `zfill`       | 1       | zero-padded copy, sign-aware         |
 

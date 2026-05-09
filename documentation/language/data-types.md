@@ -43,27 +43,23 @@ True
 
 ## Integer
 
-48-bit inline by default; transparently promoted to BigInt above ±2⁴⁷. Arithmetic preserves precision indefinitely.
+47-bit signed inline (range ±2⁴⁷ minus one). Operations that overflow raise `OverflowError`.
 
 ```python
-# Inline range
-print(2 ** 47)
+# Inside the supported range
+print(2 ** 46)
+print(2 ** 46 - 1)
 
-# Promoted to BigInt
-print(2 ** 100)
-print(10 ** 30)
-
-# BigInt arithmetic stays exact
-print(10 ** 20 + 1)
-print(2 ** 64 * 2 ** 64)
+try:
+    print(2 ** 47)
+except OverflowError:
+    print("overflow")
 ```
 
 ```text Output
-140737488355328
-1267650600228229401496703205376
-1000000000000000000000000000000
-100000000000000000001
-340282366920938463463374607431768211456
+70368744177664
+70368744177663
+overflow
 ```
 
 ```python
@@ -97,35 +93,6 @@ True
 2
 0
 1.6
-```
-
-## Complex
-
-Two `f64`s — real and imaginary part. Literals use the `j` (or `J`) suffix on the imaginary; `2 + 3j` parses as `int + complex` and the runtime promotes both sides through the complex path. Mixed arithmetic with int / float coerces to complex. Integer exponents go through repeated multiplication (exact); non-integer (or complex) exponents go through `exp(w · log(z))`, accurate to ~6–9 digits for typical magnitudes — pure-Rust trig kit, no `cmath` module needed.
-
-```python
-z = 2 + 3j
-print(z)
-print(type(z))
-print(z.real, z.imag)
-print(z.conjugate())
-print(abs(3 + 4j))
-print((1 + 2j) * (3 + 4j))
-print((1 + 1j) ** 2)
-print(complex(1, -1))
-print(round(((1+1j) ** 0.5).real, 6))
-```
-
-```text Output
-(2+3j)
-<class 'complex'>
-2.0 3.0
-(2-3j)
-5.0
-(-5+10j)
-2j
-(1-1j)
-1.098684
 ```
 
 ## String

@@ -29,26 +29,6 @@ fn i64_to_radix(n: i64, radix: u32, prefix: &str) -> String {
     s
 }
 
-fn bigint_to_radix(b: &BigInt, radix: u32, prefix: &str) -> String {
-    let mut out = String::new();
-    if b.neg { out.push('-'); }
-    out.push_str(prefix);
-    if b.is_zero() { out.push('0'); return out; }
-
-    let radix_big = BigInt::from_i64(radix as i64);
-    let mut work = b.abs();
-    let mut digits = Vec::<u8>::new();
-    while !work.is_zero() {
-        let (q, r) = work.divmod(&radix_big).unwrap();
-        let d = r.to_i64_checked().unwrap() as u8;
-        digits.push(if d < 10 { b'0' + d } else { b'a' + d - 10 });
-        work = q;
-    }
-    digits.reverse();
-    out.push_str(unsafe { core::str::from_utf8_unchecked(&digits) });
-    out
-}
-
 fn normalize_index(i: i64, len: usize) -> usize {
     (if i < 0 { len as i64 + i } else { i }) as usize
 }
@@ -109,22 +89,9 @@ impl<'a> VM<'a> {
     pub fn call_abs(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         let v = if o.is_int() {
-            self.i128_to_val((o.as_int() as i128).abs())?
+            self.int_or_overflow(o.as_int().checked_abs())?
         } else if o.is_float() {
             Val::float(o.as_float().abs())
-        } else if o.is_heap() {
-            match self.heap.get(o) {
-                HeapObj::BigInt(b) => self.bigint_to_val(b.abs())?,
-                // |a + b·j| = sqrt(a² + b²). f64::sqrt lowers to an LLVM
-                // intrinsic on every supported target (incl. wasm32), so it
-                // costs no extra dependency and stays accurate to ulp.
-                HeapObj::Complex(re, im) => {
-                    let (re, im) = (*re, *im);
-                    let mag2 = re * re + im * im;
-                    Val::float(fsqrt(mag2))
-                }
-                _ => return Err(cold_type("abs() requires a number")),
-            }
         } else {
             return Err(cold_type("abs() requires a number"));
         };
@@ -177,10 +144,6 @@ impl<'a> VM<'a> {
 
     pub fn call_int(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
-        if o.is_heap() && let HeapObj::BigInt(b) = self.heap.get(o) {
-            let v = self.bigint_to_val(b.clone())?;
-            self.push(v); return Ok(());
-        }
         let i = if o.is_int() { o.as_int() }
             else if o.is_float() { o.as_float() as i64 }
             else if o.is_bool() { o.as_bool() as i64 }
@@ -188,7 +151,7 @@ impl<'a> VM<'a> {
                 s.trim().parse().map_err(|_| cold_value("int(): invalid literal"))?
             }
             else { return Err(cold_type("int() requires a number or string")); };
-        let v = self.bigint_to_val(BigInt::from_i64(i))?;
+        let v = self.int_or_overflow(Some(i))?;
         self.push(v); Ok(())
     }
 
@@ -202,37 +165,12 @@ impl<'a> VM<'a> {
             else if o.is_heap() && let HeapObj::Str(s) = self.heap.get(o) {
                 s.trim().parse().map_err(|_| cold_value("float(): invalid literal"))?
             }
-            else if o.is_heap() && let HeapObj::BigInt(b) = self.heap.get(o) { b.to_f64() }
             else { return Err(cold_type("float() requires a number or string")); };
         self.push(Val::float(f)); Ok(())
     }
 
     pub fn call_bool(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?; self.push(Val::bool(self.truthy(o))); Ok(())
-    }
-
-    /* complex() / complex(real) / complex(real, imag). Real and imag may be
-       int, float, or bool. Passing a Complex as the sole argument returns it
-       unchanged (CPython behaviour); passing Complex with a second argument
-       follows the `(re_a, im_a) + j*(re_b, im_b)` rule, which collapses to
-       `(re_a − im_b, im_a + re_b)`. */
-    pub fn call_complex(&mut self, argc: u16) -> Result<(), VmErr> {
-        let args = self.pop_n(argc as usize)?;
-        let (re, im) = match args.as_slice() {
-            [] => (0.0, 0.0),
-            [a] => self.to_complex_parts(*a)
-                .ok_or(cold_type("complex() argument must be a number"))?,
-            [a, b] => {
-                let (ra, ia) = self.to_complex_parts(*a)
-                    .ok_or(cold_type("complex() argument must be a number"))?;
-                let (rb, ib) = self.to_complex_parts(*b)
-                    .ok_or(cold_type("complex() argument must be a number"))?;
-                (ra - ib, ia + rb)
-            }
-            _ => return Err(cold_type("complex() takes 0 to 2 arguments")),
-        };
-        let v = self.alloc_complex(re, im)?;
-        self.push(v); Ok(())
     }
 
     pub fn call_type(&mut self) -> Result<(), VmErr> {
@@ -287,7 +225,6 @@ impl<'a> VM<'a> {
             }
             (Some(o), None) if o.is_float() => Val::int(fround(o.as_float()) as i64),
             (Some(o), _) if o.is_int() => *o,
-            (Some(o), _) if o.is_heap() && matches!(self.heap.get(*o), HeapObj::BigInt(_)) => *o,
             _ => return Err(cold_type("round() requires a number")),
         };
         self.push(v); Ok(())
@@ -323,6 +260,45 @@ impl<'a> VM<'a> {
         let mut items = self.extract_iter(o, false)?;
         self.sort_by_lt(&mut items)?;
         self.alloc_and_push_list(items)
+    }
+
+    /* sorted(iterable, key=fn). Decorate-sort-undecorate: pre-apply `key`
+       to every item, sort the parallel keys vec, then re-emit items in the
+       new order. Key=None falls back to the no-key path. */
+    pub fn call_sorted_with_key(
+        &mut self, key: Option<Val>,
+        chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val],
+    ) -> Result<(), VmErr> {
+        let key = match key {
+            Some(k) if !k.is_none() => k,
+            _ => return self.call_sorted(),
+        };
+        let o = self.pop()?;
+        let items = self.extract_iter(o, false)?;
+        let mut keys: Vec<Val> = Vec::with_capacity(items.len());
+        for &item in &items {
+            self.push(key);
+            self.push(item);
+            self.exec_call(1, chunk, slots)?;
+            keys.push(self.pop()?);
+        }
+        let mut indices: Vec<usize> = (0..items.len()).collect();
+        let mut sort_err: Option<VmErr> = None;
+        indices.sort_by(|&a, &b| {
+            if sort_err.is_some() { return core::cmp::Ordering::Equal; }
+            match self.lt_vals(keys[a], keys[b]) {
+                Ok(true) => core::cmp::Ordering::Less,
+                Ok(false) => match self.lt_vals(keys[b], keys[a]) {
+                    Ok(true) => core::cmp::Ordering::Greater,
+                    Ok(false) => core::cmp::Ordering::Equal,
+                    Err(e) => { sort_err = Some(e); core::cmp::Ordering::Equal }
+                },
+                Err(e) => { sort_err = Some(e); core::cmp::Ordering::Equal }
+            }
+        });
+        if let Some(e) = sort_err { return Err(e); }
+        let sorted: Vec<Val> = indices.into_iter().map(|i| items[i]).collect();
+        self.alloc_and_push_list(sorted)
     }
 
     /* In-place sort using lt_vals for ordering. Captures the first error
@@ -415,9 +391,14 @@ impl<'a> VM<'a> {
         let (arg2, obj) = (self.pop()?, self.pop()?);
         let obj_ty = self.type_name(obj);
 
-        // For exception matching: when `obj` is a Type itself, compare names.
+        // For exception matching: when `obj` is a Type itself or an
+        // ExcInstance, compare names against the asserted type.
         let obj_type_name: Option<String> = if obj.is_heap() {
-            if let HeapObj::Type(n) = self.heap.get(obj) { Some(n.clone()) } else { None }
+            match self.heap.get(obj) {
+                HeapObj::Type(n) => Some(n.clone()),
+                HeapObj::ExcInstance(n, _) => Some(n.clone()),
+                _ => None,
+            }
         } else { None };
 
         let check_one = |t: Val, heap: &HeapPool| -> Result<bool, VmErr> {
@@ -432,7 +413,7 @@ impl<'a> VM<'a> {
                 ),
                 HeapObj::NativeFn(id) => {
                     let name = id.name();
-                    if !matches!(name, "int"|"str"|"bytes"|"float"|"complex"|"bool"|"list"|"tuple"|"dict"|"set") {
+                    if !matches!(name, "int"|"str"|"bytes"|"float"|"bool"|"list"|"tuple"|"dict"|"set") {
                         return Err(VmErr::Type("isinstance() arg 2 must be a type or tuple of types"));
                     }
                     Ok(
@@ -491,6 +472,7 @@ impl<'a> VM<'a> {
                 HeapObj::List(v) => return Ok(v.borrow().clone()),
                 HeapObj::Tuple(v) => return Ok(v.clone()),
                 HeapObj::Set(v) => return Ok(v.borrow().iter().cloned().collect()),
+                HeapObj::FrozenSet(v) => return Ok(v.iter().cloned().collect()),
                 _ => {}
             }
         }
@@ -507,6 +489,7 @@ impl<'a> VM<'a> {
             HeapObj::List(v)  => v.borrow().clone(),
             HeapObj::Tuple(v) => v.clone(),
             HeapObj::Set(v)   => v.borrow().iter().cloned().collect(),
+            HeapObj::FrozenSet(v) => v.iter().cloned().collect(),
             HeapObj::Range(s, e, st) if include_range => {
                 let (mut cur, end, step) = (*s, *e, *st);
                 let mut out = Vec::new();
@@ -582,6 +565,7 @@ impl<'a> VM<'a> {
                 HeapObj::List(v)  => v.borrow().clone(),
                 HeapObj::Tuple(v) => v.clone(),
                 HeapObj::Set(v)   => v.borrow().iter().cloned().collect(),
+                HeapObj::FrozenSet(v) => v.iter().cloned().collect(),
                 HeapObj::Str(s)   => { let s = s.clone(); self.str_to_char_vals(&s)? },
                 _ => return Err(cold_type("set() argument must be iterable")),
             };
@@ -863,14 +847,13 @@ impl<'a> VM<'a> {
         self.alloc_and_push_str(s)
     }
 
-    /* Converts int/BigInt to "<prefix><digits>" with optional sign. */
+    /* Converts int to "<prefix><digits>" with optional sign. */
     fn int_to_radix_string(&self, v: Val, radix: u32, prefix: &str) -> Result<String, VmErr> {
         if v.is_int() {
             return Ok(i64_to_radix(v.as_int(), radix, prefix));
         }
-        if v.is_heap()
-            && let HeapObj::BigInt(b) = self.heap.get(v) {
-                return Ok(bigint_to_radix(b, radix, prefix));
+        if v.is_bool() {
+            return Ok(i64_to_radix(v.as_bool() as i64, radix, prefix));
         }
         Err(cold_type("integer required"))
     }
@@ -880,11 +863,15 @@ impl<'a> VM<'a> {
     pub fn call_divmod(&mut self) -> Result<(), VmErr> {
         let b = self.pop()?;
         let a = self.pop()?;
-        let (Some(ba), Some(bb)) = (self.to_bigint(a), self.to_bigint(b))
+        let (Some(ai), Some(bi)) = (self.as_i64(a), self.as_i64(b))
             else { return Err(cold_type("divmod() requires integer operands")); };
-        let (q, r) = ba.divmod(&bb).ok_or(VmErr::ZeroDiv)?;
-        let qv = self.bigint_to_val(q)?;
-        let rv = self.bigint_to_val(r)?;
+        if bi == 0 { return Err(VmErr::ZeroDiv); }
+        let q = ai.checked_div(bi).ok_or(cold_overflow())?;
+        let r = ai - q * bi;
+        // Floor-div sign correction so divmod matches `(a // b, a % b)`.
+        let (q, r) = if (r != 0) && ((r < 0) != (bi < 0)) { (q - 1, r + bi) } else { (q, r) };
+        let qv = self.int_or_overflow(Some(q))?;
+        let rv = self.int_or_overflow(Some(r))?;
         self.alloc_and_push_tuple(vec![qv, rv])
     }
 
@@ -897,29 +884,28 @@ impl<'a> VM<'a> {
                 Ok(())
             }
             3 => {
-                // Modular exponentiation: (a ** b) % c
+                // Modular exponentiation: (a ** b) % c on i64.
                 let (Some(base), Some(modulus)) =
-                    (self.to_bigint(args[0]), self.to_bigint(args[2]))
+                    (self.as_i64(args[0]), self.as_i64(args[2]))
                     else { return Err(cold_type("pow() with 3 args requires integers")); };
                 if !args[1].is_int() {
                     return Err(cold_type("pow() with 3 args requires integer exponent"));
                 }
                 let mut e = args[1].as_int();
                 if e < 0 { return Err(cold_value("pow() exponent must be non-negative")); }
-                if modulus.is_zero() { return Err(VmErr::ZeroDiv); }
+                if modulus == 0 { return Err(VmErr::ZeroDiv); }
 
-                let mut result = BigInt::from_i64(1);
-                let (_, mut base) = base.divmod(&modulus).unwrap();
+                let m = (modulus as i128).abs();
+                let mut result = 1i128;
+                let mut b = (base as i128).rem_euclid(m);
                 while e > 0 {
                     if e & 1 == 1 {
-                        let (_, r) = result.mul(&base).divmod(&modulus).unwrap();
-                        result = r;
+                        result = (result * b).rem_euclid(m);
                     }
-                    let (_, b2) = base.mul(&base).divmod(&modulus).unwrap();
-                    base = b2;
+                    b = (b * b).rem_euclid(m);
                     e >>= 1;
                 }
-                let r = self.bigint_to_val(result)?;
+                let r = self.int_or_overflow(Some(result as i64))?;
                 self.push(r);
                 Ok(())
             }
@@ -932,71 +918,30 @@ impl<'a> VM<'a> {
     }
 
     /* Two-arg power, shared between the pow() builtin and the `**` operator
-       handler. Caller picks the error message so each surface keeps its own
-       diagnostic. */
+       handler. Integer ** non-negative integer stays i64 with overflow trap;
+       floats and negative exponents promote to f64. */
     pub(crate) fn pow_vals(&mut self, a: Val, b: Val, err_msg: &'static str) -> Result<Val, VmErr> {
-        if (self.is_complex(a) || self.is_complex(b)) && b.is_int() {
-            // Integer exponent on a complex base: repeated multiplication via
-            // exponentiation-by-squaring on the (re, im) pair. Negative exp
-            // inverts the result via the standard `1 / z` formula. Real-valued
-            // bases promoted through to_complex_parts so `2 ** (3+0j)` also
-            // hits this path (Python returns `(8+0j)`).
-            let (mut re, mut im) = self.to_complex_parts(a)
-                .ok_or_else(|| cold_type(err_msg))?;
-            let exp = b.as_int();
-            let neg = exp < 0;
-            let mut e = (exp as i64).unsigned_abs() as u32;
-            let (mut rr, mut ri) = (1.0, 0.0);
-            while e > 0 {
-                if e & 1 != 0 {
-                    let (a, b) = (rr * re - ri * im, rr * im + ri * re);
-                    rr = a; ri = b;
-                }
-                let (a, b) = (re * re - im * im, 2.0 * re * im);
-                re = a; im = b;
-                e >>= 1;
-            }
-            if neg {
-                let denom = rr * rr + ri * ri;
-                if denom == 0.0 { return Err(VmErr::ZeroDiv); }
-                // `1/z = (1+0j) / z`, expanded so the imag term is `0 - ri`
-                // (subtraction) rather than `-ri` (unary negation). They agree
-                // mathematically but IEEE 754 disagrees on sign-of-zero —
-                // `0 - 0` is +0, `-0` is −0 — and CPython's complex repr
-                // surfaces the sign bit, so we'd print `(1-0j)` for `(1+0j)
-                // ** -1` instead of the expected `(1+0j)` otherwise.
-                rr /= denom; ri = (0.0 - ri) / denom;
-            }
-            return self.alloc_complex(rr, ri);
-        }
-        if self.is_complex(a) || self.is_complex(b) {
-            // z^w = exp(w · log(z)) where log(z) = ln|z| + arg(z)·j.
-            let (ar, ai) = self.to_complex_parts(a)
-                .ok_or_else(|| cold_type(err_msg))?;
-            let (br, bi) = self.to_complex_parts(b)
-                .ok_or_else(|| cold_type(err_msg))?;
-            let mag2 = ar * ar + ai * ai;
-            // Special-case the degenerate base so we don't take ln(0) — Python
-            // returns 1 for 0**0, 0 for 0**(positive), raises for 0**(negative).
-            if mag2 == 0.0 {
-                if br == 0.0 && bi == 0.0 { return self.alloc_complex(1.0, 0.0); }
-                if br > 0.0 { return self.alloc_complex(0.0, 0.0); }
-                return Err(VmErr::ZeroDiv);
-            }
-            let log_re = 0.5 * fln(mag2);
-            let log_im = fatan2(ai, ar);
-            let prod_re = br * log_re - bi * log_im;
-            let prod_im = br * log_im + bi * log_re;
-            let mag = fexp(prod_re);
-            return self.alloc_complex(mag * fcos(prod_im), mag * fsin(prod_im));
-        }
-        if let Some(ba) = self.to_bigint(a) && b.is_int() {
+        if let (Some(ai), true) = (self.as_i64(a), b.is_int()) {
             let exp = b.as_int();
             if exp >= 0 {
-                if exp > u32::MAX as i64 { return Err(cold_value("pow() exponent too large")); }
-                return self.bigint_to_val(ba.pow_u32(exp as u32));
+                // Exponentiation by squaring on i64. Overflow at any step traps
+                // as OverflowError; bases ±1/0 finish without overflowing even
+                // with very large exponents.
+                let mut result: i64 = 1;
+                let mut base = ai;
+                let mut e = exp;
+                while e > 0 {
+                    if e & 1 == 1 {
+                        result = result.checked_mul(base).ok_or(cold_overflow())?;
+                    }
+                    e >>= 1;
+                    if e > 0 {
+                        base = base.checked_mul(base).ok_or(cold_overflow())?;
+                    }
+                }
+                return self.int_or_overflow(Some(result));
             }
-            return Ok(Val::float(fpowi(ba.to_f64(), exp as i32)));
+            return Ok(Val::float(fpowi(ai as f64, exp as i32)));
         }
         let to_f = |v: Val| -> Result<f64, VmErr> {
             if v.is_int() { Ok(v.as_int() as f64) }
@@ -1044,8 +989,6 @@ impl<'a> VM<'a> {
             match self.heap.get(o) {
                 HeapObj::Str(s) => s.hash(&mut h),
                 HeapObj::Bytes(b) => b.hash(&mut h),
-                HeapObj::BigInt(b) => { b.neg.hash(&mut h); b.limbs.hash(&mut h); }
-                HeapObj::Complex(re, im) => { re.to_bits().hash(&mut h); im.to_bits().hash(&mut h); }
                 HeapObj::Tuple(items) => {
                     for v in items { v.0.hash(&mut h); }
                 }
@@ -1096,23 +1039,6 @@ impl<'a> VM<'a> {
         self.alloc_and_push_str(result)
     }
 
-    // ascii(obj) — repr but with non-ASCII escaped.
-
-    pub fn call_ascii(&mut self) -> Result<(), VmErr> {
-        let o = self.pop()?;
-        let r = self.repr(o);
-        let mut out = String::with_capacity(r.len());
-        for c in r.chars() {
-            if (c as u32) < 0x80 { out.push(c); continue; }
-            let (escape, pad) = if (c as u32) < 0x10000 { ("\\u", 4) } else { ("\\U", 8) };
-            out.push_str(escape);
-            let hex = i64_to_radix(c as i64, 16, "");
-            for _ in 0..(pad - hex.len()) { out.push('0'); }
-            out.push_str(&hex);
-        }
-        self.alloc_and_push_str(out)
-    }
-
     // getattr(obj, name [, default]).
 
     pub fn call_getattr(&mut self, op: u16) -> Result<(), VmErr> {
@@ -1134,6 +1060,299 @@ impl<'a> VM<'a> {
             return Ok(());
         }
         Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")))
+    }
+
+    /* globals() — module-level bindings as a dict. Combines the VM's
+       `globals` HashMap (builtins, types, module references) with the
+       entry-chunk slots (user-defined top-level names, which live in
+       chunk slots rather than the globals map). Returned dict is a
+       *copy* — mutating it does not change the VM. */
+    pub fn call_globals(
+        &mut self, chunk: &crate::modules::parser::SSAChunk, slots: &[Val],
+    ) -> Result<(), VmErr> {
+        // Builtin/type/module pairs from self.globals, deduped to bare names.
+        let mut out: crate::modules::fx::FxHashMap<String, Val> =
+            crate::modules::fx::FxHashMap::default();
+        for (k, v) in self.globals.iter() {
+            // Drop SSA-mirrors (`x_0`, `x_1`); keep canonical bare name.
+            if let Some((bare, suf)) = k.rsplit_once('_')
+                && suf.chars().all(|c| c.is_ascii_digit())
+            {
+                out.entry(bare.to_string()).or_insert(*v);
+                continue;
+            }
+            out.insert(k.clone(), *v);
+        }
+        // Walk the entry chunk's slots. When we're already in the entry
+        // frame, `chunk == self.chunk` and `slots` is exactly its slot
+        // array. From inside a function, the entry slots live at the
+        // bottom of `live_slots`.
+        let (entry_chunk, entry_slots): (&crate::modules::parser::SSAChunk, &[Val]) =
+            if core::ptr::eq(chunk as *const _, self.chunk as *const _) {
+                (chunk, slots)
+            } else {
+                let n = self.chunk.names.len().min(self.live_slots.len());
+                (self.chunk, &self.live_slots[..n])
+            };
+        for (i, name) in entry_chunk.names.iter().enumerate() {
+            if name.starts_with('#') { continue; }
+            let v = match entry_slots.get(i) {
+                Some(v) if !v.is_undef() => *v,
+                _ => continue,
+            };
+            let bare = match name.rfind('_') {
+                Some(p) if name[p + 1..].chars().all(|c| c.is_ascii_digit()) =>
+                    name[..p].to_string(),
+                _ => name.clone(),
+            };
+            // User assignment overrides the builtin entry of the same name.
+            out.insert(bare, v);
+        }
+        let mut dm = DictMap::with_capacity(out.len());
+        for (k, v) in out {
+            let key = self.heap.alloc(HeapObj::Str(k))?;
+            dm.insert(key, v);
+        }
+        self.alloc_and_push_dict(dm)
+    }
+
+    /* locals() — current frame's local bindings as a dict. Walks the
+       caller-supplied chunk.names + slots, deduping multiple SSA
+       versions of the same name (`x_0`, `x_1`, ...) by keeping the
+       highest-version live value. Filters out:
+         - synthetic slots (leading `#`, e.g. `#match0`)
+         - builtins that haven't been rebound in this frame (the slot
+           still holds the same Val as the global registration). */
+    pub fn call_locals(
+        &mut self, chunk: &crate::modules::parser::SSAChunk, slots: &[Val],
+    ) -> Result<(), VmErr> {
+        // Map bare-name -> (best version, val) so we keep only the latest.
+        let mut latest: crate::modules::fx::FxHashMap<String, (i64, Val)> =
+            crate::modules::fx::FxHashMap::default();
+        for (i, name) in chunk.names.iter().enumerate() {
+            let v = match slots.get(i) {
+                Some(v) if !v.is_undef() => *v,
+                _ => continue,
+            };
+            // Synthetic slots (`#match0`, `#match_item0`) are matcher
+            // scratch — never user-visible.
+            if name.starts_with('#') { continue; }
+            // Strip SSA version suffix.
+            let (bare, ver) = match name.rfind('_') {
+                Some(p) if name[p + 1..].chars().all(|c| c.is_ascii_digit()) =>
+                    (&name[..p], name[p + 1..].parse::<i64>().unwrap_or(0)),
+                _ => (name.as_str(), 0),
+            };
+            // Skip unmodified builtins: if the global registration for this
+            // name points at the *same* Val we'd return, the user never
+            // rebound it locally — exclude from locals().
+            if let Some(&gv) = self.globals.get(bare)
+                && gv.0 == v.0 { continue; }
+            let entry = latest.entry(bare.to_string()).or_insert((-1, Val::undef()));
+            if ver > entry.0 { *entry = (ver, v); }
+        }
+        let mut dm = DictMap::with_capacity(latest.len());
+        for (name, (_, v)) in latest {
+            let key = self.heap.alloc(HeapObj::Str(name))?;
+            dm.insert(key, v);
+        }
+        self.alloc_and_push_dict(dm)
+    }
+
+    /* frozenset() | frozenset(iter) — construct an immutable, hashable
+       set from an iterable. Without args returns the empty frozenset. */
+    pub fn call_frozenset(&mut self, argc: u16) -> Result<(), VmErr> {
+        let args = self.pop_n(argc as usize)?;
+        let items: Vec<Val> = match args.len() {
+            0 => Vec::new(),
+            1 => self.iter_to_vec_general(args[0])?,
+            _ => return Err(cold_type("frozenset() takes 0 or 1 argument")),
+        };
+        let mut s = HashSet::with_capacity_and_hasher(items.len(), Default::default());
+        for v in items { s.insert(v); }
+        let v = self.heap.alloc(HeapObj::FrozenSet(Rc::new(s)))?;
+        self.push(v); Ok(())
+    }
+
+    /* bytes_fromhex(s) — decode a hex string into bytes. Whitespace is
+       tolerated (matches CPython's bytes.fromhex). Errors on odd length or
+       non-hex characters. Exposed as a free builtin since Edge Python has
+       no class methods (`bytes.fromhex` is the CPython spelling). */
+    pub fn call_bytes_fromhex(&mut self) -> Result<(), VmErr> {
+        let v = self.pop()?;
+        let s = match self.heap.get(v) {
+            HeapObj::Str(s) => s.clone(),
+            _ => return Err(cold_type("bytes_fromhex() argument must be a string")),
+        };
+        let cleaned: String = s.chars().filter(|c| !c.is_ascii_whitespace()).collect();
+        if cleaned.len() % 2 != 0 {
+            return Err(cold_value("non-hexadecimal number or odd length"));
+        }
+        let mut out = Vec::with_capacity(cleaned.len() / 2);
+        let bytes = cleaned.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            let hi = (bytes[i] as char).to_digit(16)
+                .ok_or(cold_value("non-hexadecimal digit found"))?;
+            let lo = (bytes[i + 1] as char).to_digit(16)
+                .ok_or(cold_value("non-hexadecimal digit found"))?;
+            out.push(((hi << 4) | lo) as u8);
+            i += 2;
+        }
+        let v = self.heap.alloc(HeapObj::Bytes(out))?;
+        self.push(v); Ok(())
+    }
+
+    /* int_from_bytes(b, byteorder) — parse a bytes value as an integer.
+       byteorder is "big" or "little"; signedness is unsigned (CPython's
+       default). Range check against the 47-bit Val cap; OverflowError if
+       out of range. */
+    pub fn call_int_from_bytes(&mut self) -> Result<(), VmErr> {
+        let order = self.pop()?;
+        let v = self.pop()?;
+        let buf = match self.heap.get(v) {
+            HeapObj::Bytes(b) => b.clone(),
+            _ => return Err(cold_type("int_from_bytes() first arg must be bytes")),
+        };
+        let order_s = match self.heap.get(order) {
+            HeapObj::Str(s) => s.clone(),
+            _ => return Err(cold_type("int_from_bytes() byteorder must be 'big' or 'little'")),
+        };
+        if buf.len() > 8 { return Err(cold_overflow()); }
+        let big = match order_s.as_str() {
+            "big" => true,
+            "little" => false,
+            _ => return Err(cold_value("byteorder must be 'big' or 'little'")),
+        };
+        let mut acc: u64 = 0;
+        if big {
+            for &b in &buf { acc = (acc << 8) | b as u64; }
+        } else {
+            for (i, &b) in buf.iter().enumerate() { acc |= (b as u64) << (i * 8); }
+        }
+        if acc > Val::INT_MAX as u64 { return Err(cold_overflow()); }
+        self.push(Val::int(acc as i64));
+        Ok(())
+    }
+
+    /* int_to_bytes(n, length, byteorder) — encode a non-negative int into
+       a bytes of given length. Errors if the value doesn't fit. Negative
+       values aren't supported (CPython supports them via two's complement,
+       but the use case here is wire protocols where producers control
+       sign). */
+    pub fn call_int_to_bytes(&mut self) -> Result<(), VmErr> {
+        let order = self.pop()?;
+        let length = self.pop()?;
+        let n = self.pop()?;
+        if !n.is_int() { return Err(cold_type("int_to_bytes() value must be an int")); }
+        let n = n.as_int();
+        if !length.is_int() { return Err(cold_type("int_to_bytes() length must be an int")); }
+        let length = length.as_int() as usize;
+        if length > 8 { return Err(cold_value("int_to_bytes() length must be <= 8")); }
+        if n < 0 { return Err(cold_value("int_to_bytes() requires a non-negative int")); }
+        let order_s = match self.heap.get(order) {
+            HeapObj::Str(s) => s.clone(),
+            _ => return Err(cold_type("int_to_bytes() byteorder must be 'big' or 'little'")),
+        };
+        let big = match order_s.as_str() {
+            "big" => true,
+            "little" => false,
+            _ => return Err(cold_value("byteorder must be 'big' or 'little'")),
+        };
+        let val = n as u64;
+        if length < 8 && val >= (1u64 << (length * 8)) {
+            return Err(cold_overflow());
+        }
+        let mut out = Vec::with_capacity(length);
+        if big {
+            for i in (0..length).rev() { out.push((val >> (i * 8) & 0xff) as u8); }
+        } else {
+            for i in 0..length { out.push((val >> (i * 8) & 0xff) as u8); }
+        }
+        let v = self.heap.alloc(HeapObj::Bytes(out))?;
+        self.push(v); Ok(())
+    }
+
+    /* slice(stop) | slice(start, stop) | slice(start, stop, step). Constructs
+       a HeapObj::Slice from up to three numeric arguments. Mirrors Python's
+       slice() builtin; the result can be passed as a sequence index. */
+    pub fn call_slice(&mut self, argc: u16) -> Result<(), VmErr> {
+        let args = self.pop_n(argc as usize)?;
+        let (start, stop, step) = match args.as_slice() {
+            [stop] => (Val::none(), *stop, Val::none()),
+            [start, stop] => (*start, *stop, Val::none()),
+            [start, stop, step] => (*start, *stop, *step),
+            _ => return Err(cold_type("slice() takes 1 to 3 arguments")),
+        };
+        let v = self.heap.alloc(HeapObj::Slice(start, stop, step))?;
+        self.push(v); Ok(())
+    }
+
+    /* vars(obj) — Instance: copy of __dict__ as a dict; Module: dict from
+       its attrs table. Like Python's vars(), no argument form is not
+       supported (no module-level __dict__ accessor in Edge Python). */
+    pub fn call_vars(&mut self) -> Result<(), VmErr> {
+        let obj = self.pop()?;
+        if !obj.is_heap() {
+            return Err(cold_type("vars() requires an instance or module"));
+        }
+        // Two passes so we can drop the immutable borrow on heap before any
+        // alloc(). For modules, materialise the attr names first as Vec<String>.
+        enum Source { Instance(Vec<(Val, Val)>), Module(Vec<(String, Val)>) }
+        let src = match self.heap.get(obj) {
+            HeapObj::Instance(_, attrs) => Source::Instance(attrs.borrow().entries.clone()),
+            HeapObj::Module(_, attrs) => Source::Module(attrs.clone()),
+            _ => return Err(cold_type("vars() requires an instance or module")),
+        };
+        let entries: Vec<(Val, Val)> = match src {
+            Source::Instance(e) => e,
+            Source::Module(items) => {
+                let mut out = Vec::with_capacity(items.len());
+                for (name, v) in items {
+                    let key = self.heap.alloc(HeapObj::Str(name))?;
+                    out.push((key, v));
+                }
+                out
+            }
+        };
+        let mut dm = DictMap::with_capacity(entries.len());
+        for (k, v) in entries { dm.insert(k, v); }
+        self.alloc_and_push_dict(dm)
+    }
+
+    /* setattr(obj, name, value) — store an attribute on a user instance.
+       Mirrors `obj.name = value`. Errors on non-instances since builtin
+       types (str/list/dict/...) have no mutable attribute table. */
+    pub fn call_setattr(&mut self) -> Result<(), VmErr> {
+        let value = self.pop()?;
+        let name = self.expect_str_arg("setattr() name must be a string")?;
+        let obj = self.pop()?;
+        if !obj.is_heap() || !matches!(self.heap.get(obj), HeapObj::Instance(..)) {
+            return Err(cold_type("setattr() target must be an instance"));
+        }
+        let key = self.heap.alloc(HeapObj::Str(name))?;
+        if let HeapObj::Instance(_, attrs) = self.heap.get_mut(obj) {
+            attrs.borrow_mut().insert(key, value);
+        }
+        self.push(Val::none());
+        Ok(())
+    }
+
+    /* delattr(obj, name) — remove an attribute from a user instance. */
+    pub fn call_delattr(&mut self) -> Result<(), VmErr> {
+        let name = self.expect_str_arg("delattr() name must be a string")?;
+        let obj = self.pop()?;
+        if !obj.is_heap() || !matches!(self.heap.get(obj), HeapObj::Instance(..)) {
+            return Err(cold_type("delattr() target must be an instance"));
+        }
+        // Strings <= 128 bytes are interned, so re-allocating the name yields
+        // the same Val that StoreAttr used as the key — bit-eq lookup hits.
+        let key = self.heap.alloc(HeapObj::Str(name))?;
+        if let HeapObj::Instance(_, attrs) = self.heap.get(obj) {
+            attrs.borrow_mut().remove(&key);
+        }
+        self.push(Val::none());
+        Ok(())
     }
 
     // hasattr(obj, name).
@@ -1410,52 +1629,278 @@ impl<'a> VM<'a> {
         }
     }
 
-    /* Round-robin coroutine scheduler. Queue items are (coro, sleep_left);
-       each tick decrements sleep, otherwise resumes one step. A negative
-       yielded int is interpreted as a sleep request in cycles (see call_sleep). */
+    /* `run(*coros)` — drive a cooperative scheduler until the *first*
+       argument finishes. Multiple positional args run concurrently;
+       additional ones are still drained until they resolve so caller
+       semantics match `gather`. Returns the first coroutine's result.
+
+       Behaviour reference:
+       - `Ready`     -> resume one step
+       - `Sleeping`  -> wait (advance clock to min(until_ns) when all are)
+       - `CancelPending` -> next resume raises CancelledError into the coro
+       - `Done/Errored/Cancelled` -> terminal; reaped from the scheduler
+
+       Errors in non-target coros are recorded on their handle and propagate
+       only when the user explicitly awaits them via `gather`/`with_timeout`. */
     pub fn call_run(&mut self, argc: u16) -> Result<(), VmErr> {
         let tasks = self.pop_n(argc as usize)?;
-        let mut queue: Vec<(Val, i64)> = tasks.into_iter()
-            .filter(|v| v.is_heap() && matches!(self.heap.get(*v), HeapObj::Coroutine(..)))
-            .map(|v| (v, 0))
-            .collect();
-
-        let mut max_cycles = 10_000_000u64;
-        while !queue.is_empty() && max_cycles > 0 {
-            max_cycles -= 1;
-            let mut next_queue: Vec<(Val, i64)> = Vec::new();
-
-            for (coro, sleep) in queue {
-                if sleep > 0 {
-                    next_queue.push((coro, sleep - 1));
-                    continue;
-                }
-                let result = self.resume_coroutine(coro)?;
-                let was_yielded = self.yielded;
-                self.yielded = false;
-
-                if was_yielded {
-                    let new_sleep = if result.is_int() && result.as_int() < 0 {
-                        -result.as_int()
-                    } else { 0 };
-                    next_queue.push((coro, new_sleep));
-                }
-                // Otherwise the coroutine finished; drop it from the queue.
-            }
-            queue = next_queue;
+        if tasks.is_empty() {
+            self.push(Val::none());
+            return Ok(());
         }
-
-        self.push(Val::none());
+        let target = tasks[0];
+        // Reset per-run virtual clock so deterministic tests don't drift.
+        if self.time_hook.is_none() { self.virtual_clock_ns = 0; }
+        for v in &tasks {
+            if v.is_heap() && matches!(self.heap.get(*v), HeapObj::Coroutine(..)) {
+                self.scheduler.push(super::types::CoroutineHandle {
+                    coro: *v,
+                    state: super::types::CoroState::Ready,
+                });
+            }
+        }
+        // Drain everything so concurrent coroutines all run to completion;
+        // remember the target handle's result for the return value (single
+        // arg: that coro's value; multi-arg: first arg's value, peers get
+        // their own values dropped — same as `gather` semantics).
+        self.run_until_all_done()?;
+        let mut result = Val::none();
+        if let Some(h) = self.scheduler.iter().find(|h| h.coro == target) {
+            match &h.state {
+                super::types::CoroState::Done(v) => result = *v,
+                super::types::CoroState::Errored(e) => {
+                    let e = e.clone();
+                    self.scheduler.clear();
+                    return Err(e);
+                }
+                _ => {}
+            }
+        }
+        self.scheduler.clear();
+        self.push(result);
         Ok(())
     }
 
-    /* Yield a negative int as a sleep marker for the scheduler. */
+    /* Drive the scheduler until every handle is in a terminal state
+       (Done / Errored / Cancelled). Errors are recorded on the handle —
+       only the caller decides whether to propagate them via target
+       lookup or `gather`'s fail-fast semantics. */
+    pub(crate) fn run_until_all_done(&mut self) -> Result<(), VmErr> {
+        loop {
+            let alive = self.scheduler.iter().any(|h| matches!(
+                h.state,
+                super::types::CoroState::Ready
+                | super::types::CoroState::CancelPending
+                | super::types::CoroState::Sleeping(_)
+            ));
+            if !alive { return Ok(()); }
+            // Pick a Ready handle; if none, advance clock to the earliest
+            // wakeup. If everyone is Done/Errored/Cancelled, bail out — we
+            // already returned target above so this means target is gone.
+            let mut next_ready: Option<usize> = None;
+            let mut min_wake: Option<u64> = None;
+            for (i, h) in self.scheduler.iter().enumerate() {
+                match &h.state {
+                    super::types::CoroState::Ready => { next_ready = Some(i); break; }
+                    super::types::CoroState::CancelPending => { next_ready = Some(i); break; }
+                    super::types::CoroState::Sleeping(w) => {
+                        if min_wake.map_or(true, |m| *w < m) { min_wake = Some(*w); }
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(i) = next_ready {
+                self.scheduler_step(i)?;
+                continue;
+            }
+            match min_wake {
+                Some(w) => {
+                    let now = self.now_ns();
+                    if w > now {
+                        if self.time_hook.is_none() { self.virtual_clock_ns = w; }
+                        // With a real clock we don't busy-wait: we still
+                        // advance virtual_clock_ns logically so subsequent
+                        // sleeps are relative to the new "now".
+                    }
+                    let now = self.now_ns();
+                    for h in self.scheduler.iter_mut() {
+                        if let super::types::CoroState::Sleeping(w) = h.state
+                            && w <= now
+                        {
+                            h.state = super::types::CoroState::Ready;
+                        }
+                    }
+                }
+                None => return Ok(()),
+            }
+        }
+    }
+
+    fn scheduler_step(&mut self, idx: usize) -> Result<(), VmErr> {
+        let coro = self.scheduler[idx].coro;
+        // CancelPending -> inject a CancelledError raise instead of resuming.
+        if matches!(self.scheduler[idx].state, super::types::CoroState::CancelPending) {
+            self.scheduler[idx].state = super::types::CoroState::Cancelled;
+            return Ok(());
+        }
+        // Snapshot before resume so a yield during sleep() can read it.
+        self.pending_sleep_until_ns = None;
+        let result = self.resume_coroutine(coro);
+        let yielded = self.yielded;
+        self.yielded = false;
+        let new_state = match result {
+            Err(e) => super::types::CoroState::Errored(e),
+            Ok(v) if yielded => {
+                // sleep() set pending_sleep_until_ns; receive() may also
+                // park indefinitely (we keep it Ready and re-drain queue).
+                if let Some(until) = self.pending_sleep_until_ns.take() {
+                    super::types::CoroState::Sleeping(until)
+                } else {
+                    let _ = v;
+                    super::types::CoroState::Ready
+                }
+            }
+            Ok(v) => super::types::CoroState::Done(v),
+        };
+        self.scheduler[idx].state = new_state;
+        Ok(())
+    }
+
+    /* Suspend until `s` real seconds elapse. With a host time_hook installed
+       this becomes a wall-clock wait managed by the scheduler; without one
+       it advances a per-run virtual clock so coroutines still yield in
+       order. Negative or non-numeric `s` sleeps zero (single yield). */
     pub fn call_sleep(&mut self) -> Result<(), VmErr> {
         let n = self.pop()?;
-        let cycles = if n.is_int() { n.as_int().max(0) } else { 0 };
-        self.push(Val::int(-cycles));
+        let secs: f64 = if n.is_int() { n.as_int() as f64 }
+                        else if n.is_float() { n.as_float() }
+                        else if n.is_bool() { n.as_bool() as i64 as f64 }
+                        else { 0.0 };
+        let secs = if secs < 0.0 { 0.0 } else { secs };
+        let until = self.now_ns().saturating_add((secs * 1_000_000_000.0) as u64);
+        self.pending_sleep_until_ns = Some(until);
+        // Push None as the yield value; the scheduler ignores it.
+        self.push(Val::none());
         self.yielded = true;
         Ok(())
+    }
+
+    /* gather(*coros) — concurrent fan-out. Adds every argument to the
+       running scheduler, drains until each is terminal, then returns a
+       list of their results in argument order. If any errors, peers are
+       cancelled and the first error propagates (CPython asyncio style). */
+    pub fn call_gather(&mut self, argc: u16) -> Result<(), VmErr> {
+        let tasks = self.pop_n(argc as usize)?;
+        let coros: Vec<Val> = tasks.into_iter()
+            .filter(|v| v.is_heap() && matches!(self.heap.get(*v), HeapObj::Coroutine(..)))
+            .collect();
+        for v in &coros {
+            self.scheduler.push(super::types::CoroutineHandle {
+                coro: *v,
+                state: super::types::CoroState::Ready,
+            });
+        }
+        self.run_until_all_done()?;
+        // Cancel-rest-and-raise on first error.
+        let mut first_err: Option<VmErr> = None;
+        for v in &coros {
+            if let Some(h) = self.scheduler.iter().find(|h| h.coro == *v)
+                && let super::types::CoroState::Errored(e) = &h.state
+            {
+                first_err = Some(e.clone());
+                break;
+            }
+        }
+        let mut results = Vec::with_capacity(coros.len());
+        for v in &coros {
+            let res = self.scheduler.iter().find(|h| h.coro == *v)
+                .map(|h| match &h.state {
+                    super::types::CoroState::Done(r) => *r,
+                    _ => Val::none(),
+                }).unwrap_or(Val::none());
+            results.push(res);
+        }
+        // Drop only the gather'd handles — leave any unrelated scheduler
+        // entries (set up by an outer run()) alone.
+        self.scheduler.retain(|h| !coros.contains(&h.coro));
+        if let Some(e) = first_err { return Err(e); }
+        self.alloc_and_push_list(results)
+    }
+
+    /* with_timeout(seconds, coro) — adds the coroutine to the scheduler,
+       drains it until terminal or `seconds` elapse. On timeout the
+       coroutine is cancelled and a TimeoutError is raised. */
+    pub fn call_with_timeout(&mut self) -> Result<(), VmErr> {
+        let coro = self.pop()?;
+        let secs_v = self.pop()?;
+        if !(coro.is_heap() && matches!(self.heap.get(coro), HeapObj::Coroutine(..))) {
+            return Err(cold_type("with_timeout() requires a coroutine"));
+        }
+        let secs: f64 = if secs_v.is_int() { secs_v.as_int() as f64 }
+                        else if secs_v.is_float() { secs_v.as_float() }
+                        else { return Err(cold_type("with_timeout() seconds must be a number")); };
+        let deadline = self.now_ns().saturating_add((secs.max(0.0) * 1_000_000_000.0) as u64);
+        self.scheduler.push(super::types::CoroutineHandle {
+            coro, state: super::types::CoroState::Ready,
+        });
+        // Drive one step at a time so the deadline check stays tight.
+        let mut timed_out = false;
+        loop {
+            let idx = match self.scheduler.iter().position(|h| h.coro == coro) {
+                Some(i) => i,
+                None => break,
+            };
+            match self.scheduler[idx].state.clone() {
+                super::types::CoroState::Done(_)
+                | super::types::CoroState::Errored(_)
+                | super::types::CoroState::Cancelled => break,
+                super::types::CoroState::Sleeping(until) => {
+                    // Coro asked to sleep past our deadline -> time out now.
+                    if until >= deadline {
+                        self.scheduler[idx].state = super::types::CoroState::CancelPending;
+                        timed_out = true;
+                        self.scheduler_step(idx)?;
+                        break;
+                    }
+                    // Sleep wakes before deadline -> advance clock & wake.
+                    if self.time_hook.is_none() && until > self.virtual_clock_ns {
+                        self.virtual_clock_ns = until;
+                    }
+                    self.scheduler[idx].state = super::types::CoroState::Ready;
+                }
+                _ => {}
+            }
+            if self.now_ns() >= deadline {
+                self.scheduler[idx].state = super::types::CoroState::CancelPending;
+                timed_out = true;
+                self.scheduler_step(idx)?;
+                break;
+            }
+            self.scheduler_step(idx)?;
+        }
+        let result = self.scheduler.iter().find(|h| h.coro == coro)
+            .map(|h| match &h.state {
+                super::types::CoroState::Done(v) => Ok(*v),
+                super::types::CoroState::Errored(e) => Err(e.clone()),
+                _ => Ok(Val::none()),
+            }).unwrap_or(Ok(Val::none()));
+        self.scheduler.retain(|h| h.coro != coro);
+        if timed_out { return Err(VmErr::Raised("TimeoutError".into())); }
+        let v = result?;
+        self.push(v); Ok(())
+    }
+
+    /* cancel(coro) — flag the coroutine for cancellation. The next time
+       the scheduler resumes it, a CancelledError raise is injected. If
+       the coroutine isn't currently registered with the scheduler the
+       call is a no-op (cancellation only applies inside `run`/`gather`/
+       `with_timeout`). */
+    pub fn call_cancel(&mut self) -> Result<(), VmErr> {
+        let coro = self.pop()?;
+        if let Some(h) = self.scheduler.iter_mut().find(|h| h.coro == coro) {
+            h.state = super::types::CoroState::CancelPending;
+        }
+        self.push(Val::none()); Ok(())
     }
 
     /* Pop the oldest queued message, or yield None to signal "still waiting". */

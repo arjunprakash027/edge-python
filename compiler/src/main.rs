@@ -501,7 +501,10 @@ mod runtime {
 
             match result {
                 Ok(_) => String::new(),
-                Err(e) => e.render_at(src, vm.error_pos(), None),
+                Err(e) => e.render_traceback(
+                    src, vm.error_pos(), None,
+                    vm.call_stack_frames(), vm.function_names_ref(),
+                ),
             }
         };
 

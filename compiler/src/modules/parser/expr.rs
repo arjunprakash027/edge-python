@@ -6,7 +6,7 @@ use super::types::{OpCode, Value, MAX_EXPR_DEPTH, Instruction};
 use super::types::{parse_string, parse_bytes_literal};
 use crate::modules::lexer::{Token, TokenType};
 
-use alloc::{string::ToString, vec::Vec, vec, string::String};
+use alloc::{string::ToString, vec::Vec, string::String};
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
@@ -192,15 +192,6 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 }
                 self.emit_const(Value::Bytes(buf));
             }
-            TokenType::Complex => {
-                // `3j` / `2.5j` — bare imaginary literal. The real part is 0;
-                // expressions like `2 + 3j` rely on `+` to combine an Int/Float
-                // with this Complex(0, im) at runtime.
-                let raw = self.lexeme(&t).replace('_', "");
-                let s = raw.trim_end_matches(['j', 'J']);
-                let im: f64 = s.parse().unwrap_or(0.0);
-                self.emit_const(Value::Complex(0.0, im));
-            }
             TokenType::Int | TokenType::Float => {
                 self.parse_number(self.lexeme(&t), t.kind);
             }
@@ -255,7 +246,10 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     pub(super) fn name(&mut self, t: Token) {
         let name = self.lexeme(&t).to_string();
         match self.peek() {
-            Some(TokenType::Equal) => {
+            // Inside an f-string brace expression, `=` is the debug
+            // self-doc marker (`f"{x=}"`), not an assignment — let the
+            // f-string parser see it.
+            Some(TokenType::Equal) if !self.in_fstring_expr => {
                 self.assign(name.clone());
                 self.emit_load_ssa(name);
             }
@@ -286,36 +280,15 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let s = raw.replace('_', "");
         if kind == TokenType::Float { self.emit_const(Value::Float(s.parse().unwrap_or(0.0))); return; }
         let (digits, base) = Self::parse_int_prefix(&s);
-        let maybe = if base == 10 {
-            digits.parse().ok()
+        let parsed = if base == 10 {
+            digits.parse::<i64>().ok()
         } else {
             i64::from_str_radix(digits, base).ok()
         };
-        match maybe {
+        match parsed {
             Some(v) => self.emit_const(Value::Int(v)),
-            None => {
-                let dec = if base == 10 { digits.to_string() } else { Self::big_base_to_dec(digits, base) };
-                self.emit_const(Value::BigInt(dec));
-            }
+            None => self.error("integer literal too large for 47-bit Val (max \u{00b1}140737488355327)"),
         }
-    }
-
-    fn big_base_to_dec(s: &str, base: u32) -> String {
-        const DEC: u64 = 1_000_000_000;
-        let mut limbs: Vec<u32> = vec![0];
-        for c in s.chars() {
-            let d = c.to_digit(base).unwrap_or(0) as u64;
-            let mut carry = d;
-            for limb in limbs.iter_mut() {
-                let cur = *limb as u64 * base as u64 + carry;
-                *limb = (cur % DEC) as u32;
-                carry = cur / DEC;
-            }
-            if carry != 0 { limbs.push(carry as u32); }
-        }
-        let mut out = crate::modules::fstr::format_dec_groups(&limbs);
-        if out.is_empty() { out.push('0'); }
-        out
     }
 
     /* Trailers after an atom: .attr, [i], [s:e], (args), chained. */
@@ -382,9 +355,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 }
                 Some(TokenType::Lpar) => {
                     // Call after any trailer (fns[0](x), f()(x), obj.attr[i](x)).
+                    let call_pos = self.last_end as u32;
                     let (pos, kw) = self.parse_args();
                     let encoded = ((kw & 0xFF) << 8) | (pos & 0xFF);
                     self.chunk.emit(OpCode::Call, encoded);
+                    self.chunk.record_call_pos(call_pos);
                 }
                 _ => break
             }

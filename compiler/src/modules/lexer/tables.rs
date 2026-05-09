@@ -218,8 +218,7 @@ pub const fn token_to_str(kind: &TokenType) -> &'static str {
         TokenType::Lbrace => "'{'", TokenType::Rbrace => "'}'",
 
         // Literals
-        TokenType::Name => "identifier", 
-        TokenType::Complex => "complex number", 
+        TokenType::Name => "identifier",
         TokenType::Float => "float",
         TokenType::Int => "integer",
         TokenType::String => "string",

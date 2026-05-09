@@ -3,7 +3,7 @@ title: "Built-in functions"
 description: "Every built-in function in Edge Python with examples and outputs."
 ---
 
-Edge Python ships with 45 built-in functions. They're first-class values: pass them around, store them in containers, alias them.
+Edge Python ships with 52 built-in functions. They're first-class values: pass them around, store them in containers, alias them.
 
 ```python
 # All built-ins are real values
@@ -183,24 +183,6 @@ print(float("3.14"))
 ```text Output
 2.0
 3.14
-```
-
-### complex
-
-`complex()` → `0j`, `complex(real)` → `(real+0j)`, `complex(real, imag)` builds from two reals. Each argument may be int / float / bool / complex.
-
-```python
-print(complex())
-print(complex(2))
-print(complex(2, 3))
-print(complex(1.5, -1.5))
-```
-
-```text Output
-0j
-(2+0j)
-(2+3j)
-(1.5-1.5j)
 ```
 
 ### str
@@ -611,20 +593,6 @@ print(format("hi", ">10"))
         hi
 ```
 
-### ascii
-
-Like `repr`, but escapes non-ASCII characters with `\uXXXX` / `\UXXXXXXXX`.
-
-```python
-print(ascii("café"))
-print(ascii("hello"))
-```
-
-```text Output
-'caf\u00e9'
-'hello'
-```
-
 ## Attribute access
 
 `getattr` and `hasattr` work against the built-in method tables on strings, lists, and dicts. User-defined class attributes are also supported.
@@ -656,6 +624,94 @@ True
 False
 ```
 
+### globals, locals
+
+`globals()` returns a fresh dict snapshot of the module-level bindings: every name registered as a builtin or type, plus every top-level user assignment. `locals()` returns a fresh dict of the current frame's bindings — function locals when called inside a function, the same set as `globals()` when called at module level (with builtins filtered).
+
+```python
+x = 100
+y = 200
+
+def add(a, b):
+    return a + b
+
+g = globals()
+print(g['x'] + g['y'])
+
+# Dynamic dispatch by name
+fn = globals()['add']
+print(fn(3, 4))
+
+def f():
+    a = 1
+    b = 2
+    return locals()
+print(f())
+```
+
+```text Output
+300
+7
+{'a': 1, 'b': 2}
+```
+
+The dicts are copies — mutating them does not change the VM's bindings.
+
+### setattr, delattr
+
+`setattr(obj, name, value)` stores an attribute on a user instance. `delattr(obj, name)` removes one. Both target instances of user-defined classes; builtin types do not have a writable attribute table.
+
+```python
+class Box:
+    def __init__(self):
+        pass
+
+b = Box()
+setattr(b, "x", 42)
+print(b.x)
+delattr(b, "x")
+print(hasattr(b, "x"))
+```
+
+```text Output
+42
+False
+```
+
+### slice
+
+`slice(stop)`, `slice(start, stop)`, or `slice(start, stop, step)` builds a reusable slice value that can be used as a sequence index.
+
+```python
+xs = [10, 20, 30, 40, 50]
+s = slice(1, 4)
+print(xs[s])
+print(xs[slice(0, 5, 2)])
+```
+
+```text Output
+[20, 30, 40]
+[10, 30, 50]
+```
+
+### vars
+
+`vars(instance)` returns a snapshot of the instance's `__dict__`. `vars(module)` returns a dict of the module's exported names.
+
+```python
+class P:
+    def __init__(self):
+        self.x = 1
+        self.y = 2
+
+p = P()
+print(vars(p))
+```
+
+```text Output
+{'x': 1, 'y': 2}
+```
+
 ## Async
 
 ### run
@@ -670,13 +726,51 @@ False
 
 `receive()` — suspend the current coroutine until a message is available from the host. Only valid inside `async def`.
 
+### gather
+
+`gather(*coros)` — concurrent fan-out. Adds every argument to the scheduler, drains until each is terminal, returns a list of their results in argument order. First error cancels remaining peers and propagates.
+
+```python
+async def task(n):
+    return n * 2
+
+print(gather(task(1), task(2), task(3)))
+```
+
+```text Output
+[2, 4, 6]
+```
+
+### with_timeout
+
+`with_timeout(seconds, coro)` — runs `coro` to completion or raises `TimeoutError` if the deadline elapses first. The coroutine is cancelled on timeout.
+
+```python
+async def slow():
+    sleep(10)
+    return "never"
+
+try:
+    with_timeout(0.1, slow())
+except TimeoutError:
+    print("timed out")
+```
+
+```text Output
+timed out
+```
+
+### cancel
+
+`cancel(coro)` — flag a coroutine registered with the scheduler for cancellation. The next scheduler tick stops it. Cancellation is cooperative and silent: the coroutine body does not observe a raised `CancelledError`. For deadline-driven cancellation that propagates as an exception, use `with_timeout`.
+
 ## Built-in summary
 
 | Function     | Arity      | Notes                                      |
 |--------------|------------|--------------------------------------------|
 | `print`      | variadic   | space-separated, newline                   |
 | `input`      | 0          | reads from host-provided buffer            |
-| `abs`        | 1          | int / float / BigInt                       |
+| `abs`        | 1          | int / float                                |
 | `round`      | 1 or 2     | banker's rounding                          |
 | `min`        | variadic   | or single iterable                         |
 | `max`        | variadic   | or single iterable                         |
@@ -688,7 +782,6 @@ False
 | `hex`        | 1          | `0x...` prefix                             |
 | `int`        | 0 or 1     | parse / truncate                           |
 | `float`      | 0 or 1     | parse / cast                               |
-| `complex`    | 0, 1, or 2 | `(real, imag)` pair from numeric args      |
 | `str`        | 0 or 1     | display form                               |
 | `bool`       | 0 or 1     | truthiness                                 |
 | `list`       | 0 or 1     | from any iterable                          |
@@ -699,7 +792,7 @@ False
 | `ord`        | 1          | 1-char string -> int                        |
 | `len`        | 1          | element count                              |
 | `range`      | 1, 2, or 3 | lazy integer sequence                      |
-| `sorted`     | 1          | new sorted list                            |
+| `sorted`     | 1 or 2     | optional `key=` callable                   |
 | `reversed`   | 1          | reversed as list                           |
 | `enumerate`  | 1          | (index, value) pairs                       |
 | `zip`        | variadic   | parallel iteration                         |
@@ -712,7 +805,6 @@ False
 | `hash`       | 1          | hash for hashable values                   |
 | `repr`       | 1          | developer-readable form                    |
 | `format`     | 1 or 2     | applies the same format-spec mini-language as f-strings |
-| `ascii`      | 1          | repr with non-ASCII escapes                |
 | `getattr`    | 2 or 3     | bound method or default                    |
 | `hasattr`    | 2          | True if method exists                      |
 | `next`       | 1 or 2     | next item from iterator                    |

@@ -135,6 +135,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             self.resolver.child(spec),
             self.module_cache.clone(),
         );
+        // Tag the sub-chunk with the module's spec so tracebacks render the
+        // correct path ('json_module.py' rather than '<module>').
+        sub_parser.chunk.path = alloc::sync::Arc::new(spec.to_string());
         for e in lex_errs {
             sub_parser.errors.push(Diagnostic {
                 start: e.start, end: e.end, msg: e.msg.to_string(),

@@ -66,6 +66,11 @@ pub struct Parser<'src, I: Iterator<Item = Token>> {
     pub(super) loop_kinds: Vec<bool>,
     pub(super) expr_depth: usize,
     pub(super) saw_newline: bool,
+    /* Set while parsing the expression inside an f-string brace (`{expr}`).
+       Disables the `=` -> assignment path in `name()` so `f"{x=}"` is
+       interpreted as the debug-self-doc form (echo `x=` + value) instead
+       of trying to parse `x = ...` as an assignment that reads `}`. */
+    pub(super) in_fstring_expr: bool,
     /* Every `(`, `[`, `{` consumed-but-not-yet-closed, with the error count at
        the time it opened. Lets us anchor "X was never closed" diagnostics at
        the opener (instead of at EOF where the cascade lands), and drop the
@@ -147,6 +152,10 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         // afterwards (its own `from X import ...`); those don't leak back up.
         self.chunk.extern_table = saved_chunk.extern_table.clone();
         self.chunk.extern_index = saved_chunk.extern_index.clone();
+        // Inherit source/path so nested function bodies render with the same
+        // file context as their enclosing module in tracebacks.
+        self.chunk.source = saved_chunk.source.clone();
+        self.chunk.path = saved_chunk.path.clone();
         f(self);
         let body = core::mem::take(&mut self.chunk);
         self.chunk = saved_chunk;
@@ -477,6 +486,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             alloc::rc::Rc::new(core::cell::RefCell::new(HashMap::default())))
     }
 
+    /* Same as `with_resolver` but tags the chunk with a display path used by
+       the runtime traceback renderer (`<File "main.py", line ...>`). */
+    pub fn with_path(source: &'src str, iter: I, resolver: Box<dyn Resolver>, path: &str) -> Self {
+        let mut p = Self::with_resolver(source, iter, resolver);
+        p.chunk.path = alloc::sync::Arc::new(path.into());
+        p
+    }
+
     /* Sub-parsers share the entry's module cache so each canonical spec
        parses exactly once across the whole compilation unit. */
     pub(crate) fn with_shared_cache(
@@ -485,16 +502,19 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         resolver: Box<dyn Resolver>,
         module_cache: alloc::rc::Rc<core::cell::RefCell<HashMap<String, alloc::rc::Rc<SSAChunk>>>>,
     ) -> Self {
+        let mut chunk = SSAChunk::default();
+        chunk.source = alloc::sync::Arc::new(source.into());
         Self {
             source,
             tokens: iter.peekable(),
-            chunk: SSAChunk::default(),
+            chunk,
             ssa_versions: HashMap::default(),
             join_stack: Vec::new(),
             loop_starts: Vec::new(),
             loop_breaks: Vec::new(),
             loop_kinds: Vec::new(),
             saw_newline: false,
+            in_fstring_expr: false,
             expr_depth: 0,
             last_line: 0,
             last_end: 0,
@@ -536,7 +556,6 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             self.chunk.classes.clear();
             self.chunk.name_index.clear();
             self.chunk.nonlocals.clear();
-            self.chunk.annotations.clear();
             self.chunk.stmt_pos.clear();
             self.loop_kinds.clear();
         }

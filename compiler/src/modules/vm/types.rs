@@ -130,358 +130,6 @@ impl Val {
     #[inline(always)] pub fn as_heap(&self) -> u32 { ((self.0 >> 4) & 0x0FFF_FFFF) as u32 }
 }
 
-/* Signed arbitrary-precision integer, base-2³² little-endian limbs.
-   Empty limbs means zero (then neg must be false). */
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BigInt {
-    pub neg: bool,
-    pub limbs: Vec<u32>,
-}
-
-impl BigInt {
-    pub fn zero() -> Self { Self { neg: false, limbs: Vec::new() } }
-    pub fn is_zero(&self) -> bool { self.limbs.is_empty() }
-
-    pub fn shl_u32(&self, shift: u32) -> Self {
-        if self.is_zero() || shift == 0 { return self.clone(); }
-        let limb_shift = (shift / 32) as usize;
-        let bit_shift  = shift % 32;
-        let mut limbs = vec![0u32; limb_shift];
-        let mut carry = 0u64;
-        for &l in &self.limbs {
-            let cur = (l as u64) << bit_shift | carry;
-            limbs.push(cur as u32);
-            carry = cur >> 32;
-        }
-        if carry != 0 { limbs.push(carry as u32); }
-        Self { neg: self.neg, limbs }
-    }
-
-    pub fn shr_u32(&self, shift: u32) -> Self {
-        if self.is_zero() || shift == 0 { return self.clone(); }
-        let limb_shift = (shift / 32) as usize;
-        let bit_shift  = shift % 32;
-        if limb_shift >= self.limbs.len() { return Self::zero(); }
-        let mut limbs: Vec<u32> = Vec::new();
-        for i in limb_shift..self.limbs.len() {
-            let mut word = self.limbs[i] >> bit_shift;
-            if bit_shift > 0 && i + 1 < self.limbs.len() {
-                word |= self.limbs[i + 1] << (32 - bit_shift);
-            }
-            limbs.push(word);
-        }
-        Self::trim(&mut limbs);
-        Self { neg: self.neg, limbs }
-    }
-
-    pub fn from_i64(v: i64) -> Self {
-        if v == 0 { return Self::zero(); }
-        let neg = v < 0;
-        let abs = (v as i128).unsigned_abs() as u64;
-        let mut limbs = vec![(abs & 0xFFFF_FFFF) as u32];
-        if abs >> 32 != 0 { limbs.push((abs >> 32) as u32); }
-        Self { neg, limbs }
-    }
-
-    pub fn from_i128(v: i128) -> Self {
-        if v == 0 { return Self::zero(); }
-        let neg = v < 0;
-        let mut abs = v.unsigned_abs();
-        let mut limbs = Vec::new();
-        while abs != 0 { limbs.push((abs & 0xFFFF_FFFF) as u32); abs >>= 32; }
-        Self { neg, limbs }
-    }
-
-    pub fn from_decimal(s: &str) -> Self {
-        let (neg, digits) = if let Some(stripped) = s.strip_prefix('-') { (true, stripped) } else { (false, s) };
-        let mut r = Self::zero();
-        for c in digits.chars() {
-            let d = (c as u8).wrapping_sub(b'0') as u32;
-            r = r.mul_u32(10);
-            if d != 0 { r = r.add(&Self { neg: false, limbs: vec![d] }); }
-        }
-        r.neg = neg && !r.is_zero();
-        r
-    }
-
-    pub fn to_i64_checked(&self) -> Option<i64> {
-        match self.limbs.len() {
-            0 => Some(0),
-            1 => Some(if self.neg { -(self.limbs[0] as i64) } else { self.limbs[0] as i64 }),
-            2 => {
-                let abs = self.limbs[0] as u64 | ((self.limbs[1] as u64) << 32);
-                if self.neg {
-                    if abs > i64::MIN.unsigned_abs() { 
-                        None 
-                    } else if abs == i64::MIN.unsigned_abs() {
-                        Some(i64::MIN)
-                    } else { 
-                        Some(-(abs as i64)) 
-                    }
-                } else {
-                    if abs > i64::MAX as u64 { None } else { Some(abs as i64) }
-                }
-            }
-            _ => None,
-        }
-    }
-
-    pub fn to_f64(&self) -> f64 {
-        let (mut r, mut base) = (0.0f64, 1.0f64);
-        for &l in &self.limbs { r += l as f64 * base; base *= 4_294_967_296.0; }
-        if self.neg { -r } else { r }
-    }
-
-    pub fn neg(&self) -> Self {
-        if self.is_zero() { self.clone() }
-        else { Self { neg: !self.neg, limbs: self.limbs.clone() } }
-    }
-    pub fn abs(&self) -> Self { Self { neg: false, limbs: self.limbs.clone() } }
-
-    fn trim(v: &mut Vec<u32>) { while v.last() == Some(&0) { v.pop(); } }
-
-    fn cmp_mag(a: &[u32], b: &[u32]) -> core::cmp::Ordering {
-        use core::cmp::Ordering::*;
-        if a.len() != b.len() { return a.len().cmp(&b.len()); }
-        for (&x, &y) in a.iter().rev().zip(b.iter().rev()) {
-            match x.cmp(&y) { Equal => {} o => return o }
-        }
-        Equal
-    }
-
-    fn add_mag(a: &[u32], b: &[u32]) -> Vec<u32> {
-        let mut out = Vec::with_capacity(a.len().max(b.len()) + 1);
-        let mut carry = 0u64;
-        for i in 0..a.len().max(b.len()) {
-            let s = a.get(i).copied().unwrap_or(0) as u64
-                  + b.get(i).copied().unwrap_or(0) as u64
-                  + carry;
-            out.push(s as u32); carry = s >> 32;
-        }
-        if carry != 0 { out.push(carry as u32); }
-        out
-    }
-
-    fn sub_mag(a: &[u32], b: &[u32]) -> Vec<u32> {
-        let mut out = Vec::with_capacity(a.len());
-        let mut borrow = 0i64;
-        for (i, _item) in a.iter().enumerate() {
-            let d = a[i] as i64 - b.get(i).copied().unwrap_or(0) as i64 - borrow;
-            borrow = if d < 0 { 1 } else { 0 };
-            out.push((d + if d < 0 { 0x1_0000_0000 } else { 0 }) as u32);
-        }
-        Self::trim(&mut out); out
-    }
-
-    pub fn add(&self, other: &Self) -> Self {
-        if self.neg == other.neg {
-            return Self { neg: self.neg, limbs: Self::add_mag(&self.limbs, &other.limbs) };
-        }
-        match Self::cmp_mag(&self.limbs, &other.limbs) {
-            core::cmp::Ordering::Equal => Self::zero(),
-            core::cmp::Ordering::Greater => Self { neg: self.neg,  limbs: Self::sub_mag(&self.limbs,  &other.limbs) },
-            core::cmp::Ordering::Less => Self { neg: other.neg, limbs: Self::sub_mag(&other.limbs, &self.limbs)  },
-        }
-    }
-    pub fn sub(&self, other: &Self) -> Self { self.add(&other.neg()) }
-
-    pub fn mul(&self, other: &Self) -> Self {
-        if self.is_zero() || other.is_zero() { return Self::zero(); }
-        let (n, m) = (self.limbs.len(), other.limbs.len());
-        let mut tmp = vec![0u64; n + m];
-        for (i, &ai) in self.limbs.iter().enumerate() {
-            for (j, &bj) in other.limbs.iter().enumerate() {
-                tmp[i + j] += ai as u64 * bj as u64;
-            }
-        }
-        let mut limbs = Vec::with_capacity(n + m);
-        let mut carry = 0u64;
-        for &d in &tmp { let s = d + carry; limbs.push(s as u32); carry = s >> 32; }
-        if carry != 0 { limbs.push(carry as u32); }
-        Self::trim(&mut limbs);
-        Self { neg: self.neg != other.neg, limbs }
-    }
-
-    pub fn mul_u32(&self, d: u32) -> Self {
-        if d == 0 || self.is_zero() { return Self::zero(); }
-        let mut carry = 0u64;
-        let mut limbs = Vec::with_capacity(self.limbs.len() + 1);
-        for &l in &self.limbs { let s = l as u64 * d as u64 + carry; limbs.push(s as u32); carry = s >> 32; }
-        if carry != 0 { limbs.push(carry as u32); }
-        Self { neg: self.neg, limbs }
-    }
-
-    fn div_mag(u: &[u32], v: &[u32]) -> (Vec<u32>, Vec<u32>) {
-        let n = v.len();
-        let m = u.len().saturating_sub(n);
-
-        // Single-limb fast path
-        if n == 1 {
-            let d = v[0] as u64;
-            let mut rem = 0u64;
-            let mut q = vec![0u32; u.len()];
-            for i in (0..u.len()).rev() {
-                let cur = (rem << 32) | u[i] as u64;
-                q[i] = (cur / d) as u32;
-                rem = cur % d;
-            }
-            Self::trim(&mut q);
-            return (q, if rem == 0 { vec![] } else { vec![rem as u32] });
-        }
-
-        // Normalize so v[n-1] >= BASE/2, bounding q_hat error to at most 2
-        let shift = v[n - 1].leading_zeros();
-        let vn = Self::shl_limbs(v, shift);
-        let mut un = Self::shl_limbs_ext(u, shift);
-
-        let (vn1, vn2) = (vn[n - 1] as u64, vn[n - 2] as u64);
-        let mut q = vec![0u32; m + 1];
-
-        for j in (0..=m).rev() {
-            // Estimate quotient digit, then refine (at most 2 corrections)
-            let u2 = ((un[j + n] as u64) << 32) | un[j + n - 1] as u64;
-            let (mut q_hat, mut r_hat) = (u2 / vn1, u2 % vn1);
-            while q_hat >= (1u64 << 32)
-                || q_hat * vn2 > ((r_hat << 32) | un[j + n - 2] as u64)
-            {
-                q_hat -= 1;
-                r_hat += vn1;
-                if r_hat >= (1u64 << 32) { break; }
-            }
-
-            // Subtract q_hat * vn from un[j..]
-            let mut borrow = 0i64;
-            for i in 0..n {
-                let prod = q_hat * vn[i] as u64;
-                let diff = un[j+i] as i64 - borrow - (prod & 0xFFFF_FFFF) as i64;
-                un[j+i] = diff as u32;
-                borrow = (prod >> 32) as i64 - (diff >> 32);
-            }
-            let top = un[j + n] as i64 - borrow;
-            un[j + n] = top as u32;
-
-            // Add back if q_hat was too large (rare)
-            if top < 0 {
-                q_hat -= 1;
-                let mut carry = 0u64;
-                for i in 0..n {
-                    let s = un[j+i] as u64 + vn[i] as u64 + carry;
-                    un[j+i] = s as u32;
-                    carry = s >> 32;
-                }
-                un[j+n] = un[j+n].wrapping_add(carry as u32);
-            }
-
-            q[j] = q_hat as u32;
-        }
-
-        // Denormalize remainder
-        let mut rem = Self::shr_limbs(&un[..n], shift);
-        Self::trim(&mut q);
-        Self::trim(&mut rem);
-        (q, rem)
-    }
-
-    /* Shift left, returning n+1 limbs to hold overflow. */
-    fn shl_limbs_ext(limbs: &[u32], shift: u32) -> Vec<u32> {
-        let mut out = vec![0u32; limbs.len() + 1];
-        if shift == 0 {
-            out[..limbs.len()].copy_from_slice(limbs);
-            return out;
-        }
-        out[limbs.len()] = limbs[limbs.len() - 1] >> (32 - shift);
-        for i in (1..limbs.len()).rev() {
-            out[i] = (limbs[i] << shift) | (limbs[i-1] >> (32 - shift));
-        }
-        out[0] = limbs[0] << shift;
-        out
-    }
-
-    /* Shift left without overflow limb. */
-    fn shl_limbs(limbs: &[u32], shift: u32) -> Vec<u32> {
-        if shift == 0 { return limbs.to_vec(); }
-        let mut out = vec![0u32; limbs.len()];
-        for i in (1..limbs.len()).rev() {
-            out[i] = (limbs[i] << shift) | (limbs[i-1] >> (32 - shift));
-        }
-        out[0] = limbs[0] << shift;
-        out
-    }
-
-    /* Shift right to undo normalization. */
-    fn shr_limbs(limbs: &[u32], shift: u32) -> Vec<u32> {
-        if shift == 0 { return limbs.to_vec(); }
-        let mut out = vec![0u32; limbs.len()];
-        for i in 0..limbs.len() - 1 {
-            out[i] = (limbs[i] >> shift) | (limbs[i+1] << (32 - shift));
-        }
-        *out.last_mut().unwrap() = limbs.last().unwrap() >> shift;
-        out
-    }
-
-    pub fn divmod(&self, other: &Self) -> Option<(Self, Self)> {
-        if other.is_zero() { return None; }
-        if self.is_zero()  { return Some((Self::zero(), Self::zero())); }
-
-        let (q_l, r_l) = Self::div_mag(&self.limbs, &other.limbs);
-        let mut q = Self { neg: self.neg != other.neg, limbs: q_l };
-        let mut r = Self { neg: self.neg, limbs: r_l };
-
-        if !r.is_zero() && r.neg != other.neg {
-            q = q.sub(&Self { neg: false, limbs: vec![1] });
-            r = r.add(other);
-        }
-        Some((q, r))
-    }
-
-    pub fn pow_u32(&self, mut exp: u32) -> Self {
-        if exp == 0 { return Self { neg: false, limbs: vec![1] }; }
-        let mut base = self.clone();
-        let mut result = Self { neg: false, limbs: vec![1] };
-        while exp > 0 {
-            if exp & 1 != 0 { result = result.mul(&base); }
-            base = base.mul(&base);
-            exp >>= 1;
-        }
-        result
-    }
-
-    pub fn to_decimal(&self) -> alloc::string::String {
-        if self.is_zero() { return alloc::string::String::from("0"); }
-        const BASE: u64 = 1_000_000_000;
-        let mut limbs = self.limbs.clone();
-        let mut groups: alloc::vec::Vec<u32> = alloc::vec::Vec::new();
-        while !limbs.is_empty() {
-            let mut rem = 0u64;
-            let mut nl: alloc::vec::Vec<u32> = alloc::vec::Vec::new();
-            for &l in limbs.iter().rev() {
-                let cur = (rem << 32) | l as u64;
-                let q = cur / BASE; rem = cur % BASE;
-                if !nl.is_empty() || q != 0 { nl.push(q as u32); }
-            }
-            nl.reverse(); groups.push(rem as u32); limbs = nl;
-        }
-        let mut s = alloc::string::String::new();
-        if self.neg { s.push('-'); }
-        s.push_str(&crate::modules::fstr::format_dec_groups(&groups));
-        s
-    }
-}
-
-impl PartialOrd for BigInt {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(Ord::cmp(self, other))
-    }
-}
-impl Ord for BigInt {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        if self.neg != other.neg {
-            return if self.neg { core::cmp::Ordering::Less } else { core::cmp::Ordering::Greater };
-        }
-        let m = Self::cmp_mag(&self.limbs, &other.limbs);
-        if self.neg { m.reverse() } else { m }
-    }
-}
 
 /* Heap-allocated value variants. Stored in HeapPool's arena; addressed
    by index via the Val::heap tag. */
@@ -492,15 +140,23 @@ pub enum HeapObj {
     List(Rc<RefCell<Vec<Val>>>),
     Dict(Rc<RefCell<DictMap>>),
     Set(Rc<RefCell<HashSet<Val>>>),
+    /* Immutable, hashable counterpart of Set. Built once via the
+       `frozenset(iter)` builtin and then read-only — no add/remove/clear
+       methods exposed. Hashable so it can live in dict keys and other
+       sets. Equality is by element membership (same as Set). */
+    FrozenSet(Rc<HashSet<Val>>),
     Tuple(Vec<Val>),
     Func(usize, Vec<Val>, Vec<(usize, Val)>),
     Range(i64, i64, i64),
     Slice(Val, Val, Val),
     Type(String),
-    BigInt(BigInt),
-    /* Two-f64 complex number. Doesn't fit in NaN-boxed Val, so it lives
-       on the heap. Equality is value-based; hash combines both halves. */
-    Complex(f64, f64),
+    /* Constructed exception value: `ValueError("bad")` builds one via the
+       Type-as-callable path. Carries the type name (for `except` matching
+       and `type(e).__name__`) and the constructor args (exposed via `.args`
+       as a tuple). Distinct from Type so `isinstance(e, ValueError)` and
+       `type(e)` give the right answers without confusing the bare class
+       object with an instance of it. */
+    ExcInstance(String, Vec<Val>),
     BoundMethod(Val, BuiltinMethodId),
     NativeFn(NativeFnId),
     Class(String, Vec<(String, Val)>),
@@ -528,8 +184,11 @@ pub enum NativeFnId {
     Range, Round, Min, Max, Sum, Sorted, Enumerate, Zip,
     List, Tuple, Dict, Set, IsInstance, Input, All, Any,
     Bin, Oct, Hex, Divmod, Pow, Repr, Reversed, Callable, Id,
-    Hash, Format, Ascii, GetAttr, HasAttr, Next, Run, Sleep,
-    Receive, Map, Filter, Iter, Bytes, ImportModule, Complex,
+    Hash, Format, GetAttr, HasAttr, SetAttr, DelAttr, Next, Run, Sleep,
+    Receive, Map, Filter, Iter, Bytes, ImportModule, Slice, Vars,
+    Gather, WithTimeout, Cancel,
+    BytesFromHex, IntFromBytes, IntToBytes, FrozenSet,
+    Globals, Locals,
 }
 
 impl NativeFnId {
@@ -541,8 +200,13 @@ impl NativeFnId {
             "range", "round", "min", "max", "sum", "sorted", "enumerate", "zip",
             "list", "tuple", "dict", "set", "isinstance", "input", "all", "any",
             "bin", "oct", "hex", "divmod", "pow", "repr", "reversed", "callable", "id",
-            "hash", "format", "ascii", "getattr", "hasattr", "next", "run", "sleep",
-            "receive", "map", "filter", "iter", "bytes", "import_module", "complex",
+            "hash", "format", "getattr", "hasattr", "setattr", "delattr",
+            "next", "run", "sleep",
+            "receive", "map", "filter", "iter", "bytes", "import_module",
+            "slice", "vars",
+            "gather", "with_timeout", "cancel",
+            "bytes_fromhex", "int_from_bytes", "int_to_bytes", "frozenset",
+            "globals", "locals",
         ];
         NAMES[self as usize]
     }
@@ -631,6 +295,7 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
         HeapObj::List(rc)             => for &v in rc.borrow().iter() { f(v); },
         HeapObj::Dict(rc)             => for (k, v) in rc.borrow().iter() { f(k); f(v); },
         HeapObj::Set(rc)              => for &v in rc.borrow().iter() { f(v); },
+        HeapObj::FrozenSet(rc)        => for &v in rc.iter() { f(v); },
         HeapObj::BoundMethod(recv, _) => f(*recv),
         HeapObj::Class(_, methods)    => for (_, v) in methods { f(*v); },
         HeapObj::BoundUserMethod(r, fu) => { f(*r); f(*fu); }
@@ -652,9 +317,10 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
             for &(_, v) in captures { f(v); }
         }
         HeapObj::Module(_, attrs) => for (_, v) in attrs { f(*v); },
-        // Variants without Val payloads (Str, Bytes, BigInt, Complex, Type,
-        // NativeFn, Range, Extern) — terminal, nothing to trace.
-        HeapObj::Str(_) | HeapObj::Bytes(_) | HeapObj::BigInt(_) | HeapObj::Complex(..)
+        HeapObj::ExcInstance(_, args) => for &v in args { f(v); },
+        // Variants without Val payloads (Str, Bytes, Type, NativeFn,
+        // Range, Extern) — terminal, nothing to trace.
+        HeapObj::Str(_) | HeapObj::Bytes(_)
         | HeapObj::Type(_) | HeapObj::NativeFn(_) | HeapObj::Range(..) | HeapObj::Extern(_) => {}
     }
 }
@@ -809,12 +475,12 @@ impl HeapPool {
                 Some(HeapObj::List(_)) => 6,
                 Some(HeapObj::Dict(_)) => 7,
                 Some(HeapObj::Set(_)) => 8,
+                Some(HeapObj::FrozenSet(_)) => 25,
                 Some(HeapObj::Tuple(_)) => 9,
                 Some(HeapObj::Func(_, _, _)) => 10,
                 Some(HeapObj::Range(..)) => 11,
                 Some(HeapObj::Slice(..)) => 12,
                 Some(HeapObj::Type(_)) => 13,
-                Some(HeapObj::BigInt(_)) => 14,
                 Some(HeapObj::BoundMethod(_, _)) => 15,
                 Some(HeapObj::NativeFn(_)) => 16,
                 Some(HeapObj::BoundUserMethod(..)) => 17,
@@ -824,7 +490,7 @@ impl HeapPool {
                 Some(HeapObj::Module(..)) => 20,
                 Some(HeapObj::Extern(_)) => 21,
                 Some(HeapObj::Bytes(_)) => 22,
-                Some(HeapObj::Complex(..)) => 23,
+                Some(HeapObj::ExcInstance(..)) => 24,
                 None => 0,
             }
         } else { 0 }
@@ -841,10 +507,6 @@ pub(super) fn eq_dict(a: &DictMap, b: &DictMap, eq: impl Fn(Val,Val)->bool) -> b
 }
 
 pub fn eq_vals_with_heap(a: Val, b: Val, heap: &HeapPool) -> bool {
-    if let (Some(ba), Some(bb)) = (bigint_of(a, heap), bigint_of(b, heap)) {
-        return ba.cmp(bb) == core::cmp::Ordering::Equal;
-    }
-
     if !a.is_heap() || !b.is_heap() {
         if a.is_int() && b.is_int() { return a.as_int() == b.as_int(); }
         if a.is_float() && b.is_float() { return a.as_float() == b.as_float(); }
@@ -854,31 +516,28 @@ pub fn eq_vals_with_heap(a: Val, b: Val, heap: &HeapPool) -> bool {
     }
 
     match (heap.get(a), heap.get(b)) {
-        (HeapObj::BigInt(x), HeapObj::BigInt(y)) => x.cmp(y) == core::cmp::Ordering::Equal,
         (HeapObj::Str(x), HeapObj::Str(y)) => x == y,
         (HeapObj::Bytes(x), HeapObj::Bytes(y)) => x == y,
         (HeapObj::Tuple(x), HeapObj::Tuple(y)) => eq_seq(x, y, |a,b| eq_vals_with_heap(a, b, heap)),
         (HeapObj::List(x), HeapObj::List(y)) => eq_seq(&x.borrow(), &y.borrow(), |a,b| eq_vals_with_heap(a, b, heap)),
         (HeapObj::Set(x), HeapObj::Set(y)) => *x.borrow() == *y.borrow(),
+        (HeapObj::FrozenSet(x), HeapObj::FrozenSet(y)) => **x == **y,
+        (HeapObj::Set(x), HeapObj::FrozenSet(y)) => *x.borrow() == **y,
+        (HeapObj::FrozenSet(x), HeapObj::Set(y)) => **x == *y.borrow(),
         (HeapObj::Dict(x), HeapObj::Dict(y)) => eq_dict(&x.borrow(), &y.borrow(), |a,b| eq_vals_with_heap(a, b, heap)),
-        (HeapObj::Complex(r1, i1), HeapObj::Complex(r2, i2)) => r1 == r2 && i1 == i2,
         // Cross-type comparisons fall through to false. Notably `bytes == str`
         // is False in Python, even when the bytes are valid UTF-8 of the str.
         _ => false,
     }
 }
 
-fn bigint_of(v: Val, heap: &HeapPool) -> Option<&BigInt> {
-    if v.is_heap() && let HeapObj::BigInt(b) = heap.get(v) { return Some(b); }
-    None
-}
-
 /* Runtime errors. Static-string variants avoid alloc on the hot error path;
    *Msg / Name / Attribute / Raised variants carry dynamic text so the user
    sees the actual offending name or object type instead of a generic
    "attribute not found". */
+#[derive(Debug, Clone)]
 pub enum VmErr {
-    CallDepth, Heap, Budget, ZeroDiv,
+    CallDepth, Heap, Budget, ZeroDiv, Overflow,
     Name(String),
     Type(&'static str),
     TypeMsg(String),
@@ -895,6 +554,7 @@ impl VmErr {
             Self::Heap => "MemoryError: heap limit",
             Self::Budget => "RuntimeError: budget exceeded",
             Self::ZeroDiv => "ZeroDivisionError: division by zero",
+            Self::Overflow => "OverflowError: integer too large for 47-bit Val",
             Self::Type(s) => s,
             Self::Value(s) => s,
             Self::Runtime(s) => s,
@@ -928,6 +588,46 @@ impl VmErr {
         crate::modules::parser::Diagnostic { start: pos, end: pos, msg: self.render() }
             .render(src, path)
     }
+
+    /* Multi-frame traceback. The error site renders first as `error: ...`
+       with a rustc-style source preview; each entry in `frames` appends a
+       `note: called from <fname>` block walking outward from the innermost
+       call to the entry chunk. `frames` is given innermost-first (most
+       recent caller closest to index 0); the renderer reverses to outermost
+       so the chain reads top-down like CPython's traceback.
+
+       `error_src` / `error_path` correspond to the chunk where the exception
+       was raised; each frame carries its own caller's source so the chain
+       traverses module boundaries without losing context. */
+    pub fn render_traceback(
+        &self,
+        error_src: &str,
+        error_byte_pos: Option<usize>,
+        error_path: Option<&str>,
+        frames: &[CallFrame],
+        function_names: &[alloc::string::String],
+    ) -> alloc::string::String {
+        let mut out = self.render_at(error_src, error_byte_pos, error_path);
+        // Frames are pushed innermost-first as the error propagates up; render
+        // outermost-first so the chain reads "outermost called inner called
+        // innermost" — easier to follow than the reverse.
+        for f in frames.iter().rev() {
+            let fname = function_names.get(f.fi)
+                .map(|s| s.as_str()).unwrap_or("<anonymous>");
+            let pos = f.call_byte_pos as usize;
+            let path: Option<&str> = if f.caller_path.is_empty() { None } else { Some(f.caller_path.as_str()) };
+            let note = crate::modules::parser::Diagnostic {
+                start: pos, end: pos,
+                msg: alloc::format!("called from {}()", fname),
+            }.render(f.caller_source.as_str(), path);
+            // Diagnostic prefixes "error:" by convention; rewrite to "note:"
+            // for the chained frames so the topmost line stays the only red.
+            let note = note.replacen("error:", "note:", 1);
+            out.push('\n');
+            out.push_str(&note);
+        }
+        out
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -935,6 +635,57 @@ impl core::fmt::Display for VmErr {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(&self.render())
     }
+}
+
+/* Cooperative scheduler state for one coroutine living in `vm.scheduler`.
+   The scheduler steps each Ready handle once per round-robin pass, swaps
+   it to Sleeping/Done/Errored/Cancelled depending on what happened, and
+   ends the run when the target handle leaves the Ready/Sleeping pool. */
+#[derive(Clone, Debug)]
+pub enum CoroState {
+    /// Resumable on the next scheduler tick.
+    Ready,
+    /// Suspended until `until_ns` (per `vm.time_hook`). When all live
+    /// handles are Sleeping the scheduler advances the clock to the
+    /// minimum `until_ns` rather than spinning.
+    Sleeping(u64),
+    /// Resumed-on-next-tick state used while a `cancel()` request is
+    /// pending: the next resume injects a `CancelledError` raise into the
+    /// coroutine instead of advancing it normally.
+    CancelPending,
+    /// Coroutine returned with this Val.
+    Done(Val),
+    /// Coroutine raised an exception. Stored verbatim so `gather` /
+    /// `with_timeout` can propagate it to the caller.
+    Errored(VmErr),
+    /// Coroutine was cancelled and its CancelledError was already
+    /// observed (or it never ran). Returns `None` to gather()s peers.
+    Cancelled,
+}
+
+#[derive(Clone, Debug)]
+pub struct CoroutineHandle {
+    /// The Coroutine HeapObj Val passed by the user.
+    pub coro: Val,
+    pub state: CoroState,
+}
+
+/* One snapshot of a user-function call site, pushed when `exec_call` enters
+   a HeapObj::Func and popped on return/error. Carries everything the
+   traceback renderer needs without requiring a chunk lookup at error time:
+     - `fi`: index into `vm.function_names` for the called function's name
+     - `call_byte_pos`: byte offset of the Call opcode in the *caller's*
+       source (set from `caller_chunk.resolve_call(rip)` then falling back
+       to `resolve(rip)` for stmt-level)
+     - `caller_source` / `caller_path`: shared Arc clones of the caller's
+       chunk metadata so render walks each frame without holding a borrow
+       on the live chunk pointers. */
+#[derive(Clone, Debug)]
+pub struct CallFrame {
+    pub fi: usize,
+    pub call_byte_pos: u32,
+    pub caller_source: alloc::sync::Arc<alloc::string::String>,
+    pub caller_path: alloc::sync::Arc<alloc::string::String>,
 }
 
 /* Iterator state for ForIter. Consumed one item at a time. */
@@ -961,119 +712,6 @@ impl IterFrame {
 }
 
 // Pure-Rust f64 math (no libm, works under no_std / WASM).
-
-/* sqrt via Newton-Raphson on f64 — pure-Rust, no libm. The exponent-halving
-   bit hack gives an initial guess accurate to ~3 bits, then ~5 iterations
-   converge to ulp. abs(complex) and any future numeric call site that needs
-   sqrt go through here so there's one math kit for the whole VM. */
-#[inline]
-pub fn fsqrt(x: f64) -> f64 {
-    if x.is_nan() || x < 0.0 { return f64::NAN; }
-    if x == 0.0 || x == f64::INFINITY { return x; }
-    let bits = f64::to_bits(x);
-    let mut g = f64::from_bits((bits >> 1) + (1023u64 << 51));
-    for _ in 0..6 {
-        let next = 0.5 * (g + x / g);
-        if next == g { break; }
-        g = next;
-    }
-    g
-}
-
-/* Trig kit needed by complex ** non-integer-exponent (z^w = exp(w·log(z))).
-   No libm dep: range reduction + Taylor series at the reduced argument
-   converges in <12 terms to ~ulp on f64. fsin reduces via the period of
-   2π and the symmetry sin(π−x) = sin(x); fcos delegates so range reduction
-   lives in one place. */
-pub fn fsin(x: f64) -> f64 {
-    if !x.is_finite() { return f64::NAN; }
-    let two_pi = 2.0 * core::f64::consts::PI;
-    let mut x = x - ftrunc(x / two_pi) * two_pi;
-    if x > core::f64::consts::PI { x -= two_pi; }
-    else if x <= -core::f64::consts::PI { x += two_pi; }
-    if x > core::f64::consts::FRAC_PI_2 { x = core::f64::consts::PI - x; }
-    else if x < -core::f64::consts::FRAC_PI_2 { x = -core::f64::consts::PI - x; }
-    let x2 = x * x;
-    let mut term = x;
-    let mut sum = x;
-    for k in 0..10 {
-        term *= -x2 / (((2 * k + 2) * (2 * k + 3)) as f64);
-        sum += term;
-    }
-    sum
-}
-
-/* fcos with its own range reduction — going through `fsin(π/2 − x)` lets
-   floating-point noise leak into the answer near x = 0 (the input becomes
-   π/2 and the Taylor sum no longer cancels exactly to 1). Reducing here
-   keeps `fcos(0) == 1.0` exact, which `complex ** 0.5` and other "trivial"
-   imag-part-zero cases rely on for clean repr. */
-pub fn fcos(x: f64) -> f64 {
-    if !x.is_finite() { return f64::NAN; }
-    let two_pi = 2.0 * core::f64::consts::PI;
-    let mut x = x - ftrunc(x / two_pi) * two_pi;
-    if x > core::f64::consts::PI { x -= two_pi; }
-    else if x <= -core::f64::consts::PI { x += two_pi; }
-    let neg = if x > core::f64::consts::FRAC_PI_2 {
-        x = core::f64::consts::PI - x; true
-    } else if x < -core::f64::consts::FRAC_PI_2 {
-        x = -core::f64::consts::PI - x; true
-    } else { false };
-    let x2 = x * x;
-    let mut term = 1.0;
-    let mut sum = 1.0;
-    for k in 0..10 {
-        term *= -x2 / (((2 * k + 1) * (2 * k + 2)) as f64);
-        sum += term;
-    }
-    if neg { -sum } else { sum }
-}
-
-/* atan via reduction to |x| <= tan(π/8) ≈ 0.4142, where Taylor converges
-   in ~10 terms. Two reductions in sequence: |x| > 1 → atan(1/x) flip,
-   then |x| > 0.4142 → addition formula atan(x) = π/4 + atan((x−1)/(x+1))
-   which lands the argument in (−0.4142, 0]. */
-pub fn fatan(x: f64) -> f64 {
-    if x.is_nan() { return f64::NAN; }
-    if x.is_infinite() {
-        return if x > 0.0 { core::f64::consts::FRAC_PI_2 } else { -core::f64::consts::FRAC_PI_2 };
-    }
-    if x < 0.0 { return -fatan(-x); }
-    if x > 1.0 { return core::f64::consts::FRAC_PI_2 - fatan(1.0 / x); }
-    if x > 0.4142135623730951 {
-        let q = (x - 1.0) / (x + 1.0);
-        return core::f64::consts::FRAC_PI_4 + fatan_small(q);
-    }
-    fatan_small(x)
-}
-
-fn fatan_small(x: f64) -> f64 {
-    let x2 = x * x;
-    let mut term = x;
-    let mut sum = x;
-    let mut sign = -1.0;
-    for k in 1..15 {
-        term *= x2;
-        sum += sign * term / ((2 * k + 1) as f64);
-        sign = -sign;
-    }
-    sum
-}
-
-/* Two-arg arctangent in (−π, π]. Splits by quadrant and feeds the slope
-   to fatan; the y-axis cases short-circuit to ±π/2. Mirrors libm's
-   atan2(y, x); used by complex.log and (transitively) by complex pow. */
-pub fn fatan2(y: f64, x: f64) -> f64 {
-    if x.is_nan() || y.is_nan() { return f64::NAN; }
-    if x > 0.0 { return fatan(y / x); }
-    if x < 0.0 {
-        return if y >= 0.0 { fatan(y / x) + core::f64::consts::PI }
-               else { fatan(y / x) - core::f64::consts::PI };
-    }
-    if y > 0.0 { return core::f64::consts::FRAC_PI_2; }
-    if y < 0.0 { return -core::f64::consts::FRAC_PI_2; }
-    0.0
-}
 
 #[inline]
 pub fn fpowi(mut base: f64, exp: i32) -> f64 {
@@ -1133,6 +771,7 @@ pub fn fpowf(base: f64, exp: f64) -> f64 {
 #[cold] #[inline(never)] pub fn cold_type(m: &'static str) -> VmErr { VmErr::Type(m) }
 #[cold] #[inline(never)] pub fn cold_value(m: &'static str) -> VmErr { VmErr::Value(m) }
 #[cold] #[inline(never)] pub fn cold_runtime(m: &'static str) -> VmErr { VmErr::Runtime(m) }
+#[cold] #[inline(never)] pub fn cold_overflow() -> VmErr { VmErr::Overflow }
 
 /* Single-write SSA store after register coalescing. */
 #[inline(always)]
@@ -1161,7 +800,3 @@ pub fn fsignum(x: f64) -> f64 {
     if x > 0.0 { 1.0 } else if x < 0.0 { -1.0 } else { 0.0 }
 }
 
-#[inline]
-pub fn flog10(x: f64) -> f64 {
-    fln(x) / core::f64::consts::LN_10
-}

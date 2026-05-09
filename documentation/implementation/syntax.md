@@ -46,7 +46,7 @@ Operands are bounded to `u16::MAX` (65,535). The same cap applies to the size of
 ```text
 Name        -> name() (handles assignment, walrus, calls)
 String      -> emit Str constant; concatenate adjacent String tokens
-Int / Float -> emit numeric constant; promote to BigInt if oversized
+Int / Float -> emit numeric constant; literal beyond 2⁴⁷ is a parse error
 True/False/None/Ellipsis -> emit dedicated load opcode
 FstringStart -> fstring()
 Lbrace      -> brace_literal()  (dict, set, comprehension)

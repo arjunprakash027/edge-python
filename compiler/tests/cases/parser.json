@@ -933,18 +933,16 @@
     "annotations": {}
   },
   {
-    "src": "match x:\n    case 1:\n        y = 10\n    case _:\n        y = 20", 
-    "constants": ["1", "10", "20"], 
-    "names": ["x_0", "#match1", "y_1", "y_2"], 
-    "instructions": [["LoadName",0], ["StoreName",1], ["LoadName",1], ["LoadConst",0], ["Eq",0], ["JumpIfFalse",9], ["LoadConst",1], ["StoreName",2], ["Jump",11], ["LoadConst",2], ["StoreName",2], ["ReturnValue",0]], 
-    "annotations": {}
+    "src": "match x:\n    case 1:\n        y = 10\n    case _:\n        y = 20",
+    "constants": ["1", "10", "20"],
+    "names": ["x_0", "#match1", "y_1", "y_2"],
+    "instructions": [["LoadName",0], ["StoreName",1], ["LoadName",1], ["LoadConst",0], ["Eq",0], ["JumpIfFalse",10], ["Jump",7], ["LoadConst",1], ["StoreName",2], ["Jump",14], ["Jump",11], ["LoadConst",2], ["StoreName",2], ["Jump",14], ["ReturnValue",0]]
   },
   {
-    "src": "match x:\n    case 1:\n        y = 1\n    case 2:\n        y = 2\n    case _:\n        y = 3", 
-    "constants": ["1", "1", "2", "2", "3"], 
-    "names": ["x_0", "#match1", "y_1", "y_2", "y_3"], 
-    "instructions": [["LoadName",0], ["StoreName",1], ["LoadName",1], ["LoadConst",0], ["Eq",0], ["JumpIfFalse",9], ["LoadConst",1], ["StoreName",2], ["Jump",18], ["LoadName",1], ["LoadConst",2], ["Eq",0], ["JumpIfFalse",16], ["LoadConst",3], ["StoreName",2], ["Jump",18], ["LoadConst",4], ["StoreName",2], ["ReturnValue",0]], 
-    "annotations": {}
+    "src": "match x:\n    case 1:\n        y = 1\n    case 2:\n        y = 2\n    case _:\n        y = 3",
+    "constants": ["1", "1", "2", "2", "3"],
+    "names": ["x_0", "#match1", "y_1", "y_2", "y_3"],
+    "instructions": [["LoadName",0], ["StoreName",1], ["LoadName",1], ["LoadConst",0], ["Eq",0], ["JumpIfFalse",10], ["Jump",7], ["LoadConst",1], ["StoreName",2], ["Jump",22], ["LoadName",1], ["LoadConst",2], ["Eq",0], ["JumpIfFalse",18], ["Jump",15], ["LoadConst",3], ["StoreName",2], ["Jump",22], ["Jump",19], ["LoadConst",4], ["StoreName",2], ["Jump",22], ["ReturnValue",0]]
   },
   {
     "src": "raise x from y", 
@@ -1083,14 +1081,7 @@
     "annotations": {}
   },
   {
-    "src": "x = 3j",
-    "constants": ["complex(0,3)"],
-    "names": ["x_1"],
-    "instructions": [["LoadConst",0], ["StoreName",0], ["ReturnValue",0]],
-    "annotations": {}
-  },
-  {
-    "src": "x = ...", 
+    "src": "x = ...",
     "constants": [], 
     "names": ["x_1"], 
     "instructions": [["LoadEllipsis",0], ["StoreName",0], ["ReturnValue",0]], 
@@ -1271,14 +1262,7 @@
     "annotations": {}
   },
   {
-    "src": "type Point = tuple", 
-    "constants": [], 
-    "names": ["tuple_0", "Point"], 
-    "instructions": [["LoadName",0], ["TypeAlias",1], ["ReturnValue",0]], 
-    "annotations": {}
-  },
-  {
-    "src": "async for a in x:\n    pass", 
+    "src": "async for a in x:\n    pass",
     "constants": [], 
     "names": ["x_0", "a_1", "a_0", "a_2"], 
     "instructions": [["LoadName",0], ["GetIter",1], ["ForIter",5], ["StoreName",2], ["Jump",2], ["Phi",2], ["ReturnValue",0]], 
