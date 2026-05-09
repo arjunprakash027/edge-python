@@ -1,0 +1,32 @@
+Branch: fix-host-edge-encode-doc
+Tech debt: D59 — duplicated copy-paste doc-comment on host_edge_encode.
+
+================================================================================
+Commit 1: correct host_edge_encode doc-comment
+================================================================================
+File: compiler/src/main/abi_bridge.rs
+
+What was wrong:
+  Lines 214 and 236 both carried the same doc-comment:
+    "// Bootstrap decoder: writes tag to `*out_tag`, bytes to `dst[..dst_max]`."
+
+  The comment is correct above host_edge_decode (line 236) but a copy-paste
+  on host_edge_encode (line 214). encode does not write to *out_tag and
+  does not own a dst buffer — it takes (tag, ptr, len), classifies them
+  into a Val, and returns the resulting handle (0 on Invalid). The
+  implementation made this clear; only the comment misled.
+
+Fix:
+  Replaced the comment on encode with:
+    "// Bootstrap encoder: classifies (tag, bytes) into a Val handle;
+     returns 0 on Invalid."
+
+  This matches the actual signature
+    fn host_edge_encode(tag: u32, ptr: *const u8, len: u32) -> u32
+  and the body's behaviour (Direct/AllocStr -> put_val, Invalid -> 0).
+
+Documentation:
+  reference/wasm-abi.md mentions host_edge_encode by name only (line 328);
+  no description there to drift. No doc changes required.
+
+Build: cargo build -p edge-python -> ok.

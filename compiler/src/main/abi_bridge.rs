@@ -212,7 +212,7 @@ fn dispatch_iter_next(recv_h: u32) -> Result<Val, VmErr> {
     })
 }
 
-// Bootstrap decoder: writes tag to `*out_tag`, bytes to `dst[..dst_max]`.
+// Bootstrap encoder: classifies (tag, bytes) into a Val handle; returns 0 on Invalid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn host_edge_encode(tag: u32, ptr: *const u8, len: u32) -> u32 {
     let bytes = if len == 0 || ptr.is_null() {
