@@ -22,10 +22,11 @@ mod test {
         for case in cases {
             let (tokens, lex_errs) = lex(&case.src);
             // If a case expects an error matching a lex diagnostic, it's handled here.
-            if !lex_errs.is_empty() {
-                if let Some(expected) = &case.error {
-                    if lex_errs.iter().any(|e| e.msg.contains(expected.as_str())) { continue; }
-                }
+            if !lex_errs.is_empty()
+                && let Some(expected) = &case.error
+                && lex_errs.iter().any(|e| e.msg.contains(expected.as_str()))
+            {
+                continue;
             }
             let (chunk, _errors) = Parser::new(&case.src, tokens.into_iter()).parse();
             let mut vm = VM::new(&chunk);

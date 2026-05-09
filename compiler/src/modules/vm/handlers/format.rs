@@ -23,7 +23,7 @@
    Returns Ok(formatted) or Err(message) so the caller can raise ValueError. */
 
 use alloc::string::{String, ToString};
-use crate::modules::vm::types::{Val, HeapObj, HeapPool, fabs, fsignum, ftrunc};
+use crate::modules::vm::types::{Val, HeapObj, HeapPool, fabs, ffloor, flog10, fsignum, ftrunc};
 
 pub fn format_value(v: Val, spec: &str, heap: &HeapPool) -> Result<String, &'static str> {
     if spec.is_empty() {
@@ -216,7 +216,7 @@ fn format_float(v: Val, s: &Spec, ty: u8, heap: &HeapPool) -> Result<String, &'s
         // `g/G` in CPython: pick `e` for very small/large, `f` otherwise.
         b'g' | b'G' => {
             let upper = ty == b'G';
-            let exp = if mag == 0.0 { 0 } else { mag.log10().floor() as i32 };
+            let exp = if mag == 0.0 { 0 } else { ffloor(flog10(mag)) as i32 };
             // CPython rule: -4 <= exp < precision uses fixed; else scientific.
             let p = prec.max(1);
             if exp < -4 || exp >= p as i32 {
