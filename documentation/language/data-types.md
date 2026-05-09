@@ -43,7 +43,7 @@ True
 
 ## Integer
 
-47-bit signed inline (range ±2⁴⁷ minus one). Operations that overflow raise `OverflowError`.
+47-bit signed inline. The full range is `-140_737_488_355_328` to `140_737_488_355_327` (±2⁴⁷). Edge Python does **not** have arbitrary-precision (bigint) integers — this is a NaN-boxing tradeoff that keeps int arithmetic to one ALU instruction with no heap allocation. Any arithmetic that escapes the range raises `OverflowError`; literals outside the range are rejected by the parser. Complex literals (`1j`, `2+3j`) are unsupported.
 
 ```python
 # Inside the supported range
@@ -130,6 +130,8 @@ a
 b
 c
 ```
+
+`len(s)` and the padding methods `str.center` / `str.zfill` measure in Unicode code points, not raw bytes — `'ñ'.center(5, '*')` produces `'**ñ**'`, five visual characters wide.
 
 ## Bytes
 
@@ -281,7 +283,7 @@ print(())           # empty
 
 ## Dict
 
-Insertion-ordered mapping. Keys must be hashable (numbers, strings, tuples of hashables).
+Insertion-ordered mapping. Keys must be hashable: numbers, strings, bytes, booleans, `None`, frozensets, and tuples whose elements are themselves hashable. Mutable containers (`list`, `dict`, `set`) raise `TypeError: unhashable type` if used as a key. Numerically equal keys (`1` and `1.0`, or `True` and `1`) collapse to a single slot — the second insertion overwrites the first.
 
 ```python
 d = {"a": 1, "b": 2}
@@ -374,6 +376,24 @@ print(type(None))
 None
 True
 <class 'NoneType'>
+```
+
+## Ellipsis
+
+`...` is a true singleton of type `ellipsis`. It compares equal only to itself and is distinct from the string `'...'`.
+
+```python
+print(...)
+print(... is ...)
+print(type(...))
+print(... == '...')
+```
+
+```text Output
+Ellipsis
+True
+<class 'ellipsis'>
+False
 ```
 
 ## Conversions

@@ -56,7 +56,7 @@ The runtime never fetches anything. The host (browser JS, WASI runtime, embedded
 
 ## packages.json
 
-Bare-name imports resolve through an import map declared in your project's `packages.json` (sitting next to the entry script):
+Bare-name imports resolve through an import map declared in your project's `packages.json` (sitting next to the entry script). The manifest is always called `packages.json` — there is no `edge.json` or other variant.
 
 ```json
 {
@@ -67,6 +67,15 @@ Bare-name imports resolve through an import map declared in your project's `pack
   }
 }
 ```
+
+The schema is small and strict:
+
+- The top-level value must be a JSON object. Empty `{}` is valid.
+- `imports` (optional): object mapping alias → spec string.
+- `extends` (optional): string naming a directory whose `packages.json` is consulted when an alias isn't found locally.
+- Unknown top-level keys are silently ignored (forward-compatible).
+- Booleans, numbers, and arrays at any level are rejected.
+- String escapes accepted: `\"`, `\\`, `\/`, `\n`, `\t`, `\r`. **`\uXXXX` is not supported** — paste the character literally (the file must be UTF-8).
 
 After this, `from utils import x` resolves to `./lib/utils.py` relative to the entry script's directory; `from math import add` loads the `.wasm` per the [wire format](/reference/wasm-abi).
 
@@ -87,10 +96,19 @@ my_app/
 ```
 
 Concretely:
-- **Bare-name imports** (`from utils import x`) walk up from the importing file's directory looking for `packages.json`. The first one found decides.
-- **Hermetic by default**: if the nearest manifest doesn't declare the alias, compilation fails. There is no silent fall-through to outer manifests — that prevents a deep transitive dep from accidentally borrowing aliases the parent declared.
-- **`extends` opts in to inheritance**: a sub-manifest with `"extends": ".."` (or any directory expression) re-runs the search from the extended directory if it doesn't declare the alias locally. Cycles in the extends chain are detected at compile time.
+- **Bare-name imports** (`from utils import x`) walk up from the importing file's directory looking for `packages.json`. The first one found decides. The walk caps at **32 hops** — exceeding it raises `packages.json walk-up exceeded 32 hops resolving '<name>'`.
+- **Hermetic by default**: if the nearest manifest doesn't declare the alias, compilation fails (`alias '<name>' not declared in '<manifest>'`). There is no silent fall-through to outer manifests — that prevents a deep transitive dep from accidentally borrowing aliases the parent declared.
+- **`extends` opts in to inheritance**: a sub-manifest with `"extends": ".."` (or any directory expression) re-runs the search from the extended directory if it doesn't declare the alias locally. Cycles in the extends chain are detected at compile time (`circular extends chain in packages.json`).
 - **Quoted relative paths** (`from "./helpers.py" import f`) resolve against the importing file's directory — a transitively-imported `lib/a.py` doing `from "./b.py" import g` correctly finds `lib/b.py`.
+
+Spec classification (handled by the resolver):
+
+| Spec shape | Example | Resolution |
+|---|---|---|
+| URL (contains `://`) | `https://x.com/u.py` | Used as-is; passed to `fetch_bytes` |
+| Absolute (`/`-prefixed) | `/usr/share/lib.py` | Used as-is |
+| Relative (`./` or `../`) | `./util.py` | Joined against importer's directory |
+| Bare name | `utils` | Walk-up `packages.json` resolution |
 
 #### `extends`
 
@@ -154,7 +172,7 @@ error: integrity check failed for 'https://example.com/utils.py'
 
 Verification lives in the compiler itself, not the host — so any host (browser shim, WASI runtime, embedder) inherits the guarantee uniformly. Hosts that don't implement `fetch_bytes` surface a clean "not supported" error instead of silently bypassing the check, so a script asking for integrity never runs unverified.
 
-Only `sha256` is supported today. A spec with any other prefix (`md5-...`, `sha384-...`) fails with `unrecognized integrity fragment`.
+Only `sha256` is supported today. A spec with any other prefix (`md5-...`, `sha384-...`) fails with `unrecognized integrity fragment`. The fragment's hex body must be **exactly 64 characters**; any other length raises `sha256 fragment must be 64 hex chars`.
 
 ## Lockfile and content-addressed cache
 
@@ -200,7 +218,9 @@ Edge Python runs as a WebAssembly module; scripts execute inside that sandbox un
 
 ## What doesn't work
 
-- **Dynamic imports** — no `__import__`, no `importlib`. The module set is fixed per compilation.
+- **Dynamic imports** — no `__import__`, no `importlib`. The module set is fixed per compilation. Use `import_module(name)` to *dispatch* among modules already statically imported elsewhere in the program.
+- **Relative imports** — `from . import x` and `from .pkg import y` are **not** supported. Use quoted relative specs (`from "./foo.py" import x`) or declare an alias in `packages.json`.
+- **Dotted submodule auto-discovery** — `import a.b.c` parses, but the dotted form is not auto-walked across the filesystem. Each importable spec must either be declared in `packages.json` or supplied as a quoted path/URL.
 
 ## Errors
 

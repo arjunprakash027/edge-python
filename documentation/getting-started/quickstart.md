@@ -13,7 +13,7 @@ Edge Python ships as a WebAssembly module. The fastest way to try it is the play
 
 To run Edge Python in your own host (browser app, server, edge runtime), you need two artifacts:
 
-1. The compiler module: `compiler_lib.wasm` (~130 KB).
+1. The compiler module: `compiler_lib.wasm` (~130 KB, contains lexer, parser, and stack VM).
 2. A loader for your platform — the canonical browser loader is [`demo/edge.js`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/demo/edge.js); WASI hosts wire it up via their runtime's import API.
 
 Build the WASM yourself:
@@ -25,7 +25,7 @@ cargo wasm
 # → target/wasm32-unknown-unknown/release/compiler_lib.wasm
 ```
 
-There is no separate native CLI binary. The host runtime owns I/O, network, and module fetching — that's what keeps Edge Python sandboxed by construction.
+There is no native CLI binary — `compiler_lib.wasm` is the shipping artifact, and `compiler/src/main.rs` is gated to `wasm32`. The host runtime owns I/O, network, and module fetching: the guest exposes one entry point (`run`) and calls back through `js_print`, `js_fetch_bytes`, and `js_call_native`. That's what keeps Edge Python sandboxed by construction.
 
 ## Your first program
 
@@ -46,18 +46,19 @@ Hello, python!
 
 ## A taste of the language
 
-Edge Python is a functional subset of Python 3.13. Functions are first-class values. Lambdas, currying, higher-order functions, and comprehensions are central.
+Edge Python is a functional subset of Python 3.13. Functions are first-class values; lambdas, currying, higher-order functions, and comprehensions are central. Classes exist as flat state containers — no inheritance, no `super()`, no dunder dispatch.
 
 ```python
 # First-class functions
 ops = [abs, len, str]
 print([f(-3) for f in ops])
 
-# Currying
+# Currying with closures
 add = lambda x: lambda y: x + y
 print(add(3)(4))
 
-# Pure functions get memoized automatically
+# Pure functions are template-memoised after two
+# hits with the same arguments
 def fib(n):
     if n < 2: return n
     return fib(n - 1) + fib(n - 2)

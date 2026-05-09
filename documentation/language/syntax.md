@@ -66,25 +66,28 @@ if (n := len(data)) > 0:
 
 ## Numbers
 
+Integers are 47-bit signed (range ±2⁴⁷). Anything beyond that range — at the literal or the result of arithmetic — raises `OverflowError`. Hex (`0x`), octal (`0o`), and binary (`0b`) prefixes are supported, with `_` digit separators between digits.
+
 ```python
-# Integers — arbitrary precision
-print(2 ** 100)
 print(0xDEAD_BEEF)
 print(0o777)
 print(0b1010_1010)
 print(1_000_000)
+print(2 ** 46)
 ```
 
 ```text Output
-1267650600228229401496703205376
 3735928559
 511
 170
 1000000
+70368744177664
 ```
 
+Underscores are validated: `1_`, `1__2`, `0x_1`, and `1e_5` are rejected as `SyntaxError`. They must sit between two digits.
+
 ```python
-# Floats — IEEE-754
+# Floats — IEEE-754 doubles
 print(3.14)
 print(1e-5)
 print(.5)
@@ -99,6 +102,8 @@ print(2 + 3.0)
 0.5
 5.0
 ```
+
+Complex literals (`1j`, `2+3j`) are not part of the language.
 
 ## Strings
 
@@ -122,11 +127,23 @@ hello world
 
 ### Escape sequences
 
+Supported: `\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\0`, `\xHH` (2-digit hex), `\uHHHH` (4-digit Unicode), `\UHHHHHHHH` (8-digit Unicode), and `\NNN` (1-3 octal digits). Named-character escapes (`\N{GREEK SMALL LETTER ALPHA}`) are not supported \u2014 use `\u` instead.
+
 ```python
 print('\n line break')
 print('\t tab')
 print('\x41 hex')
 print('\u00e9 unicode')
+print('\101')             # octal escape \u2014 'A'
+```
+
+```text Output
+
+ line break
+	 tab
+A hex
+\u00e9 unicode
+A
 ```
 
 ### f-strings
@@ -386,7 +403,7 @@ print(max(x for x in [3, 1, 4, 1, 5]))
 
 ## Type annotations
 
-Annotations parse for compatibility but the VM ignores them. They have no runtime effect.
+Annotations parse on variables, parameters, and return positions but have no runtime effect: they are drained by the parser and never reach the VM. There is no `__annotations__` attribute, and no runtime type check is performed. Treat annotations as documentation for human readers and external static-analysis tools.
 
 ```python
 counter: int = 0
@@ -396,8 +413,10 @@ def add(a: int, b: int) -> int:
     return a + b
 
 print(add(3, 4))
+print(add("a", "b"))   # annotations don't enforce — int+str logic decides
 ```
 
 ```text Output
 7
+ab
 ```

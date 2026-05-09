@@ -7,8 +7,8 @@ Edge Python has no bundled stdlib. There are **two ways** to add native function
 
 | Path | Distribution | Type coverage | Maintenance |
 |---|---|---|---|
-| **`.wasm` module via URL** ([WASM ABI](/reference/wasm-abi)) | Publish a `.wasm` to a CDN; any host loads it dynamically | Scalars only (i48, f64, bool) | You own the wire-format boilerplate, or use a community SDK |
-| **In-process Rust binding** | Publish a Rust crate; embedders link it as an rlib | Full — any `HeapObj` (str, list, dict, BigInt, …) | You own a Rust crate; cargo handles distribution |
+| **`.wasm` module via URL** ([WASM ABI](/reference/wasm-abi)) | Publish a `.wasm` to a CDN; any host loads it dynamically | Primitives only (None, bool, i64 truncated to 47-bit, f64, bytes/str) | You own the wire-format boilerplate, or use a community SDK |
+| **In-process Rust binding** | Publish a Rust crate; embedders link it as an rlib | Full — any `HeapObj` (str, list, dict, set, tuple, instance, …) | You own a Rust crate; cargo handles distribution |
 
 The `.wasm` path matches the marketplace pattern (`from "https://x.wasm" import f` works in any host). The in-process path matches the embedder pattern (compile your modules into your own `compiler.wasm`). Both are first-class.
 
@@ -76,7 +76,9 @@ Full encoding tables and language-specific snippets (C, Zig, AssemblyScript) liv
 
 ## Path B: in-process Rust binding
 
-For embedders that link `compiler_lib` as an rlib, native bindings are Rust closures the host hands the parser through the `Resolver` trait. Closures get **direct access to the VM heap** — strings, lists, dicts, BigInts, all of it — with zero serialization. There is no wire format, no marshalling overhead, no scalar-only ceiling.
+For embedders that link `compiler_lib` as an rlib, native bindings are Rust closures the host hands the parser through the `Resolver` trait. Closures get **direct access to the VM heap** — strings, lists, dicts, sets, tuples, instances, modules — with zero serialization. There is no wire format, no marshalling overhead, no primitive-only ceiling.
+
+Bindings declare a `pure` flag (true if the function is referentially transparent — same args produce same result, no side effects). Pure bindings can be memoised by the VM's template cache; impure bindings always run.
 
 ### Module crate
 

@@ -65,6 +65,29 @@ print(total(*[10, 20, 30]))
 60
 ```
 
+### Keyword-only parameters
+
+A bare `*` in the parameter list marks every following parameter as keyword-only. They can never be filled by positional arguments.
+
+```python
+def connect(host, *, port=80, secure=False):
+    return f"{host}:{port} secure={secure}"
+
+print(connect("api"))
+print(connect("api", port=443, secure=True))
+
+try:
+    connect("api", 443)        # positional past `*` is rejected
+except TypeError:
+    print("rejected")
+```
+
+```text Output
+api:80 secure=False
+api:443 secure=True
+rejected
+```
+
 ### Argument unpacking at the call site
 
 ```python
@@ -357,6 +380,15 @@ print(list(nums()))
 [0, 1, 2, 10, 20]
 ```
 
+<Note>
+Generators are one-way: producer to consumer. `gen.send(value)`,
+`gen.throw(exc)`, and `gen.close()` are not exposed — bidirectional
+communication is a procedural pattern that fights the functional
+paradigm. For task coordination with bidirectional flow, use the
+cooperative scheduler (`run` / `sleep` / `gather`) and pass values
+through arguments and return values.
+</Note>
+
 ## Generator expressions
 
 Generators inline:
@@ -373,7 +405,7 @@ print(max(i for i in [3, 1, 4, 1, 5]))
 
 ## Decorators
 
-A decorator is a function that wraps another function. Edge Python supports them syntactically:
+A decorator is a function that wraps another callable. Edge Python applies decorators to both functions and classes (see [Classes](/language/classes#class-decorators)):
 
 ```python
 def trace(f):

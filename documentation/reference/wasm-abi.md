@@ -95,17 +95,15 @@ Stash an error so the host sees it after the guest returns `1` from its export. 
 | Op | Value | Meaning |
 |---|---|---|
 | `Call` | 0 | `recv.<name>(args...)` → handle |
-| `GetAttr` | 1 | `recv.<name>` → handle (planned) |
-| `SetAttr` | 2 | `recv.<name> = args[0]` → handle (None) (planned) |
-| `GetItem` | 3 | `recv[args[0]]` → handle (planned) |
-| `SetItem` | 4 | `recv[args[0]] = args[1]` → handle (None) (planned) |
+| `GetAttr` | 1 | `recv.<name>` → handle |
+| `SetAttr` | 2 | `recv.<name> = args[0]` → handle (None) |
+| `GetItem` | 3 | `recv[args[0]]` → handle |
+| `SetItem` | 4 | `recv[args[0]] = args[1]` → handle (None) |
 | `Len` | 5 | `len(recv)` → handle (Int) |
-| `Iter` | 6 | `iter(recv)` → handle (iterator) (planned) |
-| `IterNext` | 7 | `next(iter)` → handle, or `1`+`StopIteration` on end (planned) |
+| `Iter` | 6 | `iter(recv)` → handle (iterator List) |
+| `IterNext` | 7 | `next(iter)` → handle, or `1`+`StopIteration` on end |
 
-Values `8..u32::MAX` are reserved for future ops. Old hosts return `1` with `kind=Runtime` for unknown ops.
-
-`v1` ships `Call` and `Len` fully. The rest of the table is reserved and will be enabled in subsequent point releases without ABI changes.
+All eight ops are wired in v1. The host's `Op::Iter` materialises the receiver into a List handle (set is sorted via `vm.sort_set_items`; dict yields keys; str splits to single-char strings); `Op::IterNext` advances that handle. Values `8..u32::MAX` are reserved for future ops — old hosts return `1` with `kind=Runtime` for unknown ops.
 
 ## Tags (for `edge_encode` / `edge_decode`)
 
@@ -327,7 +325,7 @@ When the host (browser shim, WASI runtime, Rust embedder) sees `from "<url>" imp
 
 1. **Fetch** the bytes (browser: `fetch()`; CLI: filesystem or HTTP).
 2. **Verify integrity** if a `#sha256-...` fragment is present (parser-side, before any code runs).
-3. **Instantiate** the module with the 5 host imports wired to compiler.wasm exports (`host_edge_op`, `host_edge_encode`, `host_edge_decode`, `host_edge_release`, `host_edge_take_error`).
+3. **Instantiate** the module with the 6 host imports wired to compiler.wasm exports (`host_edge_op`, `host_edge_encode`, `host_edge_decode`, `host_edge_release`, `host_edge_take_error`, `host_edge_throw`).
 4. **Walk the export table** and register every callable function under its name.
 5. **At each script call site**, the host registers the args as handles, invokes the matching guest export, reads the result handle, and propagates the `Val`. Errors stashed via `edge_take_error` raise the corresponding Python exception.
 

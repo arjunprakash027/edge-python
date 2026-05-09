@@ -5,6 +5,25 @@ description: "Cooperative coroutines, sleep, gather, with_timeout, cancel."
 
 Edge Python supports cooperative concurrency via `async def` coroutines and the `await` / `yield` keywords. There is **no preemption**: a coroutine runs until it explicitly yields, sleeps, awaits, or returns. The scheduler runs on a single OS thread; concurrency is by interleaving, not parallelism.
 
+There is **no `asyncio` module**. The async primitives — `run`, `sleep`, `gather`, `with_timeout`, `cancel`, `receive` — are top-level builtins. Edge Python's scheduler is direct enough that wrapping it in a module-shaped namespace would be ceremony for its own sake.
+
+```python
+import asyncio       # ModuleNotFoundError — there is no asyncio
+```
+
+```python
+# Idiomatic edge-python: call the primitives directly.
+async def main():
+    sleep(0.01)
+    return "ok"
+
+print(run(main()))
+```
+
+```text Output
+ok
+```
+
 ## Two kinds of callables
 
 | Construct | Runs as | Cancellable | Real time |
@@ -149,9 +168,10 @@ Both are in the built-in exception namespace and match `except` clauses normally
 - **No preemption.** A `while True: pass` inside a coroutine blocks the scheduler.
 - **Cancellation is silent.** `cancel(coro)` stops the coroutine; the body does not see `CancelledError`. Use `with_timeout` if you need deadline semantics that propagate as exceptions.
 - **No host event loop integration.** Edge Python's scheduler is in-process. Real I/O concurrency requires the host to expose async-shaped externs (e.g. `await fetch_json(url)` where `fetch_json` is a host function that queues a callback and yields).
-- **`async for`**: works against any iterable accepted by `for`, *plus* coroutines and async generators (functions defined with both `async def` and `yield`). Each iteration resumes the coroutine to its next yield. There is no `__aiter__` / `__anext__` dunder dispatch on user-defined classes — define an `async def` generator instead. Behavior over plain lists/tuples/dicts is identical to a regular `for`.
-- **`async with`**: parsed but not async. The keyword is accepted to match Python syntax; the runtime treats it as a regular `with` (no `__aenter__` / `__aexit__` dispatch — neither does the sync `with`). Use a `try` / `finally` block when you need real teardown semantics.
+- **`async for`** works against any iterable accepted by `for`, *plus* coroutines and async generators (functions defined with both `async def` and `yield`). Each iteration resumes the coroutine to its next yield. There is no `__aiter__` / `__anext__` dispatch on user-defined classes — define an `async def` generator instead. Behavior over plain lists/tuples/dicts is identical to a regular `for`.
+- **`async with`** is a stack-save scope just like `with`. The runtime does not call `__aenter__` / `__aexit__` (no dunder dispatch on either form). Use `try` / `finally` and explicit `await` calls for setup/teardown.
 - **No async comprehensions.** `[x async for x in it]` is not supported.
+- **No `gen.send` / `.throw` / `.close`.** Generators and coroutines are one-way producers. For bidirectional flow, structure the work with `run` / `gather` and pass messages through call arguments.
 - **`receive()` is unbounded.** Without an external producer pushing into the event queue, `receive()` yields `None` forever. Pair with `with_timeout` if you need a deadline.
 
 ## Time capability

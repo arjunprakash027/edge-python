@@ -13,6 +13,25 @@ Edge Python supports two limit profiles. Pick one when constructing the VM via `
 | Max operations | unbounded          | 100,000,000   | `RuntimeError`         |
 | Max heap bytes | 10,000,000         | 100,000       | `MemoryError`          |
 
+## Integer width
+
+Edge Python integers are inline 47-bit signed values inside a NaN-boxed `Val`. The range is `±140_737_488_355_327` (`±2^47 - 1`); literal or arithmetic results outside that range raise `OverflowError`.
+
+```python
+print(140737488355327)    # max value, fine
+try:
+    print(2 ** 47)        # 140737488355328 — past the cap
+except OverflowError:
+    print("overflow")
+```
+
+```text Output
+140737488355327
+overflow
+```
+
+This is architectural. Bigint would either need a secondary heap variant (every arith op pays a type check on the overflow path) or abandoning NaN-boxing (slower hot path, larger `Val`). Both regress the WASM-size and inner-loop performance goals that motivated the project.
+
 ### Triggering limits
 
 ```python
@@ -90,14 +109,40 @@ Raised as `VmErr`. Most are catchable with `try` / `except`.
 | `Attribute`     | `AttributeError`     | Attribute not found on object      |
 | `Name`          | `NameError`          | Undefined name                     |
 | `ZeroDiv`       | `ZeroDivisionError`  | Division or modulo by zero         |
-| `Overflow`      | `OverflowError`      | Integer arithmetic past ±2⁴⁷    |
+| `Overflow`      | `OverflowError`      | Integer arithmetic past ±2⁴⁷       |
+| `Raised("KeyError")`       | `KeyError`         | Dict / set lookup miss          |
+| `Raised("IndexError")`     | `IndexError`       | Sequence index out of range     |
+| `Raised("StopIteration")`  | `StopIteration`    | Iterator exhausted              |
 | `Raised("TimeoutError")`   | `TimeoutError`     | `with_timeout` deadline expired |
 | `Raised("CancelledError")` | `CancelledError`   | User-thrown cancellation        |
 | `CallDepth`     | `RecursionError`     | Past `max_calls`                   |
 | `Heap`          | `MemoryError`        | Past heap limit                    |
 | `Budget`        | `RuntimeError`       | Past op limit                      |
 | `Runtime`       | `RuntimeError`       | Internal invariant or unsupported  |
-| `Raised`        | `Exception`          | User `raise X` with non-builtin X  |
+| `Raised`        | (custom)             | User `raise X` (X may be a class or string) |
+
+#### Exception hierarchy
+
+The standard exception classes form a flat tree rooted at `BaseException → Exception`. `except` clauses walk parent links, so `except Exception` catches `RuntimeError`, `ValueError`, `KeyError`, etc., and `except RuntimeError` catches `RecursionError` and `NotImplementedError`.
+
+```python
+try:
+    raise RuntimeError("oops")
+except Exception as e:
+    print("caught via parent:", e)
+
+try:
+    [][0]
+except Exception:
+    print("caught IndexError as Exception")
+```
+
+```text Output
+caught via parent: oops
+caught IndexError as Exception
+```
+
+User-defined classes do not participate in the hierarchy — they're flat state containers, caught only by their own name or by a bare `except`. `raise X from Y` raises `X`; the cause is currently discarded (no `__cause__` / `__context__` chaining).
 
 ### Catching errors
 

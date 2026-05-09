@@ -3,7 +3,9 @@ title: "Classes"
 description: "User-defined classes as state machines and library namespaces."
 ---
 
-Edge Python's classes are deliberately small. They cover two patterns: **state machines** (a small number of methods that mutate the receiver) and **namespaces** (a bundle of related functions and constants). Inheritance, descriptors, properties, metaclasses, MRO, `super`, and dunder dispatch are not supported.
+Edge Python is **functional-first**: classes are state containers and library namespaces, not the primary abstraction. They cover two patterns: **state machines** (a small number of methods that mutate the receiver) and **namespaces** (a bundle of related functions and constants).
+
+By design, the class system omits inheritance chains, `super()`, MRO walking, descriptor protocols, properties, metaclasses, slots, and dunder dispatch. The only dunder the VM consults on user instances is `__init__`. This keeps the object model in ~300 LOC of VM code; programs that need a richer object system are a poor fit for the target.
 
 ## State-machine pattern
 
@@ -68,11 +70,35 @@ print(Math.cube(3))
 
 `setattr` / `delattr` work on instances. They do not modify the class object.
 
+## Class decorators
+
+A decorator on a class wraps the class object the same way it wraps a function: the decorator is called with the class and its return value is bound to the name.
+
+```python
+def tag(cls):
+    cls.kind = "tagged"
+    return cls
+
+@tag
+class Box:
+    def __init__(self, v):
+        self.v = v
+
+print(Box.kind)
+print(Box(7).v)
+```
+
+```text Output
+tagged
+7
+```
+
 ## What is *not* supported
 
-- `class Sub(Super):` — no inheritance, no `super()`, no MRO. Reuse comes from composition (hold a field of another class) or free functions.
-- `__eq__`, `__hash__`, `__repr__`, etc. — dunders are not dispatched. `==` on instances compares by identity.
+- `class Sub(Super):` — parsed but the base list has no MRO; methods are not inherited from a base class. There is no `super()`, no method resolution order, and no inheritance chain. Reuse comes from composition (hold a field of another class) or free functions.
+- `__eq__`, `__hash__`, `__repr__`, `__add__`, `__getitem__`, `__iter__`, `__len__`, `__call__`, `__bool__`, ... — none of these dunders are dispatched. Operators and built-ins resolve on the type tag, not on user-class methods. `==` on instances compares by identity.
+- `__enter__` / `__exit__` and `__aenter__` / `__aexit__` — `with` and `async with` are stack-save scopes; the runtime does **not** invoke entry or exit hooks. Use `try` / `finally` for resource cleanup.
 - `@property`, `@staticmethod`, `@classmethod` — the namespace pattern above replaces `@staticmethod`. The other two have no equivalent.
-- Slots, descriptors, metaclasses, abstract base classes.
+- Slots, descriptors, metaclasses, abstract base classes, `__slots__`, `__init_subclass__`.
 
-The trade-off is intentional: the resulting object model fits in ~300 LOC of VM code and stays predictable when read top-to-bottom. Programs that need a richer object system are a poor fit for the target.
+When you need behaviour reuse, write a free function that takes the value rather than a method on the class. That keeps dispatch fast (one ALU instruction per op rather than a dunder lookup) and aligns with the functional-first identity.

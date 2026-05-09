@@ -128,7 +128,7 @@ done
 
 Edge Python supports a useful subset of structural pattern matching: literal patterns, capture variables, the `_` wildcard, OR patterns (`|`), guards (`if`), and sequence patterns including the `*rest` star.
 
-**Not** supported: mapping patterns (`{"key": x}`), class patterns (`Point(x=0)`), nested sequence patterns inside another sequence, or value-shape captures via `as`. For those, use chained `if` / `elif`.
+Inside a sequence pattern each item must be a literal (`int` / `float` / `str` / `True` / `False` / `None`), a capture name, or `_`. Nested sequences (`case [[a, b], c]:`) are not parsed — flatten them or fall back to guards. Mapping patterns (`{"key": x}`), class patterns (`Point(x=0)`), and value-shape captures via `as` are also unsupported. For those, use chained `if` / `elif`.
 
 ```python
 def classify(p):
@@ -160,8 +160,6 @@ negative
 diagonal
 span 1..5
 ```
-
-Within a sequence pattern, each item is one of: a literal (`int` / `float` / `str` / `True` / `False` / `None`), a capture name, or `_`. Nested sequences (`case [[a, b], c]:`) are not supported — flatten them or use guards.
 
 ```python
 def describe(n):
@@ -248,28 +246,60 @@ except ValueError:
 rejected
 ```
 
-`raise X from Y` chains exceptions:
+`raise X from Y` raises `X`. The `from` clause is parsed and the cause expression is evaluated, but `__cause__` / `__context__` chaining is not preserved on the propagated exception — only the primary `X` reaches the handler.
 
 ```python
 try:
     raise ValueError from KeyError
-except:
-    print("caught chain")
+except ValueError:
+    print("caught the ValueError")
 ```
 
 ```text Output
-caught chain
+caught the ValueError
+```
+
+Handlers match on the exception's class **and** its declared parents. `except Exception` catches `ValueError`, `RuntimeError`, `KeyError`, and so on:
+
+```python
+try:
+    raise RuntimeError("boom")
+except Exception:
+    print("subclass caught")
+```
+
+```text Output
+subclass caught
 ```
 
 ### Exception names available
 
-These are pre-bound type names you can match against:
+These are pre-bound type names you can match against, with their parent links shown so you know which `except <Parent>:` clauses catch each one:
 
-`Exception`, `BaseException`, `ValueError`, `TypeError`, `NameError`, `KeyError`, `IndexError`, `AttributeError`, `RuntimeError`, `ZeroDivisionError`, `OverflowError`, `MemoryError`, `RecursionError`, `StopIteration`, `NotImplementedError`, `OSError`, `IOError`, `ImportError`, `ModuleNotFoundError`, `AssertionError`, `ArithmeticError`, `LookupError`.
+| Class | Parent |
+|---|---|
+| `BaseException` | — |
+| `Exception` | `BaseException` |
+| `RuntimeError` | `Exception` |
+| `ValueError` | `Exception` |
+| `TypeError` | `Exception` |
+| `KeyError` | `Exception` |
+| `IndexError` | `Exception` |
+| `AttributeError` | `Exception` |
+| `ZeroDivisionError` | `Exception` |
+| `OverflowError` | `Exception` |
+| `NameError` | `Exception` |
+| `MemoryError` | `Exception` |
+| `StopIteration` | `Exception` |
+| `StopAsyncIteration` | `Exception` |
+| `TimeoutError` | `Exception` |
+| `CancelledError` | `Exception` |
+| `NotImplementedError` | `RuntimeError` |
+| `RecursionError` | `RuntimeError` |
 
 ## with
 
-Context managers. `__enter__` / `__exit__` aren't user-definable in Edge Python, but the syntax is supported for compatibility:
+`with` is a stack-save scope: the expression value is bound to the `as` name and the body runs. The runtime does **not** call `__enter__` or `__exit__` — there is no protocol invocation. Use `try` / `finally` when you need real teardown semantics.
 
 ```python
 x = [1, 2]
@@ -309,7 +339,7 @@ print(reciprocal(4))
 0.25
 ```
 
-A failed assertion raises `AssertionError`.
+A failed assertion raises `RuntimeError` — catch it with `except RuntimeError:`, `except Exception:`, or a bare `except:`.
 
 ## del
 

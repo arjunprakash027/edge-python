@@ -7,17 +7,20 @@ description: "Tokenization, indentation, f-strings, and source-level limits."
 
 Edge Python uses a hand-written, LUT-driven scanner that walks the source as raw bytes and produces a stream of `Token { kind, line, start, end }`. The scanner is offset-based: tokens carry byte indices into the source buffer, never their own copies of the text. This is enough for diagnostics, debug output, and the parser's lazy slicing of identifier and string content.
 
-Lexing runs in linear time *O(n)* with constant-time per-byte branchless dispatch through two lookup tables.
+Lexing runs in linear time *O(n)* with constant-time per-byte branchless dispatch through two lookup tables. Lex-time diagnostics (unterminated strings, bad indent, unknown bytes, malformed numeric underscores, oversized f-string nesting) are collected in a `Vec<LexError>` returned alongside the token stream — the parser folds them into its own diagnostic stream so the user sees one coherent report.
+
+A leading UTF-8 BOM (`EF BB BF`) is stripped before tokenisation so the first identifier on the file does not fuse with the marker.
 
 ## Token kinds
 
 The token set tracks Python 3.13.12 closely. Categories implemented:
 
 - **Keywords**: `False`, `None`, `True`, `and`, `as`, `assert`, `async`, `await`, `break`, `class`, `continue`, `def`, `del`, `elif`, `else`, `except`, `finally`, `for`, `from`, `global`, `if`, `import`, `in`, `is`, `lambda`, `nonlocal`, `not`, `or`, `pass`, `raise`, `return`, `try`, `while`, `with`, `yield`.
-- **Soft keywords**: `case`, `match`, `type`, `_`. Resolved contextually (see below).
+- **Hard pattern keywords**: `match` and `case` are emitted as hard keywords because in Edge Python they only appear at statement start. Underscore (`_`) gets its own `Underscore` token (the parser distinguishes wildcard from name use).
+- **Soft keyword**: `type` is the only true soft keyword; it is demoted to `Name` when followed by `(`, `:`, `=`, `,`, `)`, `]`, `Newline`, or `EOF` to avoid colliding with the `type()` builtin and identifiers named `type`.
 - **Operators**: 1-, 2-, and 3-character operator forms (`+`, `==`, `**=`, `//=`, etc.).
 - **Delimiters**: `( ) [ ] { } : , ; .`.
-- **Literals**: `Name`, `Int`, `Float`, `Complex`, `String`.
+- **Literals**: `Name`, `Int`, `Float`, `String`, `Bytes`. There is no `Complex` token — a trailing `j` / `J` is **not** lexed as a complex suffix; `1j` tokenises as `Int(1)` followed by `Name("j")`.
 - **F-string segments**: `FstringStart`, `FstringMiddle`, `FstringEnd`.
 - **Whitespace and structure**: `Comment`, `Newline`, `Indent`, `Dedent`, `Nl`, `Endmarker`.
 
@@ -50,10 +53,13 @@ The keyword lookup is routed by `(length, first_byte)` to skip most `memcmp`s. M
 3.14
 .5 # leading-dot float
 1e-5 # exponent
-3j # complex literal — Complex(0.0, 3.0)
 ```
 
-The number scanner handles base prefixes, underscore separators, optional exponents, the leading-dot form, and the trailing `j` / `J` for complex literals.
+The number scanner handles base prefixes (`0x` / `0o` / `0b`, case-insensitive), underscore separators, optional exponents, and the leading-dot form. `Int` and `Float` are the only numeric token kinds.
+
+Underscores must sit **between** digits — leading, trailing, or doubled underscores raise `invalid '_' in numeric literal` or `consecutive '_' in numeric literal` at lex time. An empty radix body (`0x`, `0o`, `0b`) raises `missing digits in numeric literal`. A trailing dot (`5.`) is valid; an empty exponent body (`1e`) is left to the float parser since format specs reuse the `e` / `E` characters and a stricter check would false-positive on spec contexts.
+
+Complex literals are unsupported: `1j` lexes as two tokens (`Int(1)`, `Name("j")`).
 
 ## String prefixes
 
@@ -69,7 +75,13 @@ fr'raw fstring' # raw f-string
 """triple""" # triple-quoted, single or double
 ```
 
-A leading prefix is recognized before the opening quote by the identifier scanner and verified against `is_string_prefix` / `is_fstring_prefix`. Triple-quoted strings span newlines and bump `line` for each `\n` inside.
+A leading prefix is recognised before the opening quote by the identifier scanner and verified against `is_string_prefix`, `is_fstring_prefix`, or `is_bytes_prefix`. Triple-quoted strings span newlines and bump `line` for each `\n` inside. Backslash escapes are consumed at lex time but **decoded** by the parser, so escape semantics live alongside the literal type. Recognised escapes: `\n \t \r \\ \' \" \xHH \uHHHH \UHHHHHHHH` plus 1- to 3-digit octal escapes (`\012` -> `\n`, `\101` -> `A`). `\N{NAME}` Unicode-name escapes are not implemented and pass through as literal text — embedding the ~200 KB Unicode-name database is rejected as too costly for the WASM artifact.
+
+Lex-time errors anchor on the opening quote so the user's `^` marker points at the offender, not at end-of-line:
+
+- `unterminated string literal`
+- `unterminated triple-quoted string literal`
+- `unterminated f-string literal`
 
 ## F-strings
 
@@ -95,40 +107,41 @@ Expression tokens between `{` and `}` are emitted by the **main lexer**, not the
 
 `{{` and `}}` are treated as escaped literal braces and produce no `Lbrace` / `Rbrace`. They survive into the `FstringMiddle` text and are unescaped by the parser.
 
-Triple-quoted f-strings (`f"""..."""`) follow the same structure with newlines embedded in the middle segments.
+Triple-quoted f-strings (`f"""..."""`) follow the same structure with newlines embedded in the middle segments. Nested f-strings are tracked via a `fstring_stack` so each `}` resumes the right outer template; nesting deeper than `MAX_FSTRING_DEPTH = 200` raises `f-string nesting depth exceeds maximum (200)`. Reaching EOF inside an open f-string raises `unterminated f-string literal` and synthesises a closing `FstringEnd` so the parser still sees a balanced sequence.
 
 ## Indentation
 
 Edge Python uses CPython's INDENT/DEDENT model. The scanner tracks a stack of column counts and emits structural tokens at line boundaries:
 
-| Situation                         | Tokens emitted                       |
-|-----------------------------------|--------------------------------------|
-| Blank line or comment-only line   | `Nl`                                 |
-| Inside `(...)`, `[...]`, `{...}`  | `Nl` (no INDENT/DEDENT)              |
-| Indentation increased             | `Newline`, `Indent`                  |
-| Indentation decreased             | `Newline`, `Dedent` (× n levels)     |
-| Indentation unchanged             | `Newline`                            |
-| Mixed tabs and spaces in indent   | `Endmarker` (lex halt) + diagnostic  |
+| Situation                          | Tokens emitted                                    |
+|------------------------------------|---------------------------------------------------|
+| Blank line or comment-only line    | `Nl`                                              |
+| Inside `(...)`, `[...]`, `{...}`   | `Nl` (no `Indent` / `Dedent`)                     |
+| Indentation increased              | `Indent`, `Newline`                               |
+| Indentation decreased              | `Dedent` (× n levels), `Newline`                  |
+| Indentation unchanged              | `Newline`                                         |
+| Dedent doesn't match an outer level | diagnostic `unindent does not match any outer indentation level` |
+| Mixed tabs and spaces in indent    | `Endmarker` (lex halt) + diagnostic               |
 
 The `nesting` counter is bumped by `(`, `[`, `{` and decremented by `)`, `]`. While `nesting > 0`, line breaks emit `Nl` and the indent stack is frozen — this is what allows multi-line expressions inside brackets without spurious INDENT/DEDENT.
 
+At end-of-file the lexer drains any remaining levels off `indent_stack` so every block closes cleanly, then emits a final `Endmarker`. Without this drain, callers would have to tolerate dangling open blocks. There is **no** support for backslash line continuation (`\` followed by `\n`) outside brackets — wrap multi-line expressions in parentheses instead. ASCII bytes that have no operator slot (`$`, `?`, `` ` ``, stray `\`) raise `unexpected character` and are skipped rather than truncating the token stream.
+
 ## Soft-keyword disambiguation
 
-`match`, `case`, and `type` are keywords in some positions and identifiers in others. The lexer resolves the ambiguity by peeking at the *next* token:
+Only `type` is a true soft keyword. `match` and `case` are emitted as **hard** keywords because in Edge Python they only appear at statement start, so the syntactic ambiguity that motivates soft-keyword treatment in CPython doesn't arise here.
+
+The `type` keyword would collide with the `type()` builtin and with attributes named `type`, so it stays soft. The lexer resolves the ambiguity by peeking at the *next* token:
 
 ```python
-match x: # 'match' is a keyword
-    case 1: ...
-
-match = 5 # 'match' is an identifier
-case = True # 'case' is an identifier
 type X = int # 'type' is a keyword (alias declaration)
 type = None # 'type' is an identifier
+obj.type # 'type' is an identifier (attribute)
 ```
 
-If the token following `match` / `case` / `type` is one of `(`, `)`, `]`, `:`, `=`, `,`, `Newline`, or `EOF`, the soft keyword is downgraded to `Name`. Otherwise it stays a keyword.
+If the token following `type` is one of `(`, `:`, `=`, `,`, `)`, `]`, `Newline`, or `EOF`, it is downgraded to `Name`. Otherwise it stays a `Type` keyword token.
 
-The same logic applies to `_`. In `case _:` it's the wildcard `Underscore`; in `_ = compute()` it's a `Name`.
+`_` always emits as `Underscore`; the parser distinguishes wildcard from name use at the grammar level.
 
 ## Comments
 
@@ -148,7 +161,7 @@ These match the OWASP A04:2021 advice on resource exhaustion in interpreters.
 
 ## Why offset-based tokens
 
-A `Token` is 32 bytes:
+A `Token` carries a kind tag plus three byte offsets into the source buffer:
 
 ```rust
 pub struct Token {

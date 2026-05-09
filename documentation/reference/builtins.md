@@ -3,7 +3,7 @@ title: "Built-in functions"
 description: "Every built-in function in Edge Python with examples and outputs."
 ---
 
-Edge Python ships with 52 built-in functions. They're first-class values: pass them around, store them in containers, alias them.
+Edge Python ships with 60 built-in functions. They're first-class values: pass them around, store them in containers, alias them.
 
 ```python
 # All built-ins are real values
@@ -19,11 +19,13 @@ p("aliased")
 aliased
 ```
 
+Edge Python is functional-first. CPython introspection helpers (`eval`, `exec`, `compile`, `dir`, `ascii`, `help`, `__import__`, `breakpoint`, `open`, `issubclass`) are intentionally absent — the static-import contract and the lack of a writable global module table make them either impossible or paradigm-noise. Class-machinery builtins (`super`, `staticmethod`, `classmethod`, `property`) are also omitted; classes are flat state containers, behavior reuse is via free functions.
+
 ## Output
 
 ### print
 
-`print(*args)` — write space-separated values to stdout, followed by a newline.
+`print(*args)` — write space-separated values to stdout, followed by a newline. No `sep`, `end`, `file`, or `flush` keyword arguments — pass a pre-joined string if you need a custom separator.
 
 ```python
 print(1, 2, 3)
@@ -39,24 +41,22 @@ hello world
 
 ### input
 
-`input()` — Reads from host-provided input buffer. Native: reads stdin. WASM: requires `set_input` FFI. Returns empty string if no data.
+`input()` — read one line from the host's input buffer. Native build: reads stdin. WASM build: drains a buffer the host wrote via `set_input`. Returns the empty string if the buffer is empty. There is no prompt argument.
 
 ## Numeric
 
 ### abs
 
-`abs(x)` — absolute value.
+`abs(x)` — absolute value of an int or float. `abs("hello")` raises `TypeError` ("abs() requires a number"). Edge Python's int is 47-bit, so very large literals overflow at parse time before `abs` ever sees them.
 
 ```python
 print(abs(-7))
 print(abs(3.14))
-print(abs(-2 ** 100))
 ```
 
 ```text Output
 7
 3.14
-1267650600228229401496703205376
 ```
 
 ### round
@@ -79,7 +79,7 @@ print(round(1.55, 1))
 
 ### min, max
 
-Variadic, or accepting a single iterable.
+Variadic, or accepting a single iterable. Empty input raises `ValueError`. There is no `key=` or `default=` keyword.
 
 ```python
 print(min(3, 1, 4))
@@ -95,7 +95,7 @@ e
 
 ### sum
 
-`sum(iterable)` or `sum(iterable, start)`.
+`sum(iterable)` or `sum(iterable, start)`. `sum([])` returns `0`.
 
 ```python
 print(sum([1, 2, 3]))
@@ -111,7 +111,7 @@ print(sum(x * x for x in range(5)))
 
 ### pow
 
-`pow(base, exp)` or `pow(base, exp, mod)` for modular exponentiation.
+`pow(base, exp)` or `pow(base, exp, mod)` for modular exponentiation. The 3-arg form requires int operands and a non-negative exponent (`pow(a, b, 0)` raises `ZeroDivisionError`; `pow(a, -1, m)` raises `ValueError`).
 
 ```python
 print(pow(2, 10))
@@ -161,6 +161,8 @@ print(hex(-256))
 
 ### int
 
+`int(x)` — single-argument constructor. Accepts `int`, `bool`, `float` (truncates toward zero), or a numeric string. Strings outside that shape raise `ValueError` ("int(): invalid literal"). Integers are clamped to a 47-bit signed range; literals or arithmetic exceeding `±140_737_488_355_327` raise `OverflowError`. **There is no `int(x, base)` form** — parse hex/oct/bin strings yourself or use the `0x`/`0o`/`0b` literal syntax.
+
 ```python
 print(int(3.9))
 print(int("42"))
@@ -175,17 +177,23 @@ print(int(True))
 
 ### float
 
+`float(x)` — accepts `int`, `bool`, `float`, or a string. Strings recognise `inf`, `-inf`, `nan` (case-insensitive) in addition to numeric forms.
+
 ```python
 print(float(2))
 print(float("3.14"))
+print(float("inf"))
 ```
 
 ```text Output
 2.0
 3.14
+inf
 ```
 
 ### str
+
+`str(x)` — display form. `str()` with no argument returns the empty string.
 
 ```python
 print(str(42))
@@ -213,39 +221,49 @@ False True
 False True
 ```
 
-### list, tuple, set, dict
+### list, tuple, set, frozenset, dict
+
+`list`, `tuple`, `set`, and `frozenset` accept any iterable — `list`, `tuple`, `set`, `frozenset`, `dict` (yields keys), `range`, `bytes`, `str`, generator, coroutine. They share a single `extract_iter` helper, so the constructors are interchangeable for any iterable input.
 
 ```python
 print(list("abc"))
-print(tuple([1, 2, 3]))
-print(set([1, 1, 2, 3]))
+print(tuple(range(3)))
+print(set({"a": 1, "b": 2}))   # iterates dict keys
+print(frozenset(b"\x01\x02\x03"))
 print(dict(a=1, b=2))
 ```
 
 ```text Output
 ['a', 'b', 'c']
-(1, 2, 3)
-{1, 2, 3}
+(0, 1, 2)
+{'a', 'b'}
+frozenset({1, 2, 3})
 {'a': 1, 'b': 2}
 ```
 
+`dict` also accepts a single mapping or kwargs; it does not currently accept the iterable-of-pairs constructor form (`dict([('a', 1)])`) — use a literal or `dict.update` with the pair list instead.
+
 ### chr, ord
 
-Convert between integer code points and single-character strings.
+Convert between integer code points and single-character strings. `chr` accepts the full Unicode range (`chr(0x1F600)` returns `"😀"`); negative inputs raise `ValueError`. `ord` requires a length-1 string; `ord(b'A')` is **not** accepted.
 
 ```python
 print(chr(65))
 print(ord("A"))
+print(chr(0x1F600))
 ```
 
 ```text Output
 A
 65
+😀
 ```
 
 ## Sequence
 
 ### len
+
+Element count for `str` (Unicode code points), `bytes`, `list`, `tuple`, `dict`, `set`, `frozenset`, `range`. Anything else raises `TypeError`.
 
 ```python
 print(len("hello"))
@@ -263,7 +281,7 @@ print(len(range(100)))
 
 ### range
 
-`range(stop)`, `range(start, stop)`, `range(start, stop, step)`. Lazy.
+`range(stop)`, `range(start, stop)`, `range(start, stop, step)`. Lazy. `step` of zero raises `ValueError`; non-int arguments raise `TypeError`.
 
 ```python
 print(list(range(5)))
@@ -279,7 +297,7 @@ print(list(range(10, 0, -2)))
 
 ### sorted
 
-Returns a new sorted list.
+Returns a new sorted list. Currently no `key=` or `reverse=` keyword — sort by a derived value via a precomputed list of `(key, value)` tuples.
 
 ```python
 print(sorted([3, 1, 4, 1, 5]))
@@ -293,7 +311,7 @@ print(sorted("hello"))
 
 ### reversed
 
-Returns a list of elements in reverse order.
+Returns a **list** of elements in reverse order — eager, not a lazy iterator. For strings, the result is a list of length-1 strings (CPython yields a `<reversed object>`); for finite inputs the two are operationally identical.
 
 ```python
 print(reversed([1, 2, 3]))
@@ -307,7 +325,7 @@ print(reversed("abc"))
 
 ### enumerate
 
-Pairs each element with its index.
+Pairs each element with its index, returning a list of `(i, value)` tuples. There is no `start=` keyword — add the offset yourself.
 
 ```python
 for i, v in enumerate(["a", "b", "c"]):
@@ -322,7 +340,7 @@ for i, v in enumerate(["a", "b", "c"]):
 
 ### zip
 
-Pairs elements from N iterables, truncating to the shortest.
+Pairs elements from N iterables, truncating to the shortest. No `strict=` keyword — pre-validate lengths if needed.
 
 ```python
 for a, b in zip([1, 2, 3], ["x", "y", "z"]):
@@ -340,7 +358,7 @@ print(list(zip([1, 2], [3, 4], [5, 6])))
 
 ### next
 
-`next(iterator)` retrieves the next item from an iterator. Raises `StopIteration` if exhausted.
+`next(iterator)` retrieves the next item from an iterator. Raises `StopIteration` when exhausted. The two-argument `next(it, default)` form is **not** supported.
 
 ```python
 it = iter([10, 20, 30])
@@ -357,7 +375,7 @@ print(next(it))
 
 ### iter
 
-`iter(x)` returns a fresh iterator over any iterable (list, tuple, set, dict, range, str). The original collection is never mutated — `iter()` materialises a copy that `next()` drains front-to-back.
+`iter(x)` returns a fresh iterator over any iterable (list, tuple, set, dict, range, str, bytes, frozenset). The original collection is never mutated — `iter()` materialises a snapshot that `next()` drains front-to-back. The two-argument `iter(callable, sentinel)` form is **not** supported.
 
 ```python
 it = iter([1, 2, 3])
@@ -432,12 +450,12 @@ If you want truly dynamic loading patterns from CPython (`importlib.import_modul
 
 ### bytes
 
-Three forms:
+Four forms:
 
 - `bytes()` → empty `bytes`
 - `bytes(n)` where `n` is an int → `n` zero bytes
 - `bytes(iterable)` of ints in `0..=255` → bytes with those values
-- `bytes(s, encoding)` where `s` is a `str` → encoded bytes (`"utf-8"` or `"ascii"`)
+- `bytes(s, encoding)` where `s` is a `str` → encoded bytes (`"utf-8"`, `"utf8"`, or `"ascii"` only — anything else raises `ValueError`)
 
 ```python
 print(bytes())
@@ -454,6 +472,26 @@ b'caf\xc3\xa9'
 ```
 
 See [Bytes](/language/data-types#bytes) in the data-types reference for the literal syntax (`b"..."`), indexing, slicing, and methods.
+
+### bytes_fromhex, int_from_bytes, int_to_bytes
+
+Edge Python exposes these as **free functions** rather than int/bytes methods. The functional-first paradigm prefers free functions over bound methods on primitive types — there are no `int` or `float` methods at all (no `(5).bit_length()`, no `(255).to_bytes(2, 'big')`).
+
+- `bytes_fromhex(s)` — parse a hex string into bytes. Whitespace inside is ignored; non-hex characters raise `ValueError`. Equivalent to CPython's `bytes.fromhex`.
+- `int_from_bytes(b, order)` — `order` is `"big"` or `"little"`. Unsigned only — the high bit is **never** treated as a sign bit.
+- `int_to_bytes(n, length, order)` — `n` must be non-negative, `length` ≤ 8 (47-bit `Val` cap means anything wider would lose precision anyway). Raises `OverflowError` if `n` doesn't fit.
+
+```python
+print(bytes_fromhex("48656c6c6f"))
+print(int_from_bytes(b"\x01\x00", "big"))
+print(int_to_bytes(255, 2, "big"))
+```
+
+```text Output
+b'Hello'
+256
+b'\x00\xff'
+```
 
 ## Logical reductions
 
@@ -482,6 +520,8 @@ False
 
 ### type
 
+`type(x)` returns the class-name string `"<class 'name'>"`. It is **not** a class object — there is no `type(...)` constructor form, no metaclass, no introspection. Use it for display and equality checks.
+
 ```python
 print(type(42))
 print(type("hi"))
@@ -498,6 +538,8 @@ print(type(print))
 
 ### isinstance
 
+Type-name based check. The second argument must be a type object or a tuple of type objects — passing a string (`isinstance(x, "str")`) raises `TypeError`. `bool` is a subtype of `int`. For exception classes, the standard subclass hierarchy is consulted (e.g. `isinstance(e, Exception)` is true for any built-in exception); user classes do not participate.
+
 ```python
 print(isinstance(42, int))
 print(isinstance(True, int))           # bool is a subtype of int
@@ -510,7 +552,11 @@ True
 True
 ```
 
+There is no `issubclass` builtin — flat class layout means there's nothing to walk.
+
 ### callable
+
+True for user functions, lambdas, bound methods, type objects (callable as constructors), and native built-ins. False for everything else, including instances — there is no `__call__` dispatch.
 
 ```python
 print(callable(print))
@@ -528,7 +574,7 @@ False
 
 ### id, hash
 
-`id(x)` returns a unique identifier for the value. `hash(x)` returns a hash for hashable values.
+`id(x)` returns a stable identifier (the NaN-box bit pattern masked to int range). `hash(x)` returns a hash for hashable values; `hash(1) == hash(1.0)` so int and float keys collapse to the same dict slot.
 
 ```python
 x = 42
@@ -554,6 +600,8 @@ except TypeError:
 ```text Output
 unhashable
 ```
+
+Mutable containers used as dict keys or set members raise `TypeError("unhashable type")` at insertion — caught at `store_item`, `BuildDict`, and `build_set`.
 
 ## Representation
 
@@ -595,7 +643,7 @@ print(format("hi", ">10"))
 
 ## Attribute access
 
-`getattr` and `hasattr` work against the built-in method tables on strings, lists, and dicts. User-defined class attributes are also supported.
+`getattr` and `hasattr` consult the built-in method table for primitive types (str/list/dict/set/bytes) and the instance `__dict__` on user-class instances. They do **not** walk user-class method definitions — `hasattr(MyClass(), 'my_method')` returns `False`. The functional pattern is to call functions with values, not look up methods reflectively.
 
 ### getattr
 
@@ -696,7 +744,7 @@ print(xs[slice(0, 5, 2)])
 
 ### vars
 
-`vars(instance)` returns a snapshot of the instance's `__dict__`. `vars(module)` returns a dict of the module's exported names.
+`vars(instance)` returns a snapshot of the instance's attribute dict. `vars(module)` returns a dict of the module's exported names. **Only instances and modules are accepted** — there is no no-arg form (CPython's `vars()` returning local frame is omitted; use `locals()` instead).
 
 ```python
 class P:
@@ -714,17 +762,19 @@ print(vars(p))
 
 ## Async
 
+These primitives are top-level builtins, not under `asyncio` — there is no `asyncio` module to import.
+
 ### run
 
-`run(coroutine)` — run a coroutine to completion using the cooperative event loop.
+`run(*coros)` — drive the cooperative scheduler until the **first** argument coroutine is done; additional coroutines are added to the scheduler and run concurrently. Returns the first coroutine's result.
 
 ### sleep
 
-`sleep(seconds)` — suspend the current coroutine for the given duration. Only valid inside `async def`.
+`sleep(seconds)` — yield once and resume after the given duration. Negative values clamp to zero. With no host time hook, the VM's `virtual_clock_ns` advances to satisfy the deadline.
 
 ### receive
 
-`receive()` — suspend the current coroutine until a message is available from the host. Only valid inside `async def`.
+`receive()` — pop the oldest queued message from the scheduler's event queue. Used together with the host pushing into the queue.
 
 ### gather
 
@@ -766,48 +816,66 @@ timed out
 
 ## Built-in summary
 
-| Function     | Arity      | Notes                                      |
-|--------------|------------|--------------------------------------------|
-| `print`      | variadic   | space-separated, newline                   |
-| `input`      | 0          | reads from host-provided buffer            |
-| `abs`        | 1          | int / float                                |
-| `round`      | 1 or 2     | banker's rounding                          |
-| `min`        | variadic   | or single iterable                         |
-| `max`        | variadic   | or single iterable                         |
-| `sum`        | 1 or 2     | optional start                             |
-| `pow`        | 2 or 3     | 3-arg = modular                            |
-| `divmod`     | 2          | returns `(q, r)`                           |
-| `bin`        | 1          | `0b...` prefix                             |
-| `oct`        | 1          | `0o...` prefix                             |
-| `hex`        | 1          | `0x...` prefix                             |
-| `int`        | 0 or 1     | parse / truncate                           |
-| `float`      | 0 or 1     | parse / cast                               |
-| `str`        | 0 or 1     | display form                               |
-| `bool`       | 0 or 1     | truthiness                                 |
-| `list`       | 0 or 1     | from any iterable                          |
-| `tuple`      | 0 or 1     | from any iterable                          |
-| `set`        | 0 or 1     | from any iterable                          |
-| `dict`       | variadic   | kwargs and/or single mapping               |
-| `chr`        | 1          | int -> 1-char string                        |
-| `ord`        | 1          | 1-char string -> int                        |
-| `len`        | 1          | element count                              |
-| `range`      | 1, 2, or 3 | lazy integer sequence                      |
-| `sorted`     | 1 or 2     | optional `key=` callable                   |
-| `reversed`   | 1          | reversed as list                           |
-| `enumerate`  | 1          | (index, value) pairs                       |
-| `zip`        | variadic   | parallel iteration                         |
-| `all`        | 1          | logical AND over iterable                  |
-| `any`        | 1          | logical OR over iterable                   |
-| `type`       | 1          | type name                                  |
-| `isinstance` | 2          | type or tuple of types                     |
-| `callable`   | 1          | True for functions, lambdas, types, builtins |
-| `id`         | 1          | unique identifier                          |
-| `hash`       | 1          | hash for hashable values                   |
-| `repr`       | 1          | developer-readable form                    |
-| `format`     | 1 or 2     | applies the same format-spec mini-language as f-strings |
-| `getattr`    | 2 or 3     | bound method or default                    |
-| `hasattr`    | 2          | True if method exists                      |
-| `next`       | 1 or 2     | next item from iterator                    |
-| `run`        | 1          | run coroutine to completion                |
-| `sleep`      | 1          | suspend coroutine for duration             |
-| `receive`    | 0          | suspend coroutine until message available  |
+| Function          | Arity      | Notes                                      |
+|-------------------|------------|--------------------------------------------|
+| `print`           | variadic   | space-separated, newline; no kwargs        |
+| `input`           | 0          | reads from host-provided buffer            |
+| `abs`             | 1          | int / float                                |
+| `round`           | 1 or 2     | banker's rounding                          |
+| `min`             | variadic   | or single iterable; empty raises           |
+| `max`             | variadic   | or single iterable; empty raises           |
+| `sum`             | 1 or 2     | optional start (defaults to `0`)           |
+| `pow`             | 2 or 3     | 3-arg = modular (int, non-negative exp)    |
+| `divmod`          | 2          | returns `(q, r)`                           |
+| `bin`             | 1          | `0b...` prefix                             |
+| `oct`             | 1          | `0o...` prefix                             |
+| `hex`             | 1          | `0x...` prefix                             |
+| `int`             | 1          | 1-arg only; no base form; 47-bit cap       |
+| `float`           | 1          | parse / cast; recognises `inf`/`nan`       |
+| `str`             | 0 or 1     | display form                               |
+| `bool`            | 0 or 1     | truthiness                                 |
+| `list`            | 0 or 1     | from any iterable                          |
+| `tuple`           | 0 or 1     | from any iterable                          |
+| `set`             | 0 or 1     | from any iterable                          |
+| `frozenset`       | 0 or 1     | immutable set                              |
+| `dict`            | variadic   | kwargs and/or single mapping               |
+| `chr`             | 1          | int → 1-char string (full Unicode)         |
+| `ord`             | 1          | length-1 string → int                      |
+| `len`             | 1          | element count (str = code points)          |
+| `range`           | 1, 2, or 3 | lazy integer sequence                      |
+| `sorted`          | 1          | new sorted list; no `key=` / `reverse=`    |
+| `reversed`        | 1          | reversed as list (eager)                   |
+| `enumerate`       | 1          | `(index, value)` pairs                     |
+| `zip`             | variadic   | parallel iteration; truncates to shortest  |
+| `iter`            | 1          | fresh iterator over any iterable           |
+| `next`            | 1          | next item; no default form                 |
+| `map`             | 2          | returns list (eager)                       |
+| `filter`          | 2          | returns list; `None` filters by truthiness |
+| `all`             | 1          | logical AND; `all([])` is `True`           |
+| `any`             | 1          | logical OR; `any([])` is `False`           |
+| `type`            | 1          | display string `<class 'name'>`            |
+| `isinstance`      | 2          | type or tuple of types                     |
+| `callable`        | 1          | True for fn / lambda / type / built-in     |
+| `id`              | 1          | stable identifier                          |
+| `hash`            | 1          | hash for hashable values                   |
+| `repr`            | 1          | developer-readable form                    |
+| `format`          | 1 or 2     | f-string format-spec mini-language         |
+| `getattr`         | 2 or 3     | bound method, instance attr, or default    |
+| `hasattr`         | 2          | True for built-in method or instance attr  |
+| `setattr`         | 3          | write attr on user instance                |
+| `delattr`         | 2          | remove attr from user instance             |
+| `vars`            | 1          | snapshot dict of instance / module         |
+| `globals`         | 0          | snapshot dict of module-level bindings     |
+| `locals`          | 0          | snapshot dict of current frame             |
+| `slice`           | 1, 2, or 3 | reusable slice object                      |
+| `bytes`           | 0, 1, or 2 | empty / size / iterable / `(s, encoding)`  |
+| `bytes_fromhex`   | 1          | parse hex string → bytes                   |
+| `int_from_bytes`  | 2          | bytes + `"big"`/`"little"` → int           |
+| `int_to_bytes`    | 3          | int + length (≤8) + order → bytes          |
+| `import_module`   | 1          | runtime lookup of statically-imported module |
+| `run`             | variadic   | drive scheduler until first arg done       |
+| `sleep`           | 1          | yield then resume after seconds            |
+| `gather`          | variadic   | concurrent fan-out; first error cancels peers |
+| `with_timeout`    | 2          | `seconds, coro` → result or `TimeoutError` |
+| `cancel`          | 1          | mark coroutine cancel-pending              |
+| `receive`         | 0          | pop oldest queued host message             |

@@ -1,9 +1,11 @@
 ---
 title: "Methods"
-description: "Built-in methods on strings, lists, and dicts."
+description: "Built-in methods on strings, bytes, lists, dicts, and sets."
 ---
 
-Edge Python supports user-defined classes with methods. Strings, lists, and dicts come with a curated set of built-in methods. They behave like CPython equivalents.
+Edge Python ships built-in methods on `str`, `bytes`, `list`, `dict`, and `set`. The set is curated — it covers the day-to-day shape of CPython's API and stops short of the long tail. Methods that aren't here are intentional omissions documented under each section.
+
+There are **no methods on `int`, `float`, or `tuple`** — primitive types stay dispatch-free. `(5).bit_length()`, `(255).to_bytes(...)`, `(3.14).is_integer()`, `(1, 2).count(1)`, `(1, 2).index(2)` all raise `AttributeError`. For ints, use the [`int_from_bytes` / `int_to_bytes`](/reference/builtins#bytes_fromhex-int_from_bytes-int_to_bytes) free functions; for tuple element counting, use `sum(1 for x in t if x == v)` or convert to a list first.
 
 ```python
 # Methods are accessed with dot notation
@@ -56,6 +58,8 @@ hello
 
 ### Predicates
 
+Three predicates are supported: `isdigit` (ASCII digits only), `isalpha` (Unicode alphabetic), `isalnum` (Unicode alphanumeric). All three return `False` on the empty string.
+
 ```python
 print("123".isdigit())
 print("abc".isdigit())
@@ -76,7 +80,11 @@ True
 False
 ```
 
+`casefold`, `swapcase`, `isspace`, `isascii`, `isidentifier`, `isnumeric`, `isdecimal`, `islower`, `isupper`, `istitle`, `isprintable` are not provided — write the predicate explicitly when you need it.
+
 ### Search and count
+
+`startswith`, `endswith`, `find`, and `count` take a single string argument — there are no `start` / `end` slice positions. `find` returns a code-point index (not byte offset) and `-1` when the substring is missing. `rfind`, `index`, and `rindex` are not provided; combine `find` with reversal or write the loop explicitly.
 
 ```python
 print("hello".startswith("he"))
@@ -95,6 +103,8 @@ True
 ```
 
 ### Split, join, replace
+
+`split` with no argument splits on runs of whitespace; with an explicit separator it splits on every occurrence. There is no `maxsplit` argument, no `rsplit`. `replace` always replaces every occurrence — there is no `count` cap. `splitlines` does **not** accept a `keepends` flag; line separators are dropped.
 
 ```python
 print("a,b,c".split(","))
@@ -122,16 +132,62 @@ foo
 
 ### Padding
 
+`center(width[, fill])` and `zfill(width)` measure padding in **code points**, not bytes — `'ñ'.center(5, '*')` produces `**ñ**` (5 visible characters). `ljust`, `rjust`, `expandtabs`, `translate`, `maketrans`, and `format` / `format_map` are not provided.
+
 ```python
 print("abc".center(7, "-"))
 print("42".zfill(5))
 print("-42".zfill(5))
+print("ñ".center(5, "*"))
 ```
 
 ```text Output
 --abc--
 00042
 -0042
+**ñ**
+```
+
+### Encoding
+
+`s.encode([encoding])` produces `bytes`. Supported encoding names are `"utf-8"`, `"utf8"`, and `"ascii"` (which errors on non-ASCII content). Anything else raises `ValueError`. Default is `"utf-8"`.
+
+```python
+print("café".encode())
+print("hi".encode("ascii"))
+```
+
+```text Output
+b'caf\xc3\xa9'
+b'hi'
+```
+
+## Bytes methods
+
+`bytes` has its own small set of methods. `bytes.find` returns a **byte** offset (not a code-point index). `bytes.index` raises `ValueError` ("subsection not found") when the subsection is absent. `split` requires an explicit separator — there is no whitespace-split mode. `bytearray` and `memoryview` are not implemented.
+
+```python
+b = b"\x48\x65\x6c\x6c\x6f"
+
+print(b.decode())                     # default utf-8
+print(b.hex())                        # no separator argument
+print(b.startswith(b"He"))
+print(b.endswith(b"lo"))
+print(b.find(b"ll"))
+print(b.count(b"l"))
+print(b.replace(b"l", b"L"))
+print(b"a,b,c".split(b","))
+```
+
+```text Output
+Hello
+48656c6c6f
+True
+True
+2
+2
+b'HeLLo'
+[b'a', b'b', b'c']
 ```
 
 ## List methods
@@ -159,7 +215,7 @@ print(ys)
 
 ### Mutating
 
-These return `None` and modify the list in place.
+These return `None` and modify the list in place. `extend` accepts any iterable (list, tuple, set, frozenset, dict (yields keys), range, bytes, str, generator, coroutine). `sort` has no `key=` or `reverse=` keyword — sort by a derived key by precomputing tuples.
 
 ```python
 xs = [1, 2, 3]
@@ -167,7 +223,7 @@ xs = [1, 2, 3]
 xs.append(4)
 print(xs)
 
-xs.extend([5, 6])
+xs.extend(range(5, 7))   # any iterable
 print(xs)
 
 xs.insert(0, 99)
@@ -221,18 +277,26 @@ print(xs)
 
 ### Views
 
+`keys`, `values`, and `items` return **concrete `list` snapshots**, not live views. Mutating the dict afterwards does not affect a previously captured snapshot — and that is intentional. CPython's live views ARE shared mutable state, exactly the anti-pattern functional code avoids; an immutable snapshot is more aligned with Edge Python's paradigm.
+
 ```python
 d = {"a": 1, "b": 2, "c": 3}
 
 print(list(d.keys()))
 print(list(d.values()))
 print(list(d.items()))
+
+# Snapshot is detached from the dict
+k = d.keys()
+d["d"] = 4
+print(k)            # ['a', 'b', 'c'] — pre-mutation
 ```
 
 ```text Output
 ['a', 'b', 'c']
 [1, 2, 3]
 [('a', 1), ('b', 2), ('c', 3)]
+['a', 'b', 'c']
 ```
 
 ### Lookup with default
@@ -253,10 +317,16 @@ None
 
 ### Mutation
 
+`update` accepts either a `dict` **or** an iterable of length-2 sequences (`[(key, value), ...]`). The kwargs form `d.update(a=1)` is **not** supported. `popitem` removes and returns the last-inserted entry (insertion order); on an empty dict it raises `ValueError`. `clear` and `fromkeys` are not provided — use `d = {}` and a comprehension respectively.
+
 ```python
 d = {"a": 1}
 
 d.update({"b": 2, "a": 99})
+print(d)
+
+# Iterable-of-pairs also works
+d.update([("c", 3), ("d", 4)])
 print(d)
 
 removed = d.pop("a")
@@ -267,7 +337,8 @@ print(d.pop("missing", "fallback"))
 
 ```text Output
 {'a': 99, 'b': 2}
-99 {'b': 2}
+{'a': 99, 'b': 2, 'c': 3, 'd': 4}
+99 {'b': 2, 'c': 3, 'd': 4}
 fallback
 ```
 
@@ -286,13 +357,15 @@ print(d)
 
 ### Mutation
 
+`remove` raises `KeyError` when the element is absent (CPython parity); `discard` is the silent variant. `pop` removes an arbitrary element and raises `ValueError` on an empty set. `update` accepts any iterable.
+
 ```python
 s = {1, 2, 3}
 
 s.add(4)
 print(s)
 
-s.remove(2)        # raises ValueError if absent
+s.remove(2)        # raises KeyError if absent (CPython parity)
 s.discard(99)      # silently ignores absent values
 print(s)
 
@@ -316,7 +389,7 @@ set()
 
 ### Algebra
 
-`union`, `intersection`, `difference`, and `symmetric_difference` return a fresh set; their operator forms (`|`, `&`, `-`, `^`) work the same way and accept augmented assignment (`|=`, `&=`, `-=`, `^=`):
+`union`, `intersection`, `difference`, and `symmetric_difference` return a fresh set; their operator forms (`|`, `&`, `-`, `^`) work the same way and accept augmented assignment (`|=`, `&=`, `-=`, `^=`). The in-place variants `intersection_update`, `difference_update`, and `symmetric_difference_update` are **not** provided — assign the augmented form back (`s &= other`).
 
 ```python
 a = {1, 2, 3}
@@ -370,26 +443,41 @@ False
 | `lower`       | 0       | lowercased copy                      |
 | `capitalize`  | 0       | first letter upper, rest lower       |
 | `title`       | 0       | each word capitalized                |
-| `strip`       | 0       | no leading/trailing whitespace       |
+| `strip`       | 0 or 1  | no leading/trailing whitespace (or chars) |
 | `lstrip`      | 0 or 1  | left-strip; optional set of chars    |
 | `rstrip`      | 0 or 1  | right-strip; optional set of chars   |
-| `isdigit`     | 0       | bool: all ASCII digits               |
-| `isalpha`     | 0       | bool: all alphabetic                 |
-| `isalnum`     | 0       | bool: all alphanumeric               |
+| `isdigit`     | 0       | bool: non-empty, all ASCII digits    |
+| `isalpha`     | 0       | bool: non-empty, all alphabetic      |
+| `isalnum`     | 0       | bool: non-empty, all alphanumeric    |
 | `startswith`  | 1       | bool                                 |
 | `endswith`    | 1       | bool                                 |
-| `find`        | 1       | index or -1                          |
+| `find`        | 1       | code-point index or -1               |
 | `count`       | 1       | non-overlapping occurrences          |
-| `split`       | 0 or 1  | list of pieces                       |
+| `split`       | 0 or 1  | list of pieces (whitespace if no sep) |
 | `join`        | 1       | joined string                        |
-| `replace`     | 2       | new string with all replacements     |
+| `replace`     | 2       | new string; replaces every match     |
 | `removeprefix`| 1       | strip leading prefix if present      |
 | `removesuffix`| 1       | strip trailing suffix if present     |
-| `splitlines`  | 0       | split on line separators             |
-| `partition`   | 1       | (head, sep, tail), sep at first hit  |
-| `rpartition`  | 1       | (head, sep, tail), sep at last hit   |
-| `center`      | 1 or 2  | padded copy                          |
+| `splitlines`  | 0       | split on line separators (no `keepends`) |
+| `partition`   | 1       | `(head, sep, tail)`, sep at first hit  |
+| `rpartition`  | 1       | `(head, sep, tail)`, sep at last hit   |
+| `center`      | 1 or 2  | padded copy (code-point measured)    |
 | `zfill`       | 1       | zero-padded copy, sign-aware         |
+| `encode`      | 0 or 1  | bytes; `"utf-8"` (default) or `"ascii"` |
+
+### Bytes — `bytes`
+
+| Method        | Arity   | Returns                              |
+|---------------|---------|--------------------------------------|
+| `decode`      | 0 or 1  | str; `"utf-8"` (default) or `"ascii"` |
+| `hex`         | 0       | lowercase hex string (no separator)  |
+| `startswith`  | 1       | bool                                 |
+| `endswith`    | 1       | bool                                 |
+| `find`        | 1       | byte offset or -1                    |
+| `index`       | 1       | byte offset; raises if absent        |
+| `count`       | 1       | non-overlapping byte-sequence count  |
+| `replace`     | 2       | new bytes with all replacements      |
+| `split`       | 1       | list of bytes; sep required          |
 
 ### List — `list`
 
@@ -399,11 +487,11 @@ False
 | `count`       | 1       | no       | matching count                |
 | `copy`        | 0       | no       | shallow copy                  |
 | `append`      | 1       | yes      | None                          |
-| `extend`      | 1       | yes      | None                          |
+| `extend`      | 1       | yes      | None (any iterable)           |
 | `insert`      | 2       | yes      | None                          |
-| `remove`      | 1       | yes      | None                          |
-| `pop`         | 0 or 1  | yes      | popped value                  |
-| `sort`        | 0       | yes      | None                          |
+| `remove`      | 1       | yes      | None (raises if absent)       |
+| `pop`         | 0 or 1  | yes      | popped value (raises if empty) |
+| `sort`        | 0       | yes      | None (no `key=` / `reverse=`) |
 | `reverse`     | 0       | yes      | None                          |
 | `clear`       | 0       | yes      | None                          |
 
@@ -411,12 +499,14 @@ False
 
 | Method        | Arity   | Mutates? | Returns                       |
 |---------------|---------|----------|-------------------------------|
-| `keys`        | 0       | no       | list of keys                  |
-| `values`      | 0       | no       | list of values                |
-| `items`       | 0       | no       | list of `(k, v)` tuples       |
+| `keys`        | 0       | no       | list of keys (snapshot)       |
+| `values`      | 0       | no       | list of values (snapshot)     |
+| `items`       | 0       | no       | list of `(k, v)` tuples (snapshot) |
+| `copy`        | 0       | no       | shallow copy                  |
 | `get`         | 1 or 2  | no       | value or default              |
-| `update`      | 1       | yes      | None                          |
+| `update`      | 1       | yes      | None (dict or iterable of pairs) |
 | `pop`         | 1 or 2  | yes      | popped value or default       |
+| `popitem`     | 0       | yes      | last `(k, v)` (raises if empty) |
 | `setdefault`  | 1 or 2  | yes      | existing or default value     |
 
 ### Set — `set`
@@ -424,11 +514,11 @@ False
 | Method                 | Arity | Mutates? | Returns                       |
 |------------------------|-------|----------|-------------------------------|
 | `add`                  | 1     | yes      | None                          |
-| `remove`               | 1     | yes      | None (ValueError if absent)   |
+| `remove`               | 1     | yes      | None (`KeyError` if absent)   |
 | `discard`              | 1     | yes      | None                          |
 | `pop`                  | 0     | yes      | an arbitrary element          |
 | `clear`                | 0     | yes      | None                          |
-| `update`               | 1     | yes      | None                          |
+| `update`               | 1     | yes      | None (any iterable)           |
 | `copy`                 | 0     | no       | shallow copy                  |
 | `union`                | 1     | no       | new set                       |
 | `intersection`         | 1     | no       | new set                       |

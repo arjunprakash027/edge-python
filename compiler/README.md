@@ -1,6 +1,6 @@
 # Edge Python
 
-A compact, single-pass SSA-style bytecode compiler and stack VM for a functional subset of CPython 3.13 syntax. Hand-written lexer, Pratt-precedence parser that emits bytecode directly (no AST), and a threaded-code interpreter with per-instruction inline caching. Built for deterministic execution in sandboxed and embedded environments (≈ 130 KB WASM release).
+A compact, single-pass SSA-style bytecode compiler and stack VM for a functional subset of CPython 3.13 syntax. Hand-written lexer, Pratt-precedence parser that emits bytecode directly (no AST), and a threaded-code interpreter with per-instruction inline caching, super-instruction fusion, and pure-function template memoization. Built for deterministic execution in sandboxed and embedded environments (≈ 130 KB WASM release).
 
 * **Demo:** [demo.edgepython.com](https://demo.edgepython.com/)
 * **Docs:** [edgepython.com](https://edgepython.com/)
@@ -9,37 +9,39 @@ A compact, single-pass SSA-style bytecode compiler and stack VM for a functional
 
 ## 1. Paradigm
 
-Edge Python targets functional edge computing. The language treats functions as first-class values: lambdas, higher-order functions, currying, closures, comprehensions, and pure-function memoization are all central. Classes are supported with `__init__`, instance attributes, and methods. There is no inheritance and no method resolution order. `import` and `from <spec> import names` resolve at compile time through a host-injected `Resolver`. Each module is compiled and initialised once: the parser registers it in the importing chunk's `imports` list, the VM runs every imported module's top level in dependency order, and importers reach the resulting `HeapObj::Module` value via `OpCode::LoadModule`. Native modules dispatch via `CallExtern` for fast call-site fusion.
+Edge Python targets functional edge computing. The language treats functions as first-class values: lambdas, higher-order functions, closures, comprehensions, decorators (including class decorators), generators, async/await, pattern matching, and pure-function memoization. Classes exist as flat state containers with `__init__`, instance attributes, and methods — no inheritance walking, no MRO, no `super()`, no descriptor protocol, and no dunder-method dispatch (operators, `with`, iteration, `len`, equality, etc. all dispatch on type tag, not on user-class methods). `__init__` is the only honoured magic method.
 
-What this leaves is a small, fast, deterministic core: arithmetic with arbitrary-precision integers, sequences (lists, tuples, dicts, sets, strings, ranges), control flow, lambdas with closures, generators, exceptions, and a curated set of built-in functions exposed as first-class values.
+`import` and `from <spec> import names` resolve at compile time through a host-injected resolver (see `modules/packages/`, manifest = `packages.json`). Each module is compiled and initialised once: the parser registers it in the importing chunk's `imports` list, the VM runs every imported module's top level in dependency order, and importers reach the resulting `HeapObj::Module` value via `OpCode::LoadModule`. Native modules dispatch via `CallExtern` for fast call-site fusion. Quoted specs may carry a `#sha256-<hex>` integrity fragment.
+
+What this leaves is a small, fast, deterministic core: 47-bit inline integers + IEEE-754 floats, sequences (list, tuple, dict, set, frozenset, str, bytes, range), control flow, exceptions, generators and coroutines (with a top-level cooperative scheduler — `run` / `sleep` / `gather` / `with_timeout` / `cancel` — instead of an `asyncio` module), and a curated set of built-in functions exposed as first-class values.
 
 ---
 
 ## 2. Architecture
 
-* **Lexer**: Hand-written, LUT-driven scanner over CPython 3.13 token kinds. Tokens are `(start, end, kind)` offsets into the source buffer; no string copies during lexing.
-* **Parser**: Single-pass, Pratt precedence climbing. Emits SSA-versioned bytecode directly (`x` -> `x_1`, `x_2`) with explicit `Phi` opcodes at control-flow joins. No intermediate AST.
-* **Optimizer**: One peephole pass: constant folding over adjacent literal operands, plus dead-code compaction with jump remapping. Does not propagate through `LoadName`.
-* **VM**: Stack-based interpreter over `Vec<Instruction>` where each `Instruction` is `(opcode: OpCode, operand: u16)`. Dispatch is a flat `match` on the opcode (Rust lowers it to a jump table). One LoadAttr+Call superinstruction (`CallMethod` + `CallMethodArgs`), fused once per chunk and cached in `cache.fused_ref()`.
-* **Inline Caching**: Per-instruction type-recording cache for arithmetic and comparisons. After 4 stable hits the IC stores a `FastOp` (`AddInt`, `LtFloat`, ...) used as a speculative fast path with type-guard deopt.
-* **Template Memoization**: Pure functions called repeatedly with the same arguments return cached results after 2 hits, bypassing full execution.
-* **Memory**: NaN-boxed 64-bit `Val` (48-bit signed int, IEEE-754 float, bool, None, 28-bit heap index). Mark-and-sweep GC. Arbitrary-precision `BigInt` fallback for integers outside the 48-bit range.
+* **Lexer**: Hand-written, LUT-driven scanner (`modules/lexer/{mod,scan,tables}.rs`) over CPython 3.13 token kinds. Tokens are `(start, end, kind)` offsets into the source buffer; no string copies during lexing. Indentation tracked as INDENT/DEDENT pairs against an explicit stack; UTF-8 BOM stripped.
+* **Parser**: Single-pass, Pratt precedence climbing (`modules/parser/`). Emits SSA-versioned bytecode directly (`x` → `x_1`, `x_2`, ...) with explicit `Phi` opcodes at control-flow joins. No intermediate AST.
+* **Optimizer**: One peephole pass (`modules/vm/optimizer.rs`): constant folding over adjacent literal arithmetic / comparison / unary operands, Phi-noop elimination, and dead-instruction compaction with jump-operand remapping. Deliberately leaves `LoadName` alone to preserve the inline-cache slot.
+* **VM**: Stack-based interpreter (`modules/vm/mod.rs`) over `Vec<Instruction>`, where each `Instruction` is `(opcode: OpCode, operand: u16)`. Dispatch is a flat `match` on the opcode (Rust lowers it to a jump table). The hot path is split across handler modules (`handlers/{arith,data,format,function,methods,mod}.rs`). `LoadAttr + Call(0)` is fused into a `CallMethod` / `CallMethodArgs` super-instruction at first execution and cached per call site.
+* **Inline Caching**: Per-instruction type-recording cache (`modules/vm/cache.rs`) for arithmetic and comparisons. After 4 stable hits the IC promotes the slot to a typed `FastOp` (`AddInt`, `AddFloat`, `LtFloat`, `EqStr`, ...); the fast path keeps a type-tag guard so a miss falls back to the generic handler.
+* **Template Memoization**: Pure functions called with the same arguments return a cached result after 2 hits, bypassing full execution. Functions are tagged impure on first observed side effect (`StoreItem`, `StoreAttr`, `print`, `input`, `raise`, `yield`).
+* **Memory**: NaN-boxed 64-bit `Val` (47-bit signed inline int, IEEE-754 float, bool, None, 28-bit heap index). Heap is an arena of `HeapObj` slots managed by a mark-and-sweep GC. Strings and bytes ≤ 128 bytes are interned. **Integers are a hard 47 bits** (±140,737,488,355,327); overflow raises `OverflowError`. There is no bignum fallback — this is paradigm-level, not a TODO.
 
 ---
 
 ## 3. Compiler Design
 
-The store convention is SSA: every assignment increments a per-name version counter and emits a fresh slot. Control-flow joins backup the version maps and emit `Phi` instructions on exit so the runtime can resolve which version is live.
+The store convention is SSA: every assignment increments a per-name version counter and emits a fresh slot. Control-flow joins back up the version maps and emit `Phi` instructions on exit so the runtime can resolve which version is live. Synthetic temps (`#cmp`, `#match`, `#match_item`) carry compiler-generated values across compare-chain and pattern-match desugaring.
 
-The single optimization pass folds patterns of the form `LoadConst a, LoadConst b, BinOp` into `LoadConst (a OP b)`, plus unary `Not` and `Minus` over constants. It deliberately does **not** fold `LoadName` even when the value is statically known, because keeping the load preserves the IC slot that drives runtime specialization.
+The optimizer folds patterns of the form `LoadConst a, LoadConst b, BinOp` into `LoadConst (a OP b)` for arithmetic, comparison, and bitwise ops, plus unary `Not` and `Minus` over a constant. It deliberately does **not** fold `LoadName` even when the value is statically known, because the load is what carries the inline-cache slot that drives runtime specialization.
 
 What the compiler intentionally does *not* do:
 
 * No SSA-wide constant propagation through `LoadName`.
-* No CSE, no GVN, no LICM, no inlining, no closed-form loop folding.
-* No dead-store elimination beyond what falls out of constant folding.
+* No CSE, no GVN, no LICM, no inlining, no loop unrolling.
+* No dead-branch elimination beyond what falls out of folding.
 * No IR — bytecode is the only representation.
-* No bundled stdlib: `import`, `from ... import`, and `from ... import *` resolve at compile time through a host-injected `Resolver` (see `modules/packages/`). Each module compiles to its own `SSAChunk` and runs once at `vm.init_modules` (called from `run()` before user code dispatches). The resulting `HeapObj::Module` value is registered in `vm.module_table` keyed by canonical spec; `OpCode::LoadModule` does an O(1) lookup so every importer sees the SAME module value. Native imports also register in `chunk.extern_table` for fast `CallExtern` dispatch at call sites.
+* No bundled stdlib: `import`, `from ... import`, and `from ... import *` resolve at compile time through a host-injected resolver (`modules/packages/`, manifest is `packages.json` — never `edge.json`). Each module compiles to its own `SSAChunk` and runs once during `vm.init_modules` (invoked by the WASM `run` entry point before user code dispatches). The resulting `HeapObj::Module` value is registered in `vm.module_table` keyed by canonical spec; `OpCode::LoadModule` is an O(1) lookup so every importer sees the same module instance. Native imports register in `chunk.extern_table` for fast `CallExtern` dispatch.
 
 ---
 
@@ -54,78 +56,80 @@ What the compiler intentionally does *not* do:
 
 ## 5. Value Representation
 
-64-bit NaN-boxed `Val`:
+64-bit NaN-boxed `Val` (`QNAN = 0x7FFC_0000_0000_0000`):
 
-| Tag      | Encoding                            | Notes                                |
-|----------|-------------------------------------|--------------------------------------|
-| Int      | `QNAN \| SIGN \| i48`               | ±2⁴⁷ inline, BigInt above            |
-| Float    | IEEE-754 (any non-canonical NaN)    | Quiet NaN remapped to canonical      |
-| Bool     | `QNAN \| 2` / `QNAN \| 3`           | `True` / `False`                     |
-| None     | `QNAN \| 1`                         |                                      |
-| Heap     | `QNAN \| 4 \| i28`                  | 28-bit index into `HeapPool`         |
+| Tag      | Encoding                            | Notes                                              |
+|----------|-------------------------------------|----------------------------------------------------|
+| Int      | `QNAN \| SIGN \| i47`               | 47-bit signed; overflow raises `OverflowError`     |
+| Float    | IEEE-754 (any non-canonical NaN)    | All NaNs canonicalised to `0x7FF8_…`               |
+| Bool     | `QNAN \| TAG_TRUE / TAG_FALSE`      |                                                    |
+| None     | `QNAN \| TAG_NONE`                  |                                                    |
+| Heap     | `QNAN \| TAG_HEAP \| i28`           | 28-bit index into `HeapPool` (max 1 << 28 slots)   |
 
-*BigInt uses a base-2³² limb array with Knuth-D long division. Strings ≤ 64 bytes are interned.*
+*Strings and bytes ≤ 128 bytes are interned, so `"abc" is "abc"`. There is no bignum or arbitrary-precision integer path: 47-bit ints are the architectural ceiling and exist as a single ALU instruction in the hot path.*
 
 ---
 
 ## 6. Garbage Collection
 
-Mark-and-sweep with roots: stack, globals, iterator frames, current slot window, and saved live-slot snapshots. Triggered by a configurable heap threshold inside `HeapPool::alloc`. `Limits` controls hard caps for sandboxed execution: max ops, max heap bytes, max call depth.
+Mark-and-sweep with roots: operand stack, with-stack, pending yields, event queue, current slot window, saved live-slot snapshots, globals, every iterator frame, opcode-cache constants, active const pools, and template memoization entries. The threshold starts at 512 live slots and is recomputed `(live * 2).max(512)` after each sweep, capped by `Limits.heap` (default 10M slots, sandbox profile 100K). The free list is capped at 524,288 entries and kept sorted to prefer low indices, which keeps recently-released slots hot in cache. Cycles are reclaimed natively — there is no refcount layer to leak through. `Limits` also caps call depth (1000 default / 256 sandbox) and call count.
 
 ---
 
 ## 7. Project Structure
 
 ```text
-├── Cargo.lock
 ├── Cargo.toml
 ├── README.md
 ├── src
-│   ├── lib.rs
-│   ├── modules
-│   │   ├── fstr.rs
-│   │   ├── fx.rs
-│   │   ├── lexer
-│   │   │   ├── mod.rs
-│   │   │   ├── scan.rs
-│   │   │   └── tables.rs
-│   │   ├── packages
-│   │   │   └── mod.rs
-│   │   ├── parser
-│   │   │   ├── control.rs
-│   │   │   ├── expr.rs
-│   │   │   ├── imports.rs
-│   │   │   ├── literals.rs
-│   │   │   ├── mod.rs
-│   │   │   ├── stmt.rs
-│   │   │   └── types.rs
-│   │   └── vm
-│   │       ├── builtins.rs
-│   │       ├── cache.rs
-│   │       ├── handlers
-│   │       │   ├── arith.rs
-│   │       │   ├── data.rs
-│   │       │   ├── format.rs
-│   │       │   ├── function.rs
-│   │       │   ├── methods.rs
-│   │       │   └── mod.rs
-│   │       ├── mod.rs
-│   │       ├── ops.rs
-│   │       ├── optimizer.rs
-│   │       └── types.rs
-│   └── bridge.rs
+│   ├── abi.rs                  Sealed WASM ABI (op codes, tags, ErrorKind, HandleTable)
+│   ├── lib.rs                  Crate root; gates main.rs to wasm32
+│   ├── main.rs                 WASM bridge / orchestration (not a CLI)
+│   └── modules
+│       ├── fstr.rs             Numeric formatter + s!/push!/err! string macros
+│       ├── fx.rs               FxHasher with per-map seed (HashDoS-safe)
+│       ├── sha256.rs           Hand-rolled FIPS 180-4 SHA-256 (integrity fragments)
+│       ├── lexer
+│       │   ├── mod.rs
+│       │   ├── scan.rs
+│       │   └── tables.rs       LUT byte-class tables
+│       ├── packages
+│       │   ├── mod.rs          Resolver, walk-up, import_module dispatch
+│       │   └── manifest.rs     Hand-rolled JSON parser for packages.json
+│       ├── parser
+│       │   ├── mod.rs
+│       │   ├── stmt.rs
+│       │   ├── expr.rs
+│       │   ├── control.rs
+│       │   ├── literals.rs
+│       │   ├── imports.rs
+│       │   └── types.rs        Instruction, OpCode, SSAChunk, Value
+│       └── vm
+│           ├── mod.rs          Hot dispatch loop
+│           ├── ops.rs
+│           ├── types.rs        Val, HeapObj, HeapPool, Limits
+│           ├── optimizer.rs    Constant fold + dead-code compaction
+│           ├── cache.rs        Inline cache + template memoization
+│           ├── builtins.rs
+│           └── handlers
+│               ├── mod.rs
+│               ├── arith.rs
+│               ├── data.rs
+│               ├── format.rs
+│               ├── function.rs
+│               └── methods.rs
 └── tests
     ├── cases
     │   ├── lexer.json
-    │   ├── packages.json
     │   ├── parser.json
-    │   └── vm.json
+    │   ├── vm.json
+    │   └── packages.json
     ├── common.rs
     ├── lexer.rs
-    ├── main.rs
-    ├── packages.rs
     ├── parser.rs
-    └── vm.rs
+    ├── vm.rs
+    ├── packages.rs
+    └── main.rs
 ```
 
 ---
@@ -165,5 +169,4 @@ Edge Python is loaded by a host runtime — browser via `demo/edge.js`, server /
 8. **Casey et al.**, *Towards Superinstructions for Java Interpreters* (SCOPES 2003). LoadAttr+Call fusion.
 9. **Michie**, *Memo Functions and Machine Learning* (Nature 1968). Pure-function memoization.
 10. **McCarthy**, *Recursive Functions of Symbolic Expressions* (CACM 1960). Mark-sweep GC.
-11. **Knuth**, *The Art of Computer Programming, Vol. 2* (1981). Algorithm D for BigInt division.
-12. **Backus**, *Can Programming Be Liberated from the von Neumann Style?* (CACM 1978). Function-level paradigm.
+11. **Backus**, *Can Programming Be Liberated from the von Neumann Style?* (CACM 1978). Function-level paradigm.
