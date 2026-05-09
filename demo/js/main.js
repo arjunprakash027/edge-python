@@ -46,8 +46,8 @@ const setStatus = (text, cls) => {
     el.status.textContent = text;
     el.status.className = `ml-auto ${cls}`;
 };
-const ok = (t) => setStatus(t, 'text-[#7daf7a]');
-const err = (t) => setStatus(t, 'text-[#d67f6d]');
+const ok  = (t) => setStatus(t, 'status-ok');
+const err = (t) => setStatus(t, 'status-err');
 
 // Highlighter
 
