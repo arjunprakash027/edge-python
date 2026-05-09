@@ -35,7 +35,8 @@
           "language/data-types",
           "language/control-flow",
           "language/functions",
-          "language/classes"
+          "language/classes",
+          "language/async"
         ]
       },
       {

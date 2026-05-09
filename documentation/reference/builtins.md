@@ -3,7 +3,7 @@ title: "Built-in functions"
 description: "Every built-in function in Edge Python with examples and outputs."
 ---
 
-Edge Python ships with 47 built-in functions. They're first-class values: pass them around, store them in containers, alias them.
+Edge Python ships with 50 built-in functions. They're first-class values: pass them around, store them in containers, alias them.
 
 ```python
 # All built-ins are real values
@@ -692,6 +692,44 @@ print(vars(p))
 ### receive
 
 `receive()` — suspend the current coroutine until a message is available from the host. Only valid inside `async def`.
+
+### gather
+
+`gather(*coros)` — concurrent fan-out. Adds every argument to the scheduler, drains until each is terminal, returns a list of their results in argument order. First error cancels remaining peers and propagates.
+
+```python
+async def task(n):
+    return n * 2
+
+print(gather(task(1), task(2), task(3)))
+```
+
+```text Output
+[2, 4, 6]
+```
+
+### with_timeout
+
+`with_timeout(seconds, coro)` — runs `coro` to completion or raises `TimeoutError` if the deadline elapses first. The coroutine is cancelled on timeout.
+
+```python
+async def slow():
+    sleep(10)
+    return "never"
+
+try:
+    with_timeout(0.1, slow())
+except TimeoutError:
+    print("timed out")
+```
+
+```text Output
+timed out
+```
+
+### cancel
+
+`cancel(coro)` — flag a coroutine registered with the scheduler for cancellation. The next scheduler tick stops it. Cancellation is cooperative and silent: the coroutine body does not observe a raised `CancelledError`. For deadline-driven cancellation that propagates as an exception, use `with_timeout`.
 
 ## Built-in summary
 
