@@ -1,7 +1,7 @@
 use core::hash::{BuildHasher, Hasher};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-/* FxHash multiplier (rustc-hash); keeps mixing fast and predictable. */
+/* FxHash multiplier from rustc-hash. */
 const K: u64 = 0x517cc1b727220a95;
 
 static SEED_COUNTER: AtomicUsize = AtomicUsize::new(1);
@@ -30,8 +30,7 @@ impl Hasher for FxHasher {
 pub struct FxBuildHasher(u64);
 
 impl FxBuildHasher {
-    /* Per-map seed via atomic counter, then MurmurHash3 finalizer to
-       decorrelate sequential counter values. */
+    /* Atomic counter seed, avalanche-mixed to decorrelate sequential values. */
     #[inline]
     pub fn new() -> Self {
         let raw = SEED_COUNTER.fetch_add(1, Ordering::Relaxed) as u64;
@@ -39,7 +38,7 @@ impl FxBuildHasher {
     }
 }
 
-/* Avalanche mixer: a one-bit difference spreads across all 64 bits. */
+/* MurmurHash3 finalizer: spreads a 1-bit difference across all 64 bits. */
 #[inline]
 fn murmur3_fmix64(mut h: u64) -> u64 {
     h ^= h >> 33;
