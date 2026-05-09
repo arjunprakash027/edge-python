@@ -1506,10 +1506,13 @@
 
   {"src": "try:\n    raise RuntimeError('x') from ValueError('y')\nexcept RuntimeError:\n    print('caught')", "output": [], "error": "ValueError"},
 
-  {"src": "print(tuple('abc'))", "output": [], "error": "tuple() argument must be iterable"},
-  {"src": "print(set(range(3)))", "output": [], "error": "set() argument must be iterable"},
-  {"src": "x=[1]\nx.extend(range(3))", "output": [], "error": "extend() argument must be iterable"},
-  {"src": "d={}\nd.update(a=1)", "output": [], "error": "no keyword arguments"},
+  {"src": "print(tuple('abc'))", "output": ["('a', 'b', 'c')"]},
+  {"src": "print(tuple(range(3)))", "output": ["(0, 1, 2)"]},
+  {"src": "print(set(range(3)))", "output": ["{0, 1, 2}"]},
+  {"src": "print(set({'a':1, 'b':2}))", "output": ["{'a', 'b'}"]},
+  {"src": "x=[1]\nx.extend(range(3))\nprint(x)", "output": ["[1, 0, 1, 2]"]},
+  {"src": "x=[1]\nx.extend({2,3})\nprint(sorted(x))", "output": ["[1, 2, 3]"]},
+  {"src": "d={}\nd.update([('a',1),('b',2)])\nprint(d)", "output": ["{'a': 1, 'b': 2}"]},
   {"src": "s={1,2}\ns.remove(99)", "output": [], "error": "ValueError"},
 
   {"src": "print('ñ'.center(5, '*'))", "output": ["*ñ**"]},

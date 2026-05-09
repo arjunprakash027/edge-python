@@ -351,9 +351,7 @@ impl<'a> VM<'a> {
 
     pub fn call_tuple(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
-        let items: Vec<Val> = if o.is_heap() && let HeapObj::Tuple(v) = self.heap.get(o) { v.clone() }
-            else if o.is_heap() && let HeapObj::List(v) = self.heap.get(o) { v.borrow().clone() }
-            else { return Err(cold_type("tuple() argument must be iterable")); };
+        let items = self.extract_iter(o, true)?;
         self.alloc_and_push_tuple(items)
     }
 
@@ -479,26 +477,38 @@ impl<'a> VM<'a> {
         Ok(args)
     }
 
-    /* Extract a Vec<Val> from list/tuple/set; optionally materialise Range.
-       Str is handled at the call site (it needs heap-allocated chars, not ints). */
-    fn extract_iter(&self, o: Val, include_range: bool) -> Result<Vec<Val>, VmErr> {
+    /* Extract a Vec<Val> from any iterable: list/tuple/set/frozenset/dict
+       (yields keys)/range/str (yields one-char strs)/bytes (yields ints).
+       `include_range` is preserved for callers that need to reject Range. */
+    pub(super) fn extract_iter(&mut self, o: Val, include_range: bool) -> Result<Vec<Val>, VmErr> {
         if !o.is_heap() {
             return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable")));
         }
-        Ok(match self.heap.get(o) {
-            HeapObj::List(v)  => v.borrow().clone(),
-            HeapObj::Tuple(v) => v.clone(),
-            HeapObj::Set(v)   => v.borrow().iter().cloned().collect(),
-            HeapObj::FrozenSet(v) => v.iter().cloned().collect(),
+        // Snapshot the variant out so the &self borrow ends before any allocation.
+        let snapshot = match self.heap.get(o) {
+            HeapObj::List(v)      => Some(v.borrow().clone()),
+            HeapObj::Tuple(v)     => Some(v.clone()),
+            HeapObj::Set(v)       => Some(v.borrow().iter().cloned().collect()),
+            HeapObj::FrozenSet(v) => Some(v.iter().cloned().collect()),
             HeapObj::Range(s, e, st) if include_range => {
                 let (mut cur, end, step) = (*s, *e, *st);
                 let mut out = Vec::new();
                 if step > 0 { while cur < end { out.push(Val::int(cur)); cur += step; } }
                 else        { while cur > end { out.push(Val::int(cur)); cur += step; } }
-                out
+                Some(out)
             }
+            HeapObj::Dict(d)      => Some(d.borrow().keys().collect()),
+            HeapObj::Bytes(b)     => Some(b.iter().map(|&x| Val::int(x as i64)).collect()),
+            HeapObj::Str(_)       => None, // handled below — needs heap allocation
             _ => return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable"))),
-        })
+        };
+        if let Some(v) = snapshot { return Ok(v); }
+        // Str path materialises one-char heap strings via the existing helper.
+        if let HeapObj::Str(s) = self.heap.get(o) {
+            let s = s.clone();
+            return self.str_to_char_vals(&s);
+        }
+        unreachable!()
     }
 
     fn alloc_set(&mut self, items: Vec<Val>) -> Result<Val, VmErr> {
@@ -560,15 +570,7 @@ impl<'a> VM<'a> {
             self.push(val);
         } else {
             let o = self.pop()?;
-            if !o.is_heap() { return Err(cold_type("set() argument must be iterable")); }
-            let src: Vec<Val> = match self.heap.get(o) {
-                HeapObj::List(v)  => v.borrow().clone(),
-                HeapObj::Tuple(v) => v.clone(),
-                HeapObj::Set(v)   => v.borrow().iter().cloned().collect(),
-                HeapObj::FrozenSet(v) => v.iter().cloned().collect(),
-                HeapObj::Str(s)   => { let s = s.clone(); self.str_to_char_vals(&s)? },
-                _ => return Err(cold_type("set() argument must be iterable")),
-            };
+            let src = self.extract_iter(o, true)?;
             let val = self.alloc_set(src)?;
             self.push(val);
         }

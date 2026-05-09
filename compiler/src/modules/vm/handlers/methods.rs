@@ -755,15 +755,7 @@ define_methods! {
     }),
     (ListExtend, "extend", mutating, |vm, recv, pos| {
         check_arity(&pos, 1, 1, "extend takes 1 argument")?;
-        let items: Vec<Val> = if pos[0].is_heap() {
-            match vm.heap.get(pos[0]) {
-                HeapObj::List(rc) => rc.borrow().clone(),
-                HeapObj::Tuple(v) => v.clone(),
-                _ => return Err(cold_type("extend() argument must be iterable")),
-            }
-        } else {
-            return Err(cold_type("extend() argument must be iterable"));
-        };
+        let items = vm.extract_iter(pos[0], true)?;
         list_mut(vm, recv, "extend: receiver is not a list", |list| {
             list.extend_from_slice(&items); Ok(())
         })?;
@@ -872,9 +864,22 @@ define_methods! {
     }),
     (DictUpdate, "update", mutating, |vm, recv, pos| {
         check_arity(&pos, 1, 1, "update takes 1 argument")?;
-        let pairs = match vm.heap.get(pos[0]) {
-            HeapObj::Dict(rc) => rc.borrow().entries.clone(),
-            _ => return Err(cold_type("update() argument must be a dict")),
+        // Accept either a dict (entries reused directly) or an iterable of
+        // 2-element pair sequences ([(k, v), ...]) — matches CPython contract.
+        let pairs: Vec<(Val, Val)> = if let HeapObj::Dict(rc) = vm.heap.get(pos[0]) {
+            rc.borrow().entries.clone()
+        } else {
+            let items = vm.extract_iter(pos[0], true)?;
+            let mut out = Vec::with_capacity(items.len());
+            for it in items {
+                let pair = match vm.heap.get(it) {
+                    HeapObj::Tuple(v) if v.len() == 2 => (v[0], v[1]),
+                    HeapObj::List(v) if v.borrow().len() == 2 => { let v = v.borrow(); (v[0], v[1]) }
+                    _ => return Err(cold_value("dictionary update sequence element must have length 2")),
+                };
+                out.push(pair);
+            }
+            out
         };
         dict_mut(vm, recv, "update: receiver is not a dict", |dict| {
             for (k, v) in pairs { dict.insert(k, v); }
