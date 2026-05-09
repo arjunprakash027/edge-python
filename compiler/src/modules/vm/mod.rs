@@ -52,7 +52,7 @@ pub(crate) struct ExceptionFrame {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum ParamKind { Normal, Star, DoubleStar }
+pub(crate) enum ParamKind { Normal, Star, DoubleStar, KwOnly }
 
 pub struct VM<'a> {
     pub(crate) stack: Vec<Val>,
@@ -429,10 +429,13 @@ impl<'a> VM<'a> {
             let (params, _, _, _) = vm.functions[fi];
             let bm = &vm.body_maps[fi];
             params.iter().map(|p| {
+                // Prefix `~` marks parameters declared after a lone `*` separator.
                 let (kind, bare) = if let Some(stripped) = p.strip_prefix("**") {
                     (ParamKind::DoubleStar, stripped)
                 } else if let Some(stripped) = p.strip_prefix('*') {
                     (ParamKind::Star, stripped)
+                } else if let Some(stripped) = p.strip_prefix('~') {
+                    (ParamKind::KwOnly, stripped)
                 } else {
                     (ParamKind::Normal, p.as_str())
                 };
@@ -460,7 +463,7 @@ impl<'a> VM<'a> {
         vm.needs_caller_slots = (0..vm.functions.len()).map(|fi| {
             let (params, body, _, _) = vm.functions[fi];
             let param_names: crate::modules::fx::FxHashSet<&str> = params.iter()
-                .map(|p| p.trim_start_matches('*')).collect();
+                .map(|p| p.trim_start_matches(['*', '~'])).collect();
             body.names.iter().any(|n| {
                 let base = ssa_strip(n);
                 !param_names.contains(base) && !vm.globals.contains_key(n)

@@ -76,7 +76,7 @@ impl<'a> VM<'a> {
         let defaults = if n_defaults > 0 { self.pop_n(n_defaults)? } else { vec![] };
 
         let (params, body, _, _) = self.functions[global];
-        let param_names: crate::modules::fx::FxHashSet<String> = params.iter().map(|p| s!(str p.trim_start_matches('*'), "_0")).collect();
+        let param_names: crate::modules::fx::FxHashSet<String> = params.iter().map(|p| s!(str p.trim_start_matches(['*', '~']), "_0")).collect();
         let mut captures: Vec<(usize, Val)> = Vec::new();
         // Capture closure values once per canonical (coalesced) slot, skipping
         // names already bound as formal parameters. The body.names list is
@@ -260,6 +260,8 @@ impl<'a> VM<'a> {
                     if slot < fn_slots.len() { fn_slots[slot] = positional[pos_idx]; }
                     pos_idx += 1;
                 }
+                // KwOnly slots are NOT consumed positionally; they bind only via kwargs.
+                super::super::ParamKind::KwOnly => {}
             }
         }
 
@@ -271,7 +273,9 @@ impl<'a> VM<'a> {
                     HeapObj::Str(s) => s.clone(),
                     _ => return Err(cold_runtime("malformed kwarg on stack")),
                 };
-                if params.iter().any(|p| p.trim_start_matches('*') == key.as_str()) {
+                // Param prefixes (`*`, `**`, `~`) decorate the declared name —
+                // strip them to compare with the keyword arg key.
+                if params.iter().any(|p| p.trim_start_matches(['*', '~']) == key.as_str()) {
                     let pname = s!(str &key, "_0");
                     if let Some(&s) = body_map.get(pname.as_str()) {
                         fn_slots[s] = pair[1];

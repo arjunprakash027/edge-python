@@ -475,7 +475,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         // without this loop, `def A → def B → def C` where C references A's
         // var fails with NameError because B never captured it.
         let param_slots: crate::modules::fx::FxHashSet<String> = params.iter()
-            .map(|p| s!(str p.trim_start_matches('*'), "_0")).collect();
+            .map(|p| s!(str p.trim_start_matches(['*', '~']), "_0")).collect();
         for name in &body.names {
             if !param_slots.contains(name.as_str()) {
                 self.chunk.push_name(name);
@@ -513,6 +513,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.advance();
         let mut params = Vec::new();
         let mut defaults = 0u16;
+        // Once we cross a lone `*` separator, every subsequent positional
+        // becomes keyword-only and gets a `~` prefix in its param name.
+        let mut kw_only = false;
         // Also break on `Rarrow`: drain_annotation surfaces it when it ran past
         // a malformed annotation, and from here it means "params are over,
         // return type follows" — eat(Rpar) below will anchor at the unclosed `(`.
@@ -521,13 +524,31 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.eat_if(TokenType::Comma);
                 continue;
             }
-            let prefix = if self.eat_if(TokenType::DoubleStar) { "**" }
-                         else if self.eat_if(TokenType::Star) { "*" }
-                         else { "" };
+            if self.eat_if(TokenType::Star) {
+                // Lone `*` (no name) flips kw-only mode for what follows.
+                if matches!(self.peek(), Some(TokenType::Comma | TokenType::Rpar)) {
+                    self.eat_if(TokenType::Comma);
+                    kw_only = true;
+                    continue;
+                }
+                let nm = self.advance_text();
+                params.push(s!("*", str &nm));
+                self.drain_annotation();
+                self.eat_if(TokenType::Comma);
+                continue;
+            }
+            if self.eat_if(TokenType::DoubleStar) {
+                let nm = self.advance_text();
+                params.push(s!("**", str &nm));
+                self.drain_annotation();
+                self.eat_if(TokenType::Comma);
+                continue;
+            }
+            let prefix = if kw_only { "~" } else { "" };
             let nm = self.advance_text();
             params.push(if prefix.is_empty() { nm } else { s!(str prefix, str &nm) });
             self.drain_annotation();
-            if prefix.is_empty() && self.eat_if(TokenType::Equal) {
+            if self.eat_if(TokenType::Equal) {
                 self.expr();
                 defaults += 1;
             }
@@ -576,7 +597,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let mut body = self.with_fresh_chunk(|s| {
             for p in params {
                 s.ssa_versions.insert(p.clone(), 0);
-                let _ = s.push_ssa_name(p.trim_start_matches('*'), 0);
+                let _ = s.push_ssa_name(p.trim_start_matches(['*', '~']), 0);
             }
             s.compile_block_body();
         });

@@ -1490,6 +1490,8 @@
   {"src": "g = (i*2 for i in range(3))\nprint(type(g))", "output": ["<class 'list'>"]},
 
   {"src": "def f(a, *, b):\n    return a + b\nprint(f(1, b=2))", "output": ["3"]},
+  {"src": "def f(a, *, b):\n    return a + b\nprint(f(1, 2))", "output": [], "error": "name 'b' is not defined"},
+  {"src": "def f(a, *, b=10):\n    return a + b\nprint(f(1))", "output": ["11"]},
 
   {"src": "def f(): pass\nprint(f.__annotations__)", "output": [], "error": "AttributeError"},
 
