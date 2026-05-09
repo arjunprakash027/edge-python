@@ -1,0 +1,28 @@
+Branch: remove-cosmetic-package-aliases
+Tech debt: D45 — three pub-use aliases unused anywhere in the workspace.
+
+================================================================================
+Commit 1: drop unused package re-export aliases
+================================================================================
+File: compiler/src/modules/packages/mod.rs
+
+What was wrong:
+  Lines 91-94 re-exported three names with no callers:
+    pub use NativeBinding as Binding;
+    pub use Resolved as ResolvedModule;
+    pub use NoopResolver as Default_;
+
+  A workspace-wide grep for `\bBinding\b|\bResolvedModule\b|\bDefault_\b`
+  returns only the three declarations themselves. The .md docs and rust
+  sources all use the canonical names `NativeBinding`, `Resolved`, and
+  `NoopResolver`.
+
+  `Default_` with the trailing underscore is also a Rust-convention
+  smell — readers expect `Default` to be the trait, not a type alias.
+
+Fix:
+  Removed the three aliases and their wrapping comment. Canonical names
+  remain the single source of truth.
+
+Tests: cargo test -> 6/6 passed.
+Docs: none reference the aliases; no changes required.
