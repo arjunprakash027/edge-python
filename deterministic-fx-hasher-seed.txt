@@ -1,0 +1,37 @@
+Branch: deterministic-fx-hasher-seed
+Tech debt: D48 — non-deterministic FxBuildHasher seed.
+
+================================================================================
+Commit 1: use fixed seed for FxBuildHasher
+================================================================================
+Files:
+  - compiler/src/modules/fx.rs
+  - documentation/implementation/design.md
+
+What was wrong:
+  fx.rs used a global atomic counter (SEED_COUNTER) plus the MurmurHash3
+  finalizer to assign each FxBuildHasher a per-instance seed. In a host-
+  driven WASM compiler that is single-threaded and runs only trusted input,
+  the per-instance randomisation buys nothing — there is no DoS attacker
+  whose collisions need to be foiled. What it does cost:
+
+  - Map iteration order varies across runs of the same input. Diagnostic
+    output that lists names from a FxHashMap (e.g. "X imports never used:
+    [...]") differs between runs.
+  - Bytecode artifacts that serialise any hash-ordered table cannot be
+    compared byte-for-byte across builds.
+  - Golden tests that assert exact stdout become flaky.
+
+Fix:
+  Replaced the atomic counter and murmur3 finaliser with a single fixed
+  constant FIXED_SEED (0x9e3779b97f4a7c15, the golden ratio in u64 — a
+  conventional choice for a non-zero, non-trivial seed). FxBuildHasher::new()
+  is now Self(FIXED_SEED). Removed the unused AtomicUsize, Ordering import,
+  SEED_COUNTER static, and murmur3_fmix64 helper.
+
+Documentation:
+  documentation/implementation/design.md line 93 listed fx.rs as
+  "per-map seeded FxBuildHasher", which directly contradicts the fix.
+  Updated to "fixed-seed FxBuildHasher (deterministic)".
+
+Tests: cargo test -> 6/6 passed.

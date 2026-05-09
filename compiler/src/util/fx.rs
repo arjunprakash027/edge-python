@@ -1,10 +1,12 @@
 use core::hash::{BuildHasher, Hasher};
-use core::sync::atomic::{AtomicUsize, Ordering};
 
 /* FxHash multiplier from rustc-hash. */
 const K: u64 = 0x517cc1b727220a95;
 
-static SEED_COUNTER: AtomicUsize = AtomicUsize::new(1);
+/* Fixed seed: deterministic across runs so map iteration order is reproducible.
+   The compiler is single-threaded in trusted contexts (host-driven WASM), so
+   per-instance randomisation buys nothing here and breaks golden tests. */
+const FIXED_SEED: u64 = 0x9e3779b97f4a7c15;
 
 #[derive(Clone, Default)]
 pub struct FxHasher(u64);
@@ -30,23 +32,8 @@ impl Hasher for FxHasher {
 pub struct FxBuildHasher(u64);
 
 impl FxBuildHasher {
-    /* Atomic counter seed, avalanche-mixed to decorrelate sequential values. */
     #[inline]
-    pub fn new() -> Self {
-        let raw = SEED_COUNTER.fetch_add(1, Ordering::Relaxed) as u64;
-        Self(murmur3_fmix64(raw))
-    }
-}
-
-/* MurmurHash3 finalizer: spreads a 1-bit difference across all 64 bits. */
-#[inline]
-fn murmur3_fmix64(mut h: u64) -> u64 {
-    h ^= h >> 33;
-    h = h.wrapping_mul(0xff51afd7ed558ccd);
-    h ^= h >> 33;
-    h = h.wrapping_mul(0xc4ceb9fe1a85ec53);
-    h ^= h >> 33;
-    h
+    pub fn new() -> Self { Self(FIXED_SEED) }
 }
 
 impl Default for FxBuildHasher {
