@@ -123,9 +123,12 @@ const PythonWorker = (() => {
         ready:  ({ ms }) => { setBusy(false); ok(`Ready${DEV ? ' - Dev' : ''} (Loaded in ${fmt(ms)})`); },
         line:   ({ line }) => { el.term.textContent += (el.term.textContent ? '\n' : '') + line; },
         result: ({ out, ms }) => {
-            // `out` is empty on success (already streamed); non-empty only for errors.
-            if (out) el.term.textContent = out;
-            ok(`Ran in ${fmt(ms)}`);
+            if (out) {
+                el.term.textContent = out;
+                err(`Failed in ${fmt(ms)}`);
+            } else {
+                ok(`Ran in ${fmt(ms)}`);
+            }
             setBusy(false);
         },
         error:  ({ message }) => { setBusy(false); err('Load failed'); el.term.textContent = `Could not load WASM.\n\n${message}`; },
