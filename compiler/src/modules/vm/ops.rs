@@ -83,6 +83,7 @@ impl<'a> VM<'a> {
             HeapObj::Module(..) => true,
             HeapObj::Extern(_) => true,
             HeapObj::ExcInstance(..) => true,
+            HeapObj::Ellipsis => true,
         }
     }
 
@@ -163,6 +164,7 @@ impl<'a> VM<'a> {
             HeapObj::Module(..) => "module",
             HeapObj::Extern(_) => "builtin_function_or_method",
             HeapObj::ExcInstance(..) => "exception",
+            HeapObj::Ellipsis => "ellipsis",
         }}
     }
 
@@ -247,6 +249,7 @@ impl<'a> VM<'a> {
                 out.push_str("})");
                 out
             }
+            HeapObj::Ellipsis => "Ellipsis".into(),
         }
     }
 

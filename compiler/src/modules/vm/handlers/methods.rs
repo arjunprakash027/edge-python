@@ -681,7 +681,8 @@ define_methods! {
         let fill = if pos.len() > 1 {
             val_to_str(vm, pos[1])?.chars().next().unwrap_or(' ')
         } else { ' ' };
-        let pad = width.saturating_sub(s.len());
+        // Padding measured in code points, not UTF-8 bytes (Unicode parity).
+        let pad = width.saturating_sub(s.chars().count());
         let left = pad / 2;
         let right = pad - left;
         let out = fill.to_string().repeat(left) + &s + &fill.to_string().repeat(right);
@@ -693,10 +694,11 @@ define_methods! {
         if !pos[0].is_int() { return Err(cold_type("zfill() requires an integer argument")); }
         let s = recv_str(vm, recv)?;
         let width = pos[0].as_int() as usize;
-        let out = if s.len() >= width {
+        let nchars = s.chars().count();
+        let out = if nchars >= width {
             s
         } else {
-            let pad = "0".repeat(width - s.len());
+            let pad = "0".repeat(width - nchars);
             if s.starts_with('+') || s.starts_with('-') {
                 s[..1].to_string() + &pad + &s[1..]
             } else {

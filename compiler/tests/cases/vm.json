@@ -66,7 +66,7 @@
   {"src": "a, b = 1, 2\nprint(a, b)", "output": ["1 2"]},
   {"src": "x, y = [10, 20]\nprint(x, y)", "output": ["10 20"]},
   {"src": "a, b, c = 'abc'\nprint(a, b, c)", "output": ["a b c"]},
-  {"src": "print(...)", "output": ["..."]},
+  {"src": "print(...)", "output": ["Ellipsis"]},
   {"src": "print(min(3,1,4))", "output": ["1"]},
   {"src": "print(max(3,1,4))", "output": ["4"]},
   {"src": "print(sum([1,2,3]))", "output": ["6"]},
@@ -1497,8 +1497,9 @@
   {"src": "print(ord('\\101'))", "output": ["65"]},
   {"src": "print(ord('\\0'))", "output": ["0"]},
 
-  {"src": "print(type(...))", "output": ["<class 'str'>"]},
-  {"src": "print(... == '...')", "output": ["True"]},
+  {"src": "print(type(...))", "output": ["<class 'ellipsis'>"]},
+  {"src": "print(... == '...')", "output": ["False"]},
+  {"src": "print(... is ...)", "output": ["True"]},
 
   {"src": "d = {}\nd[1] = 'a'\nd[1.0] = 'b'\nprint(len(d))\nprint(d[1])", "output": ["1", "b"]},
 
@@ -1517,9 +1518,9 @@
   {"src": "d={}\nd.update([('a',1),('b',2)])\nprint(d)", "output": ["{'a': 1, 'b': 2}"]},
   {"src": "s={1,2}\ns.remove(99)", "output": [], "error": "ValueError"},
 
-  {"src": "print('ñ'.center(5, '*'))", "output": ["*ñ**"]},
-  {"src": "print('ñ'.zfill(3))", "output": ["0ñ"]},
-  {"src": "print('αβ'.center(6, '-'))", "output": ["-αβ-"]},
+  {"src": "print('ñ'.center(5, '*'))", "output": ["**ñ**"]},
+  {"src": "print('ñ'.zfill(3))", "output": ["00ñ"]},
+  {"src": "print('αβ'.center(6, '-'))", "output": ["--αβ--"]},
 
   {"src": "x = reversed('abc')\nprint(type(x))", "output": ["<class 'list'>"]},
 

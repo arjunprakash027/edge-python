@@ -160,6 +160,8 @@ pub enum HeapObj {
     Func(usize, Vec<Val>, Vec<(usize, Val)>),
     Range(i64, i64, i64),
     Slice(Val, Val, Val),
+    // True ellipsis singleton, distinct from any string `...`.
+    Ellipsis,
     Type(String),
     /* Constructed exception value: `ValueError("bad")` builds one via the
        Type-as-callable path. Carries the type name (for `except` matching
@@ -329,10 +331,10 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
         }
         HeapObj::Module(_, attrs) => for (_, v) in attrs { f(*v); },
         HeapObj::ExcInstance(_, args) => for &v in args { f(v); },
-        // Variants without Val payloads (Str, Bytes, Type, NativeFn,
-        // Range, Extern) — terminal, nothing to trace.
+        // Variants without Val payloads — terminal, nothing to trace.
         HeapObj::Str(_) | HeapObj::Bytes(_)
-        | HeapObj::Type(_) | HeapObj::NativeFn(_) | HeapObj::Range(..) | HeapObj::Extern(_) => {}
+        | HeapObj::Type(_) | HeapObj::NativeFn(_) | HeapObj::Range(..)
+        | HeapObj::Extern(_) | HeapObj::Ellipsis => {}
     }
 }
 
@@ -355,6 +357,8 @@ pub struct HeapPool {
        bits — without interning, a dict's `d[b"key"]` lookup hashes a
        different slot than the one that was inserted. Mirrors `strings`. */
     bytes_intern: HashMap<Vec<u8>, u32>,
+    // Cached Ellipsis slot index so `... is ...` is True (singleton parity).
+    ellipsis_idx: Option<u32>,
 }
 
 impl HeapPool {
@@ -368,6 +372,7 @@ impl HeapPool {
             limit,
             strings: HashMap::default(),
             bytes_intern: HashMap::default(),
+            ellipsis_idx: None,
         }
     }
 
@@ -380,6 +385,11 @@ impl HeapPool {
         if let HeapObj::Bytes(ref b) = obj
             && b.len() <= 128
             && let Some(&idx) = self.bytes_intern.get(b) {
+                return Ok(Val::heap(idx));
+        }
+        // Ellipsis is a true singleton — every `...` literal returns the same Val.
+        if matches!(obj, HeapObj::Ellipsis)
+            && let Some(idx) = self.ellipsis_idx {
                 return Ok(Val::heap(idx));
         }
         if self.live >= self.limit { return Err(cold_heap()); }
@@ -397,6 +407,7 @@ impl HeapPool {
         match self.slots[idx as usize].obj.as_ref().unwrap() {
             HeapObj::Str(s) if s.len() <= 128 => { self.strings.insert(s.clone(), idx); }
             HeapObj::Bytes(b) if b.len() <= 128 => { self.bytes_intern.insert(b.clone(), idx); }
+            HeapObj::Ellipsis => { self.ellipsis_idx = Some(idx); }
             _ => {}
         }
 
@@ -434,6 +445,13 @@ impl HeapPool {
                 }
                 Some(HeapObj::Bytes(b)) => {
                     self.bytes_intern.remove(b);
+                    slot.obj = None;
+                    self.free_list.push(idx as u32);
+                    self.live -= 1;
+                }
+                Some(HeapObj::Ellipsis) => {
+                    // Cached singleton index becomes stale when its slot is freed.
+                    if self.ellipsis_idx == Some(idx as u32) { self.ellipsis_idx = None; }
                     slot.obj = None;
                     self.free_list.push(idx as u32);
                     self.live -= 1;
@@ -502,6 +520,7 @@ impl HeapPool {
                 Some(HeapObj::Extern(_)) => 21,
                 Some(HeapObj::Bytes(_)) => 22,
                 Some(HeapObj::ExcInstance(..)) => 24,
+                Some(HeapObj::Ellipsis) => 26,
                 None => 0,
             }
         } else { 0 }

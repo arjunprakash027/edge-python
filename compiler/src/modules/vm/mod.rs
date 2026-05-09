@@ -1299,7 +1299,7 @@ impl<'a> VM<'a> {
 
             OpCode::Yield => self.handle_yield()?,
             OpCode::LoadEllipsis => {
-                let v = self.heap.alloc(HeapObj::Str("...".to_string()))?;
+                let v = self.heap.alloc(HeapObj::Ellipsis)?;
                 self.push(v);
             }
             OpCode::Dup => {
