@@ -472,6 +472,7 @@ impl<'a> VM<'a> {
                 HeapObj::List(v) => return Ok(v.borrow().clone()),
                 HeapObj::Tuple(v) => return Ok(v.clone()),
                 HeapObj::Set(v) => return Ok(v.borrow().iter().cloned().collect()),
+                HeapObj::FrozenSet(v) => return Ok(v.iter().cloned().collect()),
                 _ => {}
             }
         }
@@ -488,6 +489,7 @@ impl<'a> VM<'a> {
             HeapObj::List(v)  => v.borrow().clone(),
             HeapObj::Tuple(v) => v.clone(),
             HeapObj::Set(v)   => v.borrow().iter().cloned().collect(),
+            HeapObj::FrozenSet(v) => v.iter().cloned().collect(),
             HeapObj::Range(s, e, st) if include_range => {
                 let (mut cur, end, step) = (*s, *e, *st);
                 let mut out = Vec::new();
@@ -563,6 +565,7 @@ impl<'a> VM<'a> {
                 HeapObj::List(v)  => v.borrow().clone(),
                 HeapObj::Tuple(v) => v.clone(),
                 HeapObj::Set(v)   => v.borrow().iter().cloned().collect(),
+                HeapObj::FrozenSet(v) => v.iter().cloned().collect(),
                 HeapObj::Str(s)   => { let s = s.clone(); self.str_to_char_vals(&s)? },
                 _ => return Err(cold_type("set() argument must be iterable")),
             };
@@ -1057,6 +1060,120 @@ impl<'a> VM<'a> {
             return Ok(());
         }
         Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")))
+    }
+
+    /* frozenset() | frozenset(iter) — construct an immutable, hashable
+       set from an iterable. Without args returns the empty frozenset. */
+    pub fn call_frozenset(&mut self, argc: u16) -> Result<(), VmErr> {
+        let args = self.pop_n(argc as usize)?;
+        let items: Vec<Val> = match args.len() {
+            0 => Vec::new(),
+            1 => self.iter_to_vec_general(args[0])?,
+            _ => return Err(cold_type("frozenset() takes 0 or 1 argument")),
+        };
+        let mut s = HashSet::with_capacity_and_hasher(items.len(), Default::default());
+        for v in items { s.insert(v); }
+        let v = self.heap.alloc(HeapObj::FrozenSet(Rc::new(s)))?;
+        self.push(v); Ok(())
+    }
+
+    /* bytes_fromhex(s) — decode a hex string into bytes. Whitespace is
+       tolerated (matches CPython's bytes.fromhex). Errors on odd length or
+       non-hex characters. Exposed as a free builtin since Edge Python has
+       no class methods (`bytes.fromhex` is the CPython spelling). */
+    pub fn call_bytes_fromhex(&mut self) -> Result<(), VmErr> {
+        let v = self.pop()?;
+        let s = match self.heap.get(v) {
+            HeapObj::Str(s) => s.clone(),
+            _ => return Err(cold_type("bytes_fromhex() argument must be a string")),
+        };
+        let cleaned: String = s.chars().filter(|c| !c.is_ascii_whitespace()).collect();
+        if cleaned.len() % 2 != 0 {
+            return Err(cold_value("non-hexadecimal number or odd length"));
+        }
+        let mut out = Vec::with_capacity(cleaned.len() / 2);
+        let bytes = cleaned.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            let hi = (bytes[i] as char).to_digit(16)
+                .ok_or(cold_value("non-hexadecimal digit found"))?;
+            let lo = (bytes[i + 1] as char).to_digit(16)
+                .ok_or(cold_value("non-hexadecimal digit found"))?;
+            out.push(((hi << 4) | lo) as u8);
+            i += 2;
+        }
+        let v = self.heap.alloc(HeapObj::Bytes(out))?;
+        self.push(v); Ok(())
+    }
+
+    /* int_from_bytes(b, byteorder) — parse a bytes value as an integer.
+       byteorder is "big" or "little"; signedness is unsigned (CPython's
+       default). Range check against the 47-bit Val cap; OverflowError if
+       out of range. */
+    pub fn call_int_from_bytes(&mut self) -> Result<(), VmErr> {
+        let order = self.pop()?;
+        let v = self.pop()?;
+        let buf = match self.heap.get(v) {
+            HeapObj::Bytes(b) => b.clone(),
+            _ => return Err(cold_type("int_from_bytes() first arg must be bytes")),
+        };
+        let order_s = match self.heap.get(order) {
+            HeapObj::Str(s) => s.clone(),
+            _ => return Err(cold_type("int_from_bytes() byteorder must be 'big' or 'little'")),
+        };
+        if buf.len() > 8 { return Err(cold_overflow()); }
+        let big = match order_s.as_str() {
+            "big" => true,
+            "little" => false,
+            _ => return Err(cold_value("byteorder must be 'big' or 'little'")),
+        };
+        let mut acc: u64 = 0;
+        if big {
+            for &b in &buf { acc = (acc << 8) | b as u64; }
+        } else {
+            for (i, &b) in buf.iter().enumerate() { acc |= (b as u64) << (i * 8); }
+        }
+        if acc > Val::INT_MAX as u64 { return Err(cold_overflow()); }
+        self.push(Val::int(acc as i64));
+        Ok(())
+    }
+
+    /* int_to_bytes(n, length, byteorder) — encode a non-negative int into
+       a bytes of given length. Errors if the value doesn't fit. Negative
+       values aren't supported (CPython supports them via two's complement,
+       but the use case here is wire protocols where producers control
+       sign). */
+    pub fn call_int_to_bytes(&mut self) -> Result<(), VmErr> {
+        let order = self.pop()?;
+        let length = self.pop()?;
+        let n = self.pop()?;
+        if !n.is_int() { return Err(cold_type("int_to_bytes() value must be an int")); }
+        let n = n.as_int();
+        if !length.is_int() { return Err(cold_type("int_to_bytes() length must be an int")); }
+        let length = length.as_int() as usize;
+        if length > 8 { return Err(cold_value("int_to_bytes() length must be <= 8")); }
+        if n < 0 { return Err(cold_value("int_to_bytes() requires a non-negative int")); }
+        let order_s = match self.heap.get(order) {
+            HeapObj::Str(s) => s.clone(),
+            _ => return Err(cold_type("int_to_bytes() byteorder must be 'big' or 'little'")),
+        };
+        let big = match order_s.as_str() {
+            "big" => true,
+            "little" => false,
+            _ => return Err(cold_value("byteorder must be 'big' or 'little'")),
+        };
+        let val = n as u64;
+        if length < 8 && val >= (1u64 << (length * 8)) {
+            return Err(cold_overflow());
+        }
+        let mut out = Vec::with_capacity(length);
+        if big {
+            for i in (0..length).rev() { out.push((val >> (i * 8) & 0xff) as u8); }
+        } else {
+            for i in 0..length { out.push((val >> (i * 8) & 0xff) as u8); }
+        }
+        let v = self.heap.alloc(HeapObj::Bytes(out))?;
+        self.push(v); Ok(())
     }
 
     /* slice(stop) | slice(start, stop) | slice(start, stop, step). Constructs

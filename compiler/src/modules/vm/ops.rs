@@ -69,6 +69,7 @@ impl<'a> VM<'a> {
             HeapObj::Tuple(t) => !t.is_empty(),
             HeapObj::Dict(d) => !d.borrow().is_empty(),
             HeapObj::Set(s) => !s.borrow().is_empty(),
+            HeapObj::FrozenSet(s) => !s.is_empty(),
             HeapObj::Range(s,e,st) => if *st > 0 { s < e } else { s > e },
             HeapObj::Type(_) => true,
             HeapObj::Func(_, _, _) => true,
@@ -147,6 +148,7 @@ impl<'a> VM<'a> {
             HeapObj::List(_) => "list",
             HeapObj::Dict(_) => "dict",
             HeapObj::Set(_) => "set",
+            HeapObj::FrozenSet(_) => "frozenset",
             HeapObj::Tuple(_) => "tuple",
             HeapObj::Func(_, _, _) => "function",
             HeapObj::Type(_) => "type",
@@ -236,6 +238,15 @@ impl<'a> VM<'a> {
                 out.push('}');
                 out
             }
+            HeapObj::FrozenSet(s) => {
+                let mut items: Vec<Val> = s.iter().cloned().collect();
+                if items.is_empty() { return "frozenset()".into(); }
+                self.sort_set_items(&mut items);
+                let mut out = String::from("frozenset({");
+                self.append_reprs(&mut out, items.iter());
+                out.push_str("})");
+                out
+            }
         }
     }
 
@@ -284,6 +295,7 @@ impl<'a> VM<'a> {
             HeapObj::Tuple(v) => v.iter().any(|x| eq_vals_with_heap(*x, item, &self.heap)),
             HeapObj::Dict(p) => p.borrow().contains_key(&item),
             HeapObj::Set(s) => s.borrow().iter().any(|x| eq_vals_with_heap(*x, item, &self.heap)),
+            HeapObj::FrozenSet(s) => s.iter().any(|x| eq_vals_with_heap(*x, item, &self.heap)),
             HeapObj::Str(s) => {
                 if item.is_heap() && let HeapObj::Str(sub) = self.heap.get(item) { return s.contains(sub.as_str()); }
                 false

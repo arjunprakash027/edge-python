@@ -140,6 +140,11 @@ pub enum HeapObj {
     List(Rc<RefCell<Vec<Val>>>),
     Dict(Rc<RefCell<DictMap>>),
     Set(Rc<RefCell<HashSet<Val>>>),
+    /* Immutable, hashable counterpart of Set. Built once via the
+       `frozenset(iter)` builtin and then read-only — no add/remove/clear
+       methods exposed. Hashable so it can live in dict keys and other
+       sets. Equality is by element membership (same as Set). */
+    FrozenSet(Rc<HashSet<Val>>),
     Tuple(Vec<Val>),
     Func(usize, Vec<Val>, Vec<(usize, Val)>),
     Range(i64, i64, i64),
@@ -182,6 +187,7 @@ pub enum NativeFnId {
     Hash, Format, GetAttr, HasAttr, SetAttr, DelAttr, Next, Run, Sleep,
     Receive, Map, Filter, Iter, Bytes, ImportModule, Slice, Vars,
     Gather, WithTimeout, Cancel,
+    BytesFromHex, IntFromBytes, IntToBytes, FrozenSet,
 }
 
 impl NativeFnId {
@@ -198,6 +204,7 @@ impl NativeFnId {
             "receive", "map", "filter", "iter", "bytes", "import_module",
             "slice", "vars",
             "gather", "with_timeout", "cancel",
+            "bytes_fromhex", "int_from_bytes", "int_to_bytes", "frozenset",
         ];
         NAMES[self as usize]
     }
@@ -286,6 +293,7 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
         HeapObj::List(rc)             => for &v in rc.borrow().iter() { f(v); },
         HeapObj::Dict(rc)             => for (k, v) in rc.borrow().iter() { f(k); f(v); },
         HeapObj::Set(rc)              => for &v in rc.borrow().iter() { f(v); },
+        HeapObj::FrozenSet(rc)        => for &v in rc.iter() { f(v); },
         HeapObj::BoundMethod(recv, _) => f(*recv),
         HeapObj::Class(_, methods)    => for (_, v) in methods { f(*v); },
         HeapObj::BoundUserMethod(r, fu) => { f(*r); f(*fu); }
@@ -465,6 +473,7 @@ impl HeapPool {
                 Some(HeapObj::List(_)) => 6,
                 Some(HeapObj::Dict(_)) => 7,
                 Some(HeapObj::Set(_)) => 8,
+                Some(HeapObj::FrozenSet(_)) => 25,
                 Some(HeapObj::Tuple(_)) => 9,
                 Some(HeapObj::Func(_, _, _)) => 10,
                 Some(HeapObj::Range(..)) => 11,
@@ -510,6 +519,9 @@ pub fn eq_vals_with_heap(a: Val, b: Val, heap: &HeapPool) -> bool {
         (HeapObj::Tuple(x), HeapObj::Tuple(y)) => eq_seq(x, y, |a,b| eq_vals_with_heap(a, b, heap)),
         (HeapObj::List(x), HeapObj::List(y)) => eq_seq(&x.borrow(), &y.borrow(), |a,b| eq_vals_with_heap(a, b, heap)),
         (HeapObj::Set(x), HeapObj::Set(y)) => *x.borrow() == *y.borrow(),
+        (HeapObj::FrozenSet(x), HeapObj::FrozenSet(y)) => **x == **y,
+        (HeapObj::Set(x), HeapObj::FrozenSet(y)) => *x.borrow() == **y,
+        (HeapObj::FrozenSet(x), HeapObj::Set(y)) => **x == *y.borrow(),
         (HeapObj::Dict(x), HeapObj::Dict(y)) => eq_dict(&x.borrow(), &y.borrow(), |a,b| eq_vals_with_heap(a, b, heap)),
         // Cross-type comparisons fall through to false. Notably `bytes == str`
         // is False in Python, even when the bytes are valid UTF-8 of the str.

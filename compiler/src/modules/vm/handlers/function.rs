@@ -577,9 +577,13 @@ impl<'a> VM<'a> {
             SetAttr => Some(3),
             WithTimeout => Some(2),
             Cancel => Some(1),
+            BytesFromHex => Some(1),
+            IntFromBytes => Some(2),
+            IntToBytes => Some(3),
             Bytes => None,  // 0/1/2-arg: bytes() | bytes(n|iter) | bytes(str, "utf-8")
             Slice => None,  // 1/2/3-arg
             Gather => None, // variadic
+            FrozenSet => None, // 0/1-arg
             Vars => Some(1),
             ImportModule => Some(1),
             _ => None,
@@ -657,6 +661,10 @@ impl<'a> VM<'a> {
             Gather => self.call_gather(argc),
             WithTimeout => self.call_with_timeout(),
             Cancel => self.call_cancel(),
+            BytesFromHex => self.call_bytes_fromhex(),
+            IntFromBytes => self.call_int_from_bytes(),
+            IntToBytes => self.call_int_to_bytes(),
+            FrozenSet => self.call_frozenset(argc),
         }
     }
 }
