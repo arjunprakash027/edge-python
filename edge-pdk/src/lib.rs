@@ -38,6 +38,16 @@ extern crate alloc;
 
 pub use edge_pdk_macros::plugin_fn;
 
+/* Curated public surface for plugin authors. Glob-importing the whole
+   crate exposes #[doc(hidden)] symbols (`__edge_alloc`, `__internals`)
+   which are part of the macro contract, not the user API. The prelude
+   re-exports just what `#[plugin_fn]` expansion needs and what most
+   plugins reach for: type wrappers, the attribute, the trait pair.
+   Recommended: `use edge_pdk::prelude::*;`. */
+pub mod prelude {
+    pub use crate::{plugin_fn, Handle, Value, Error, Result, FromValue, IntoValue};
+}
+
 use alloc::{string::String, vec::Vec};
 
 /* ---------- Wire imports --------------------------------------------- */
