@@ -280,7 +280,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         };
         match parsed {
             Some(v) => self.emit_const(Value::Int(v)),
-            None => self.error("integer literal too large for 47-bit Val (max \u{00b1}140737488355327)"),
+            None => self.error("integer literal too large to represent"),
         }
     }
 
