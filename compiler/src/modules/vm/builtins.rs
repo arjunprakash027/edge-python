@@ -1715,11 +1715,11 @@ impl<'a> VM<'a> {
             match min_wake {
                 Some(w) => {
                     let now = self.now_ns();
-                    if w > now {
-                        if self.time_hook.is_none() { self.virtual_clock_ns = w; }
-                        // With a real clock we don't busy-wait: we still
-                        // advance virtual_clock_ns logically so subsequent
-                        // sleeps are relative to the new "now".
+                    // With a real clock we don't busy-wait: we still
+                    // advance virtual_clock_ns logically so subsequent
+                    // sleeps are relative to the new "now".
+                    if w > now && self.time_hook.is_none() {
+                        self.virtual_clock_ns = w;
                     }
                     let now = self.now_ns();
                     for h in self.scheduler.iter_mut() {
@@ -1844,11 +1844,7 @@ impl<'a> VM<'a> {
         });
         // Drive one step at a time so the deadline check stays tight.
         let mut timed_out = false;
-        loop {
-            let idx = match self.scheduler.iter().position(|h| h.coro == coro) {
-                Some(i) => i,
-                None => break,
-            };
+        while let Some(idx) = self.scheduler.iter().position(|h| h.coro == coro) {
             match self.scheduler[idx].state.clone() {
                 super::types::CoroState::Done(_)
                 | super::types::CoroState::Errored(_)
