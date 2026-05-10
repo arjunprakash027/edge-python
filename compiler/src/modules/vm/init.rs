@@ -76,6 +76,22 @@ impl<'a> VM<'a> {
             self.build_function_table(&desc.1, Some(global as usize), module_spec);
         }
         self.fn_index.push((chunk as *const _, indices));
+
+        // Index every SSA name in this chunk by its bare prefix so the
+        // call-site free-load fallback can do O(1) lookups instead of
+        // re-parsing each name on every miss.
+        let mut name_versions: crate::util::fx::FxHashMap<alloc::string::String, alloc::vec::Vec<(i64, usize)>> =
+            crate::util::fx::FxHashMap::default();
+        for (si, sname) in chunk.names.iter().enumerate() {
+            if let Some(p) = sname.rfind('_')
+                && let Ok(v) = sname[p+1..].parse::<i64>() {
+                    name_versions
+                        .entry(sname[..p].to_string())
+                        .or_default()
+                        .push((v, si));
+                }
+        }
+        self.chunk_name_versions.insert(chunk as *const _, name_versions);
         for class_body in chunk.classes.iter() {
             self.build_function_table(class_body, parent_fi, module_spec);
         }

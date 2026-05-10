@@ -476,20 +476,19 @@ impl<'a> VM<'a> {
         // sibling defs as `_1+` while each body still records `_0`. Skips
         // capture-protected slots so closures keep their captured values.
         let free_loads = &self.body_free_loads[fi];
+        let name_index = self.chunk_name_versions.get(&(chunk as *const _));
         for (bare, bs) in free_loads {
             if captured_set.contains(bs) { continue; }
             let mut latest_ver: i64 = -1;
             let mut latest_v: Val = Val::undef();
-            for (si, sname) in chunk.names.iter().enumerate() {
-                if let Some(p) = sname.rfind('_')
-                    && &sname[..p] == bare.as_str()
-                    && let Ok(v) = sname[p+1..].parse::<i64>()
-                    && si < slots.len()
-                    && !slots[si].is_undef()
-                    && v > latest_ver
-                {
-                    latest_ver = v;
-                    latest_v = slots[si];
+            if let Some(idx) = name_index
+                && let Some(versions) = idx.get(bare.as_str())
+            {
+                for &(v, si) in versions {
+                    if si < slots.len() && !slots[si].is_undef() && v > latest_ver {
+                        latest_ver = v;
+                        latest_v = slots[si];
+                    }
                 }
             }
             if !latest_v.is_undef() {

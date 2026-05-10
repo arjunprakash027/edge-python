@@ -78,6 +78,12 @@ pub struct VM<'a> {
        call. None for anonymous lambdas or names not present in the body. */
     pub(crate) self_ref_slot: Vec<Option<usize>>,
     pub(crate) opcode_caches: HashMap<*const SSAChunk, OpcodeCache>,
+    /* Per-chunk index for the call-site bare-name fallback. Keyed by
+       chunk pointer, value is `bare_name -> Vec<(version, slot)>` of
+       every SSA name in `chunk.names` carrying a `_<digits>` suffix.
+       Replaces the linear scan that re-parsed every name on every
+       free-load lookup. Populated by `build_function_table`. */
+    pub(crate) chunk_name_versions: HashMap<*const SSAChunk, crate::util::fx::FxHashMap<String, Vec<(i64, usize)>>>,
     /* Const pool slice ptrs for caches currently owned by a live exec()
        frame (removed from `opcode_caches` for the duration of the call). */
     pub(crate) active_const_pools: Vec<*const [Val]>,
@@ -192,6 +198,7 @@ impl<'a> VM<'a> {
             default_slots: Vec::new(),
             self_ref_slot: Vec::new(),
             opcode_caches: HashMap::default(),
+            chunk_name_versions: HashMap::default(),
             active_const_pools: Vec::new(),
             sandbox_off,
         };
