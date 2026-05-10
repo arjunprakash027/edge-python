@@ -8,37 +8,48 @@ use super::methods_helpers::*;
 use crate::alloc::string::ToString;
 use crate::s;
 
+/* Result of `resolve_attr` — every shape the LoadAttr / CallMethod
+   path needs to dispatch on. Centralising the shape eliminates the
+   3-branch + builtin-fallback duplication that previously lived in
+   both `handle_load_attr` and `exec_call_method`, including the six
+   hand-formatted `'X' object has no attribute 'Y'` messages. */
+pub(crate) enum AttrLookup {
+    ModuleAttr(Val),
+    ClassMember(Val),
+    InstanceField(Val),
+    InstanceMethod { recv: Val, func: Val },
+    BuiltinMethod(BuiltinMethodId),
+    /* `e.args` on an ExcInstance: caller decides whether to materialise
+       the tuple (LoadAttr) or treat it as a non-callable attribute
+       (CallMethod, preserving the pre-existing AttributeError). */
+    ExcArgs(Vec<Val>),
+}
+
 impl<'a> VM<'a> {
-    pub(crate) fn handle_load_attr(&mut self, name_idx: u16, chunk: &SSAChunk) -> Result<(), VmErr> {
-        let name = chunk.names.get(name_idx as usize)
-            .ok_or(VmErr::Runtime("LoadAttr: bad name index"))?;
-        let obj = self.pop()?;
+    /* Single source of truth for `obj.<name>` resolution. Walks the
+       heap object kind, returning the appropriate `AttrLookup` variant
+       or an `AttributeError`. Both `handle_load_attr` and
+       `exec_call_method` consume the result. */
+    pub(crate) fn resolve_attr(&self, obj: Val, name: &str) -> Result<AttrLookup, VmErr> {
+        let bare = crate::modules::parser::ssa_strip(name);
 
         // Module attribute lookup: linear scan over the attr table. Sized
         // for ~30 entries; any module larger than that is unusual.
         if obj.is_heap()
             && let HeapObj::Module(mod_name, attrs) = self.heap.get(obj) {
-                let bare = crate::modules::parser::ssa_strip(name);
                 if let Some((_, v)) = attrs.iter().find(|(n, _)| n == bare) {
-                    let v = *v;
-                    self.push(v);
-                    return Ok(());
+                    return Ok(AttrLookup::ModuleAttr(*v));
                 }
                 return Err(VmErr::Attribute(s!(
                     "module '", str mod_name, "' has no attribute '", str bare, "'")));
             }
 
         // ExcInstance attribute lookup: `e.args` returns the constructor
-        // args as a tuple. Anything else falls through to the generic
-        // `'exception' object has no attribute …` error.
+        // args; everything else is "no such attribute".
         if obj.is_heap()
             && let HeapObj::ExcInstance(_, args) = self.heap.get(obj) {
-                let bare = crate::modules::parser::ssa_strip(name);
                 if bare == "args" {
-                    let args = args.clone();
-                    let v = self.heap.alloc(HeapObj::Tuple(args))?;
-                    self.push(v);
-                    return Ok(());
+                    return Ok(AttrLookup::ExcArgs(args.clone()));
                 }
                 let ty = self.type_name(obj);
                 return Err(VmErr::Attribute(s!(
@@ -49,17 +60,11 @@ impl<'a> VM<'a> {
         // function directly (no `self` prepended). Useful for class-as-namespace
         // patterns and for accessing class-level constants.
         if obj.is_heap()
-            && let HeapObj::Class(_, members) = self.heap.get(obj) {
-                let bare = crate::modules::parser::ssa_strip(name);
+            && let HeapObj::Class(cls_name, members) = self.heap.get(obj) {
                 if let Some((_, v)) = members.iter().find(|(n, _)| n == bare) {
-                    let v = *v;
-                    self.push(v);
-                    return Ok(());
+                    return Ok(AttrLookup::ClassMember(*v));
                 }
-                let cls_name = match self.heap.get(obj) {
-                    HeapObj::Class(n, _) => n.clone(),
-                    _ => alloc::string::String::new(),
-                };
+                let cls_name = cls_name.clone();
                 return Err(VmErr::Attribute(s!(
                     "type object '", str &cls_name, "' has no attribute '", str bare, "'")));
             }
@@ -72,28 +77,54 @@ impl<'a> VM<'a> {
                     .find(|(k, _)| k.is_heap() && matches!(self.heap.get(*k), HeapObj::Str(s) if s == name))
                     .map(|(_, v)| *v);
                 if let Some(v) = found {
-                    self.push(v);
-                    return Ok(());
+                    return Ok(AttrLookup::InstanceField(v));
                 }
                 if cls_val.is_heap()
                     && let HeapObj::Class(_, methods) = self.heap.get(cls_val)
                     && let Some((_, mv)) = methods.iter().find(|(n, _)| n == name) {
-                        let mv = *mv;
-                            let bound = self.heap.alloc(HeapObj::BoundUserMethod(obj, mv))?;
-                            self.push(bound);
-                            return Ok(());
-                        }
+                        return Ok(AttrLookup::InstanceMethod { recv: obj, func: *mv });
+                    }
                 let ty = self.type_name(obj);
-                return Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str name, "'")));
+                return Err(VmErr::Attribute(s!(
+                    "'", str ty, "' object has no attribute '", str name, "'")));
             }
 
         // Builtin type method.
         let ty = self.type_name(obj);
-        let method_id = lookup_method(ty, name.as_str())
-            .ok_or_else(|| VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str name, "'")))?;
-        let bound = self.heap.alloc(HeapObj::BoundMethod(obj, method_id))?;
-        self.push(bound);
-        Ok(())
+        lookup_method(ty, name)
+            .map(AttrLookup::BuiltinMethod)
+            .ok_or_else(|| VmErr::Attribute(s!(
+                "'", str ty, "' object has no attribute '", str name, "'")))
+    }
+
+    pub(crate) fn handle_load_attr(&mut self, name_idx: u16, chunk: &SSAChunk) -> Result<(), VmErr> {
+        let name = chunk.names.get(name_idx as usize)
+            .ok_or(VmErr::Runtime("LoadAttr: bad name index"))?
+            .clone();
+        let obj = self.pop()?;
+        match self.resolve_attr(obj, &name)? {
+            AttrLookup::ModuleAttr(v)
+            | AttrLookup::ClassMember(v)
+            | AttrLookup::InstanceField(v) => {
+                self.push(v);
+                Ok(())
+            }
+            AttrLookup::InstanceMethod { recv, func } => {
+                let bound = self.heap.alloc(HeapObj::BoundUserMethod(recv, func))?;
+                self.push(bound);
+                Ok(())
+            }
+            AttrLookup::BuiltinMethod(id) => {
+                let bound = self.heap.alloc(HeapObj::BoundMethod(obj, id))?;
+                self.push(bound);
+                Ok(())
+            }
+            AttrLookup::ExcArgs(args) => {
+                let v = self.heap.alloc(HeapObj::Tuple(args))?;
+                self.push(v);
+                Ok(())
+            }
+        }
     }
 }
 
