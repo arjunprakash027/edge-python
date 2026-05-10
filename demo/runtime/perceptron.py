@@ -6,13 +6,13 @@ Rosenblatt, F. (1958). The perceptron: A probabilistic model for information sto
 from "./lib/format.py" import report
 
 class SimplePerceptron:
-    def __init__(self, seed: float = 42.0) -> None:
+    def __init__(self, seed: int = 42) -> None:
         self.weights: list[float] = []
         self.bias: float = 0.0
         self.seed = seed
 
     def train(self, labeled_data: dict[tuple[float | int, ...], int], epochs: int = 30, learning_rate: float = 0.1) -> None:
-        input_dim = len(list(labeled_data.keys())[0])
+        input_dim = len(next(iter(labeled_data))) # Send the pointer to the first memory register.
         self.weights = [self._lcg() for _ in range(input_dim)]
         self.bias = self._lcg()
 

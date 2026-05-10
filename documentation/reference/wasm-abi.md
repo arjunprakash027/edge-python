@@ -38,7 +38,7 @@ pub extern "C" fn __edge_abi_version() -> u32;
 
 `__edge_alloc` lets the host stage `argv` arrays in the guest's linear memory before invoking each export.
 
-`__edge_abi_version` returns the wire-format version this module targets (currently `1`). The host MUST read this symbol once at instantiation and refuse modules whose version it does not understand. Without the handshake, a host that has evolved beyond v1 would load a v1 module and decode garbage silently.
+`__edge_abi_version` returns the wire-format version this module targets (currently `1`). The host MUST read this symbol once at instantiation and refuse modules whose version it does not understand. Without the handshake, a host that has evolved beyond v1 would load a v1 module and decode garbage silently. (At v1 every loader targets version 1 so the bundled `compiler.wasm` shim does not yet read the symbol; the check becomes load-bearing only when a v2 ships.)
 
 The reference `edge-pdk` crate emits both symbols automatically (`EDGE_ABI_VERSION` is a `pub const` in the same crate).
 
@@ -150,9 +150,7 @@ extern crate alloc;
 use alloc::string::String;
 use edge_pdk::*;
 
-#[global_allocator]
-static A: lol_alloc::LeakingPageAllocator = lol_alloc::LeakingPageAllocator;
-#[panic_handler] fn panic(_: &core::panic::PanicInfo) -> ! { core::arch::wasm32::unreachable() }
+edge_pdk::module!();   // expands to #[global_allocator] + #[panic_handler]
 
 #[plugin_fn]
 fn slugify(s: String) -> String {
@@ -189,7 +187,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 edge-pdk = { path = "../../edge-pdk" }   # or = "0.1" once published
-lol_alloc = "0.4"
 ```
 
 Build:
@@ -351,6 +348,7 @@ The reference browser shim is `demo/worker.js`. WASI hosts and Rust embedders mi
 The Edge Python project distributes only this specification. The reference Rust author layer is the **`edge-pdk`** crate (Plugin Development Kit), bundled in this repo at `edge-pdk/` and intended to be published independently. It provides:
 
 - `#[plugin_fn]` proc macro that turns a typed Rust function into a wire-conformant export.
+- `module!()` macro that expands to the `#[global_allocator]` and `#[panic_handler]` every plugin needs.
 - `FromValue` / `IntoValue` traits with primitive impls (`i64`, `f64`, `bool`, `String`, `&str`, `Option<T>`, `Handle`).
 - `Handle` / `Value` / `Error` types wrapping handles with `Drop`-driven release.
 - The required `__edge_alloc` and `__edge_abi_version` exports emitted automatically.
@@ -359,6 +357,8 @@ A typical author-side function with the macro:
 
 ```rust
 use edge_pdk::*;
+
+edge_pdk::module!();
 
 #[plugin_fn]
 fn slugify(s: String) -> String {

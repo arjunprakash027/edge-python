@@ -96,7 +96,7 @@ my_app/
 ```
 
 Concretely:
-- **Bare-name imports** (`from utils import x`) walk up from the importing file's directory looking for `packages.json`. The first one found decides. The walk caps at **32 hops** — exceeding it raises `packages.json walk-up exceeded 32 hops resolving '<name>'`.
+- **Bare-name imports** (`from utils import x`) walk up from the importing file's directory looking for `packages.json`. The first one found decides. The walk is capped (currently **32 hops**) — exceeding it raises `packages.json walk-up exceeded <cap> hops resolving '<name>'`.
 - **Hermetic by default**: if the nearest manifest doesn't declare the alias, compilation fails (`alias '<name>' not declared in '<manifest>'`). There is no silent fall-through to outer manifests — that prevents a deep transitive dep from accidentally borrowing aliases the parent declared.
 - **`extends` opts in to inheritance**: a sub-manifest with `"extends": ".."` (or any directory expression) re-runs the search from the extended directory if it doesn't declare the alias locally. Cycles in the extends chain are detected at compile time (`circular extends chain in packages.json`).
 - **Quoted relative paths** (`from "./helpers.py" import f`) resolve against the importing file's directory — a transitively-imported `lib/a.py` doing `from "./b.py" import g` correctly finds `lib/b.py`.

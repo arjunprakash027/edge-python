@@ -59,7 +59,7 @@ For arithmetic and comparison opcodes, the loop first checks `cache.get_fast(ip)
 
 `INT_MAX = 140_737_488_355_327`, `INT_MIN = -140_737_488_355_328`. The 47-bit cap is architectural: NaN-boxed inline ints turn arithmetic into one ALU op with no boxing, and bigints would either need a `HeapObj::Bignum` variant (heap round-trip on every overflow) or abandoning NaN-boxing entirely (much wider `Val`, slower hot path).
 
-`PartialEq` and `Hash` for `Val` funnel value-equal numerics through `f64` bits so `1 == 1.0` and `hash(1) == hash(1.0)` hold — dicts and sets see them as a single key.
+`PartialEq` and `Hash` for `Val` funnel value-equal numerics through `f64` bits so `1 == 1.0` and `hash(1) == hash(1.0)` hold — dicts and sets see them as a single key. The internal `FxBuildHasher` uses a fixed seed, so dict/set iteration order is reproducible across runs and process boundaries.
 
 The heap is a `Vec<HeapSlot>` arena with a free list (capped at 524,288 slots and sorted to prefer low indices). String and bytes values up to 128 bytes are interned in side hashes (`strings`, `bytes_intern`) so short literal compares short-circuit through identity. The hard cap on live heap objects comes from `Limits.heap` (default 10M; sandbox 100K). Integer arithmetic stays strictly within ±2⁴⁷; any overflow raises `OverflowError` instead of promoting to a heap variant. The collector is a single-colour mark-and-sweep that runs when `live >= gc_threshold` or `alloc_count >= max(live/4, 4096)`; cycles are reclaimed natively (there is no refcount).
 
