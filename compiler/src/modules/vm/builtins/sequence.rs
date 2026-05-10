@@ -5,6 +5,56 @@ use alloc::{vec, vec::Vec};
 use super::super::VM;
 use super::super::types::*;
 
+/* Lazy walker over any iterable Val. Used by `all`/`any`/`sum`/`min`/
+   `max` so a `range(10**6)` argument doesn't materialise 10 million Val
+   slots before the consumer touches the first one. The Vec variant
+   still copies once for list/set/dict (their items aren't streamable
+   without holding a mutable borrow on the heap), but Range and Bytes
+   produce items by index without pre-allocation, and short-circuiting
+   builtins exit on the first match without walking the rest. */
+pub(crate) enum IterCursor {
+    Range { cur: i64, end: i64, step: i64 },
+    Vec { items: Vec<Val>, idx: usize },
+    Bytes { bytes: Vec<u8>, idx: usize },
+    StrChars { chars: Vec<char>, idx: usize },
+}
+
+impl IterCursor {
+    /* Yield the next value, allocating into `heap` only when the source
+       requires it (currently just StrChars). Returns Err for an
+       allocation failure; Ok(None) for exhaustion. */
+    pub fn next(&mut self, heap: &mut HeapPool) -> Result<Option<Val>, VmErr> {
+        match self {
+            Self::Range { cur, end, step } => {
+                let (c, e, s) = (*cur, *end, *step);
+                let live = if s > 0 { c < e } else if s < 0 { c > e } else { false };
+                if !live { return Ok(None); }
+                *cur = c + s;
+                Ok(Some(Val::int(c)))
+            }
+            Self::Vec { items, idx } => {
+                if *idx >= items.len() { return Ok(None); }
+                let v = items[*idx];
+                *idx += 1;
+                Ok(Some(v))
+            }
+            Self::Bytes { bytes, idx } => {
+                if *idx >= bytes.len() { return Ok(None); }
+                let b = bytes[*idx];
+                *idx += 1;
+                Ok(Some(Val::int(b as i64)))
+            }
+            Self::StrChars { chars, idx } => {
+                if *idx >= chars.len() { return Ok(None); }
+                let mut s = alloc::string::String::new();
+                s.push(chars[*idx]);
+                *idx += 1;
+                Ok(Some(heap.alloc(HeapObj::Str(s))?))
+            }
+        }
+    }
+}
+
 impl<'a> VM<'a> {
 
     pub fn call_len(&mut self) -> Result<(), VmErr> {
@@ -127,6 +177,27 @@ impl<'a> VM<'a> {
             pairs.push(t);
         }
         self.alloc_and_push_list(pairs)
+    }
+
+    /* Build an IterCursor over any iterable Val. Used by short-circuit
+       builtins so `all(range(10**6))` walks at most until the first
+       falsy element instead of materialising 10M ints first. Returns
+       a TypeError for non-iterables, mirroring extract_iter. */
+    pub(in crate::modules::vm) fn iter_cursor(&self, o: Val) -> Result<IterCursor, VmErr> {
+        if !o.is_heap() {
+            return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable")));
+        }
+        Ok(match self.heap.get(o) {
+            HeapObj::Range(s, e, st) => IterCursor::Range { cur: *s, end: *e, step: *st },
+            HeapObj::Bytes(b) => IterCursor::Bytes { bytes: b.clone(), idx: 0 },  // Vec<u8> clone
+            HeapObj::Str(s) => IterCursor::StrChars { chars: s.chars().collect(), idx: 0 },
+            HeapObj::List(v) => IterCursor::Vec { items: v.borrow().clone(), idx: 0 },
+            HeapObj::Tuple(v) => IterCursor::Vec { items: v.clone(), idx: 0 },
+            HeapObj::Set(v) => IterCursor::Vec { items: v.borrow().iter().cloned().collect(), idx: 0 },
+            HeapObj::FrozenSet(v) => IterCursor::Vec { items: v.iter().cloned().collect(), idx: 0 },
+            HeapObj::Dict(d) => IterCursor::Vec { items: d.borrow().keys().collect(), idx: 0 },
+            _ => return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable"))),
+        })
     }
 
     /* Extract a Vec<Val> from any iterable: list/tuple/set/frozenset/dict
@@ -272,8 +343,8 @@ impl<'a> VM<'a> {
     pub fn call_all(&mut self, op: u16) -> Result<(), VmErr> {
         if op != 1 { return Err(cold_type("all() takes exactly 1 argument")); }
         let o = self.pop()?;
-        let items = self.extract_iter(o, true)?;
-        for v in items {
+        let mut cur = self.iter_cursor(o)?;
+        while let Some(v) = cur.next(&mut self.heap)? {
             if !self.truthy(v) {
                 self.push(Val::bool(false));
                 return Ok(());
@@ -286,8 +357,8 @@ impl<'a> VM<'a> {
     pub fn call_any(&mut self, op: u16) -> Result<(), VmErr> {
         if op != 1 { return Err(cold_type("any() takes exactly 1 argument")); }
         let o = self.pop()?;
-        let items = self.extract_iter(o, true)?;
-        for v in items {
+        let mut cur = self.iter_cursor(o)?;
+        while let Some(v) = cur.next(&mut self.heap)? {
             if self.truthy(v) {
                 self.push(Val::bool(true));
                 return Ok(());
