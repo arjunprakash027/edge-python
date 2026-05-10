@@ -187,16 +187,20 @@ impl<'a> VM<'a> {
                                 VmErr::Raised(s)   => s.clone(),
                             };
                             // Prefer the pending ExcInstance Val (built by
-                            // `raise X("msg")`) so `except X as e` binds the
-                            // actual instance — `e.args` then works. Fall
-                            // back to the Type from globals for bare-name
-                            // raises and to a fresh Str for ad-hoc messages.
+                            // `raise X("msg")` or `raise X`) so `except X
+                            // as e` binds the actual instance. For native
+                            // errors (`1/0`, type mismatches, ...) build a
+                            // fresh ExcInstance carrying the message as
+                            // args[0] — this matches CPython where
+                            // `except ZeroDivisionError as e: print(e.args)`
+                            // yields `('division by zero',)` even when the
+                            // exception was raised by the runtime, not by
+                            // user `raise` syntax.
                             let exc = if let Some(v) = self.pending.exc_val.take() {
                                 v
-                            } else if let Some(&type_val) = self.globals.get(&msg) {
-                                type_val
                             } else {
-                                self.heap.alloc(HeapObj::Str(msg))?
+                                let msg_val = self.heap.alloc(HeapObj::Str(e.message()))?;
+                                self.heap.alloc(HeapObj::ExcInstance(msg, alloc::vec![msg_val]))?
                             };
                             self.push(exc);
                             ip = frame.handler_ip;

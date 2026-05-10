@@ -164,7 +164,17 @@ impl<'a> VM<'a> {
                             self.pending.exc_val = Some(exc);
                             n
                         }
-                        HeapObj::Type(n) => n.clone(),
+                        HeapObj::Type(n) => {
+                            // Bare `raise X` (no args): construct an empty
+                            // ExcInstance so `except X as e: print(e.args)`
+                            // returns `()` matching CPython, instead of
+                            // binding the Type itself.
+                            let n = n.clone();
+                            let inst = self.heap.alloc(
+                                HeapObj::ExcInstance(n.clone(), Vec::new()))?;
+                            self.pending.exc_val = Some(inst);
+                            n
+                        }
                         _ => self.display(exc),
                     }
                 } else {

@@ -50,6 +50,24 @@ impl VmErr {
         }
     }
 
+    /* Just the message portion of `render()`, without the "Class:" prefix.
+       Used by the catch arm to populate `e.args` on native errors so
+       `except E as e: print(e.args)` matches CPython for `1/0` etc.,
+       not only for `raise X("msg")`. */
+    pub fn message(&self) -> alloc::string::String {
+        use alloc::string::String;
+        match self {
+            Self::Name(n) => crate::s!("name '", str n, "' is not defined"),
+            Self::Type(m) | Self::Value(m) | Self::Runtime(m) => String::from(*m),
+            Self::TypeMsg(m) | Self::Attribute(m) | Self::Raised(m) => m.clone(),
+            Self::ZeroDiv => String::from("division by zero"),
+            Self::Overflow => String::from("integer too large for 47-bit Val"),
+            Self::CallDepth => String::from("max depth"),
+            Self::Heap => String::from("heap limit"),
+            Self::Budget => String::from("budget exceeded"),
+        }
+    }
+
     /* Same message as render(), but anchored at a source byte offset so the
        parser's Diagnostic renderer adds the rustc-style line/caret preview.
        Falls back to plain render() when no position is known. */
