@@ -11,7 +11,7 @@ use alloc::{string::{String, ToString}, vec::Vec};
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
-    /* `{}`: dict/set literal or comprehension; always eat(Rbrace) to keep bracket_stack in sync. */
+    /* `{}`: dict/set literal or comprehension; always eat(Rbrace) to keep `bracket_stack` in sync. */
     pub(super) fn brace_literal(&mut self) {
         if matches!(self.peek(), Some(TokenType::Rbrace)) {
             self.advance();
@@ -65,7 +65,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* `[]`: list literal or list-comp; always eat(Rsqb) to keep bracket_stack in sync. */
+    /* `[]`: list literal or list-comp; always eat(Rsqb) to keep `bracket_stack` in sync. */
     pub(super) fn list_literal(&mut self) {
         if matches!(self.peek(), Some(TokenType::Rsqb)) {
             self.advance();
@@ -165,7 +165,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* f-string: parses literal+expr chunks until FstringEnd; fs_start/fs_end anchor unclosed-string errors. */
+    /* f-string: parses literal+expr chunks until FstringEnd; `fs_start/fs_end` anchor unclosed-string errors. */
     pub(super) fn fstring(&mut self, fs_start: usize, fs_end: usize) {
         let mut parts = 0u16;
         let mut got_end = false;
@@ -199,7 +199,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             }
                 Some(TokenType::Lbrace) => {
                     self.advance();
-                    // Capture span for f"{expr=}" debug prefix.
+                    // Capture span for `f"{expr=}"` debug prefix.
                     let expr_start_byte = self.tokens.peek().map(|t| t.start).unwrap_or(0);
                     let insn_start = self.chunk.instructions.len();
                     let saved_in_fstring = self.in_fstring_expr;
@@ -234,7 +234,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     if debug_prefix.is_some() && (flags & 0b110) == 0 && !matches!(self.peek(), Some(TokenType::Colon)) {
                         flags |= 1 << 1; // default !r when `=` has no explicit conv/spec
                     }
-                    // Drain expr bytecode, emit prefix const, re-emit expr so stack=[prefix, value].
+                    // Drain expr bytecode, emit prefix const, re-emit expr so `stack=[prefix, value]`.
                     if let Some(prefix) = debug_prefix.take() {
                         let drained: Vec<Instruction> = self.chunk.instructions
                             .drain(insn_start..)
@@ -302,7 +302,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             return leaves_value;
         }
 
-        // Native: emit CallExtern with operand=(extern_idx<<8)|argc, skipping LoadName heap alloc.
+        // Native: emit CallExtern with `operand=(extern_idx<<8)|argc`, skipping LoadName heap alloc.
         if let Some(&extern_idx) = self.chunk.extern_index.get(&name) {
             let (pos, _kw) = self.parse_args();
             let encoded = (extern_idx << 8) | (pos & 0xFF);
@@ -517,7 +517,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         (params, defaults)
     }
 
-    /* Drains annotation via advance_raw (keeps bracket_stack clean); breaks on Rarrow to avoid infinite drain. */
+    /* Drains annotation via `advance_raw` (keeps bracket_stack clean); breaks on Rarrow to avoid infinite drain. */
     pub(super) fn drain_annotation(&mut self) {
         if self.eat_if(TokenType::Colon) {
             let mut depth = 0u32;
@@ -563,7 +563,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             | OpCode::RaiseFrom
             | OpCode::Yield
         ));
-        // Pre-compute is_generator to avoid O(n) scan per exec_call.
+        // Pre-compute is_generator to avoid O(n) scan per `exec_call`.
         body.is_generator = body.instructions.iter().any(|i| matches!(
             i.opcode,
             OpCode::Yield

@@ -11,7 +11,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
     /* Statement dispatch; returns true if a value is left on the stack for caller to PopTop. */
     pub(super) fn stmt(&mut self) -> bool {
-        // Record ip->source offset before any emit so resolve() can map ip to source.
+        // Record ip->source offset before any emit so `resolve()` can map ip to source.
         let ip = self.chunk.instructions.len() as u32;
         let pos = self.tokens.peek().map(|t| t.start as u32).unwrap_or(self.last_end as u32);
         self.chunk.stmt_pos.push((ip, pos));
@@ -45,7 +45,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             Some(TokenType::Yield) => {
                 self.advance();
                 if self.eat_if(TokenType::From) {
-                    // yield from: GetIter+ForIter+Yield loop; LoadNone at end (return value not tracked).
+                    // `yield from`: GetIter+ForIter+Yield loop; LoadNone at end (return value not tracked).
                     self.expr();
                     self.chunk.emit(OpCode::GetIter, 0);
                     let loop_start = self.chunk.instructions.len() as u16;
@@ -151,7 +151,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 loop {
                     let name = self.advance_text();
                     if self.eat_if(TokenType::Lsqb) {
-                        // del x[k] or x[a:b]: BuildSlice so DelItem sees HeapObj::Slice.
+                        // del `x[k]` or `x[a:b]`: BuildSlice so DelItem sees HeapObj::Slice.
                         self.emit_load_ssa(name);
                         let is_slice = matches!(self.peek(), Some(TokenType::Colon));
                         if is_slice {
@@ -208,7 +208,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 if self.loop_breaks.is_empty() {
                     self.error("'break' outside loop");
                 } else {
-                    // For-loop: PopIter before break so iter_stack stays clean.
+                    // For-loop: PopIter before break so `iter_stack` stays clean.
                     if let Some(true) = self.loop_kinds.last() {
                         self.chunk.emit(OpCode::PopIter, 0);
                     }
@@ -327,8 +327,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             }
             if indented { continue; }
             if is_body {
-                let just_returned = self.chunk.instructions.last()
-                    .is_some_and(|i| i.opcode == OpCode::ReturnValue);
+                let just_returned = self.chunk.instructions.last().is_some_and(|i| i.opcode == OpCode::ReturnValue);
                 if just_returned || !matches!(self.peek(), Some(TokenType::Semi)) { break; }
             } else if !matches!(self.peek(), Some(TokenType::Semi)) { break; }
         }

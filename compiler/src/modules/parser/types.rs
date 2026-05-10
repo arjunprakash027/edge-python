@@ -26,11 +26,11 @@ pub enum OpCode {
     LoadExtern,
     /* Builds HeapObj::Module from stack: name + operand (attr_name, attr_value) pairs. */
     BuildModule,
-    /* Constant-time lookup of chunk.imports[operand] from vm.module_table. */
+    /* Constant-time lookup of chunk.imports[operand] from `vm.module_table`. */
     LoadModule,
 }
 
-// Python builtin name -> (specialised OpCode, leaves_value_on_stack).
+// Python builtin name -> (specialised OpCode, `leaves_value_on_stack`).
 pub(super) fn builtin(name: &str) -> Option<(OpCode, bool)> {
     match name {
         "len" => Some((OpCode::CallLen, true)),
@@ -89,7 +89,7 @@ pub struct Instruction {
     pub operand: u16,
 }
 
-/* Parse-time import entry. VM dedupes by spec at run() start, runs Code modules once; LoadModule is then O(1). Native skips execution; Module Val built from bindings. */
+/* Parse-time import entry. VM dedupes by spec at `run()` start, runs Code modules once; LoadModule is then O(1). Native skips execution; Module Val built from bindings. */
 #[derive(Clone)]
 pub struct ImportEntry {
     pub spec: alloc::string::String,
@@ -127,7 +127,7 @@ pub struct SSAChunk {
     pub source: alloc::sync::Arc<alloc::string::String>,
     /* Display path for tracebacks; empty string suppresses the file: prefix. */
     pub path: alloc::sync::Arc<alloc::string::String>,
-    /* Native bindings from `from <pkg> import`. CallExtern operand=(idx<<8)|argc; per-chunk. */
+    /* Native bindings from `from <pkg> import`. CallExtern `operand=(idx<<8)|argc`; per-chunk. */
     pub extern_table: Vec<ExternFn>,
     pub(super) extern_index: HashMap<String, u16>,
     /* Chunk's import list; LoadModule operands index here; each spec becomes one Module Val at init. */
@@ -141,7 +141,7 @@ impl SSAChunk {
         Some(self.stmt_pos[i].1)
     }
 
-    /* Finer than resolve(): returns call-site byte offset or None (caller falls back to resolve). */
+    /* Finer than `resolve()`: returns call-site byte offset or None (caller falls back to resolve). */
     pub fn resolve_call(&self, ip: u32) -> Option<u32> {
         let i = self.call_byte_pos.partition_point(|&(s, _)| s < ip);
         let (recorded_ip, byte) = *self.call_byte_pos.get(i)?;
@@ -157,7 +157,7 @@ impl SSAChunk {
         self.instructions.push(Instruction { opcode: op, operand });
     }
 
-    /* Records (ip, byte_pos) for the last emitted call so traceback caret lands on it. */
+    /* Records (ip, `byte_pos`) for the last emitted call so traceback caret lands on it. */
     pub(super) fn record_call_pos(&mut self, byte_pos: u32) {
         if self.instructions.is_empty() { return; }
         let ip = (self.instructions.len() - 1) as u32;
@@ -183,11 +183,11 @@ impl SSAChunk {
         i
     }
 
-    /* Builds prev_slots, coalesces SSA versions to canonical root, rewrites operands, builds phi_map. */
+    /* Builds `prev_slots`, coalesces SSA versions to canonical root, rewrites operands, builds `phi_map`. */
     pub fn finalize_prev_slots(&mut self) {
         let n = self.names.len();
 
-        // prev_slots[i]: slot of name i at version-1, if any.
+        // `prev_slots[i]`: slot of name i at version-1, if any.
         let mut ps: Vec<Option<u16>> = vec![None; n];
         for (i, name) in self.names.iter().enumerate() {
             if let Some(parsed) = SsaName::parse(name)
@@ -255,27 +255,19 @@ pub(crate) struct JoinNode {
     pub(super) then: Option<HashMap<String, u32>>,
 }
 
-/* Synthetic SSA temp prefixes for compiler-generated values that have
-   to carry across multi-step desugarings. The leading `#` is filtered
-   by `globals()` / `locals()` so they never leak to user code, and
-   centralising the strings here means a typo in one site (e.g.
-   `#mtch`) is a compile error instead of a silently misnamed slot. */
+/* Synthetic SSA temps for multi-step desugarings. Leading `#` hides them from `globals()`/`locals()`; centralised so a typo becomes a compile error, not a misnamed slot. */
 pub const SSA_TMP_CMP: &str = "#cmp";
 pub const SSA_TMP_MATCH: &str = "#match";
 pub const SSA_TMP_MATCH_ITEM: &str = "#match_item";
 
-/* Parsed view of a `<bare>_<digits>` SSA-suffixed name. Returned by
-   `SsaName::parse` and used everywhere callers need the bare prefix
-   and/or the numeric version, instead of re-doing the rfind('_') +
-   ascii-digit + parse dance inline. */
+/* Parsed view of a `<bare>_<digits>` SSA-suffixed name — avoids re-inlining the rfind('_') + ascii-digit + parse dance at every call site. */
 pub struct SsaName<'a> {
     pub bare: &'a str,
     pub version: u32,
 }
 
 impl<'a> SsaName<'a> {
-    /* Returns Some(parts) when `name` matches `<bare>_<digits>`; None
-       for synthetic temps (`#cmp`, `#match`) and any non-SSA name. */
+    // Some when `name` matches `<bare>_<digits>`; None for synthetic temps and non-SSA names.
     pub fn parse(name: &'a str) -> Option<Self> {
         let pos = name.rfind('_')?;
         if pos + 1 >= name.len() { return None; }
@@ -285,9 +277,7 @@ impl<'a> SsaName<'a> {
         Some(Self { bare: &name[..pos], version })
     }
 
-    /* Convenience for callers that want a (bare, version) pair for
-       every name, falling back to (name, 0) when no SSA suffix is
-       present. */
+    // (bare, version) for any name, defaulting to (name, 0) when no SSA suffix is present.
     pub fn parse_or_bare(name: &'a str) -> (&'a str, u32) {
         Self::parse(name)
             .map(|s| (s.bare, s.version))
@@ -488,7 +478,7 @@ fn unescape(s: &str) -> String {
             Some('x') => out.push(take_hex(&mut chars, 2)),
             Some('u') => out.push(take_hex(&mut chars, 4)),
             Some('U') => out.push(take_hex(&mut chars, 8)),
-            // Octal: up to 3 digits, greedy (CPython semantics).
+            // Octal: up to 3 digits.
             Some(c @ '0'..='7') => {
                 let mut digits = String::from(c);
                 while digits.len() < 3 && matches!(chars.peek(), Some('0'..='7')) {

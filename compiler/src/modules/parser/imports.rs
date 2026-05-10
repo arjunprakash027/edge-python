@@ -83,8 +83,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             if computed != hash {
                 return Err(s!(
                     "integrity check failed for '", str url,
-                    "'\n  expected sha256-", str &hex_encode(&hash),
-                    "\n  got      sha256-", str &hex_encode(&computed)));
+                    "'\n expected sha256-", str &hex_encode(&hash),
+                    "\n got sha256-", str &hex_encode(&computed)));
             }
         }
         let resolved = self.resolver.resolve(url)?;

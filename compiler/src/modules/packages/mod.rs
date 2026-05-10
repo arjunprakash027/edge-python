@@ -56,10 +56,7 @@ pub fn parse_integrity(spec: &str) -> Result<(&str, Option<[u8; 32]>), String> {
         return Ok((spec, None));
     };
     let Some(hex) = frag.strip_prefix("sha256-") else {
-        return Err(s!(
-            "unrecognized integrity fragment in '", str spec,
-            "'; expected '#sha256-<64 hex chars>'"));
-    };
+        return Err(s!("unrecognized integrity fragment in '", str spec, "'; expected '#sha256-<64 hex chars>'"));};
     if hex.len() != 64 {
         return Err(s!(
             "sha256 fragment must be 64 hex chars in '", str spec,
@@ -79,7 +76,7 @@ impl Resolver for NoopResolver {
     }
 }
 
-/* Boxes a concrete Resolver into Box<dyn Resolver>, removing boilerplate casts at call sites. */
+/* Boxes a concrete Resolver into `Box<dyn Resolver>`, removing boilerplate casts at call sites. */
 pub fn boxed<R: Resolver + 'static>(r: R) -> Box<dyn Resolver> {
     Box::new(r)
 }

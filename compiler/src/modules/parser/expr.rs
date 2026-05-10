@@ -45,7 +45,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.infix_bp(0);
     }
 
-    /* Pratt parser: unary prefix then infix loop via binding_power table. */
+    /* Pratt parser: unary prefix then infix loop via `binding_power` table. */
     pub(super) fn expr_bp(&mut self, min_bp: u8) {
         match self.peek() {
             Some(TokenType::Not) => {
@@ -181,7 +181,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.emit_const(Value::Str(s));
             }
             TokenType::Bytes => {
-                // Adjacent bytes literals concat like Python; mixing with str surfaces a diagnostic.
+                // Adjacent bytes literals concat; mixing with str surfaces a diagnostic.
                 let mut buf = parse_bytes_literal(self.lexeme(&t));
                 while matches!(self.peek(), Some(TokenType::Bytes)) {
                     let t = self.advance();
@@ -227,7 +227,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 }
             }
             TokenType::Lambda => self.parse_lambda(),
-            // Caret at consumed token; skip if advance() already reported the error.
+            // Caret at consumed token; skip if `advance()` already reported the error.
             _ => {
                 if self.errors.len() == errs_before {
                     self.error_at(t.start, t.end, "expected expression");
@@ -237,7 +237,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.postfix_tail();
     }
 
-    /* Name: assignment, walrus :=, call, or plain load. */
+    /* Name: assignment, walrus `:=`, call, or plain load. */
     pub(super) fn name(&mut self, t: Token) {
         let name = self.lexeme(&t).to_string();
         match self.peek() {
@@ -284,7 +284,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Postfix trailers: .attr, [i], [s:e], (args), chained. */
+    /* Postfix trailers: `.attr`, [i], [s:e], (args), chained. */
     pub(super) fn postfix_tail(&mut self) {
         loop {
             match self.peek() {
@@ -339,7 +339,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     let t = self.advance();
                     let (start, end) = (t.start, t.end);
                     let idx = self.chunk.push_name(&self.source[start..end]);
-                    // LoadAttr adjacent to Call lets fuse_method_calls collapse them.
+                    // LoadAttr adjacent to Call lets `fuse_method_calls` collapse them.
                     self.chunk.emit(OpCode::LoadAttr, idx);
                 }
                 Some(TokenType::Lpar) => {
@@ -363,8 +363,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             loop {
                 // Match parse_params prefix detection so *args/**kw names align with ParamKind.
                 let prefix = if self.eat_if(TokenType::DoubleStar) { "**" }
-                             else if self.eat_if(TokenType::Star)   { "*"  }
-                             else { "" };
+                    else if self.eat_if(TokenType::Star) { "*"  }
+                    else { "" };
                 let nm = self.advance_text();
                 params.push(if prefix.is_empty() { nm } else { s!(str prefix, str &nm) });
                 if prefix.is_empty() && self.eat_if(TokenType::Equal) {

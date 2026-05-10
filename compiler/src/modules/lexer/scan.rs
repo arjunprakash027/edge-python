@@ -321,7 +321,7 @@ impl<'a> Scanner<'a> {
                 self.pos = end;
                 self.scan_fstring_body(quote, triple, end);
                 self.pending.push((TokenType::Rbrace, self.line, start, end));
-                // pos already advanced by scan_fstring_body.
+                // `pos` already advanced by scan_fstring_body.
                 return;
             }
         } else {

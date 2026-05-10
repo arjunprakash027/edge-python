@@ -93,11 +93,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         for pos in end_jumps { self.patch(pos); }
     }
 
-    /* Emits bytecode for one pattern; appends case-fail jumps to fail_jumps; reloads subject from subj. */
+    /* Emits bytecode for one pattern; appends case-fail jumps to `fail_jumps`; reloads subject from subj. */
     pub(super) fn parse_pattern(&mut self, subj: u16, fail_jumps: &mut Vec<usize>) {
         // OR pattern: each alt gets a success-jump landing past all alts.
         let alt_start = self.chunk.instructions.len();
-        let _ = alt_start; // unused; alts link via fail_jumps.
+        let _ = alt_start; // unused; alts link via `fail_jumps`.
 
         let mut alts: Vec<Vec<usize>> = Vec::new();
         let mut succ_jumps: Vec<usize> = Vec::new();
@@ -119,7 +119,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 let target = here as u16;
                 self.chunk.instructions[j].operand = target;
             }
-            self.advance(); // consume |
+            self.advance(); // consume `|`
         }
 
         // Last alt's fails become the case-fail exits.
@@ -163,7 +163,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.advance(); // consume `[`
 
         // Two-pass: scan counts items/star; second pass emits bytecode.
-        let _ = Vec::<bool>::new(); // remove item_positions entirely, it's dead
+        let _ = Vec::<bool>::new(); // remove `item_positions` entirely, it's dead
 
         // Pass 1: buffer tokens to count items and locate the star.
         let mut buffered: Vec<crate::modules::lexer::Token> = Vec::new();
@@ -278,7 +278,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             // Dispatch: wildcard, capture, or literal. No nested sequences; use if/match instead.
             let toks = &saved[item_start..item_end];
             if toks.is_empty() || (toks.len() == 1 && toks[0].kind == TokenType::Underscore) {
-                // Wildcard: discard stored item_subj.
+                // Wildcard: discard stored `item_subj`.
             } else if toks.len() == 1 && toks[0].kind == TokenType::Name {
                 let name = self.source[toks[0].start..toks[0].end].to_string();
                 if name != "_" {

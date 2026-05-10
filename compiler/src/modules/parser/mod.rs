@@ -53,10 +53,10 @@ pub struct Parser<'src, I: Iterator<Item = Token>> {
     pub(super) join_stack: Vec<JoinNode>,
     pub(super) loop_starts: Vec<u16>,
     pub(super) last_line: usize,
-    /* Last token's end offset; anchors diagnostics when peek() already skipped a Newline. */
+    /* Last token's end offset; anchors diagnostics when `peek()` already skipped a Newline. */
     pub(super) last_end: usize,
     pub(super) loop_breaks: Vec<Vec<usize>>,
-    // true=for (PopIter on break), false=while; parallels loop_starts/loop_breaks.
+    // `true=for` (PopIter on break), false=while; parallels loop_starts/loop_breaks.
     pub(super) loop_kinds: Vec<bool>,
     pub(super) expr_depth: usize,
     pub(super) saw_newline: bool,
@@ -176,6 +176,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             .chain(b.keys())
             .filter(|name| a.get(*name).unwrap_or(&0) != b.get(*name).unwrap_or(&0))
             .collect();
+
         // Sort for deterministic Phi order; dedup chain() duplicates from shared vars.
         divergent.sort();
         divergent.dedup();
@@ -242,9 +243,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 } else if let Some(&(top_k, _, _, _)) = self.bracket_stack.last() {
                     self.errors.push(Diagnostic {
                         start: tok.start, end: tok.end,
-                        msg: s!(str close_str(tok.kind), " does not match ",
-                                str open_str(top_k), ", expected ",
-                                str match_close_str(top_k)),
+                        msg: s!(str close_str(tok.kind), " does not match ", str open_str(top_k), ", expected ", str match_close_str(top_k)),
                     });
                     self.bracket_stack.pop();
                 } else {
@@ -273,9 +272,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     /* Diagnostic at next token + panic-mode sync to next statement boundary. */
     pub(super) fn error(&mut self, msg: &str) {
         let n = self.source.len();
-        let (start, end) = self.tokens.peek()
-            .map(|t| (t.start, t.end))
-            .unwrap_or((n, n));
+        let (start, end) = self.tokens.peek().map(|t| (t.start, t.end)).unwrap_or((n, n));
         self.error_at(start, end, msg);
     }
 
@@ -460,12 +457,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             let n = self.source.len();
             self.errors.push(Diagnostic {
                 start: n, end: n,
-                msg: "program too large: exceeded maximum instruction limit".to_string()
+                msg: "program too large: exceeded maximum instruction limit".to_string(),
             });
         }
 
         if !self.errors.is_empty() {
-            // Clear bytecode state so finalize_prev_slots doesn't use stale phi sources.
+            // Clear bytecode state so `finalize_prev_slots` doesn't use stale phi sources.
             self.chunk.instructions.clear();
             self.chunk.constants.clear();
             self.chunk.names.clear();
