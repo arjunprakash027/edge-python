@@ -255,6 +255,15 @@ pub(crate) struct JoinNode {
     pub(super) then: Option<HashMap<String, u32>>,
 }
 
+/* Synthetic SSA temp prefixes for compiler-generated values that have
+   to carry across multi-step desugarings. The leading `#` is filtered
+   by `globals()` / `locals()` so they never leak to user code, and
+   centralising the strings here means a typo in one site (e.g.
+   `#mtch`) is a compile error instead of a silently misnamed slot. */
+pub const SSA_TMP_CMP: &str = "#cmp";
+pub const SSA_TMP_MATCH: &str = "#match";
+pub const SSA_TMP_MATCH_ITEM: &str = "#match_item";
+
 /* Parsed view of a `<bare>_<digits>` SSA-suffixed name. Returned by
    `SsaName::parse` and used everywhere callers need the bare prefix
    and/or the numeric version, instead of re-doing the rfind('_') +
