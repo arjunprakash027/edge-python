@@ -53,17 +53,18 @@ class SimplePerceptron:
         self.seed = (self.seed * 16807) % 2147483647
         return (self.seed / 2147483647) - 0.5 # Normalized between -0.5 and 0.5 to avoid data scaling problems.
 
-or_gate: dict[tuple[int, int], int] = {
-    (0, 0): 0,
-    (0, 1): 1,
-    (1, 0): 1,
-    (1, 1): 1
-}
+if __name__ == "__main__":
+    or_gate: dict[tuple[int, int], int] = {
+        (0, 0): 0,
+        (0, 1): 1,
+        (1, 0): 1,
+        (1, 1): 1
+    }
 
-model = SimplePerceptron()
-model.train(or_gate)
+    model = SimplePerceptron()
+    model.train(or_gate)
 
-inputs: tuple[int, int] = (0, 0)
-pred: int = model.inference(inputs)
+    inputs: tuple[int, int] = (0, 0)
+    pred: int = model.inference(inputs)
 
-print(report(inputs, pred))
+    print(report(inputs, pred))
