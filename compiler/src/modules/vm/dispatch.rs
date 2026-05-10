@@ -300,7 +300,7 @@ impl<'a> VM<'a> {
         let method_id = handlers::methods::lookup_method(ty, name.as_str())
             .ok_or_else(|| VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")))?;
 
-        self.exec_bound_method(obj, method_id, positional, kw_flat)
+        self.exec_bound_method(obj, method_id, &positional, &kw_flat)
     }
 
     /* Hot dispatch. Takes the fused instruction slice and constants slice as

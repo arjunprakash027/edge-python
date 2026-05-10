@@ -122,7 +122,7 @@ macro_rules! define_methods {
 
         pub(crate) fn dispatch_method(
             vm: &mut VM, id: BuiltinMethodId,
-            recv: Val, pos: Vec<Val>, kw: Vec<Val>,
+            recv: Val, pos: &[Val], kw: &[Val],
         ) -> Result<(), VmErr> {
             if !kw.is_empty() {
                 return Err(cold_type("builtin method takes no keyword arguments"));

@@ -57,7 +57,7 @@ impl<'a> VM<'a> {
     pub(crate) fn exec_bound_method(
         &mut self, recv: Val,
         id: super::methods::BuiltinMethodId,
-        pos: Vec<Val>, kw: Vec<Val>,
+        pos: &[Val], kw: &[Val],
     ) -> Result<(), VmErr> {
         super::methods::dispatch_method(self, id, recv, pos, kw)
     }
@@ -239,13 +239,13 @@ impl<'a> VM<'a> {
         if let HeapObj::BoundMethod(recv, id) = self.heap.get(callee) {
             let recv = *recv;
             let id = *id;
-            self.exec_bound_method(recv, id, positional.to_vec(), kw_flat.to_vec())?;
+            self.exec_bound_method(recv, id, positional, kw_flat)?;
             return Ok(true);
         }
 
         if let HeapObj::NativeFn(id) = self.heap.get(callee) {
             let id = *id;
-            self.dispatch_native(id, positional.to_vec(), kw_flat.to_vec(), chunk, slots)?;
+            self.dispatch_native(id, positional, kw_flat, chunk, slots)?;
             return Ok(true);
         }
 
@@ -636,16 +636,17 @@ impl<'a> VM<'a> {
 
     pub(crate) fn dispatch_native(
         &mut self, id: super::super::types::NativeFnId,
-        positional: Vec<Val>, kw: Vec<Val>,
+        positional: &[Val], kw: &[Val],
         chunk: &SSAChunk, slots: &mut [Val],
     ) -> Result<(), VmErr> {
         use super::super::types::NativeFnId::*;
 
         // sorted() is the one builtin that accepts keyword arguments
-        // (`sorted(xs, key=fn)`). Pull the key out of kw_flat (Vec of
+        // (`sorted(xs, key=fn)`). Pull the key out of kw_flat (slice of
         // alternating name/value) before the generic "no kwargs" check.
         let mut sort_key: Option<Val> = None;
-        let kw = if id == Sorted {
+        let leftover_storage: Vec<Val>;
+        let kw_remaining: &[Val] = if id == Sorted {
             let mut leftover: Vec<Val> = Vec::new();
             for chunk_pair in kw.chunks(2) {
                 let (name_v, val_v) = (chunk_pair[0], chunk_pair[1]);
@@ -658,10 +659,11 @@ impl<'a> VM<'a> {
                     leftover.push(val_v);
                 }
             }
-            leftover
+            leftover_storage = leftover;
+            &leftover_storage
         } else { kw };
 
-        if !kw.is_empty() {
+        if !kw_remaining.is_empty() {
             return Err(cold_type("native function takes no keyword arguments"));
         }
         let argc = positional.len() as u16;
@@ -694,7 +696,7 @@ impl<'a> VM<'a> {
                 return Err(cold_type("wrong number of arguments to builtin"));
         }
 
-        for v in positional { self.push(v); }
+        for &v in positional { self.push(v); }
 
         match id {
             // Variadic
