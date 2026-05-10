@@ -40,7 +40,7 @@ pub extern "C" fn __edge_abi_version() -> u32;
 
 `__edge_abi_version` returns the wire-format version this module targets (currently `1`). The host MUST read this symbol once at instantiation and refuse modules whose version it does not understand. Without the handshake, a host that has evolved beyond v1 would load a v1 module and decode garbage silently. (At v1 every loader targets version 1 so the bundled `compiler.wasm` shim does not yet read the symbol; the check becomes load-bearing only when a v2 ships.)
 
-The reference `edge-pdk` crate emits both symbols automatically (`EDGE_ABI_VERSION` is a `pub const` in the same crate).
+The reference `edge-pdk` crate emits both symbols automatically. `EDGE_ABI_VERSION` itself lives in the shared `edge-abi` crate (no_std, zero deps) so the host and every PDK read the same value; `edge-pdk` re-exports it.
 
 ## Host imports (6 functions)
 
