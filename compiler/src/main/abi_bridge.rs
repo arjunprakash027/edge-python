@@ -1,12 +1,13 @@
-use crate::abi::{classify_decode, classify_encode, DecodeBits, EncodeRequest, Op, PrimitiveBytes, TAG_INVALID};
+use crate::abi::{classify_decode, classify_encode, DecodeBits, EncodeRequest, ErrorKind, Op, PrimitiveBytes, TAG_INVALID};
 use crate::modules::vm::types::{HeapObj, Val, VmErr};
 use crate::modules::vm::handlers::methods::{lookup_method, dispatch_method};
-use alloc::{rc::Rc, string::{String, ToString}, vec, vec::Vec};
+use crate::modules::packages::NativeBinding;
+use alloc::{rc::Rc, string::{String, ToString}, sync::Arc, vec, vec::Vec};
 use core::cell::RefCell;
 use crate::s;
 
-use super::{error_stash, get_val, handles, put_val, with_recv, with_vm};
-use super::errors::stash_error;
+use super::{error_stash, get_val, handles, host_call_native, put_val, with_recv, with_vm};
+use super::errors::{error_from_kind, stash_error};
 
 // Universal dispatch. Returns 0 + handle in `*out_handle`, or 1 + stashed error.
 #[unsafe(no_mangle)]
@@ -311,4 +312,46 @@ pub unsafe extern "C" fn host_edge_take_error(out_kind: *mut u32, dst: *mut u8, 
         }
     }
     bytes.len() as i32
+}
+
+/* Builds a NativeBinding whose closure translates a VM CallExtern call
+   into the universal wire ABI: stage args as handles, invoke
+   `host_call_native(id, ...)`, drain status into Result<Val, VmErr>, and
+   release every handle (including out_handle) before returning.
+
+   Lives here — not in resolver.rs — because the body is pure ABI
+   marshalling. The resolver only needs to ask "give me a binding for
+   (name, id)" and forget about handle plumbing. `pure: false` because
+   any guest call may have side effects through the host. */
+pub(super) fn make_native_binding(name: String, id: u32) -> NativeBinding {
+    let closure = move |_: &mut crate::modules::vm::types::HeapPool, args: &[Val]| -> Result<Val, VmErr> {
+        /* 1. Register args as handles the guest will see. */
+        let argv: Vec<u32> = args.iter().map(|v| put_val(*v)).collect();
+        let mut out_handle: u32 = 0;
+
+        /* 2. Call guest export through the host shim. */
+        let status = unsafe {
+            host_call_native(
+                id,
+                argv.as_ptr(), argv.len() as u32,
+                &mut out_handle as *mut u32,
+            )
+        };
+
+        /* 3. Translate status/out_handle into Result<Val>. Read result
+           BEFORE releasing — argv release frees the slots `result` may
+           reference if the guest returned one of its inputs. */
+        if status != 0 {
+            for h in &argv { handles().release(*h); }
+            let (kind, msg) = error_stash().take()
+                .unwrap_or((ErrorKind::Runtime as u32, String::from("native call failed")));
+            return Err(error_from_kind(kind, msg));
+        }
+        let result = get_val(out_handle)
+            .ok_or(VmErr::Runtime("native returned invalid handle"))?;
+        for h in &argv { handles().release(*h); }
+        handles().release(out_handle);
+        Ok(result)
+    };
+    NativeBinding { name, func: Arc::new(closure), pure: false }
 }
