@@ -9,3 +9,4 @@ description = "Sealed wire-format constants shared by the Edge Python compiler a
 [lib]
 crate-type = ["rlib"]
 doctest = false
+test = false
