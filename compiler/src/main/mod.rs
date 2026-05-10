@@ -149,6 +149,20 @@ pub(super) fn with_vm<R>(f: impl FnOnce(&mut VM<'static>) -> R) -> Option<R> {
     Some(f(unsafe { &mut *ptr.as_ptr() }))
 }
 
+/* Construct a `&[u8]` from an FFI `(ptr, len)` pair, returning an empty
+   slice when `ptr` is null or `len == 0`. Removes the unconditional
+   `from_raw_parts` calls that would UB on null inputs. */
+pub(super) unsafe fn safe_bytes<'a>(ptr: *const u8, len: u32) -> &'a [u8] {
+    if ptr.is_null() || len == 0 { return &[]; }
+    unsafe { core::slice::from_raw_parts(ptr, len as usize) }
+}
+
+/* Same for `&[u32]` argv arrays. */
+pub(super) unsafe fn safe_handles<'a>(ptr: *const u32, len: u32) -> &'a [u32] {
+    if ptr.is_null() || len == 0 { return &[]; }
+    unsafe { core::slice::from_raw_parts(ptr, len as usize) }
+}
+
 pub(super) unsafe fn write_out(s: &str) -> usize {
     let b = s.as_bytes();
     let n = b.len().min(SZ);

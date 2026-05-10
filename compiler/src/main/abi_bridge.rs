@@ -6,19 +6,16 @@ use alloc::{rc::Rc, string::{String, ToString}, sync::Arc, vec, vec::Vec};
 use core::cell::RefCell;
 use crate::s;
 
-use super::{get_val, host_call_native, put_val, with_recv, with_runtime, with_vm};
+use super::{get_val, host_call_native, put_val, safe_bytes, safe_handles, with_recv, with_runtime, with_vm};
 use super::errors::{error_from_kind, stash_error};
 
 // Universal dispatch. Returns 0 + handle in `*out_handle`, or 1 + stashed error.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn host_edge_op(op: u32, recv: u32, name_ptr: *const u8, name_len: u32,argv_ptr: *const u32, argc: u32, out_handle: *mut u32) -> i32 {
-    let name = if name_len == 0 { String::new() } else {
-        core::str::from_utf8(unsafe {core::slice::from_raw_parts(name_ptr, name_len as usize)}).unwrap_or("").to_string()
-    };
-    let args: Vec<Val> = (0..argc).filter_map(|i| {
-        let h = unsafe { *argv_ptr.add(i as usize) };
-        get_val(h)
-    }).collect();
+    let name = core::str::from_utf8(unsafe { safe_bytes(name_ptr, name_len) })
+        .unwrap_or("").to_string();
+    let args: Vec<Val> = unsafe { safe_handles(argv_ptr, argc) }
+        .iter().filter_map(|&h| get_val(h)).collect();
 
     let result: Result<Val, VmErr> = match Op::from_u32(op) {
         Some(Op::Call) => dispatch_call(recv, &name, args),
@@ -218,11 +215,7 @@ fn dispatch_iter_next(recv_h: u32) -> Result<Val, VmErr> {
 // Bootstrap encoder: classifies (tag, bytes) into a Val handle; returns 0 on Invalid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn host_edge_encode(tag: u32, ptr: *const u8, len: u32) -> u32 {
-    let bytes = if len == 0 || ptr.is_null() {
-        &[][..]
-    } else {
-        unsafe { core::slice::from_raw_parts(ptr, len as usize) }
-    };
+    let bytes = unsafe { safe_bytes(ptr, len) };
     match classify_encode(tag, bytes) {
         EncodeRequest::Direct(bits) => put_val(Val(bits)),
         EncodeRequest::AllocStr(s) => {
@@ -287,11 +280,8 @@ pub unsafe extern "C" fn host_edge_release(h: u32) {
 // Stash a guest error for the host. Overwrites any pending error.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn host_edge_throw(kind: u32, msg_ptr: *const u8, msg_len: u32) {
-    let msg = if msg_len == 0 { String::new() } else {
-        core::str::from_utf8(unsafe {
-            core::slice::from_raw_parts(msg_ptr, msg_len as usize)
-        }).unwrap_or("").to_string()
-    };
+    let msg = core::str::from_utf8(unsafe { safe_bytes(msg_ptr, msg_len) })
+        .unwrap_or("").to_string();
     with_runtime(|rt| rt.error_stash.set(kind, msg));
 }
 

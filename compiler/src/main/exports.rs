@@ -4,7 +4,7 @@ use crate::modules::vm::{VM, Limits};
 use alloc::{boxed::Box, string::{String, ToString}};
 use crate::s;
 
-use super::{ModuleEntry, SZ, VmGuard, stream_print, with_runtime, write_out};
+use super::{ModuleEntry, SZ, VmGuard, safe_bytes, stream_print, with_runtime, write_out};
 use super::resolver::WasmHostResolver;
 
 #[unsafe(no_mangle)]
@@ -40,12 +40,10 @@ pub unsafe extern "C" fn register_code_module(
     spec_ptr: *const u8, spec_len: u32,
     src_ptr: *const u8, src_len: u32,
 ) {
-    let spec = core::str::from_utf8(unsafe {
-        core::slice::from_raw_parts(spec_ptr, spec_len as usize)
-    }).unwrap_or("").to_string();
-    let src = core::str::from_utf8(unsafe {
-        core::slice::from_raw_parts(src_ptr, src_len as usize)
-    }).unwrap_or("").to_string();
+    let spec = core::str::from_utf8(unsafe { safe_bytes(spec_ptr, spec_len) })
+        .unwrap_or("").to_string();
+    let src = core::str::from_utf8(unsafe { safe_bytes(src_ptr, src_len) })
+        .unwrap_or("").to_string();
     with_runtime(|rt| rt.registry.push((spec, ModuleEntry::Code(src))));
 }
 
@@ -56,12 +54,10 @@ pub unsafe extern "C" fn register_native_module(
     base_id: u32,
 ) {
     use alloc::vec::Vec;
-    let spec = core::str::from_utf8(unsafe {
-        core::slice::from_raw_parts(spec_ptr, spec_len as usize)
-    }).unwrap_or("").to_string();
-    let names_str = core::str::from_utf8(unsafe {
-        core::slice::from_raw_parts(names_ptr, names_len as usize)
-    }).unwrap_or("");
+    let spec = core::str::from_utf8(unsafe { safe_bytes(spec_ptr, spec_len) })
+        .unwrap_or("").to_string();
+    let names_str = core::str::from_utf8(unsafe { safe_bytes(names_ptr, names_len) })
+        .unwrap_or("");
     let funcs: Vec<(String, u32)> = names_str.split('\n')
         .filter(|n| !n.is_empty())
         .enumerate()
