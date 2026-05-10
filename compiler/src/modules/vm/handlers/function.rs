@@ -290,6 +290,11 @@ impl<'a> VM<'a> {
             let methods = methods.clone();
             let instance = self.heap.alloc(HeapObj::Instance(callee, Rc::new(RefCell::new(DictMap::new()))))?;
             if let Some((_, init_fn)) = methods.iter().find(|(n, _)| n == "__init__") {
+                // Fail-fast on deep init chains before pushing anything onto
+                // the stack: the recursive exec_call below would catch this
+                // too, but only after parse_call_args has already popped
+                // the args we just pushed.
+                if self.depth >= self.max_calls { return Err(cold_depth()); }
                 let init_fn = *init_fn;
                 self.push(init_fn);
                 let mut args = vec![instance];
@@ -306,6 +311,9 @@ impl<'a> VM<'a> {
 
         // Bound user method: prepend `self` to the arg list and re-dispatch.
         if let HeapObj::BoundUserMethod(recv, func) = self.heap.get(callee) {
+            // Same rationale as the Class branch: stop deep recursion
+            // chains before mutating the stack.
+            if self.depth >= self.max_calls { return Err(cold_depth()); }
             let (recv, func) = (*recv, *func);
             self.push(func);
             self.push(recv);
