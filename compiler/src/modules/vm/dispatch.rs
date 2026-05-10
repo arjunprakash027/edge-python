@@ -162,8 +162,8 @@ impl<'a> VM<'a> {
                             self.stack.truncate(frame.stack_depth);
                             self.iter_stack.truncate(frame.iter_depth);
                             self.with_stack.truncate(frame.with_depth);
-                            self.pending_pos_delta = 0;
-                            self.pending_kw_delta  = 0;
+                            self.pending.pos_delta = 0;
+                            self.pending.kw_delta  = 0;
                             self.error_byte_pos    = None;
                             // Caught exception: discard the partial traceback
                             // so a later unhandled error doesn't carry stale
@@ -187,16 +187,20 @@ impl<'a> VM<'a> {
                                 VmErr::Raised(s)   => s.clone(),
                             };
                             // Prefer the pending ExcInstance Val (built by
-                            // `raise X("msg")`) so `except X as e` binds the
-                            // actual instance — `e.args` then works. Fall
-                            // back to the Type from globals for bare-name
-                            // raises and to a fresh Str for ad-hoc messages.
-                            let exc = if let Some(v) = self.pending_exc_val.take() {
+                            // `raise X("msg")` or `raise X`) so `except X
+                            // as e` binds the actual instance. For native
+                            // errors (`1/0`, type mismatches, ...) build a
+                            // fresh ExcInstance carrying the message as
+                            // args[0] — this matches CPython where
+                            // `except ZeroDivisionError as e: print(e.args)`
+                            // yields `('division by zero',)` even when the
+                            // exception was raised by the runtime, not by
+                            // user `raise` syntax.
+                            let exc = if let Some(v) = self.pending.exc_val.take() {
                                 v
-                            } else if let Some(&type_val) = self.globals.get(&msg) {
-                                type_val
                             } else {
-                                self.heap.alloc(HeapObj::Str(msg))?
+                                let msg_val = self.heap.alloc(HeapObj::Str(e.message()))?;
+                                self.heap.alloc(HeapObj::ExcInstance(msg, alloc::vec![msg_val]))?
                             };
                             self.push(exc);
                             ip = frame.handler_ip;
@@ -236,71 +240,53 @@ impl<'a> VM<'a> {
         let positional = stack_items;
 
         let obj = self.pop()?;
-        let ty = self.type_name(obj);
         let name = chunk.names.get(attr_idx as usize)
-            .ok_or(VmErr::Runtime("CallMethod: bad name index"))?;
+            .ok_or(VmErr::Runtime("CallMethod: bad name index"))?
+            .clone();
 
-        // Module attribute call: look up the attr on the module and call it
-        // directly. No `self` is prepended (modules aren't classes).
-        if obj.is_heap()
-            && let HeapObj::Module(mod_name, attrs) = self.heap.get(obj) {
-                let bare = ssa_strip(name);
-                if let Some((_, attr)) = attrs.iter().find(|(n, _)| n == bare) {
-                    let callee = *attr;
-                    self.push(callee);
-                    for a in &positional { self.push(*a); }
-                    for a in &kw_flat   { self.push(*a); }
-                    let argc = positional.len() as u16;
-                    let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
-                    return self.exec_call(encoded, chunk, slots);
-                }
-                let mod_name = mod_name.clone();
-                return Err(VmErr::Attribute(s!(
-                    "module '", str &mod_name, "' has no attribute '", str bare, "'")));
+        match self.resolve_attr(obj, &name)? {
+            handlers::methods::AttrLookup::ModuleAttr(callee)
+            | handlers::methods::AttrLookup::ClassMember(callee) => {
+                // Direct call on the resolved value, no `self` prepended.
+                self.push(callee);
+                for a in &positional { self.push(*a); }
+                for a in &kw_flat   { self.push(*a); }
+                let argc = positional.len() as u16;
+                let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
+                self.exec_call(encoded, chunk, slots)
             }
-
-        // Class.method(args): direct method call on the class object,
-        // without prepending self. Mirrors the LoadAttr Class arm.
-        if obj.is_heap()
-            && let HeapObj::Class(_, members) = self.heap.get(obj) {
-                let bare = ssa_strip(name);
-                if let Some((_, mv)) = members.iter().find(|(n, _)| n == bare) {
-                    let mv = *mv;
-                    self.push(mv);
-                    for a in &positional { self.push(*a); }
-                    for a in &kw_flat   { self.push(*a); }
-                    let argc = positional.len() as u16;
-                    let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
-                    return self.exec_call(encoded, chunk, slots);
-                }
-                let cls_name = match self.heap.get(obj) {
-                    HeapObj::Class(n, _) => n.clone(),
-                    _ => String::new(),
-                };
-                return Err(VmErr::Attribute(s!(
-                    "type object '", str &cls_name, "' has no attribute '", str bare, "'")));
+            handlers::methods::AttrLookup::InstanceMethod { recv, func } => {
+                // Prepend `self`. Pre-existing behaviour: kwargs aren't
+                // forwarded — see the encoded num_kw below mirrors the
+                // original code path so any call site that ever passed
+                // kwargs through this branch keeps the same observable
+                // shape.
+                self.push(func);
+                self.push(recv);
+                for a in &positional { self.push(*a); }
+                let argc = (positional.len() + 1) as u16;
+                let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
+                self.exec_call(encoded, chunk, slots)
             }
-
-        // User-defined method on Instance: call with self prepended.
-        if obj.is_heap()
-            && let HeapObj::Instance(cls_val, _) = self.heap.get(obj) {
-                let cls_val = *cls_val;
-                if cls_val.is_heap()
-                    && let HeapObj::Class(_, methods) = self.heap.get(cls_val)
-                    && let Some((_, mv)) = methods.iter().find(|(n, _)| n == name.as_str()) {
-                        let mv = *mv;
-                        self.push(mv);
-                        self.push(obj);
-                        for a in &positional { self.push(*a); }
-                        let argc = (positional.len() + 1) as u16;
-                        let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
-                        return self.exec_call(encoded, chunk, slots);
-                    }
+            handlers::methods::AttrLookup::BuiltinMethod(id) => {
+                self.exec_bound_method(obj, id, &positional, &kw_flat)
             }
-        let method_id = handlers::methods::lookup_method(ty, name.as_str())
-            .ok_or_else(|| VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")))?;
-
-        self.exec_bound_method(obj, method_id, positional, kw_flat)
+            handlers::methods::AttrLookup::InstanceField(_) => {
+                // `inst.field()` where `field` isn't a class method falls
+                // through to "no such method" — pre-existing semantics
+                // had no Instance-field-as-callable path here.
+                let ty = self.type_name(obj);
+                Err(VmErr::Attribute(s!(
+                    "'", str ty, "' object has no attribute '", str &name, "'")))
+            }
+            handlers::methods::AttrLookup::ExcArgs(_) => {
+                // `e.args()` was an AttributeError under the previous
+                // implementation; preserve that.
+                let ty = self.type_name(obj);
+                Err(VmErr::Attribute(s!(
+                    "'", str ty, "' object has no attribute '", str &name, "'")))
+            }
+        }
     }
 
     /* Hot dispatch. Takes the fused instruction slice and constants slice as
@@ -454,7 +440,7 @@ impl<'a> VM<'a> {
                 // Snapshot the byte_pos of this call site so exec_call can
                 // record it on the new CallFrame. Prefer call_byte_pos
                 // (instr-level) and fall back to the enclosing statement.
-                self.pending_call_byte_pos = chunk.resolve_call(rip as u32)
+                self.pending.call_byte_pos = chunk.resolve_call(rip as u32)
                     .or_else(|| chunk.resolve(rip as u32));
                 self.handle_function(ins.opcode, op, chunk, slots)?;
             }
@@ -650,14 +636,14 @@ impl<'a> VM<'a> {
                         let items = self.iter_to_vec_for_spread(val)?;
                         let n = items.len() as i32;
                         for v in items { self.push(v); }
-                        self.pending_pos_delta += n - 1;
+                        self.pending.pos_delta += n - 1;
                     }
                     2 => {
                         let pairs = self.mapping_to_kw_pairs(val)?;
                         let n = pairs.len() as i32;
                         for (k, v) in pairs { self.push(k); self.push(v); }
-                        self.pending_pos_delta -= 1;
-                        self.pending_kw_delta  += n;
+                        self.pending.pos_delta -= 1;
+                        self.pending.kw_delta  += n;
                     }
                     _ => return Err(cold_runtime("UnpackArgs: bad operand")),
                 }

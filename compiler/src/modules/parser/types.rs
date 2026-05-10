@@ -190,13 +190,13 @@ impl SSAChunk {
         // prev_slots[i]: slot of name i at version-1, if any.
         let mut ps: Vec<Option<u16>> = vec![None; n];
         for (i, name) in self.names.iter().enumerate() {
-            if let Some(pos) = name.rfind('_')
-                && let Ok(ver) = name[pos+1..].parse::<u32>()
-                && ver > 0 {
-                    let prev = s!(str &name[..pos], "_", int ver - 1);
-                    if let Some(&j) = self.name_index.get(&prev) {
-                        ps[i] = Some(j);
-                    }
+            if let Some(parsed) = SsaName::parse(name)
+                && parsed.version > 0
+            {
+                let prev = s!(str parsed.bare, "_", int parsed.version as i64 - 1);
+                if let Some(&j) = self.name_index.get(&prev) {
+                    ps[i] = Some(j);
+                }
             }
         }
 
@@ -255,16 +255,49 @@ pub(crate) struct JoinNode {
     pub(super) then: Option<HashMap<String, u32>>,
 }
 
+/* Synthetic SSA temp prefixes for compiler-generated values that have
+   to carry across multi-step desugarings. The leading `#` is filtered
+   by `globals()` / `locals()` so they never leak to user code, and
+   centralising the strings here means a typo in one site (e.g.
+   `#mtch`) is a compile error instead of a silently misnamed slot. */
+pub const SSA_TMP_CMP: &str = "#cmp";
+pub const SSA_TMP_MATCH: &str = "#match";
+pub const SSA_TMP_MATCH_ITEM: &str = "#match_item";
+
+/* Parsed view of a `<bare>_<digits>` SSA-suffixed name. Returned by
+   `SsaName::parse` and used everywhere callers need the bare prefix
+   and/or the numeric version, instead of re-doing the rfind('_') +
+   ascii-digit + parse dance inline. */
+pub struct SsaName<'a> {
+    pub bare: &'a str,
+    pub version: u32,
+}
+
+impl<'a> SsaName<'a> {
+    /* Returns Some(parts) when `name` matches `<bare>_<digits>`; None
+       for synthetic temps (`#cmp`, `#match`) and any non-SSA name. */
+    pub fn parse(name: &'a str) -> Option<Self> {
+        let pos = name.rfind('_')?;
+        if pos + 1 >= name.len() { return None; }
+        let suffix = &name[pos + 1..];
+        if !suffix.bytes().all(|b| b.is_ascii_digit()) { return None; }
+        let version = suffix.parse().ok()?;
+        Some(Self { bare: &name[..pos], version })
+    }
+
+    /* Convenience for callers that want a (bare, version) pair for
+       every name, falling back to (name, 0) when no SSA suffix is
+       present. */
+    pub fn parse_or_bare(name: &'a str) -> (&'a str, u32) {
+        Self::parse(name)
+            .map(|s| (s.bare, s.version))
+            .unwrap_or((name, 0))
+    }
+}
+
 /* Strips `_<digits>` SSA suffix for user-facing diagnostics; returns input unchanged if absent. */
 pub fn ssa_strip(name: &str) -> &str {
-    if let Some(pos) = name.rfind('_')
-        && pos + 1 < name.len()
-        && name[pos + 1..].bytes().all(|b| b.is_ascii_digit())
-    {
-        &name[..pos]
-    } else {
-        name
-    }
+    SsaName::parse(name).map(|s| s.bare).unwrap_or(name)
 }
 
 /* Diagnostic with byte offsets; line/col computed at render time (UTF-8 safe). */

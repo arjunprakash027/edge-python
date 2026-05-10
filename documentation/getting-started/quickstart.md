@@ -13,7 +13,7 @@ Edge Python is distributed as a WebAssembly module. The fastest way to try it is
 
 To run Edge Python in your own host (browser app, server, edge runtime), you need two artifacts:
 
-1. The compiler module: `compiler_lib.wasm` (~130 KB, contains lexer, parser, and stack VM).
+1. The compiler module: `compiler_lib.wasm` (~153 KB, contains lexer, parser, and stack VM).
 2. A loader for your platform — the canonical browser loader is [`demo/edge.js`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/demo/edge.js); WASI hosts wire it up via their runtime's import API.
 
 Build the WASM yourself:

@@ -119,38 +119,22 @@ unsafe extern "C" {
 
 /* ---------- ABI version handshake ------------------------------------ */
 
-/* Wire-format version this PDK targets. Bump on any breaking change to
-   op codes, value tags, codec layout, or error kinds. The host loader
-   reads `__edge_abi_version` and refuses to instantiate a plugin whose
-   version it does not understand — without this, an evolved host would
-   load an old plugin and decode garbage silently. */
-pub const EDGE_ABI_VERSION: u32 = 1;
+/* Wire-format version this PDK targets. The constant lives in `edge-abi`
+   so the host and every plugin compile against the same value. Plugins
+   export `__edge_abi_version` returning `EDGE_ABI_VERSION`; the host
+   loader reads that symbol and refuses to instantiate a plugin whose
+   version it does not understand — without the handshake an evolved
+   host would load an old plugin and decode garbage silently. */
+pub use edge_abi::EDGE_ABI_VERSION;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn __edge_abi_version() -> u32 { EDGE_ABI_VERSION }
 
-/* ---------- Op codes & tags (must match bridge.rs spec) -------------- */
+/* ---------- Op codes & tags ------------------------------------------ */
 
-#[allow(non_camel_case_types)]
-pub mod op {
-    pub const CALL: u32      = 0;
-    pub const GET_ATTR: u32  = 1;
-    pub const SET_ATTR: u32  = 2;
-    pub const GET_ITEM: u32  = 3;
-    pub const SET_ITEM: u32  = 4;
-    pub const LEN: u32       = 5;
-    pub const ITER: u32      = 6;
-    pub const ITER_NEXT: u32 = 7;
-}
-
-#[allow(non_camel_case_types)]
-pub mod tag {
-    pub const NONE: u32  = 0;
-    pub const BOOL: u32  = 1;
-    pub const INT: u32   = 2;
-    pub const FLOAT: u32 = 3;
-    pub const BYTES: u32 = 4;
-}
+/* Re-exported from `edge-abi` so the host and the PDK observe the same
+   constants. `use edge_pdk::op;` keeps working for plugin authors. */
+pub use edge_abi::{op, tag};
 
 /* ---------- Internals — macro contract surface, not user API --------- */
 

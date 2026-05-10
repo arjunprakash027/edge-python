@@ -1,6 +1,6 @@
 # Edge Python
 
-A compact, single-pass SSA-style bytecode compiler and stack VM for a functional subset of Python 3.13 syntax. Hand-written lexer, Pratt-precedence parser that emits bytecode directly (no AST), and a threaded-code interpreter with per-instruction inline caching, super-instruction fusion, and pure-function template memoization. Built for deterministic execution in sandboxed and embedded environments (≈ 130 KB WASM release).
+A compact, single-pass SSA-style bytecode compiler and stack VM for a functional subset of Python 3.13 syntax. Hand-written lexer, Pratt-precedence parser that emits bytecode directly (no AST), and a threaded-code interpreter with per-instruction inline caching, super-instruction fusion, and pure-function template memoization. Built for deterministic execution in sandboxed and embedded environments (≈ 153 KB WASM release).
 
 * **Demo:** [demo.edgepython.com](https://demo.edgepython.com/)
 * **Docs:** [edgepython.com](https://edgepython.com/)

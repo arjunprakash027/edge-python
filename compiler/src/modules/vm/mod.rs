@@ -31,6 +31,42 @@ pub(crate) struct ExceptionFrame {
 #[derive(Clone, Copy)]
 pub(crate) enum ParamKind { Normal, Star, DoubleStar, KwOnly }
 
+/* Side-channel state set by one opcode and consumed by another inside
+   the same dispatch frame. Grouped here so the implicit "set here,
+   read there" coupling is auditable in one place — adding a new
+   pending flag goes through this struct, not the VM root. The
+   long-term direction is to convert each into an explicit return on
+   the producing opcode (see AGENT-1 #19 in the audit), but that's a
+   broader change touching every opcode handler. */
+pub(crate) struct Pending {
+    /* Star/double-star spread bumps the next Call's argument count. */
+    pub pos_delta: i32,
+    pub kw_delta: i32,
+    /* Source byte offset of the Call instruction currently dispatching;
+       picked up by the traceback renderer. */
+    pub call_byte_pos: Option<u32>,
+    /* Wakeup deadline set by `sleep()` and consumed by the scheduler. */
+    pub sleep_until_ns: Option<u64>,
+    /* `raise X("msg")` stashes the lifted ExcInstance here so a
+       matching `except X as e` handler can bind the actual instance. */
+    pub exc_val: Option<Val>,
+}
+
+impl Pending {
+    const fn new() -> Self {
+        Self {
+            pos_delta: 0,
+            kw_delta: 0,
+            call_byte_pos: None,
+            sleep_until_ns: None,
+            exc_val: None,
+        }
+    }
+}
+
+/* `bare_name -> [(version, slot), ...]` for one chunk's `chunk.names`. */
+pub(crate) type NameVersionIndex = crate::util::fx::FxHashMap<String, Vec<(i64, usize)>>;
+
 pub struct VM<'a> {
     pub(crate) stack: Vec<Val>,
     pub(crate) heap: HeapPool,
@@ -72,7 +108,18 @@ pub struct VM<'a> {
     pub(crate) body_free_loads: Vec<Vec<(String, usize)>>,
     pub(crate) is_async: Vec<bool>,
     pub(crate) default_slots: Vec<Vec<(usize, Val)>>,
+    /* Pre-resolved body slot for each function's own name (`<name>_0`),
+       so the call path can bind the self-reference with a single
+       Option<usize> lookup instead of allocating a versioned key per
+       call. None for anonymous lambdas or names not present in the body. */
+    pub(crate) self_ref_slot: Vec<Option<usize>>,
     pub(crate) opcode_caches: HashMap<*const SSAChunk, OpcodeCache>,
+    /* Per-chunk index for the call-site bare-name fallback. Keyed by
+       chunk pointer, value is `bare_name -> Vec<(version, slot)>` of
+       every SSA name in `chunk.names` carrying a `_<digits>` suffix.
+       Replaces the linear scan that re-parsed every name on every
+       free-load lookup. Populated by `build_function_table`. */
+    pub(crate) chunk_name_versions: HashMap<*const SSAChunk, NameVersionIndex>,
     /* Const pool slice ptrs for caches currently owned by a live exec()
        frame (removed from `opcode_caches` for the duration of the call). */
     pub(crate) active_const_pools: Vec<*const [Val]>,
@@ -80,8 +127,7 @@ pub struct VM<'a> {
        the budget decrement on every backward jump. */
     pub(crate) sandbox_off: bool,
     pub(crate) with_stack: Vec<Val>,
-    pub(crate) pending_pos_delta: i32,
-    pub(crate) pending_kw_delta: i32,
+    pub(crate) pending: Pending,
     pub(crate) yielded: bool,
     pub(crate) resume_ip: usize,
     pub output: Vec<String>,
@@ -92,14 +138,6 @@ pub struct VM<'a> {
     /* Source byte offset of the deepest frame that raised a propagating
        error in the most recent run(). */
     pub(crate) error_byte_pos: Option<u32>,
-    /* Byte offset of the Call instruction currently being dispatched. */
-    pub(crate) pending_call_byte_pos: Option<u32>,
-    /* When `sleep(s)` yields, it stores the wakeup time here so the
-       scheduler can move the handle to Sleeping(until_ns). */
-    pub(crate) pending_sleep_until_ns: Option<u64>,
-    /* When a `raise X("msg")` lifts an `ExcInstance`, we stash the Val here
-       so the matching `except X as e` handler can bind the actual instance. */
-    pub(crate) pending_exc_val: Option<Val>,
     /* spec -> Module Val map populated by `init_modules` before user
        bytecode runs. Both `OpCode::LoadModule` and the `import_module()`
        builtin look up here. */
@@ -150,8 +188,7 @@ impl<'a> VM<'a> {
             depth: 0,
             max_calls: limits.calls,
             with_stack: Vec::new(),
-            pending_pos_delta: 0,
-            pending_kw_delta: 0,
+            pending: Pending::new(),
             yielded: false,
             resume_ip: 0,
             strict_input: false,
@@ -162,9 +199,6 @@ impl<'a> VM<'a> {
             observed_impure: Vec::new(),
             exception_stack: Vec::new(),
             error_byte_pos: None,
-            pending_call_byte_pos: None,
-            pending_sleep_until_ns: None,
-            pending_exc_val: None,
             module_table: HashMap::default(),
             fn_module: Vec::new(),
             function_names: Vec::new(),
@@ -185,7 +219,9 @@ impl<'a> VM<'a> {
             body_free_loads: Vec::new(),
             is_async: Vec::new(),
             default_slots: Vec::new(),
+            self_ref_slot: Vec::new(),
             opcode_caches: HashMap::default(),
+            chunk_name_versions: HashMap::default(),
             active_const_pools: Vec::new(),
             sandbox_off,
         };
@@ -221,7 +257,7 @@ impl<'a> VM<'a> {
                 // we explicitly require the suffix-bearing form here, not
                 // ssa_strip's "fall through to bare on missing suffix" shape.
                 let canon = body.names.iter().enumerate()
-                    .find(|(_, n)| n.rfind('_').map(|p| &n[..p]) == Some(base.as_str()))
+                    .find(|(_, n)| crate::modules::parser::SsaName::parse(n).map(|s| s.bare) == Some(base.as_str()))
                     .map(|(i, _)| body.alias_groups.get(i).and_then(|g| g.first().copied()).unwrap_or(i as u16) as usize)?;
                 Some((canon, canon))
             }).collect()
@@ -268,10 +304,18 @@ impl<'a> VM<'a> {
                 if canon != slot { return None; }
                 if param_bm.get(slot).copied().unwrap_or(false) { return None; }
                 if written.contains(&slot) { return None; }
-                let p = name.rfind('_')?;
-                name[p+1..].parse::<u32>().ok()?;
-                Some((name[..p].to_string(), slot))
+                let parsed = crate::modules::parser::SsaName::parse(name)?;
+                Some((parsed.bare.to_string(), slot))
             }).collect()
+        }).collect();
+
+        // Self-reference slot table: looked up once instead of allocating a
+        // `<base>_0` String per call inside `bind_self_reference`.
+        vm.self_ref_slot = (0..vm.functions.len()).map(|fi| {
+            let bare = vm.function_names.get(fi)?;
+            if bare.is_empty() { return None; }
+            let key = s!(str bare, "_0");
+            vm.body_maps[fi].get(key.as_str()).copied()
         }).collect();
 
         // Default-slot table: (slot, placeholder) entries the call path overwrites.

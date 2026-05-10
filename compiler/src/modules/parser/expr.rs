@@ -101,8 +101,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 && let Some(next_tok) = self.peek()
                 && matches!(next_tok, TokenType::Less | TokenType::Greater | TokenType::LessEqual | TokenType::GreaterEqual | TokenType::EqEqual | TokenType::NotEqual)
             {
-                let ver = self.increment_version("#cmp");
-                let tmp = self.push_ssa_name("#cmp", ver);
+                let ver = self.increment_version(super::SSA_TMP_CMP);
+                let tmp = self.push_ssa_name(super::SSA_TMP_CMP, ver);
                 self.chunk.emit(OpCode::StoreName, tmp);
                 self.chunk.emit(OpCode::LoadName, tmp);
                 self.chunk.emit(op, 0);

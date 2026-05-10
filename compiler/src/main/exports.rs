@@ -4,17 +4,17 @@ use crate::modules::vm::{VM, Limits};
 use alloc::{boxed::Box, string::{String, ToString}};
 use crate::s;
 
-use super::{INP, INP_LEN, ModuleEntry, OUT, SRC, SZ, error_stash, handles, registry, manifests, write_out, stream_print};
+use super::{ModuleEntry, SZ, VmGuard, safe_bytes, stream_print, with_runtime, write_out};
 use super::resolver::WasmHostResolver;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn src_ptr() -> *mut u8 {
-    core::ptr::addr_of_mut!(SRC) as *mut u8
+    with_runtime(|rt| rt.src.as_mut_ptr())
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn out_ptr() -> *const u8 {
-    core::ptr::addr_of!(OUT) as *const u8
+    with_runtime(|rt| rt.out.as_ptr())
 }
 
 #[unsafe(no_mangle)]
@@ -40,13 +40,11 @@ pub unsafe extern "C" fn register_code_module(
     spec_ptr: *const u8, spec_len: u32,
     src_ptr: *const u8, src_len: u32,
 ) {
-    let spec = core::str::from_utf8(unsafe {
-        core::slice::from_raw_parts(spec_ptr, spec_len as usize)
-    }).unwrap_or("").to_string();
-    let src = core::str::from_utf8(unsafe {
-        core::slice::from_raw_parts(src_ptr, src_len as usize)
-    }).unwrap_or("").to_string();
-    unsafe { registry().push((spec, ModuleEntry::Code(src))); }
+    let spec = core::str::from_utf8(unsafe { safe_bytes(spec_ptr, spec_len) })
+        .unwrap_or("").to_string();
+    let src = core::str::from_utf8(unsafe { safe_bytes(src_ptr, src_len) })
+        .unwrap_or("").to_string();
+    with_runtime(|rt| rt.registry.push((spec, ModuleEntry::Code(src))));
 }
 
 #[unsafe(no_mangle)]
@@ -55,65 +53,63 @@ pub unsafe extern "C" fn register_native_module(
     names_ptr: *const u8, names_len: u32,
     base_id: u32,
 ) {
-    use alloc::{string::ToString, vec::Vec};
-    let spec = core::str::from_utf8(unsafe {
-        core::slice::from_raw_parts(spec_ptr, spec_len as usize)
-    }).unwrap_or("").to_string();
-    let names_str = core::str::from_utf8(unsafe {
-        core::slice::from_raw_parts(names_ptr, names_len as usize)
-    }).unwrap_or("");
+    use alloc::vec::Vec;
+    let spec = core::str::from_utf8(unsafe { safe_bytes(spec_ptr, spec_len) })
+        .unwrap_or("").to_string();
+    let names_str = core::str::from_utf8(unsafe { safe_bytes(names_ptr, names_len) })
+        .unwrap_or("");
     let funcs: Vec<(String, u32)> = names_str.split('\n')
         .filter(|n| !n.is_empty())
         .enumerate()
         .map(|(i, name)| (name.to_string(), base_id + i as u32))
         .collect();
-    unsafe { registry().push((spec, ModuleEntry::Native(funcs))); }
+    with_runtime(|rt| rt.registry.push((spec, ModuleEntry::Native(funcs))));
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn reset_modules() {
-    unsafe {
-        registry().clear();
-        manifests().clear();
-    }
-    handles().clear();
-    error_stash().clear();
+    with_runtime(|rt| {
+        rt.registry.clear();
+        rt.manifests.clear();
+        rt.handles.clear();
+        rt.error_stash.clear();
+    });
 }
 
-/* Reads up to SZ bytes from the host-owned SRC buffer and validates UTF-8.
-   `len` is capped so the slice never extends past the buffer; callers decide
-   how to surface a UTF-8 failure (silent vs. user-facing error). */
-unsafe fn read_src(len: usize) -> Result<&'static str, core::str::Utf8Error> {
-    let len = len.min(SZ);
-    let bytes = unsafe {
-        core::slice::from_raw_parts(core::ptr::addr_of!(SRC) as *const u8, len)
-    };
-    core::str::from_utf8(bytes)
+/* Reads up to SZ bytes from the host-owned SRC buffer, validates UTF-8,
+   and returns an owned String so the caller can drop the runtime borrow
+   before downstream parsing. `len` is capped at SZ so the slice never
+   extends past the buffer. */
+fn read_src(len: usize) -> Result<String, core::str::Utf8Error> {
+    with_runtime(|rt| {
+        let len = len.min(SZ);
+        core::str::from_utf8(&rt.src[..len]).map(|s| s.to_string())
+    })
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn extract_imports(len: usize) -> usize {
-    let src = match unsafe { read_src(len) } {
+    let src = match read_src(len) {
         Ok(s) => s,
         Err(_) => return unsafe { write_out("") },
     };
-    let specs = crate::modules::packages::scan_string_imports(src);
+    let specs = crate::modules::packages::scan_string_imports(&src);
     let joined = specs.join("\n");
     unsafe { write_out(&joined) }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn run(len: usize) -> usize {
-    let src = match unsafe { read_src(len) } {
+    let src = match read_src(len) {
         Ok(s) => s,
         Err(e) => return unsafe {
             write_out(&s!("input rejected: invalid utf-8 at byte ", int e.valid_up_to()))
         },
     };
 
-    let (tokens, lex_errs) = lex(src);
+    let (tokens, lex_errs) = lex(&src);
     let resolver = Box::new(WasmHostResolver { dir: String::new() });
-    let mut p = Parser::with_resolver(src, tokens.into_iter(), resolver);
+    let mut p = Parser::with_resolver(&src, tokens.into_iter(), resolver);
     for e in lex_errs {
         p.errors.push(Diagnostic { start: e.start, end: e.end, msg: e.msg.into() });
     }
@@ -123,7 +119,7 @@ pub unsafe extern "C" fn run(len: usize) -> usize {
         let mut s = String::new();
         for (i, e) in errs.iter().enumerate() {
             if i > 0 { s.push('\n'); }
-            s.push_str(&e.render(src, None));
+            s.push_str(&e.render(&src, None));
         }
         s
     } else {
@@ -131,28 +127,28 @@ pub unsafe extern "C" fn run(len: usize) -> usize {
         let mut vm = VM::with_limits(&chunk, Limits::sandbox());
         vm.print_hook = Some(stream_print);
         vm.strict_input = true;
-        let inp_len = unsafe { INP_LEN };
-        if inp_len > 0 {
-            /* Host-supplied buffer; validate UTF-8 to keep the FFI boundary safe.
-               Invalid bytes degrade to an empty input rather than UB. */
-            let bytes = unsafe {
-                core::slice::from_raw_parts(core::ptr::addr_of!(INP) as *const u8, inp_len)
-            };
-            let inp = core::str::from_utf8(bytes).unwrap_or("");
-            vm.input_buffer = inp.split('\n').map(alloc::string::String::from).collect();
-            unsafe { INP_LEN = 0; }
+        // Drain any host-supplied input bytes; UTF-8 invalid bytes degrade
+        // to an empty input rather than UB.
+        let inp_text = with_runtime(|rt| {
+            if rt.inp_len == 0 { return String::new(); }
+            let bytes = &rt.inp[..rt.inp_len];
+            let inp = core::str::from_utf8(bytes).unwrap_or("").to_string();
+            rt.inp_len = 0;
+            inp
+        });
+        if !inp_text.is_empty() {
+            vm.input_buffer = inp_text.split('\n').map(alloc::string::String::from).collect();
         }
 
-        // Publish VM for re-entrant host_edge_op; cleared on scope exit.
-        let vm_ptr: *mut VM<'static> = (&mut vm as *mut VM<'_>).cast();
-        unsafe { super::CURRENT_VM = vm_ptr; }
+        // Publish VM for re-entrant host_edge_op via RAII guard so a panic
+        // or early return cannot leave a stale pointer in the runtime.
+        let _guard = VmGuard::new(&mut vm);
         let result = vm.run();
-        unsafe { super::CURRENT_VM = core::ptr::null_mut(); }
 
         match result {
             Ok(_) => String::new(),
             Err(e) => e.render_traceback(
-                src, vm.error_pos(), None,
+                &src, vm.error_pos(), None,
                 vm.call_stack_frames(), vm.function_names_ref(),
             ),
         }

@@ -57,8 +57,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.advance();
         self.expr();
 
-        let ver = self.increment_version("#match");
-        let subj = self.chunk.push_name(&s!("#match", int ver));
+        let ver = self.increment_version(super::SSA_TMP_MATCH);
+        let subj = self.chunk.push_name(&s!(str super::SSA_TMP_MATCH, int ver));
         self.chunk.emit(OpCode::StoreName, subj);
 
         self.eat(TokenType::Colon);
@@ -219,8 +219,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let total = saved.len();
 
         // Fresh slot to use as the per-item sub-subject.
-        let item_ver = self.increment_version("#match_item");
-        let item_subj = self.chunk.push_name(&s!("#match_item", int item_ver));
+        let item_ver = self.increment_version(super::SSA_TMP_MATCH_ITEM);
+        let item_subj = self.chunk.push_name(&s!(str super::SSA_TMP_MATCH_ITEM, int item_ver));
 
         // Walk items; split on top-level commas.
         let mut item_idx: i64 = 0;

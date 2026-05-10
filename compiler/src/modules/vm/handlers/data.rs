@@ -156,15 +156,25 @@ impl<'a> VM<'a> {
                 // can bind the actual instance. For Type, msg is the bare
                 // class name (no instance to bind). For anything else, fall
                 // through to display().
-                self.pending_exc_val = None;
+                self.pending.exc_val = None;
                 let msg = if exc.is_heap() {
                     match self.heap.get(exc) {
                         HeapObj::ExcInstance(n, _) => {
                             let n = n.clone();
-                            self.pending_exc_val = Some(exc);
+                            self.pending.exc_val = Some(exc);
                             n
                         }
-                        HeapObj::Type(n) => n.clone(),
+                        HeapObj::Type(n) => {
+                            // Bare `raise X` (no args): construct an empty
+                            // ExcInstance so `except X as e: print(e.args)`
+                            // returns `()` matching CPython, instead of
+                            // binding the Type itself.
+                            let n = n.clone();
+                            let inst = self.heap.alloc(
+                                HeapObj::ExcInstance(n.clone(), Vec::new()))?;
+                            self.pending.exc_val = Some(inst);
+                            n
+                        }
                         _ => self.display(exc),
                     }
                 } else {

@@ -3,8 +3,9 @@ use crate::util::fx::FxHashSet;
 use alloc::{boxed::Box, string::{String, ToString}, vec::Vec};
 use crate::s;
 
-use super::{ModuleEntry, host_fetch_bytes, manifests, registry};
+use super::{ModuleEntry, host_fetch_bytes, with_runtime};
 use super::abi_bridge::make_native_binding;
+use super::exports::wasm_free;
 
 /* Hard cap on packages.json `extends` chain length. Prevents an attacker-
    crafted manifest from looping the resolver indefinitely; 32 is well above
@@ -36,7 +37,17 @@ impl Resolver for WasmHostResolver {
         if ptr.is_null() {
             return Err(s!("no bytes cached by host for '", str spec, "'"));
         }
-        Ok(unsafe { Vec::from_raw_parts(ptr, len as usize, len as usize) })
+        // The host MUST allocate the returned buffer via `wasm_alloc` (it's
+        // documented as such in wasm-abi.md and implemented that way in the
+        // canonical JS shim). Copy out into a guest-owned Vec so subsequent
+        // ownership lives entirely on this side, then release the host
+        // buffer through the symmetric `wasm_free` — a `Vec::from_raw_parts`
+        // here would silently deallocate Box-laid memory through Vec's
+        // layout assumptions and trigger UB if the layouts ever drift.
+        let len = len as usize;
+        let bytes: Vec<u8> = unsafe { core::slice::from_raw_parts(ptr, len) }.to_vec();
+        unsafe { wasm_free(ptr, len as u32) };
+        Ok(bytes)
     }
 
     fn child(&self, spec: &str) -> Box<dyn Resolver> {
@@ -92,9 +103,12 @@ impl WasmHostResolver {
 
     #[allow(clippy::type_complexity)]
     fn lookup_in_manifest(&mut self, m_spec: &str, name: &str) -> Result<Option<(Option<String>, Option<String>)>, String> {
-        let cache = unsafe { manifests() };
-        if let Some((_, m)) = cache.iter().find(|(s, _)| s == m_spec) {
-            return Ok(Some((m.imports.get(name).cloned(), m.extends.clone())));
+        if let Some(hit) = with_runtime(|rt| {
+            rt.manifests.iter()
+                .find(|(s, _)| s == m_spec)
+                .map(|(_, m)| (m.imports.get(name).cloned(), m.extends.clone()))
+        }) {
+            return Ok(Some(hit));
         }
         // Walk-up fetch — manifests aren't pinned by URL fragment, so no hash.
         let bytes = match self.fetch_bytes(m_spec, None) {
@@ -104,16 +118,23 @@ impl WasmHostResolver {
         let parsed = parse_manifest(&bytes).map_err(|e| s!("packages.json at '", str m_spec, "': ", str &e))?;
         let target = parsed.imports.get(name).cloned();
         let ext = parsed.extends.clone();
-        cache.push((m_spec.to_string(), parsed));
+        with_runtime(|rt| rt.manifests.push((m_spec.to_string(), parsed)));
         Ok(Some((target, ext)))
     }
 
     fn resolve_canonical(&self, spec: &str) -> Result<Resolved, String> {
-        let reg = unsafe { registry() };
-        let entry = reg.iter().find(|(s, _)| s == spec).ok_or_else(|| s!("module '", str spec, "' not registered (host did not pre-fetch / register before run())"))?;
-        match &entry.1 {
+        let entry = with_runtime(|rt| {
+            rt.registry.iter().find(|(s, _)| s == spec).map(|(s, e)| {
+                let cloned = match e {
+                    ModuleEntry::Code(src) => ModuleEntry::Code(src.clone()),
+                    ModuleEntry::Native(funcs) => ModuleEntry::Native(funcs.clone()),
+                };
+                (s.clone(), cloned)
+            })
+        }).ok_or_else(|| s!("module '", str spec, "' not registered (host did not pre-fetch / register before run())"))?;
+        match entry.1 {
             ModuleEntry::Code(src) => Ok(Resolved::Code {
-                src: src.clone(),
+                src,
                 canonical: spec.to_string(),
             }),
             ModuleEntry::Native(funcs) => {

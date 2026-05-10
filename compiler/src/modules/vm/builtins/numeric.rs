@@ -134,9 +134,11 @@ impl<'a> VM<'a> {
         let args = self.pop_n(op as usize)?;
         if args.is_empty() { return Err(cold_type("sum() requires at least 1 argument")); }
         let start = if args.len() > 1 { args[1] } else { Val::int(0) };
-        let items = self.extract_iter(args[0], false)?;
+        let mut cur = self.iter_cursor(args[0])?;
         let mut acc = start;
-        for item in items { acc = self.add_vals(acc, item)?; }
+        while let Some(item) = cur.next(&mut self.heap)? {
+            acc = self.add_vals(acc, item)?;
+        }
         self.push(acc); Ok(())
     }
 
