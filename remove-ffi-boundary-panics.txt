@@ -1,0 +1,47 @@
+Branch: remove-ffi-boundary-panics
+Tech debt: D26 (companion to stash-panic-before-trap) — expect/unwrap calls in abi_bridge.rs let panics cross the WASM FFI boundary as opaque traps.
+
+================================================================================
+Commit 1: replace expect/unwrap on FFI dispatch paths with propagated VmErr
+================================================================================
+File: compiler/src/main/abi_bridge.rs
+
+What was wrong:
+  Three sites violated the "panics never cross FFI" rule:
+
+  - host_edge_take_error (line 305):
+      let (_, msg) = stash.take().expect("peek returned Some");
+    Single-threaded WASM makes this unreachable today, but the
+    `expect` is a foot-gun: any future scheduler change that lets
+    another path `take()` between the peek and the take above would
+    panic and trap the module without a message.
+
+  - dispatch_call (line 50): `Ok(vm.stack.pop().unwrap())`
+  - dispatch_get_item (line 127): `Ok(vm.stack.pop().unwrap())`
+    Both protected by an `if vm.stack.len() != stack_before + 1`
+    invariant, but the `unwrap` is a second invariant — if the check
+    above is ever weakened (e.g. someone bumps the +1 to +N), the
+    unwrap goes from "redundant" to "panic" silently.
+
+Fix:
+  - host_edge_take_error: replaced `expect` with a `let-else`
+    pattern that returns -1 (no pending error) on the unreachable
+    branch. Documented in a /* ... */ comment why the prior `.expect`
+    was a latent FFI hazard.
+  - dispatch_call / dispatch_get_item: replaced `.unwrap()` with
+    `.ok_or(VmErr::Runtime("...stack drained mid-dispatch"))`.
+    Behaviour for the happy path is byte-identical; the previously-
+    unreachable branch now propagates a typed error instead of
+    panicking the host process.
+
+  Combined with stash-panic-before-trap (already merged, captures
+  panics that DO occur), the FFI boundary now never traps with a
+  bare unreachable except from genuinely unrecoverable Rust panics
+  outside our reach (e.g. allocator OOM during the format).
+
+Documentation:
+  No .md docs reference the old expect/unwrap behaviour. wasm-abi.md
+  describes the public ABI contract, which is unchanged: the same
+  status codes carry the same meanings.
+
+Build & tests: cargo build -p edge-python -> ok; cargo test -> 6/6 passed.

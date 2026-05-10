@@ -48,7 +48,10 @@ fn dispatch_call(recv_h: u32, name: &str, args: Vec<Val>) -> Result<Val, VmErr> 
         if vm.stack.len() != stack_before + 1 {
             return Err(VmErr::Runtime("edge_op call: method left no result"));
         }
-        Ok(vm.stack.pop().unwrap())
+        /* The length check above guarantees a value is present; ok_or
+           keeps the FFI boundary panic-free if a future change drops
+           the invariant. */
+        vm.stack.pop().ok_or(VmErr::Runtime("edge_op call: stack drained mid-dispatch"))
     })
 }
 
@@ -125,7 +128,7 @@ fn dispatch_get_item(recv_h: u32, args: &[Val]) -> Result<Val, VmErr> {
         if vm.stack.len() != stack_before + 1 {
             return Err(VmErr::Runtime("edge_op get_item: get_item left no result"));
         }
-        Ok(vm.stack.pop().unwrap())
+        vm.stack.pop().ok_or(VmErr::Runtime("edge_op get_item: stack drained mid-dispatch"))
     })
 }
 
@@ -302,8 +305,12 @@ pub unsafe extern "C" fn host_edge_take_error(out_kind: *mut u32, dst: *mut u8, 
         None => return -1,
     };
     if len > dst_max as usize { return -(len as i32); }
-    // Buffer fits — drain and copy.
-    let (_, msg) = stash.take().expect("peek returned Some");
+    // Buffer fits — drain and copy. Treat a None on take() as "race lost the
+    // peek/take window" and surface it as no-pending-error rather than panic
+    // across the FFI boundary (the .expect() previously here violated
+    // "panics never cross FFI"; in single-threaded WASM this is unreachable
+    // today but we don't want a future scheduler change to weaponise it).
+    let Some((_, msg)) = stash.take() else { return -1; };
     let bytes = msg.as_bytes();
     unsafe {
         *out_kind = kind;
