@@ -48,6 +48,44 @@ pub mod prelude {
     pub use crate::{plugin_fn, Handle, Value, Error, Result, FromValue, IntoValue};
 }
 
+/* ---------- Plugin bootstrap ----------------------------------------- */
+
+/* Re-exported under a hidden path so `module!` can name lol_alloc without
+   forcing the plugin author to add it to their own Cargo.toml. */
+#[cfg(target_arch = "wasm32")]
+#[doc(hidden)]
+pub use lol_alloc as __lol_alloc;
+
+/* Emits the wasm32-only boilerplate every Edge Python plugin needs:
+     - a #[global_allocator] backed by lol_alloc::LeakingPageAllocator
+       (single-threaded bump allocator that matches the host model),
+     - a #[panic_handler] that traps via wasm32::unreachable.
+
+   The plugin author still writes #![no_std] / #![no_main] / extern crate
+   alloc; at the crate root — those are crate-level attributes the macro
+   cannot inject from inside an item position.
+
+   Usage:
+     edge_pdk::module!();
+
+   On non-wasm targets (e.g. host-side unit tests for the plugin) the
+   macro expands to nothing so cargo test still works. */
+#[macro_export]
+macro_rules! module {
+    () => {
+        #[cfg(target_arch = "wasm32")]
+        #[global_allocator]
+        static __EDGE_PDK_ALLOC: $crate::__lol_alloc::LeakingPageAllocator
+            = $crate::__lol_alloc::LeakingPageAllocator;
+
+        #[cfg(target_arch = "wasm32")]
+        #[panic_handler]
+        fn __edge_pdk_panic(_: &core::panic::PanicInfo) -> ! {
+            core::arch::wasm32::unreachable()
+        }
+    };
+}
+
 use alloc::{string::String, vec::Vec};
 
 /* ---------- Wire imports --------------------------------------------- */

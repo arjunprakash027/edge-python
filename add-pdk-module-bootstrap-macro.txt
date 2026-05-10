@@ -1,0 +1,58 @@
+Branch: add-pdk-module-bootstrap-macro
+Tech debt: D55 — every plugin author re-declares the same allocator + panic_handler boilerplate.
+
+================================================================================
+Commit 1: add edge_pdk::module! bootstrap macro
+================================================================================
+Files:
+  - edge-pdk/Cargo.toml (wasm32 lol_alloc dep)
+  - edge-pdk/src/lib.rs (re-export + macro_rules! module)
+
+What was wrong:
+  Each plugin's lib.rs duplicated four lines of boilerplate:
+
+    extern crate alloc;
+    #[global_allocator]
+    static A: lol_alloc::LeakingPageAllocator = lol_alloc::LeakingPageAllocator;
+    #[panic_handler]
+    fn panic(_: &core::panic::PanicInfo) -> ! { core::arch::wasm32::unreachable() }
+
+  Two real costs:
+  - lol_alloc had to be listed in every plugin's Cargo.toml. The
+    workspace already needed it for the host compiler; making each
+    plugin add it again is duplication that drifts (different version
+    pins between plugins is a real failure mode).
+  - The #[panic_handler] is wasm32-only. New plugin authors who try
+    to add unit tests find their host build fails because panic_handler
+    is `duplicate language item` or `cannot apply to host build`.
+    The cfg-gating that fixes this isn't obvious; the macro hides it.
+
+Fix:
+  - Added a wasm32-only `lol_alloc = "0.4"` dependency in
+    edge-pdk/Cargo.toml under `[target.'cfg(target_arch = "wasm32")'.dependencies]`,
+    so the host build (e.g. cargo test on the PDK itself) does not pull
+    it in.
+  - Re-exported the crate as `__lol_alloc` (under a hidden path) from
+    edge-pdk/src/lib.rs so the macro can name the symbol regardless of
+    whether the user added their own `lol_alloc` dep.
+  - Added a `macro_rules! module` (#[macro_export]) that emits the
+    #[global_allocator] static and the #[panic_handler] fn under
+    `#[cfg(target_arch = "wasm32")]`, so on host builds the macro
+    expands to nothing and `cargo test` works without further changes.
+
+  Plugin authors can now write `edge_pdk::module!();` once at the top
+  of lib.rs and drop the four boilerplate lines. The pre-existing
+  manual pattern still works; the macro is strictly additive.
+
+  /* ... */ doc comment in the lexer/parser style records the exact
+  attributes the macro emits and the still-required crate-root
+  attributes (#![no_std], #![no_main], extern crate alloc;) that
+  cannot be injected from inside an item position.
+
+Documentation:
+  reference/wasm-abi.md and reference/writing-modules.md show the
+  manual pattern. Both are still valid — the macro is opt-in. No doc
+  updates are strictly required (recommending the macro path is a
+  pure migration suggestion, not a correctness fix).
+
+Build & tests: cargo build -p edge-pdk -> ok; cargo test -> 6/6 passed.
