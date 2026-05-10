@@ -478,55 +478,58 @@ impl<'a> VM<'a> {
         // Bare-name fallback for free-load slots: when the body's reference
         // records `<base>_0` (the version current at body-compile time) but
         // the caller now stores `<base>` under a higher SSA version, exact-
-        // name match misses. Find the caller's most-recent slot for the
-        // bare name and propagate. Required for mutual recursion across
-        // top-level defs in a code module — the splicer ends up storing
-        // sibling defs as `_1+` while each body still records `_0`. Skips
-        // capture-protected slots so closures keep their captured values.
+        // name match misses. `resolve_free_name` walks the documented
+        // three-layer fallback (caller slots → callee module attrs →
+        // globals) so the order lives in one place; capture-protected
+        // slots are filtered here so closures keep their captured values.
         let free_loads = &self.body_free_loads[fi];
-        let name_index = self.chunk_name_versions.get(&(chunk as *const _));
         for (bare, bs) in free_loads {
             if captured_set.contains(bs) { continue; }
-            let mut latest_ver: i64 = -1;
-            let mut latest_v: Val = Val::undef();
-            if let Some(idx) = name_index
-                && let Some(versions) = idx.get(bare.as_str())
-            {
-                for &(v, si) in versions {
-                    if si < slots.len() && !slots[si].is_undef() && v > latest_ver {
-                        latest_ver = v;
-                        latest_v = slots[si];
-                    }
-                }
-            }
-            if !latest_v.is_undef() {
-                fn_slots[*bs] = latest_v;
-                continue;
-            }
-            // Module-bindings fallback: if the callee was defined in
-            // an imported module, look up `bare` in that module's
-            // attrs first. Cross-module name collisions stay isolated
-            // — `a.helper` and `b.helper` resolve to their own
-            // module's helper instead of clobbering each other in the
-            // shared globals table.
-            if let Some(Some(spec)) = self.fn_module.get(fi).cloned()
-                && let Some(mod_val) = self.module_table.get(&spec).copied()
-                && mod_val.is_heap()
-                && let HeapObj::Module(_, attrs) = self.heap.get(mod_val)
-                && let Some((_, v)) = attrs.iter().find(|(n, _)| n == bare.as_str())
-            {
-                fn_slots[*bs] = *v;
-                continue;
-            }
-            // Globals fallback: catches forward-ref module-level mutual
-            // recursion in the entry chunk (where module_table doesn't
-            // apply because the entry isn't a "module"). Top-level defs
-            // in entry register themselves in globals at MakeFunction
-            // time for this lookup.
-            if let Some(&v) = self.globals.get(bare.as_str()) {
+            if let Some(v) = self.resolve_free_name(fi, bare, chunk, slots) {
                 fn_slots[*bs] = v;
             }
         }
+    }
+
+    /* Documented three-layer fallback for a bare free-load name: walk the
+       caller's most-recent SSA slot, then the callee's own module
+       bindings, then the entry-chunk globals. Returns the first hit.
+       Centralised so the order is auditable in one place — call_globals
+       and the call-site loop above both rely on this exact shape. */
+    fn resolve_free_name(
+        &self, fi: usize, bare: &str,
+        chunk: &SSAChunk, slots: &[Val],
+    ) -> Option<Val> {
+        // Layer 1: caller's most-recent SSA version of `bare`.
+        if let Some(idx) = self.chunk_name_versions.get(&(chunk as *const _))
+            && let Some(versions) = idx.get(bare)
+        {
+            let mut latest_ver: i64 = -1;
+            let mut latest_v: Val = Val::undef();
+            for &(v, si) in versions {
+                if si < slots.len() && !slots[si].is_undef() && v > latest_ver {
+                    latest_ver = v;
+                    latest_v = slots[si];
+                }
+            }
+            if !latest_v.is_undef() { return Some(latest_v); }
+        }
+        // Layer 2: callee's own module attrs. Cross-module name
+        // collisions stay isolated — `a.helper` and `b.helper` resolve
+        // to their own module's helper instead of clobbering each other.
+        if let Some(Some(spec)) = self.fn_module.get(fi).cloned()
+            && let Some(mod_val) = self.module_table.get(&spec).copied()
+            && mod_val.is_heap()
+            && let HeapObj::Module(_, attrs) = self.heap.get(mod_val)
+            && let Some((_, v)) = attrs.iter().find(|(n, _)| n == bare)
+        {
+            return Some(*v);
+        }
+        // Layer 3: globals. Catches forward-ref module-level mutual
+        // recursion in the entry chunk (where module_table doesn't
+        // apply because the entry isn't a "module"); top-level defs
+        // register themselves at MakeFunction time for this lookup.
+        self.globals.get(bare).copied()
     }
 
     /* Bind the function's own name slot to `callee` so recursive calls
