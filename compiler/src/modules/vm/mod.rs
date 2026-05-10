@@ -72,6 +72,11 @@ pub struct VM<'a> {
     pub(crate) body_free_loads: Vec<Vec<(String, usize)>>,
     pub(crate) is_async: Vec<bool>,
     pub(crate) default_slots: Vec<Vec<(usize, Val)>>,
+    /* Pre-resolved body slot for each function's own name (`<name>_0`),
+       so the call path can bind the self-reference with a single
+       Option<usize> lookup instead of allocating a versioned key per
+       call. None for anonymous lambdas or names not present in the body. */
+    pub(crate) self_ref_slot: Vec<Option<usize>>,
     pub(crate) opcode_caches: HashMap<*const SSAChunk, OpcodeCache>,
     /* Const pool slice ptrs for caches currently owned by a live exec()
        frame (removed from `opcode_caches` for the duration of the call). */
@@ -185,6 +190,7 @@ impl<'a> VM<'a> {
             body_free_loads: Vec::new(),
             is_async: Vec::new(),
             default_slots: Vec::new(),
+            self_ref_slot: Vec::new(),
             opcode_caches: HashMap::default(),
             active_const_pools: Vec::new(),
             sandbox_off,
@@ -272,6 +278,15 @@ impl<'a> VM<'a> {
                 name[p+1..].parse::<u32>().ok()?;
                 Some((name[..p].to_string(), slot))
             }).collect()
+        }).collect();
+
+        // Self-reference slot table: looked up once instead of allocating a
+        // `<base>_0` String per call inside `bind_self_reference`.
+        vm.self_ref_slot = (0..vm.functions.len()).map(|fi| {
+            let bare = vm.function_names.get(fi)?;
+            if bare.is_empty() { return None; }
+            let key = s!(str bare, "_0");
+            vm.body_maps[fi].get(key.as_str()).copied()
         }).collect();
 
         // Default-slot table: (slot, placeholder) entries the call path overwrites.

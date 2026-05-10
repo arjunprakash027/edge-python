@@ -155,8 +155,7 @@ impl<'a> VM<'a> {
         }
 
         self.depth += 1;
-        let (_params, body, _, name_idx_ref) = self.functions[fi];
-        let name_idx = *name_idx_ref;
+        let (_params, body, _, _) = self.functions[fi];
         let mut fn_slots = self.slot_templates[fi].clone();
 
         self.bind_function_args(fi, callee, &positional, &kw_flat, &mut fn_slots)?;
@@ -165,7 +164,7 @@ impl<'a> VM<'a> {
             self.apply_caller_slot_propagation(fi, callee, chunk, slots, &mut fn_slots);
         }
 
-        self.bind_self_reference(fi, name_idx, callee, chunk, &mut fn_slots);
+        self.bind_self_reference(fi, callee, &mut fn_slots);
 
         // Generator/coroutine functions return a suspended Coroutine instead
         // of running. `is_generator` is set at parse time, `is_async` at VM
@@ -522,19 +521,14 @@ impl<'a> VM<'a> {
     }
 
     /* Bind the function's own name slot to `callee` so recursive calls
-       resolve without a global lookup. No-op for anonymous lambdas
-       (`name_idx == u16::MAX`) or when the slot was already filled by an
-       earlier phase (params, captures, caller-slot propagation). */
-    fn bind_self_reference(
-        &self, fi: usize, name_idx: u16, callee: Val,
-        chunk: &SSAChunk, fn_slots: &mut [Val],
-    ) {
-        if name_idx == u16::MAX { return; }
-        let Some(raw_name) = chunk.names.get(name_idx as usize) else { return; };
-        let base = ssa_strip(raw_name);
-        let versioned = s!(str base, "_0");
-        let body_map = &self.body_maps[fi];
-        if let Some(&slot) = body_map.get(versioned.as_str())
+       resolve without a global lookup. No-op for anonymous lambdas or
+       when the slot was already filled by an earlier phase (params,
+       captures, caller-slot propagation). The lookup is pre-resolved
+       at VM init (`self_ref_slot[fi]`), so this is a single indexed
+       read with no allocation. */
+    fn bind_self_reference(&self, fi: usize, callee: Val, fn_slots: &mut [Val]) {
+        if let Some(slot) = self.self_ref_slot.get(fi).copied().flatten()
+            && slot < fn_slots.len()
             && fn_slots[slot].is_undef()
         {
             fn_slots[slot] = callee;
