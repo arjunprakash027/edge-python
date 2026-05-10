@@ -90,3 +90,7 @@ For architecture details, see [`compiler/README.md`](compiler/README.md). For la
 ## License
 
 MIT OR Apache-2.0
+
+## Sponsors 
+
+- [PyneSys](https://pynesys.io/) — since May 2026
