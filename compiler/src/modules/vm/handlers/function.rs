@@ -579,16 +579,19 @@ impl<'a> VM<'a> {
         &mut self, fi: usize, body: &SSAChunk, callee: Val,
         chunk: &SSAChunk, slots: &mut [Val], fn_slots: &[Val],
     ) {
-        let nl_table = &self.nonlocal_tables[fi];
-        if nl_table.is_empty() { return; }
-        for &(canon_body, _) in nl_table {
+        if self.nonlocal_tables[fi].is_empty() { return; }
+        // Snapshot to release borrows on self before the heap.get_mut writes.
+        let nl_pairs: Vec<(usize, usize)> = self.nonlocal_tables[fi].clone();
+        let name_index = self.chunk_name_versions.get(&(chunk as *const _));
+        for (canon_body, _) in nl_pairs {
             if let Some(&val) = fn_slots.get(canon_body) {
                 if val.is_undef() { continue; }
                 for base in &body.nonlocals {
-                    for (si, sname) in chunk.names.iter().enumerate() {
-                        if let Some(p) = sname.rfind('_')
-                            && &sname[..p] == base.as_str() && si < slots.len() {
-                                slots[si] = val;
+                    if let Some(idx) = name_index
+                        && let Some(versions) = idx.get(base.as_str())
+                    {
+                        for &(_, si) in versions {
+                            if si < slots.len() { slots[si] = val; }
                         }
                     }
                     // Sync closure-capture entries with the new value.
