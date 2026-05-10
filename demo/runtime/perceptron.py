@@ -1,5 +1,5 @@
 """
-Recreation of the simple perceptron algorithm maintaining the exact application of Rosenblatt.
+Recreation of the simple perceptron algorithm maintaining the exact application of Rosenblatt (where could solve linear separable problems).
 Rosenblatt, F. (1958). The perceptron: A probabilistic model for information storage and organization in the brain. Psychological Review, 65(6), 386–408.
 """
 
@@ -7,12 +7,15 @@ from "./lib/format.py" import report
 
 class SimplePerceptron:
     def __init__(self, seed: int = 42) -> None:
+        if seed == 0:
+            raise ValueError("LCG seed cannot be zero: it is a fixed point of the generator.")
+        
         self.weights: list[float] = []
         self.bias: float = 0.0
         self.seed = seed
 
     def train(self, labeled_data: dict[tuple[float | int, ...], int], epochs: int = 30, learning_rate: float = 0.1) -> None:
-        input_dim = len(next(iter(labeled_data))) # Send the pointer to the first memory register.
+        input_dim = len(next(iter(labeled_data))) # Get input dimensionality from the first training example.
         self.weights = [self._lcg() for _ in range(input_dim)]
         self.bias = self._lcg()
 
@@ -47,8 +50,6 @@ class SimplePerceptron:
         return 1 if pred >= 0.0 else 0
         
     def _lcg(self) -> float: # Congruential linear generator.
-        if self.seed == 0.0:
-            raise ValueError("LCG seed cannot be zero: it is a fixed point of the generator.")
         self.seed = (self.seed * 16807) % 2147483647
         return (self.seed / 2147483647) - 0.5 # Normalized between -0.5 and 0.5 to avoid data scaling problems.
 
