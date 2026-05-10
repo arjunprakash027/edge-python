@@ -334,13 +334,14 @@ impl<'a> VM<'a> {
         positional: &[Val], kw_flat: &[Val],
         fn_slots: &mut [Val],
     ) -> Result<(), VmErr> {
-        // Param binding via pre-computed param_slots. Cloned because the
-        // DoubleStar/Star arms call `self.heap.alloc`, which needs `&mut
-        // self` and would conflict with an in-flight `&self.param_slots`
-        // iterator borrow.
-        let pslots = self.param_slots[fi].clone();
+        // Index by position so we don't hold an iterator borrow on
+        // self.param_slots across the heap.alloc calls in the
+        // DoubleStar/Star arms. (ParamKind, usize) is Copy, so per-iteration
+        // reads are essentially free.
+        let n_params = self.param_slots[fi].len();
         let mut pos_idx = 0usize;
-        for (kind, slot) in pslots {
+        for i in 0..n_params {
+            let (kind, slot) = self.param_slots[fi][i];
             match kind {
                 ParamKind::DoubleStar => {
                     let dm = DictMap::from_pairs(kw_flat.chunks_exact(2).map(|p| (p[0], p[1])).collect());
