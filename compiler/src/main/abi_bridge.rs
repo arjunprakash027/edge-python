@@ -2,7 +2,7 @@ use crate::abi::{classify_decode, classify_encode, DecodeBits, EncodeRequest, Er
 use crate::modules::vm::types::{HeapObj, Val, VmErr};
 use crate::modules::vm::handlers::methods::{lookup_method, dispatch_method};
 use crate::modules::packages::NativeBinding;
-use alloc::{rc::Rc, string::{String, ToString}, sync::Arc, vec, vec::Vec};
+use alloc::{rc::Rc, string::{String, ToString}, sync::Arc, vec::Vec};
 use core::cell::RefCell;
 use crate::s;
 
@@ -18,7 +18,7 @@ pub unsafe extern "C" fn host_edge_op(op: u32, recv: u32, name_ptr: *const u8, n
         .iter().filter_map(|&h| get_val(h)).collect();
 
     let result: Result<Val, VmErr> = match Op::from_u32(op) {
-        Some(Op::Call) => dispatch_call(recv, &name, args),
+        Some(Op::Call) => dispatch_call(recv, &name, &args),
         Some(Op::GetAttr) => dispatch_get_attr(recv, &name),
         Some(Op::SetAttr) => dispatch_set_attr(recv, &name, &args),
         Some(Op::GetItem) => dispatch_get_item(recv, &args),
@@ -35,13 +35,13 @@ pub unsafe extern "C" fn host_edge_op(op: u32, recv: u32, name_ptr: *const u8, n
     }
 }
 
-fn dispatch_call(recv_h: u32, name: &str, args: Vec<Val>) -> Result<Val, VmErr> {
+fn dispatch_call(recv_h: u32, name: &str, args: &[Val]) -> Result<Val, VmErr> {
     with_recv("edge_op call: invalid receiver handle", recv_h, |vm, recv| {
         let ty = vm.type_name(recv);
         let mid = lookup_method(ty, name)
             .ok_or_else(|| VmErr::Attribute(s!("'", str ty, "' object has no method '", str name, "'")))?;
         let stack_before = vm.stack.len();
-        dispatch_method(vm, mid, recv, args, vec![])?;
+        dispatch_method(vm, mid, recv, args, &[])?;
         if vm.stack.len() != stack_before + 1 {
             return Err(VmErr::Runtime("edge_op call: method left no result"));
         }
