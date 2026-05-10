@@ -15,7 +15,8 @@
 //!     `edge_throw` / `edge_take_error`.
 //!   * `FromValue` / `IntoValue` traits with primitive impls (`i64`,
 //!     `f64`, `bool`, `String`, `&str`, `Option<T>`, `Handle`).
-//!   * The `__edge_alloc` export the host shim needs for argv staging.
+//!   * The `__edge_alloc` export the host shim needs for argv staging
+//!     (lives in the hidden `__internals` module so glob imports stay clean).
 //!
 //! Author code:
 //!
@@ -37,7 +38,7 @@ extern crate alloc;
 
 pub use edge_pdk_macros::plugin_fn;
 
-use alloc::{string::{String, ToString}, vec::Vec};
+use alloc::{string::String, vec::Vec};
 
 /* ---------- Wire imports --------------------------------------------- */
 
@@ -68,15 +69,6 @@ unsafe extern "C" {
     pub fn edge_throw(kind: u32, msg_ptr: *const u8, msg_len: u32);
 }
 
-/// Stash an error so the host sees it after the export returns 1.
-/// Used by the `#[plugin_fn]` macro when a user function returns Err(_).
-#[doc(hidden)]
-pub fn __stash_error(e: Error) {
-    let kind = e.kind();
-    let msg = e.message().to_string();
-    unsafe { edge_throw(kind, msg.as_ptr(), msg.len() as u32); }
-}
-
 /* ---------- Op codes & tags (must match bridge.rs spec) -------------- */
 
 #[allow(non_camel_case_types)]
@@ -100,17 +92,34 @@ pub mod tag {
     pub const BYTES: u32 = 4;
 }
 
-/* ---------- Allocator the host calls to stage argv buffers ----------- */
+/* ---------- Internals — macro contract surface, not user API --------- */
 
-/// Host-side argv stager. The shim allocates space in this module's
-/// linear memory before invoking each export; the layout is
-/// [u32; argc] for argv and a single u32 for `out`. We use a leak-free
-/// bump scheme — every call lives entirely on the heap, so the leak is
-/// reclaimed when the WASM instance is torn down.
-#[unsafe(no_mangle)]
-pub extern "C" fn __edge_alloc(size: u32) -> *mut u8 {
-    let v = alloc::vec![0u8; size as usize];
-    alloc::boxed::Box::into_raw(v.into_boxed_slice()) as *mut u8
+/* Sub-module so `use edge_pdk::*;` cannot pull these into a plugin
+   author's namespace. The `#[plugin_fn]` expansion qualifies the path
+   explicitly (`::edge_pdk::__internals::stash_error`), and `__edge_alloc`
+   stays a no_mangle WASM export regardless of Rust module nesting. */
+#[doc(hidden)]
+pub mod __internals {
+    use super::Error;
+    use alloc::string::ToString;
+
+    /* Used by #[plugin_fn] expansion when a user fn returns Err(_). */
+    pub fn stash_error(e: Error) {
+        let kind = e.kind();
+        let msg = e.message().to_string();
+        unsafe { super::edge_throw(kind, msg.as_ptr(), msg.len() as u32); }
+    }
+
+    /* Host-side argv stager. The shim allocates space in this module's
+       linear memory before invoking each export; the layout is
+       [u32; argc] for argv and a single u32 for `out`. We use a leak-free
+       bump scheme — every call lives entirely on the heap, so the leak is
+       reclaimed when the WASM instance is torn down. */
+    #[unsafe(no_mangle)]
+    pub extern "C" fn __edge_alloc(size: u32) -> *mut u8 {
+        let v = alloc::vec![0u8; size as usize];
+        alloc::boxed::Box::into_raw(v.into_boxed_slice()) as *mut u8
+    }
 }
 
 /* ---------- Errors --------------------------------------------------- */

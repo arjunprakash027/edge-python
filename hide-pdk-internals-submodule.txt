@@ -1,0 +1,62 @@
+Branch: hide-pdk-internals-submodule
+Tech debt: D56 (full) — finishes the prelude work by removing __stash_error / __edge_alloc from the crate root, where `use edge_pdk::*;` could still glob them.
+
+================================================================================
+Commit 1: relocate pdk macro contract surface to __internals
+================================================================================
+Files:
+  - edge-pdk/src/lib.rs
+  - edge-pdk/macros/src/lib.rs
+
+What was wrong:
+  After the prelude branch, plugin authors had a clean opt-in via
+  `use edge_pdk::prelude::*;`, but the legacy `use edge_pdk::*;` in
+  the wasm-abi doc and existing plugins still glob-imported every
+  crate-root pub item — including the two #[doc(hidden)] symbols that
+  exist purely as the proc-macro's contract surface:
+    - pub fn __stash_error(e: Error)
+    - pub extern "C" fn __edge_alloc(size: u32) -> *mut u8
+
+  #[doc(hidden)] only hides them from rustdoc; it does not exclude them
+  from a glob. So renaming or refactoring those internals remained a
+  silent breaking change for any plugin that touched them
+  (intentionally or not) through the glob.
+
+Fix:
+  Created a #[doc(hidden)] sub-module:
+
+    pub mod __internals {
+        pub fn stash_error(e: Error) { ... }
+        #[unsafe(no_mangle)]
+        pub extern "C" fn __edge_alloc(...) -> *mut u8 { ... }
+    }
+
+  `use edge_pdk::*;` does NOT glob-import items from sub-modules, so
+  these symbols are now invisible to plugin authors who use the glob.
+  Renamed `__stash_error` to `stash_error` inside the sub-module —
+  the leading double-underscore was a "do not touch" warning that
+  becomes redundant once the symbol lives in `__internals`.
+
+  __edge_alloc keeps its name and #[no_mangle] so the host shim's
+  WASM call site is unchanged. The Rust path moved, but the WASM
+  export symbol is identical.
+
+  Updated the macro expansion in edge-pdk/macros/src/lib.rs from
+  `::edge_pdk::__stash_error(...)` to
+  `::edge_pdk::__internals::stash_error(...)` (4 sites). Removed the
+  now-unused `ToString` import from the lib.rs root (it lives inside
+  __internals).
+
+  Verified the slugify-mod example still builds cleanly against the
+  wasm32-unknown-unknown target via the macro.
+
+Documentation:
+  reference/wasm-abi.md mentions `__edge_alloc` as the WASM export
+  name only; the symbol name is unchanged so the doc stays correct.
+  Updated the lib.rs module-doc bullet that listed __edge_alloc to
+  note where it now lives in source.
+
+Build & tests:
+  cargo build -p edge-pdk -p macros -> ok (no warnings).
+  cargo build -p slugify-mod --target wasm32-unknown-unknown --release -> ok.
+  cargo test -> 6/6 passed.
