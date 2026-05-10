@@ -138,8 +138,12 @@ impl<'a> VM<'a> {
             return Ok(());
         }
 
-        let fi = match self.heap.get(callee) {
-            HeapObj::Func(i, _, _) => *i,
+        // Snapshot the Func's defaults/captures once. Both are typically
+        // empty or tiny (<10 entries), so cloning beats the 3+ separate
+        // heap reads the original called for across binding + propagation.
+        // Back-propagation still uses `heap.get_mut` because it writes.
+        let (fi, defaults, captures) = match self.heap.get(callee) {
+            HeapObj::Func(i, d, c) => (*i, d.clone(), c.clone()),
             _ => return Err(cold_type("object is not callable")),
         };
 
@@ -158,10 +162,10 @@ impl<'a> VM<'a> {
         let (_params, body, _, _) = self.functions[fi];
         let mut fn_slots = self.slot_templates[fi].clone();
 
-        self.bind_function_args(fi, callee, &positional, &kw_flat, &mut fn_slots)?;
+        self.bind_function_args(fi, &defaults, &captures, &positional, &kw_flat, &mut fn_slots)?;
 
         if self.needs_caller_slots[fi] {
-            self.apply_caller_slot_propagation(fi, callee, chunk, slots, &mut fn_slots);
+            self.apply_caller_slot_propagation(fi, &captures, chunk, slots, &mut fn_slots);
         }
 
         self.bind_self_reference(fi, callee, &mut fn_slots);
@@ -325,11 +329,14 @@ impl<'a> VM<'a> {
     }
 
     /* Bind formal parameters from the popped positional/kw buffers, then
-       fill remaining un-bound slots with any defaults and closure captures
-       attached to the callee Func. Operates on the freshly-cloned
-       `fn_slots` for the callee body. */
+       fill remaining un-bound slots with any defaults and closure captures.
+       `defaults` and `captures` are snapshots from the callee Func; the
+       caller takes them once at the top of `exec_call` so the binding
+       phase doesn't re-read the heap for them. Operates on the
+       freshly-cloned `fn_slots` for the callee body. */
     fn bind_function_args(
-        &mut self, fi: usize, callee: Val,
+        &mut self, fi: usize,
+        defaults: &[Val], captures: &[(usize, Val)],
         positional: &[Val], kw_flat: &[Val],
         fn_slots: &mut [Val],
     ) -> Result<(), VmErr> {
@@ -383,24 +390,21 @@ impl<'a> VM<'a> {
             }
         }
 
-        // Defaults: borrow from heap; only fill slots still undef after binding.
-        if let HeapObj::Func(_, defaults, _) = self.heap.get(callee)
-            && !defaults.is_empty() {
-                let ds = &self.default_slots[fi];
-                for (di, &dv) in defaults.iter().enumerate() {
-                    if let Some(&(slot, _)) = ds.get(di)
-                        && slot < fn_slots.len() && fn_slots[slot].is_undef() {
-                            fn_slots[slot] = dv;
-                        }
-                }
+        // Defaults: only fill slots still undef after binding.
+        if !defaults.is_empty() {
+            let ds = &self.default_slots[fi];
+            for (di, &dv) in defaults.iter().enumerate() {
+                if let Some(&(slot, _)) = ds.get(di)
+                    && slot < fn_slots.len() && fn_slots[slot].is_undef() {
+                        fn_slots[slot] = dv;
+                    }
             }
+        }
 
         // Closure captures: same rule as defaults — only fill if undef.
-        if let HeapObj::Func(_, _, captures) = self.heap.get(callee) {
-            for &(bi, val) in captures {
-                if bi < fn_slots.len() && fn_slots[bi].is_undef() {
-                    fn_slots[bi] = val;
-                }
+        for &(bi, val) in captures {
+            if bi < fn_slots.len() && fn_slots[bi].is_undef() {
+                fn_slots[bi] = val;
             }
         }
 
@@ -427,7 +431,7 @@ impl<'a> VM<'a> {
        is_param_slot remains the hard guard for formal parameters bound
        by the call. */
     fn apply_caller_slot_propagation(
-        &self, fi: usize, callee: Val,
+        &self, fi: usize, captures: &[(usize, Val)],
         chunk: &SSAChunk, slots: &[Val], fn_slots: &mut [Val],
     ) {
         let body_map = &self.body_maps[fi];
@@ -449,10 +453,8 @@ impl<'a> VM<'a> {
             && caller_module == callee_module;
         let captured_set: crate::util::fx::FxHashSet<usize> = if same_scope {
             crate::util::fx::FxHashSet::default()
-        } else if let HeapObj::Func(_, _, captures) = self.heap.get(callee) {
-            captures.iter().map(|(s, _)| *s).collect()
         } else {
-            crate::util::fx::FxHashSet::default()
+            captures.iter().map(|(s, _)| *s).collect()
         };
         for (si, &v) in slots.iter().enumerate() {
             if !v.is_undef()
