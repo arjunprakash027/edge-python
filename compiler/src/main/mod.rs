@@ -38,10 +38,7 @@ A ~3,000-alloc perceptron run pays ~600 ms; bumping cuts it to ~50 grows.
 #[global_allocator]
 static A: AssumeSingleThreaded<LeakingAllocator> = unsafe { AssumeSingleThreaded::new(LeakingAllocator::new()) };
 
-/* Best-effort panic-to-stash: the host's edge_take_error then sees a typed
-   message instead of an opaque WASM trap. If the format allocation itself
-   re-enters this handler we fall through to unreachable(); the host trap
-   behaviour is unchanged from the previous bare implementation. */
+/* Best-effort panic-to-stash so the host gets a typed message instead of an opaque trap. Re-entry during the format alloc falls through to unreachable() — same trap as before. */
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     let msg = alloc::format!("internal panic: {}", info.message());
@@ -58,13 +55,7 @@ pub(super) enum ModuleEntry {
     Native(Vec<(String, u32)>),
 }
 
-/* Single struct holding every piece of mutable runtime state the WASM
-   bridge owns. Lives in one `static mut` so every accessor goes through
-   `with_runtime`, which is the sole `unsafe` point — instead of six
-   independent statics each requiring its own ad-hoc unsafe. The
-   `current_vm` pointer is set/cleared by `VmGuard` so a panic or early
-   return inside `run()` cannot leave a stale pointer behind for a
-   later host_edge_op to dereference. */
+/* All mutable WASM-bridge state in one struct so every accessor funnels through `with_runtime` — the sole `unsafe` point — instead of N independent statics. */
 pub(super) struct WasmRuntime {
     pub src: [u8; SZ],
     pub out: [u8; SZ],
@@ -74,10 +65,7 @@ pub(super) struct WasmRuntime {
     pub manifests: Vec<(String, Manifest)>,
     pub handles: HandleTable,
     pub error_stash: ErrorStash,
-    /* Live during `run()` for re-entrant `host_edge_op` dispatch. Set
-       and cleared exclusively through `VmGuard`; the lifetime cast to
-       `'static` is a storage-only convention — the pointer is only
-       dereferenced inside the `run()` scope that constructed it. */
+    /* Set/cleared exclusively by `VmGuard`. The `'static` is storage-only — the pointer is dereferenced only inside the `run()` scope that built it. */
     pub current_vm: Option<NonNull<VM<'static>>>,
 }
 
@@ -99,17 +87,7 @@ impl WasmRuntime {
 
 static mut RUNTIME: WasmRuntime = WasmRuntime::new();
 
-/* Sole entry point for accessing the WASM runtime state. The closure
-   form forces every borrow to be scoped: callers that need to invoke
-   the VM (which can re-enter `host_edge_op` and therefore `with_runtime`
-   itself) MUST copy what they need out and exit this scope first.
-
-   SAFETY: WASM is single-threaded and there is no preemption, so the
-   `&mut WasmRuntime` produced here cannot alias another live borrow as
-   long as no helper called inside `f` re-enters `with_runtime`. The
-   discipline is enforced by routing VM dispatch through `with_vm`,
-   which copies `current_vm` out and drops the runtime borrow before
-   handing control to the VM. */
+// SAFETY: single-threaded WASM; re-entrant callers route through `with_vm` to drop the borrow first.
 pub(super) fn with_runtime<R>(f: impl FnOnce(&mut WasmRuntime) -> R) -> R {
     unsafe { f(&mut *core::ptr::addr_of_mut!(RUNTIME)) }
 }
@@ -117,18 +95,12 @@ pub(super) fn with_runtime<R>(f: impl FnOnce(&mut WasmRuntime) -> R) -> R {
 pub(super) fn put_val(v: Val) -> u32 { with_runtime(|rt| rt.handles.put(v.0)) }
 pub(super) fn get_val(h: u32) -> Option<Val> { with_runtime(|rt| rt.handles.get(h).map(Val)) }
 
-/* RAII publisher for the live VM pointer. Construction stashes the
-   pointer; Drop clears it. Holding the guard for the full body of
-   `run()` means a panic, early return, or `?` propagation cannot leave
-   a stale pointer behind — every subsequent `host_edge_op` would
-   otherwise read freed stack memory. */
+/* RAII publisher for the live VM pointer. Holding the guard across `run()` ensures a panic or early return cannot leave a stale pointer for later `host_edge_op` calls. */
 pub(super) struct VmGuard;
 
 impl VmGuard {
     pub(super) fn new(vm: &mut VM<'_>) -> Self {
-        // Storage cast to 'static: the pointer is only dereferenced
-        // inside the same `run()` frame that holds the guard, so the
-        // VM is alive for the entire window the pointer is observable.
+        // 'static is storage-only — deref only inside the `run()` frame holding the guard.
         let ptr: NonNull<VM<'static>> = NonNull::from(vm).cast();
         with_runtime(|rt| rt.current_vm = Some(ptr));
         Self
@@ -142,16 +114,12 @@ impl Drop for VmGuard {
 }
 
 pub(super) fn with_vm<R>(f: impl FnOnce(&mut VM<'static>) -> R) -> Option<R> {
-    // Copy the pointer out and exit `with_runtime` before invoking `f`,
-    // because the VM dispatch invoked inside `f` will re-enter
-    // `with_runtime` and aliasing the outer borrow would be UB.
+    // Drop the runtime borrow before `f` — VM dispatch re-enters `with_runtime`.
     let ptr = with_runtime(|rt| rt.current_vm)?;
     Some(f(unsafe { &mut *ptr.as_ptr() }))
 }
 
-/* Construct a `&[u8]` from an FFI `(ptr, len)` pair, returning an empty
-   slice when `ptr` is null or `len == 0`. Removes the unconditional
-   `from_raw_parts` calls that would UB on null inputs. */
+/* Builds a `&[u8]` from an FFI `(ptr, len)`, empty on null or zero length — `from_raw_parts` would UB on either. */
 pub(super) unsafe fn safe_bytes<'a>(ptr: *const u8, len: u32) -> &'a [u8] {
     if ptr.is_null() || len == 0 { return &[]; }
     unsafe { core::slice::from_raw_parts(ptr, len as usize) }
@@ -170,10 +138,7 @@ pub(super) unsafe fn write_out(s: &str) -> usize {
     n
 }
 
-/* dispatch_* prologue: resolve `recv_h` and run `f` against the live VM. Fails on stale handle or call outside `run()`. */
+/* `dispatch_*` prologue: resolve `recv_h` and run `f` against the live VM. Fails on stale handle or call outside `run()`. */
 pub(super) fn with_recv<F>(invalid_recv_msg: &'static str, recv_h: u32, f: F) -> Result<Val, VmErr>
 where F: FnOnce(&mut VM<'static>, Val) -> Result<Val, VmErr>
-{
-    let recv = get_val(recv_h).ok_or(VmErr::Runtime(invalid_recv_msg))?;
-    with_vm(|vm| f(vm, recv)).ok_or(VmErr::Runtime("edge_op called outside run()"))?
-}
+{ let recv = get_val(recv_h).ok_or(VmErr::Runtime(invalid_recv_msg))?; with_vm(|vm| f(vm, recv)).ok_or(VmErr::Runtime("edge_op called outside run()"))? }

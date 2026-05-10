@@ -23,9 +23,7 @@ pub unsafe extern "C" fn wasm_alloc(size: u32) -> *mut u8 {
     Box::into_raw(v.into_boxed_slice()) as *mut u8
 }
 
-/* Releases a buffer previously returned by `wasm_alloc`. The host MUST pass
-   the exact same `size` it requested; mismatched lengths reconstruct the
-   wrong Box layout. Calling with a null pointer or `size == 0` is a no-op. */
+/* Frees a `wasm_alloc` buffer. Host must pass the exact `size` it requested — a mismatched length rebuilds the wrong Box layout. Null or zero is a no-op. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wasm_free(ptr: *mut u8, size: u32) {
     if ptr.is_null() || size == 0 { return; }
@@ -76,10 +74,7 @@ pub unsafe extern "C" fn reset_modules() {
     });
 }
 
-/* Reads up to SZ bytes from the host-owned SRC buffer, validates UTF-8,
-   and returns an owned String so the caller can drop the runtime borrow
-   before downstream parsing. `len` is capped at SZ so the slice never
-   extends past the buffer. */
+/* Copies up to SZ bytes from the host SRC buffer into an owned `String` so the caller can drop the runtime borrow before parsing. */
 fn read_src(len: usize) -> Result<String, core::str::Utf8Error> {
     with_runtime(|rt| {
         let len = len.min(SZ);
@@ -127,8 +122,7 @@ pub unsafe extern "C" fn run(len: usize) -> usize {
         let mut vm = VM::with_limits(&chunk, Limits::sandbox());
         vm.print_hook = Some(stream_print);
         vm.strict_input = true;
-        // Drain any host-supplied input bytes; UTF-8 invalid bytes degrade
-        // to an empty input rather than UB.
+        // Drain any host-supplied input bytes; `UTF-8` invalid bytes degrade to an empty input rather than UB.
         let inp_text = with_runtime(|rt| {
             if rt.inp_len == 0 { return String::new(); }
             let bytes = &rt.inp[..rt.inp_len];
@@ -140,8 +134,7 @@ pub unsafe extern "C" fn run(len: usize) -> usize {
             vm.input_buffer = inp_text.split('\n').map(alloc::string::String::from).collect();
         }
 
-        // Publish VM for re-entrant host_edge_op via RAII guard so a panic
-        // or early return cannot leave a stale pointer in the runtime.
+        // Publish VM for re-entrant host_edge_op via RAII guard so a panic or early return cannot leave a stale pointer in the runtime.
         let _guard = VmGuard::new(&mut vm);
         let result = vm.run();
 

@@ -7,9 +7,7 @@ use super::{ModuleEntry, host_fetch_bytes, with_runtime};
 use super::abi_bridge::make_native_binding;
 use super::exports::wasm_free;
 
-/* Hard cap on packages.json `extends` chain length. Prevents an attacker-
-   crafted manifest from looping the resolver indefinitely; 32 is well above
-   any sane real-world workspace depth. */
+// Cap on packages.json `extends` chain — bounds attacker-crafted loops; 32 dwarfs real workspace depth.
 const MAX_PACKAGES_HOPS: u32 = 32;
 
 pub(super) struct WasmHostResolver { pub(super) dir: String }
@@ -37,13 +35,7 @@ impl Resolver for WasmHostResolver {
         if ptr.is_null() {
             return Err(s!("no bytes cached by host for '", str spec, "'"));
         }
-        // The host MUST allocate the returned buffer via `wasm_alloc` (it's
-        // documented as such in wasm-abi.md and implemented that way in the
-        // canonical JS shim). Copy out into a guest-owned Vec so subsequent
-        // ownership lives entirely on this side, then release the host
-        // buffer through the symmetric `wasm_free` — a `Vec::from_raw_parts`
-        // here would silently deallocate Box-laid memory through Vec's
-        // layout assumptions and trigger UB if the layouts ever drift.
+        // Host allocates via `wasm_alloc` (wasm-abi.md): copy into a guest Vec, then `wasm_free`. `Vec::from_raw_parts` would UB by freeing Box-laid memory through Vec's layout.
         let len = len as usize;
         let bytes: Vec<u8> = unsafe { core::slice::from_raw_parts(ptr, len) }.to_vec();
         unsafe { wasm_free(ptr, len as u32) };
@@ -94,9 +86,7 @@ impl WasmHostResolver {
                 search_dir = next;
                 continue;
             }
-            return Err(s!(
-                "alias '", str name, "' not declared in '", str &m_spec, "'\n",
-                "help: declare it, add \"extends\": \"..\" to inherit, or use a quoted path",
+            return Err(s!("alias '", str name, "' not declared in '", str &m_spec, "'\n", "help: declare it, add \"extends\": \"..\" to inherit, or use a quoted path",
             ));
         }
     }

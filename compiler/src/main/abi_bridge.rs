@@ -12,10 +12,8 @@ use super::errors::{error_from_kind, stash_error};
 // Universal dispatch. Returns 0 + handle in `*out_handle`, or 1 + stashed error.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn host_edge_op(op: u32, recv: u32, name_ptr: *const u8, name_len: u32,argv_ptr: *const u32, argc: u32, out_handle: *mut u32) -> i32 {
-    let name = core::str::from_utf8(unsafe { safe_bytes(name_ptr, name_len) })
-        .unwrap_or("").to_string();
-    let args: Vec<Val> = unsafe { safe_handles(argv_ptr, argc) }
-        .iter().filter_map(|&h| get_val(h)).collect();
+    let name = core::str::from_utf8(unsafe { safe_bytes(name_ptr, name_len) }).unwrap_or("").to_string();
+    let args: Vec<Val> = unsafe { safe_handles(argv_ptr, argc) }.iter().filter_map(|&h| get_val(h)).collect();
 
     let result: Result<Val, VmErr> = match Op::from_u32(op) {
         Some(Op::Call) => dispatch_call(recv, &name, &args),
@@ -38,16 +36,13 @@ pub unsafe extern "C" fn host_edge_op(op: u32, recv: u32, name_ptr: *const u8, n
 fn dispatch_call(recv_h: u32, name: &str, args: &[Val]) -> Result<Val, VmErr> {
     with_recv("edge_op call: invalid receiver handle", recv_h, |vm, recv| {
         let ty = vm.type_name(recv);
-        let mid = lookup_method(ty, name)
-            .ok_or_else(|| VmErr::Attribute(s!("'", str ty, "' object has no method '", str name, "'")))?;
+        let mid = lookup_method(ty, name).ok_or_else(|| VmErr::Attribute(s!("'", str ty, "' object has no method '", str name, "'")))?;
         let stack_before = vm.stack.len();
         dispatch_method(vm, mid, recv, args, &[])?;
         if vm.stack.len() != stack_before + 1 {
             return Err(VmErr::Runtime("edge_op call: method left no result"));
         }
-        /* The length check above guarantees a value is present; ok_or
-           keeps the FFI boundary panic-free if a future change drops
-           the invariant. */
+        // The length check above guarantees a value is present; `ok_or` keeps the FFI boundary panic-free if a future change drops the invariant.
         vm.stack.pop().ok_or(VmErr::Runtime("edge_op call: stack drained mid-dispatch"))
     })
 }
@@ -91,7 +86,7 @@ fn dispatch_get_attr(recv_h: u32, name: &str) -> Result<Val, VmErr> {
     })
 }
 
-/* SetAttr: writes to instance __dict__; rejects modules and builtins. */
+/* SetAttr: writes to instance `__dict__`; rejects modules and builtins. */
 fn dispatch_set_attr(recv_h: u32, name: &str, args: &[Val]) -> Result<Val, VmErr> {
     if args.len() != 1 {
         return Err(VmErr::TypeMsg(s!("set_attr expects exactly 1 value, got ", int args.len() as i64)));
@@ -111,7 +106,7 @@ fn dispatch_set_attr(recv_h: u32, name: &str, args: &[Val]) -> Result<Val, VmErr
     })
 }
 
-/* GetItem: routes through vm.get_item for script-identical semantics. */
+/* GetItem: routes through `vm.get_item` for script-identical semantics. */
 fn dispatch_get_item(recv_h: u32, args: &[Val]) -> Result<Val, VmErr> {
     if args.len() != 1 {
         return Err(VmErr::TypeMsg(s!("get_item expects 1 index, got ", int args.len() as i64)));
@@ -121,7 +116,7 @@ fn dispatch_get_item(recv_h: u32, args: &[Val]) -> Result<Val, VmErr> {
         let stack_before = vm.stack.len();
         vm.push(recv);
         vm.push(idx);
-        let _ = vm.get_item()?; // discard the bool (slice-path indicator).
+        let _ = vm.get_item()?; // Discard the bool (slice-path indicator).
         if vm.stack.len() != stack_before + 1 {
             return Err(VmErr::Runtime("edge_op get_item: get_item left no result"));
         }
@@ -129,7 +124,7 @@ fn dispatch_get_item(recv_h: u32, args: &[Val]) -> Result<Val, VmErr> {
     })
 }
 
-/* SetItem: routes through vm.store_item. */
+/* SetItem: routes through `vm.store_item`. */
 fn dispatch_set_item(recv_h: u32, args: &[Val]) -> Result<Val, VmErr> {
     if args.len() != 2 {
         return Err(VmErr::TypeMsg(s!("set_item expects (index, value), got ", int args.len() as i64, " args")));
@@ -137,7 +132,7 @@ fn dispatch_set_item(recv_h: u32, args: &[Val]) -> Result<Val, VmErr> {
     let idx = args[0];
     let value = args[1];
     with_recv("edge_op set_item: invalid receiver handle", recv_h, |vm, recv| {
-        // store_item pops value, idx, container — push in that order.
+        // `store_item` pops value, idx, container — push in that order.
         vm.push(recv);
         vm.push(idx);
         vm.push(value);
@@ -188,8 +183,7 @@ fn dispatch_iter(recv_h: u32) -> Result<Val, VmErr> {
                     .map(|cs| vm.heap.alloc(HeapObj::Str(cs)))
                     .collect::<Result<Vec<_>, _>>()?
             }
-            _ => return Err(VmErr::TypeMsg(s!(
-                "object of type '", str vm.type_name(recv), "' is not iterable"))),
+            _ => return Err(VmErr::TypeMsg(s!("object of type '", str vm.type_name(recv), "' is not iterable"))),
         };
         vm.heap.alloc(HeapObj::List(Rc::new(RefCell::new(items))))
     })
@@ -205,9 +199,7 @@ fn dispatch_iter_next(recv_h: u32) -> Result<Val, VmErr> {
             }
             Ok(v.remove(0))
         } else {
-            Err(VmErr::TypeMsg(s!(
-                "iter_next expects a List iterator (produced by Op::Iter), got '",
-                str vm.type_name(recv), "'")))
+            Err(VmErr::TypeMsg(s!("iter_next expects a List iterator (produced by Op::Iter), got '", str vm.type_name(recv), "'")))
         }
     })
 }
@@ -256,7 +248,7 @@ pub unsafe extern "C" fn host_edge_decode(h: u32, out_tag: *mut u32, dst: *mut u
             PrimitiveBytes::Eight(a) => copy_into(tag, &a),
         },
         DecodeBits::Heap => {
-            // Only Str decodes; composites must go through edge_op.
+            // Only Str decodes; composites must go through `edge_op`.
             let result = with_vm(|vm| {
                 if let HeapObj::Str(s) = vm.heap.get(v) {
                     Some(s.clone())
@@ -280,8 +272,7 @@ pub unsafe extern "C" fn host_edge_release(h: u32) {
 // Stash a guest error for the host. Overwrites any pending error.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn host_edge_throw(kind: u32, msg_ptr: *const u8, msg_len: u32) {
-    let msg = core::str::from_utf8(unsafe { safe_bytes(msg_ptr, msg_len) })
-        .unwrap_or("").to_string();
+    let msg = core::str::from_utf8(unsafe { safe_bytes(msg_ptr, msg_len) }).unwrap_or("").to_string();
     with_runtime(|rt| rt.error_stash.set(kind, msg));
 }
 
@@ -294,11 +285,7 @@ pub unsafe extern "C" fn host_edge_take_error(out_kind: *mut u32, dst: *mut u8, 
         None => return -1,
     };
     if len > dst_max as usize { return -(len as i32); }
-    // Buffer fits — drain and copy. Treat a None on take() as "race lost the
-    // peek/take window" and surface it as no-pending-error rather than panic
-    // across the FFI boundary (the .expect() previously here violated
-    // "panics never cross FFI"; in single-threaded WASM this is unreachable
-    // today but we don't want a future scheduler change to weaponise it).
+    // Buffer fits — drain and copy. None on `take()` means a lost peek/take race; return no-pending-error instead of panicking across FFI.
     let Some((_, msg)) = with_runtime(|rt| rt.error_stash.take()) else { return -1; };
     let bytes = msg.as_bytes();
     unsafe {
@@ -310,15 +297,7 @@ pub unsafe extern "C" fn host_edge_take_error(out_kind: *mut u32, dst: *mut u8, 
     bytes.len() as i32
 }
 
-/* Builds a NativeBinding whose closure translates a VM CallExtern call
-   into the universal wire ABI: stage args as handles, invoke
-   `host_call_native(id, ...)`, drain status into Result<Val, VmErr>, and
-   release every handle (including out_handle) before returning.
-
-   Lives here — not in resolver.rs — because the body is pure ABI
-   marshalling. The resolver only needs to ask "give me a binding for
-   (name, id)" and forget about handle plumbing. `pure: false` because
-   any guest call may have side effects through the host. */
+/* Builds a NativeBinding that marshals handles around `host_call_native`. Kept out of resolver.rs so the resolver stays ABI-agnostic. */
 pub(super) fn make_native_binding(name: String, id: u32) -> NativeBinding {
     let closure = move |_: &mut crate::modules::vm::types::HeapPool, args: &[Val]| -> Result<Val, VmErr> {
         /* 1. Register args as handles the guest will see. */
@@ -334,19 +313,14 @@ pub(super) fn make_native_binding(name: String, id: u32) -> NativeBinding {
             )
         };
 
-        /* 3. Translate status/out_handle into Result<Val>. Read result
-           BEFORE releasing — argv release frees the slots `result` may
-           reference if the guest returned one of its inputs. */
+        /* 3. Read result BEFORE releasing argv: a returned input would point into slots we're about to free. */
         if status != 0 {
-            with_runtime(|rt| {
-                for h in &argv { rt.handles.release(*h); }
-            });
+            with_runtime(|rt| { for h in &argv { rt.handles.release(*h); } });
             let (kind, msg) = with_runtime(|rt| rt.error_stash.take())
                 .unwrap_or((ErrorKind::Runtime as u32, String::from("native call failed")));
             return Err(error_from_kind(kind, msg));
         }
-        let result = get_val(out_handle)
-            .ok_or(VmErr::Runtime("native returned invalid handle"))?;
+        let result = get_val(out_handle).ok_or(VmErr::Runtime("native returned invalid handle"))?;
         with_runtime(|rt| {
             for h in &argv { rt.handles.release(*h); }
             rt.handles.release(out_handle);
