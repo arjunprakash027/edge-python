@@ -1,9 +1,9 @@
 [workspace]
-members = ["compiler", "edge-pdk", "edge-pdk/macros", "examples/slugify-mod"]
+members = ["compiler", "edge-abi", "edge-pdk", "edge-pdk/macros", "examples/slugify-mod"]
 # Wasm-only example crates live in `members` (so they share the lockfile and
 # resolve path deps) but are excluded from default workspace commands. Run
 # them explicitly with `-p` against `wasm32-unknown-unknown`.
-default-members = ["compiler", "edge-pdk", "edge-pdk/macros"]
+default-members = ["compiler", "edge-abi", "edge-pdk", "edge-pdk/macros"]
 resolver = "2"
 
 [workspace.package]
@@ -15,6 +15,7 @@ repository = "https://github.com/dylan-sutton-chavez/edge-python/"
 # `dep = { workspace = true }` so a bump touches one line workspace-wide
 # and the lockfile cannot grow accidental version splits.
 [workspace.dependencies]
+edge-abi = { path = "edge-abi", version = "0.1.0" }
 hashbrown = { version = "0.17", default-features = false }
 itoa = "1"
 lol_alloc = "0.4"

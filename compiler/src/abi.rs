@@ -1,104 +1,93 @@
-/* 
+/*
 Sealed contract for modules.
   Op codes, tags, error kinds, HandleTable, ErrorStash, and primitive codec are frozen.
   Bug fixes only. New capabilities via new Op values — never new imports or signature changes.
-  See documentation/reference/wasm-abi.md for the user-facing spec. 
+  See documentation/reference/wasm-abi.md for the user-facing spec.
+
+  The wire-level constants (op codes, value tags, NaN-boxing layout, error
+  kinds) live in the `edge-abi` crate so the host and the edge-pdk read
+  the same source of truth. The host-side enums below wrap those
+  constants for type-safe matching in the dispatch path; their
+  discriminants must equal the `edge-abi` constants byte for byte —
+  static_assert below catches any drift at compile time.
 */
 
 use alloc::{string::String, vec::Vec};
 
-/* Source-of-truth NaN-boxing layout. Both the wire codec below and
-   vm::types::Val import from here, so any change touches one site
-   instead of three. Reserved for the `Sealed contract — v1` set: a
-   layout change forces a wasm-abi version bump. */
-pub mod nan_box {
-    pub const QNAN: u64        = 0x7FFC_0000_0000_0000;
-    pub const SIGN: u64        = 0x8000_0000_0000_0000;
-    pub const TAG_UNDEF: u64   = QNAN;
-    pub const TAG_NONE: u64    = QNAN | 1;
-    pub const TAG_TRUE: u64    = QNAN | 2;
-    pub const TAG_FALSE: u64   = QNAN | 3;
-    pub const TAG_INT: u64     = QNAN | SIGN;
-    pub const TAG_HEAP: u64    = QNAN | 4;
-    /* 47-bit signed integer payload mask (two's-complement, sign bit at bit 47). */
-    pub const INT_PAYLOAD_MASK: u64 = 0x0000_FFFF_FFFF_FFFF;
-}
+pub use edge_abi::{nan_box, EDGE_ABI_VERSION, TAG_INVALID};
 
-/* Op codes (sealed) */
+/* Op codes (sealed) — values mirror `edge_abi::op::*`. */
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum Op {
-    Call = 0,
-    GetAttr = 1,
-    SetAttr = 2,
-    GetItem = 3,
-    SetItem = 4,
-    Len = 5,
-    Iter = 6,
-    IterNext = 7,
+    Call = edge_abi::op::CALL,
+    GetAttr = edge_abi::op::GET_ATTR,
+    SetAttr = edge_abi::op::SET_ATTR,
+    GetItem = edge_abi::op::GET_ITEM,
+    SetItem = edge_abi::op::SET_ITEM,
+    Len = edge_abi::op::LEN,
+    Iter = edge_abi::op::ITER,
+    IterNext = edge_abi::op::ITER_NEXT,
 }
 
 impl Op {
     pub fn from_u32(op: u32) -> Option<Self> {
         match op {
-            0 => Some(Self::Call),
-            1 => Some(Self::GetAttr),
-            2 => Some(Self::SetAttr),
-            3 => Some(Self::GetItem),
-            4 => Some(Self::SetItem),
-            5 => Some(Self::Len),
-            6 => Some(Self::Iter),
-            7 => Some(Self::IterNext),
+            edge_abi::op::CALL => Some(Self::Call),
+            edge_abi::op::GET_ATTR => Some(Self::GetAttr),
+            edge_abi::op::SET_ATTR => Some(Self::SetAttr),
+            edge_abi::op::GET_ITEM => Some(Self::GetItem),
+            edge_abi::op::SET_ITEM => Some(Self::SetItem),
+            edge_abi::op::LEN => Some(Self::Len),
+            edge_abi::op::ITER => Some(Self::Iter),
+            edge_abi::op::ITER_NEXT => Some(Self::IterNext),
             _ => None,
         }
     }
 }
 
-/* Tags (sealed) */
+/* Tags (sealed) — values mirror `edge_abi::tag::*`. */
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum Tag {
-    None = 0,
-    Bool = 1,
-    Int = 2,
-    Float = 3,
+    None = edge_abi::tag::NONE,
+    Bool = edge_abi::tag::BOOL,
+    Int = edge_abi::tag::INT,
+    Float = edge_abi::tag::FLOAT,
     // UTF-8 bytes: encoder builds a str, decoder returns its bytes.
-    Bytes = 4,
+    Bytes = edge_abi::tag::BYTES,
 }
 
 impl Tag {
     pub fn from_u32(t: u32) -> Option<Self> {
         match t {
-            0 => Some(Self::None),
-            1 => Some(Self::Bool),
-            2 => Some(Self::Int),
-            3 => Some(Self::Float),
-            4 => Some(Self::Bytes),
+            edge_abi::tag::NONE => Some(Self::None),
+            edge_abi::tag::BOOL => Some(Self::Bool),
+            edge_abi::tag::INT => Some(Self::Int),
+            edge_abi::tag::FLOAT => Some(Self::Float),
+            edge_abi::tag::BYTES => Some(Self::Bytes),
             _ => None,
         }
     }
 }
 
-// edge_decode sentinel: invalid handle or non-primitive; caller should use edge_op.
-pub const TAG_INVALID: u32 = u32::MAX;
-
-/* Error kinds (sealed) */
+/* Error kinds (sealed) — values mirror `edge_abi::error_kind::*`. */
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum ErrorKind {
-    Type = 0,
-    Value = 1,
-    Runtime = 2,
-    Attribute = 3,
-    Index = 4,
-    Key = 5,
-    Custom = 6,
+    Type = edge_abi::error_kind::TYPE,
+    Value = edge_abi::error_kind::VALUE,
+    Runtime = edge_abi::error_kind::RUNTIME,
+    Attribute = edge_abi::error_kind::ATTRIBUTE,
+    Index = edge_abi::error_kind::INDEX,
+    Key = edge_abi::error_kind::KEY,
+    Custom = edge_abi::error_kind::CUSTOM,
 }
 
 /* Handle table */

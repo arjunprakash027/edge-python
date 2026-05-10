@@ -1,0 +1,11 @@
+[package]
+name = "edge-abi"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Sealed wire-format constants shared by the Edge Python compiler and the edge-pdk. no_std, zero deps. Bump-and-version on any layout change."
+
+[lib]
+crate-type = ["rlib"]
+doctest = false
