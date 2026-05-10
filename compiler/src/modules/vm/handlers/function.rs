@@ -278,6 +278,12 @@ impl<'a> VM<'a> {
 
         // Calling a class: create an instance and run __init__ if defined.
         if let HeapObj::Class(_, methods) = self.heap.get(callee) {
+            // The recursive `exec_call(argc, ...)` below only encodes
+            // positional count, so kwargs would silently disappear before
+            // reaching `__init__`. Surface that explicitly.
+            if !kw_flat.is_empty() {
+                return Err(cold_type("class constructor takes no keyword arguments"));
+            }
             let methods = methods.clone();
             let instance = self.heap.alloc(HeapObj::Instance(callee, Rc::new(RefCell::new(DictMap::new()))))?;
             if let Some((_, init_fn)) = methods.iter().find(|(n, _)| n == "__init__") {
