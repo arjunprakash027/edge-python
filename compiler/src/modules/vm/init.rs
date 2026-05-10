@@ -80,8 +80,7 @@ impl<'a> VM<'a> {
         // Index every SSA name in this chunk by its bare prefix so the
         // call-site free-load fallback can do O(1) lookups instead of
         // re-parsing each name on every miss.
-        let mut name_versions: crate::util::fx::FxHashMap<alloc::string::String, alloc::vec::Vec<(i64, usize)>> =
-            crate::util::fx::FxHashMap::default();
+        let mut name_versions: super::NameVersionIndex = crate::util::fx::FxHashMap::default();
         for (si, sname) in chunk.names.iter().enumerate() {
             if let Some(p) = sname.rfind('_')
                 && let Ok(v) = sname[p+1..].parse::<i64>() {

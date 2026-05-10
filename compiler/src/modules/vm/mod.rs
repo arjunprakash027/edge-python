@@ -31,6 +31,9 @@ pub(crate) struct ExceptionFrame {
 #[derive(Clone, Copy)]
 pub(crate) enum ParamKind { Normal, Star, DoubleStar, KwOnly }
 
+/* `bare_name -> [(version, slot), ...]` for one chunk's `chunk.names`. */
+pub(crate) type NameVersionIndex = crate::util::fx::FxHashMap<String, Vec<(i64, usize)>>;
+
 pub struct VM<'a> {
     pub(crate) stack: Vec<Val>,
     pub(crate) heap: HeapPool,
@@ -83,7 +86,7 @@ pub struct VM<'a> {
        every SSA name in `chunk.names` carrying a `_<digits>` suffix.
        Replaces the linear scan that re-parsed every name on every
        free-load lookup. Populated by `build_function_table`. */
-    pub(crate) chunk_name_versions: HashMap<*const SSAChunk, crate::util::fx::FxHashMap<String, Vec<(i64, usize)>>>,
+    pub(crate) chunk_name_versions: HashMap<*const SSAChunk, NameVersionIndex>,
     /* Const pool slice ptrs for caches currently owned by a live exec()
        frame (removed from `opcode_caches` for the duration of the call). */
     pub(crate) active_const_pools: Vec<*const [Val]>,

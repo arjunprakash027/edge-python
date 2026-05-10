@@ -171,7 +171,7 @@ define_methods! {
     // string is pure ASCII; any other name errors out so silent
     // mismatches don't sneak through).
     (StrEncode, "encode", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 1, "encode takes 0 or 1 arguments")?;
+        check_arity(pos, 0, 1, "encode takes 0 or 1 arguments")?;
         let s = recv_str(vm, recv)?;
         if let Some(arg) = pos.first() {
             let enc = val_to_str(vm, *arg)?;
@@ -192,7 +192,7 @@ define_methods! {
     // on invalid sequences (Python raises UnicodeDecodeError; we surface
     // it as a ValueError to keep the error taxonomy compact).
     (BytesDecode, "decode", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 1, "decode takes 0 or 1 arguments")?;
+        check_arity(pos, 0, 1, "decode takes 0 or 1 arguments")?;
         let buf = recv_bytes(vm, recv)?;
         if let Some(arg) = pos.first() {
             let enc = val_to_str(vm, *arg)?;
@@ -208,7 +208,7 @@ define_methods! {
 
     // bytes.hex() — lowercase hex of every byte. No separator.
     (BytesHex, "hex", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "hex takes no arguments")?;
+        check_arity(pos, 0, 0, "hex takes no arguments")?;
         let buf = recv_bytes(vm, recv)?;
         let mut out = alloc::string::String::with_capacity(buf.len() * 2);
         const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -223,14 +223,14 @@ define_methods! {
     // bytes.startswith(prefix) / bytes.endswith(suffix) — bytes-only
     // prefix matching (str.startswith handles strings).
     (BytesStartswith, "startswith", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "startswith takes 1 argument")?;
+        check_arity(pos, 1, 1, "startswith takes 1 argument")?;
         let buf = recv_bytes(vm, recv)?;
         let prefix = recv_bytes(vm, pos[0])?;
         vm.push(Val::bool(buf.starts_with(&prefix)));
         Ok(())
     }),
     (BytesEndswith, "endswith", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "endswith takes 1 argument")?;
+        check_arity(pos, 1, 1, "endswith takes 1 argument")?;
         let buf = recv_bytes(vm, recv)?;
         let suffix = recv_bytes(vm, pos[0])?;
         vm.push(Val::bool(buf.ends_with(&suffix)));
@@ -239,19 +239,19 @@ define_methods! {
 
     // str: zero-arg transforms.
     (StrUpper, "upper", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "upper takes no arguments")?;
+        check_arity(pos, 0, 0, "upper takes no arguments")?;
         let s = recv_str(vm, recv)?;
         let v = vm.heap.alloc(HeapObj::Str(s.to_uppercase()))?;
         vm.push(v); Ok(())
     }),
     (StrLower, "lower", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "lower takes no arguments")?;
+        check_arity(pos, 0, 0, "lower takes no arguments")?;
         let s = recv_str(vm, recv)?;
         let v = vm.heap.alloc(HeapObj::Str(s.to_lowercase()))?;
         vm.push(v); Ok(())
     }),
     (StrStrip, "strip", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 1, "strip takes 0 or 1 arguments")?;
+        check_arity(pos, 0, 1, "strip takes 0 or 1 arguments")?;
         let s = recv_str(vm, recv)?;
         let out = if pos.is_empty() {
             s.trim().to_string()
@@ -263,13 +263,13 @@ define_methods! {
         vm.push(v); Ok(())
     }),
     (StrCapitalize, "capitalize", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "capitalize takes no arguments")?;
+        check_arity(pos, 0, 0, "capitalize takes no arguments")?;
         let s = recv_str(vm, recv)?;
         let v = vm.heap.alloc(HeapObj::Str(capitalize_first(&s)))?;
         vm.push(v); Ok(())
     }),
     (StrTitle, "title", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "title takes no arguments")?;
+        check_arity(pos, 0, 0, "title takes no arguments")?;
         let s = recv_str(vm, recv)?;
         let v = vm.heap.alloc(HeapObj::Str(title_case(&s)))?;
         vm.push(v); Ok(())
@@ -277,7 +277,7 @@ define_methods! {
 
     // str: optional separator.
     (StrLstrip, "lstrip", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 1, "lstrip takes 0 or 1 arguments")?;
+        check_arity(pos, 0, 1, "lstrip takes 0 or 1 arguments")?;
         let s = recv_str(vm, recv)?;
         let out = if pos.is_empty() {
             s.trim_start().to_string()
@@ -289,7 +289,7 @@ define_methods! {
         vm.push(v); Ok(())
     }),
     (StrRstrip, "rstrip", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 1, "rstrip takes 0 or 1 arguments")?;
+        check_arity(pos, 0, 1, "rstrip takes 0 or 1 arguments")?;
         let s = recv_str(vm, recv)?;
         let out = if pos.is_empty() {
             s.trim_end().to_string()
@@ -303,19 +303,19 @@ define_methods! {
 
     // str: predicates.
     (StrIsDigit, "isdigit", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "isdigit takes no arguments")?;
+        check_arity(pos, 0, 0, "isdigit takes no arguments")?;
         let s = recv_str(vm, recv)?;
         vm.push(Val::bool(!s.is_empty() && s.chars().all(|c| c.is_ascii_digit())));
         Ok(())
     }),
     (StrIsAlpha, "isalpha", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "isalpha takes no arguments")?;
+        check_arity(pos, 0, 0, "isalpha takes no arguments")?;
         let s = recv_str(vm, recv)?;
         vm.push(Val::bool(!s.is_empty() && s.chars().all(|c| c.is_alphabetic())));
         Ok(())
     }),
     (StrIsAlnum, "isalnum", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "isalnum takes no arguments")?;
+        check_arity(pos, 0, 0, "isalnum takes no arguments")?;
         let s = recv_str(vm, recv)?;
         vm.push(Val::bool(!s.is_empty() && s.chars().all(|c| c.is_alphanumeric())));
         Ok(())
@@ -323,21 +323,21 @@ define_methods! {
 
     // str: queries with one string arg.
     (StrStartswith, "startswith", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "startswith takes 1 argument")?;
+        check_arity(pos, 1, 1, "startswith takes 1 argument")?;
         let s = recv_str(vm, recv)?;
         let p = val_to_str(vm, pos[0])?;
         vm.push(Val::bool(s.starts_with(p.as_str())));
         Ok(())
     }),
     (StrEndswith, "endswith", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "endswith takes 1 argument")?;
+        check_arity(pos, 1, 1, "endswith takes 1 argument")?;
         let s = recv_str(vm, recv)?;
         let p = val_to_str(vm, pos[0])?;
         vm.push(Val::bool(s.ends_with(p.as_str())));
         Ok(())
     }),
     (StrFind, "find", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "find takes 1 argument")?;
+        check_arity(pos, 1, 1, "find takes 1 argument")?;
         let s = recv_str(vm, recv)?;
         let sub = val_to_str(vm, pos[0])?;
         let idx = s.find(sub.as_str())
@@ -347,7 +347,7 @@ define_methods! {
         Ok(())
     }),
     (StrCount, "count", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "count takes 1 argument")?;
+        check_arity(pos, 1, 1, "count takes 1 argument")?;
         let s = recv_str(vm, recv)?;
         let sub = val_to_str(vm, pos[0])?;
         vm.push(Val::int(s.matches(sub.as_str()).count() as i64));
@@ -356,7 +356,7 @@ define_methods! {
 
     // str: split / join / replace.
     (StrSplit, "split", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 1, "split takes 0 or 1 arguments")?;
+        check_arity(pos, 0, 1, "split takes 0 or 1 arguments")?;
         let s = recv_str(vm, recv)?;
         let parts: Vec<Val> = if pos.is_empty() {
             s.split_whitespace()
@@ -371,7 +371,7 @@ define_methods! {
         vm.alloc_and_push_list(parts)
     }),
     (StrJoin, "join", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "join takes 1 argument")?;
+        check_arity(pos, 1, 1, "join takes 1 argument")?;
         let sep = recv_str(vm, recv)?;
         let items = match vm.heap.get(pos[0]) {
             HeapObj::List(rc) => rc.borrow().clone(),
@@ -384,7 +384,7 @@ define_methods! {
         vm.push(v); Ok(())
     }),
     (StrReplace, "replace", pure, |vm, recv, pos| {
-        check_arity(&pos, 2, 2, "replace takes 2 arguments")?;
+        check_arity(pos, 2, 2, "replace takes 2 arguments")?;
         let s = recv_str(vm, recv)?;
         let old = val_to_str(vm, pos[0])?;
         let new = val_to_str(vm, pos[1])?;
@@ -395,7 +395,7 @@ define_methods! {
     /* str.removeprefix(p) — strip leading prefix if present, else return
        unchanged. str.removesuffix(s) — same for trailing suffix. */
     (StrRemovePrefix, "removeprefix", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "removeprefix takes 1 argument")?;
+        check_arity(pos, 1, 1, "removeprefix takes 1 argument")?;
         let s = recv_str(vm, recv)?;
         let p = val_to_str(vm, pos[0])?;
         let out = s.strip_prefix(p.as_str()).map(|t| t.to_string()).unwrap_or(s);
@@ -403,7 +403,7 @@ define_methods! {
         vm.push(v); Ok(())
     }),
     (StrRemoveSuffix, "removesuffix", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "removesuffix takes 1 argument")?;
+        check_arity(pos, 1, 1, "removesuffix takes 1 argument")?;
         let s = recv_str(vm, recv)?;
         let suf = val_to_str(vm, pos[0])?;
         let out = s.strip_suffix(suf.as_str()).map(|t| t.to_string()).unwrap_or(s);
@@ -414,7 +414,7 @@ define_methods! {
     /* str.splitlines() — split on every \n, \r, or \r\n, dropping the
        separator. Mirrors Python's keepends=False default. */
     (StrSplitlines, "splitlines", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "splitlines takes no arguments")?;
+        check_arity(pos, 0, 0, "splitlines takes no arguments")?;
         let s = recv_str(vm, recv)?;
         let mut parts: Vec<Val> = Vec::new();
         for line in s.split_inclusive(['\n', '\r']) {
@@ -435,7 +435,7 @@ define_methods! {
     /* str.partition(sep) — find sep, return (head, sep, tail). If sep is
        absent: (s, "", ""). rpartition splits at the last occurrence. */
     (StrPartition, "partition", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "partition takes 1 argument")?;
+        check_arity(pos, 1, 1, "partition takes 1 argument")?;
         let s = recv_str(vm, recv)?;
         let sep = val_to_str(vm, pos[0])?;
         if sep.is_empty() { return Err(cold_value("empty separator")); }
@@ -449,7 +449,7 @@ define_methods! {
         vm.alloc_and_push_tuple(vec![av, bv, cv])
     }),
     (StrRPartition, "rpartition", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "rpartition takes 1 argument")?;
+        check_arity(pos, 1, 1, "rpartition takes 1 argument")?;
         let s = recv_str(vm, recv)?;
         let sep = val_to_str(vm, pos[0])?;
         if sep.is_empty() { return Err(cold_value("empty separator")); }
@@ -466,7 +466,7 @@ define_methods! {
     /* bytes.find(sub) / bytes.index(sub) / bytes.count(sub) / bytes.replace(old, new)
        — byte-oriented analogs of the str methods. */
     (BytesFind, "find", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "find takes 1 argument")?;
+        check_arity(pos, 1, 1, "find takes 1 argument")?;
         let buf = recv_bytes(vm, recv)?;
         let sub = recv_bytes(vm, pos[0])?;
         let idx = buf.windows(sub.len()).position(|w| w == sub.as_slice())
@@ -475,7 +475,7 @@ define_methods! {
         Ok(())
     }),
     (BytesIndex, "index", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "index takes 1 argument")?;
+        check_arity(pos, 1, 1, "index takes 1 argument")?;
         let buf = recv_bytes(vm, recv)?;
         let sub = recv_bytes(vm, pos[0])?;
         let idx = buf.windows(sub.len()).position(|w| w == sub.as_slice())
@@ -484,7 +484,7 @@ define_methods! {
         Ok(())
     }),
     (BytesCount, "count", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "count takes 1 argument")?;
+        check_arity(pos, 1, 1, "count takes 1 argument")?;
         let buf = recv_bytes(vm, recv)?;
         let sub = recv_bytes(vm, pos[0])?;
         if sub.is_empty() {
@@ -501,7 +501,7 @@ define_methods! {
         Ok(())
     }),
     (BytesReplace, "replace", pure, |vm, recv, pos| {
-        check_arity(&pos, 2, 2, "replace takes 2 arguments")?;
+        check_arity(pos, 2, 2, "replace takes 2 arguments")?;
         let buf = recv_bytes(vm, recv)?;
         let old = recv_bytes(vm, pos[0])?;
         let new = recv_bytes(vm, pos[1])?;
@@ -522,7 +522,7 @@ define_methods! {
         vm.push(v); Ok(())
     }),
     (BytesSplit, "split", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "split takes 1 argument")?;
+        check_arity(pos, 1, 1, "split takes 1 argument")?;
         let buf = recv_bytes(vm, recv)?;
         let sep = recv_bytes(vm, pos[0])?;
         if sep.is_empty() { return Err(cold_value("empty separator")); }
@@ -541,7 +541,7 @@ define_methods! {
 
     // str: padding.
     (StrCenter, "center", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 2, "center takes 1 or 2 arguments")?;
+        check_arity(pos, 1, 2, "center takes 1 or 2 arguments")?;
         let s = recv_str(vm, recv)?;
         if !pos[0].is_int() { return Err(cold_type("center() width must be an integer")); }
         let width = pos[0].as_int() as usize;
@@ -557,7 +557,7 @@ define_methods! {
         vm.push(v); Ok(())
     }),
     (StrZfill, "zfill", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "zfill takes 1 argument")?;
+        check_arity(pos, 1, 1, "zfill takes 1 argument")?;
         if !pos[0].is_int() { return Err(cold_type("zfill() requires an integer argument")); }
         let s = recv_str(vm, recv)?;
         let width = pos[0].as_int() as usize;
@@ -578,7 +578,7 @@ define_methods! {
 
     // list: pure.
     (ListIndex, "index", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "index takes 1 argument")?;
+        check_arity(pos, 1, 1, "index takes 1 argument")?;
         let items = list_clone(vm, recv)?;
         let idx = items.iter()
             .position(|&v| eq_vals_with_heap(v, pos[0], &vm.heap))
@@ -588,42 +588,42 @@ define_methods! {
         Ok(())
     }),
     (ListCount, "count", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "count takes 1 argument")?;
+        check_arity(pos, 1, 1, "count takes 1 argument")?;
         let items = list_clone(vm, recv)?;
         let n = items.iter().filter(|&&v| eq_vals_with_heap(v, pos[0], &vm.heap)).count() as i64;
         vm.push(Val::int(n));
         Ok(())
     }),
     (ListCopy, "copy", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "copy takes no arguments")?;
+        check_arity(pos, 0, 0, "copy takes no arguments")?;
         let items = list_clone(vm, recv)?;
         vm.alloc_and_push_list(items)
     }),
 
     // list: mutating.
     (ListAppend, "append", mutating, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "append takes 1 argument")?;
+        check_arity(pos, 1, 1, "append takes 1 argument")?;
         list_mut(vm, recv, "append: receiver is not a list", |list| {
             list.push(pos[0]); Ok(())
         })?;
         vm.push(Val::none()); Ok(())
     }),
     (ListClear, "clear", mutating, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "clear takes no arguments")?;
+        check_arity(pos, 0, 0, "clear takes no arguments")?;
         list_mut(vm, recv, "clear: receiver is not a list", |list| {
             list.clear(); Ok(())
         })?;
         vm.push(Val::none()); Ok(())
     }),
     (ListReverse, "reverse", mutating, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "reverse takes no arguments")?;
+        check_arity(pos, 0, 0, "reverse takes no arguments")?;
         list_mut(vm, recv, "reverse: receiver is not a list", |list| {
             list.reverse(); Ok(())
         })?;
         vm.push(Val::none()); Ok(())
     }),
     (ListExtend, "extend", mutating, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "extend takes 1 argument")?;
+        check_arity(pos, 1, 1, "extend takes 1 argument")?;
         let items = vm.extract_iter(pos[0], true)?;
         list_mut(vm, recv, "extend: receiver is not a list", |list| {
             list.extend_from_slice(&items); Ok(())
@@ -631,7 +631,7 @@ define_methods! {
         vm.push(Val::none()); Ok(())
     }),
     (ListInsert, "insert", mutating, |vm, recv, pos| {
-        check_arity(&pos, 2, 2, "insert takes 2 arguments")?;
+        check_arity(pos, 2, 2, "insert takes 2 arguments")?;
         if !pos[0].is_int() { return Err(cold_type("list indices must be integers")); }
         list_mut(vm, recv, "insert: receiver is not a list", |list| {
             let i = pos[0].as_int();
@@ -646,7 +646,7 @@ define_methods! {
         vm.push(Val::none()); Ok(())
     }),
     (ListRemove, "remove", mutating, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "remove takes 1 argument")?;
+        check_arity(pos, 1, 1, "remove takes 1 argument")?;
         let items = list_clone(vm, recv)?;
         let idx = items.iter()
             .position(|&v| eq_vals_with_heap(v, pos[0], &vm.heap))
@@ -657,7 +657,7 @@ define_methods! {
         vm.push(Val::none()); Ok(())
     }),
     (ListPop, "pop", mutating, |vm, recv, pos| {
-        check_arity(&pos, 0, 1, "pop takes 0 or 1 arguments")?;
+        check_arity(pos, 0, 1, "pop takes 0 or 1 arguments")?;
         let popped = list_mut(vm, recv, "pop: receiver is not a list", |list| {
             if list.is_empty() { return Err(cold_value("pop from empty list")); }
             if pos.is_empty() { return Ok(list.pop().unwrap()); }
@@ -670,7 +670,7 @@ define_methods! {
         vm.push(popped); Ok(())
     }),
     (ListSort, "sort", mutating, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "sort takes no arguments")?;
+        check_arity(pos, 0, 0, "sort takes no arguments")?;
         let mut sorted = list_clone(vm, recv)?;
         vm.sort_by_lt(&mut sorted)?;
         list_mut(vm, recv, "sort: receiver is not a list", |list| {
@@ -681,19 +681,19 @@ define_methods! {
 
     // dict.
     (DictKeys, "keys", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "keys takes no arguments")?;
+        check_arity(pos, 0, 0, "keys takes no arguments")?;
         let entries = dict_entries(vm, recv)?;
         let keys: Vec<Val> = entries.into_iter().map(|(k, _)| k).collect();
         vm.alloc_and_push_list(keys)
     }),
     (DictValues, "values", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "values takes no arguments")?;
+        check_arity(pos, 0, 0, "values takes no arguments")?;
         let entries = dict_entries(vm, recv)?;
         let vals: Vec<Val> = entries.into_iter().map(|(_, v)| v).collect();
         vm.alloc_and_push_list(vals)
     }),
     (DictItems, "items", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "items takes no arguments")?;
+        check_arity(pos, 0, 0, "items takes no arguments")?;
         let entries = dict_entries(vm, recv)?;
         let mut items: Vec<Val> = Vec::with_capacity(entries.len());
         for (k, vv) in entries {
@@ -705,7 +705,7 @@ define_methods! {
     /* dict.copy() — shallow copy. Mutations to the result don't affect
        the original. */
     (DictCopy, "copy", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "copy takes no arguments")?;
+        check_arity(pos, 0, 0, "copy takes no arguments")?;
         let entries = dict_entries(vm, recv)?;
         let mut dm = DictMap::with_capacity(entries.len());
         for (k, v) in entries { dm.insert(k, v); }
@@ -714,7 +714,7 @@ define_methods! {
     /* dict.popitem() — remove and return the last (key, value) tuple.
        Raises KeyError on an empty dict. */
     (DictPopItem, "popitem", mutating, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "popitem takes no arguments")?;
+        check_arity(pos, 0, 0, "popitem takes no arguments")?;
         let pair = dict_mut(vm, recv, "popitem: receiver is not a dict", |dict| {
             let (k, v) = dict.entries.last().copied().ok_or(cold_value("popitem(): dictionary is empty"))?;
             dict.remove(&k);
@@ -723,7 +723,7 @@ define_methods! {
         vm.alloc_and_push_tuple(vec![pair.0, pair.1])
     }),
     (DictGet, "get", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 2, "get takes 1 or 2 arguments")?;
+        check_arity(pos, 1, 2, "get takes 1 or 2 arguments")?;
         let default = if pos.len() == 2 { pos[1] } else { Val::none() };
         let result = match vm.heap.get(recv) {
             HeapObj::Dict(rc) => rc.borrow().get(&pos[0]).copied().unwrap_or(default),
@@ -732,7 +732,7 @@ define_methods! {
         vm.push(result); Ok(())
     }),
     (DictUpdate, "update", mutating, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "update takes 1 argument")?;
+        check_arity(pos, 1, 1, "update takes 1 argument")?;
         // Accept either a dict (entries reused directly) or an iterable of
         // 2-element pair sequences ([(k, v), ...]) — matches CPython contract.
         let pairs: Vec<(Val, Val)> = if let HeapObj::Dict(rc) = vm.heap.get(pos[0]) {
@@ -757,7 +757,7 @@ define_methods! {
         vm.push(Val::none()); Ok(())
     }),
     (DictPop, "pop", mutating, |vm, recv, pos| {
-        check_arity(&pos, 1, 2, "pop takes 1 or 2 arguments")?;
+        check_arity(pos, 1, 2, "pop takes 1 or 2 arguments")?;
         let default = if pos.len() == 2 { Some(pos[1]) } else { None };
         let result = dict_mut(vm, recv, "pop: receiver is not a dict", |dict| {
             match dict.remove(&pos[0]) {
@@ -768,7 +768,7 @@ define_methods! {
         vm.push(result); Ok(())
     }),
     (DictSetDefault, "setdefault", mutating, |vm, recv, pos| {
-        check_arity(&pos, 1, 2, "setdefault takes 1 or 2 arguments")?;
+        check_arity(pos, 1, 2, "setdefault takes 1 or 2 arguments")?;
         let default = if pos.len() > 1 { pos[1] } else { Val::none() };
         let result = dict_mut(vm, recv, "setdefault: receiver is not a dict", |dict| {
             if let Some(v) = dict.get(&pos[0]).copied() { Ok(v) }
@@ -779,14 +779,14 @@ define_methods! {
 
     // set: mutating.
     (SetAdd, "add", mutating, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "add takes 1 argument")?;
+        check_arity(pos, 1, 1, "add takes 1 argument")?;
         set_mut(vm, recv, "add: receiver is not a set", |set| {
             set.insert(pos[0]); Ok(())
         })?;
         vm.push(Val::none()); Ok(())
     }),
     (SetRemove, "remove", mutating, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "remove takes 1 argument")?;
+        check_arity(pos, 1, 1, "remove takes 1 argument")?;
         set_mut(vm, recv, "remove: receiver is not a set", |set| {
             // CPython: KeyError, not ValueError.
             if !set.remove(&pos[0]) { return Err(VmErr::Raised("KeyError".into())); }
@@ -795,14 +795,14 @@ define_methods! {
         vm.push(Val::none()); Ok(())
     }),
     (SetDiscard, "discard", mutating, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "discard takes 1 argument")?;
+        check_arity(pos, 1, 1, "discard takes 1 argument")?;
         set_mut(vm, recv, "discard: receiver is not a set", |set| {
             set.remove(&pos[0]); Ok(())
         })?;
         vm.push(Val::none()); Ok(())
     }),
     (SetPop, "pop", mutating, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "pop takes no arguments")?;
+        check_arity(pos, 0, 0, "pop takes no arguments")?;
         let popped = set_mut(vm, recv, "pop: receiver is not a set", |set| {
             // Pop an arbitrary element. HashSet doesn't expose pop(), so we
             // grab one via iter() and remove it. Empty set raises like CPython.
@@ -814,14 +814,14 @@ define_methods! {
         vm.push(popped); Ok(())
     }),
     (SetClear, "clear", mutating, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "clear takes no arguments")?;
+        check_arity(pos, 0, 0, "clear takes no arguments")?;
         set_mut(vm, recv, "clear: receiver is not a set", |set| {
             set.clear(); Ok(())
         })?;
         vm.push(Val::none()); Ok(())
     }),
     (SetUpdate, "update", mutating, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "update takes 1 argument")?;
+        check_arity(pos, 1, 1, "update takes 1 argument")?;
         let items = iter_to_vec(vm, pos[0])?;
         set_mut(vm, recv, "update: receiver is not a set", |set| {
             for v in items { set.insert(v); }
@@ -832,18 +832,18 @@ define_methods! {
 
     // set: pure (return a fresh set or a bool).
     (SetCopy, "copy", pure, |vm, recv, pos| {
-        check_arity(&pos, 0, 0, "copy takes no arguments")?;
+        check_arity(pos, 0, 0, "copy takes no arguments")?;
         let items = set_clone(vm, recv)?;
         vm.alloc_and_push_set(items)
     }),
     (SetUnion, "union", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "union takes 1 argument")?;
+        check_arity(pos, 1, 1, "union takes 1 argument")?;
         let mut out = set_clone(vm, recv)?;
         out.extend(iter_to_vec(vm, pos[0])?);
         vm.alloc_and_push_set(out)
     }),
     (SetIntersection, "intersection", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "intersection takes 1 argument")?;
+        check_arity(pos, 1, 1, "intersection takes 1 argument")?;
         let lhs = set_clone(vm, recv)?;
         let rhs_items = iter_to_vec(vm, pos[0])?;
         let rhs: crate::util::fx::FxHashSet<Val> = rhs_items.into_iter().collect();
@@ -851,7 +851,7 @@ define_methods! {
         vm.alloc_and_push_set(out)
     }),
     (SetDifference, "difference", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "difference takes 1 argument")?;
+        check_arity(pos, 1, 1, "difference takes 1 argument")?;
         let lhs = set_clone(vm, recv)?;
         let rhs_items = iter_to_vec(vm, pos[0])?;
         let rhs: crate::util::fx::FxHashSet<Val> = rhs_items.into_iter().collect();
@@ -859,28 +859,28 @@ define_methods! {
         vm.alloc_and_push_set(out)
     }),
     (SetSymmetricDifference, "symmetric_difference", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "symmetric_difference takes 1 argument")?;
+        check_arity(pos, 1, 1, "symmetric_difference takes 1 argument")?;
         let lhs: crate::util::fx::FxHashSet<Val> = set_clone(vm, recv)?.into_iter().collect();
         let rhs: crate::util::fx::FxHashSet<Val> = iter_to_vec(vm, pos[0])?.into_iter().collect();
         let out: Vec<Val> = lhs.symmetric_difference(&rhs).copied().collect();
         vm.alloc_and_push_set(out)
     }),
     (SetIsSubset, "issubset", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "issubset takes 1 argument")?;
+        check_arity(pos, 1, 1, "issubset takes 1 argument")?;
         let lhs = set_clone(vm, recv)?;
         let rhs: crate::util::fx::FxHashSet<Val> = iter_to_vec(vm, pos[0])?.into_iter().collect();
         vm.push(Val::bool(lhs.iter().all(|v| rhs.contains(v))));
         Ok(())
     }),
     (SetIsSuperset, "issuperset", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "issuperset takes 1 argument")?;
+        check_arity(pos, 1, 1, "issuperset takes 1 argument")?;
         let lhs: crate::util::fx::FxHashSet<Val> = set_clone(vm, recv)?.into_iter().collect();
         let rhs = iter_to_vec(vm, pos[0])?;
         vm.push(Val::bool(rhs.iter().all(|v| lhs.contains(v))));
         Ok(())
     }),
     (SetIsDisjoint, "isdisjoint", pure, |vm, recv, pos| {
-        check_arity(&pos, 1, 1, "isdisjoint takes 1 argument")?;
+        check_arity(pos, 1, 1, "isdisjoint takes 1 argument")?;
         let lhs: crate::util::fx::FxHashSet<Val> = set_clone(vm, recv)?.into_iter().collect();
         let rhs = iter_to_vec(vm, pos[0])?;
         vm.push(Val::bool(!rhs.iter().any(|v| lhs.contains(v))));
