@@ -33,7 +33,7 @@ impl<'a> VM<'a> {
     pub fn call_hash(&mut self) -> Result<(), VmErr> {
         use core::hash::{Hash, Hasher};
         let o = self.pop()?;
-        let mut h = crate::modules::fx::FxHasher::default();
+        let mut h = crate::util::fx::FxHasher::default();
         if o.is_int()        { o.as_int().hash(&mut h); }
         else if o.is_float() { o.as_float().to_bits().hash(&mut h); }
         else if o.is_bool()  { o.as_bool().hash(&mut h); }

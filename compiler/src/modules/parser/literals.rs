@@ -5,7 +5,7 @@ use super::types::builtin;
 use super::types::{OpCode, Value, SSAChunk, Instruction};
 
 use crate::modules::lexer::{Token, TokenType, utf8_char_len};
-use crate::modules::fx::FxHashMap as HashMap;
+use crate::util::fx::FxHashMap as HashMap;
 
 use alloc::{string::{String, ToString}, vec::Vec};
 
@@ -437,7 +437,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let body = self.compile_body(&params);
 
         // Propagate free names to parent chunk so nested defs capture grandparent vars.
-        let param_slots: crate::modules::fx::FxHashSet<String> = params.iter()
+        let param_slots: crate::util::fx::FxHashSet<String> = params.iter()
             .map(|p| s!(str p.trim_start_matches(['*', '~']), "_0")).collect();
         for name in &body.names {
             if !param_slots.contains(name.as_str()) {

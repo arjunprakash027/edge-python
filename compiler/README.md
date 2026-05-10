@@ -90,10 +90,11 @@ Mark-and-sweep with roots: operand stack, with-stack, pending yields, event queu
 │   │   ├── abi_bridge.rs
 │   │   ├── resolver.rs
 │   │   └── errors.rs
+│   ├── util
+│   │   ├── fstr.rs
+│   │   ├── fx.rs
+│   │   └── sha256.rs
 │   └── modules
-│       ├── fstr.rs
-│       ├── fx.rs
-│       ├── sha256.rs
 │       ├── lexer
 │       │   ├── mod.rs
 │       │   ├── scan.rs

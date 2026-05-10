@@ -1,12 +1,15 @@
-use crate::modules::vm::types::{HeapPool, Val, VmErr};
 use crate::modules::packages::{NativeBinding, Resolved, Resolver, parse_manifest, walk_up_dirs, dir_of, join_relative};
-use crate::modules::fx::FxHashSet;
-use alloc::{boxed::Box, string::{String, ToString}, sync::Arc, vec::Vec};
+use crate::util::fx::FxHashSet;
+use alloc::{boxed::Box, string::{String, ToString}, vec::Vec};
 use crate::s;
 
-use super::{ModuleEntry, error_stash, get_val, handles, host_fetch_bytes, manifests, put_val, registry};
-use super::errors::error_from_kind;
-use crate::abi::ErrorKind;
+use super::{ModuleEntry, host_fetch_bytes, manifests, registry};
+use super::abi_bridge::make_native_binding;
+
+/* Hard cap on packages.json `extends` chain length. Prevents an attacker-
+   crafted manifest from looping the resolver indefinitely; 32 is well above
+   any sane real-world workspace depth. */
+const MAX_PACKAGES_HOPS: u32 = 32;
 
 pub(super) struct WasmHostResolver { pub(super) dir: String }
 
@@ -47,8 +50,11 @@ impl WasmHostResolver {
         let mut search_dir = start_dir.to_string();
         let mut hops: u32 = 0;
         loop {
-            if hops > 32 {
-                return Err(s!("packages.json walk-up exceeded 32 hops resolving '", str name, "'"));
+            if hops > MAX_PACKAGES_HOPS {
+                return Err(s!(
+                    "packages.json walk-up exceeded ",
+                    int MAX_PACKAGES_HOPS as i64,
+                    " hops resolving '", str name, "'"));
             }
             hops += 1;
 
@@ -111,42 +117,9 @@ impl WasmHostResolver {
                 canonical: spec.to_string(),
             }),
             ModuleEntry::Native(funcs) => {
-                let bindings: Vec<NativeBinding> = funcs.iter().map(|(name, id)| {
-                    let id = *id;
-                    // Translate VM CallExtern into the universal ABI wire shape.
-                    let closure = move |_: &mut HeapPool, args: &[Val]| -> Result<Val, VmErr>
-                    {
-                        // 1. Register args as handles.
-                        let argv: Vec<u32> = args.iter().map(|v| put_val(*v)).collect();
-                        let mut out_handle: u32 = 0;
-
-                        // 2. Call guest export through the host shim.
-                        let status = unsafe {
-                            super::host_call_native(
-                                id,
-                                argv.as_ptr(), argv.len() as u32,
-                                &mut out_handle as *mut u32,
-                            )
-                        };
-
-                        // 3. Translate status/out_handle into Result<Val>. Read result BEFORE releasing — order matters.
-                        if status != 0 {
-                            for h in &argv { handles().release(*h); }
-                            let (kind, msg) = error_stash().take().unwrap_or((ErrorKind::Runtime as u32, String::from("native call failed")));
-                            return Err(error_from_kind(kind, msg));
-                        }
-                        let result = get_val(out_handle)
-                            .ok_or(VmErr::Runtime("native returned invalid handle"))?;
-                        for h in &argv { handles().release(*h); }
-                        handles().release(out_handle);
-                        Ok(result)
-                    };
-                    NativeBinding {
-                        name: name.clone(),
-                        func: Arc::new(closure),
-                        pure: false,
-                    }
-                }).collect();
+                let bindings: Vec<NativeBinding> = funcs.iter()
+                    .map(|(name, id)| make_native_binding(name.clone(), *id))
+                    .collect();
                 Ok(Resolved::Native {
                     bindings,
                     canonical: spec.to_string(),

@@ -11,4 +11,10 @@ crate-type = ["rlib"]
 doctest = false
 
 [dependencies]
-macros = { path = "macros", version = "0.1.0" }
+edge-pdk-macros = { path = "macros", version = "0.1.0" }
+
+# Re-exported only so `edge_pdk::module!()` can refer to the symbol path.
+# Plugin authors who skip the macro and declare their own #[global_allocator]
+# do not pay for this — Rust drops unused crates from the cdylib.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+lol_alloc = "0.4"

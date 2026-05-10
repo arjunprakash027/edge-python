@@ -1,6 +1,6 @@
 use core::cell::RefCell;
 use alloc::{rc::Rc, string::String, vec::Vec};
-use crate::modules::fx::FxHashSet as HashSet;
+use crate::util::fx::FxHashSet as HashSet;
 
 use super::super::VM;
 use super::super::types::*;

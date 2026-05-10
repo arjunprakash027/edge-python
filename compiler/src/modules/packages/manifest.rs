@@ -1,7 +1,7 @@
 use alloc::string::{String, ToString};
 
 use crate::s;
-use crate::modules::fx::FxHashMap;
+use crate::util::fx::FxHashMap;
 
 /* Parsed `packages.json`. `imports` maps bare names to specs; `extends` inherits another manifest's imports when a name isn't local. */
 #[derive(Clone)]

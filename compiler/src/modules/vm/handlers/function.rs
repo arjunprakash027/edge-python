@@ -76,13 +76,13 @@ impl<'a> VM<'a> {
         let defaults = if n_defaults > 0 { self.pop_n(n_defaults)? } else { vec![] };
 
         let (params, body, _, _) = self.functions[global];
-        let param_names: crate::modules::fx::FxHashSet<String> = params.iter().map(|p| s!(str p.trim_start_matches(['*', '~']), "_0")).collect();
+        let param_names: crate::util::fx::FxHashSet<String> = params.iter().map(|p| s!(str p.trim_start_matches(['*', '~']), "_0")).collect();
         let mut captures: Vec<(usize, Val)> = Vec::new();
         // Capture closure values once per canonical (coalesced) slot, skipping
         // names already bound as formal parameters. The body.names list is
         // typically <30, so a linear scan over chunk.names is competitive
         // with a HashMap and avoids a per-call monomorphization.
-        let mut seen_canonical: crate::modules::fx::FxHashSet<usize> = crate::modules::fx::FxHashSet::default();
+        let mut seen_canonical: crate::util::fx::FxHashSet<usize> = crate::util::fx::FxHashSet::default();
         for (bi, bname) in body.names.iter().enumerate() {
             if param_names.contains(bname.as_str()) { continue; }
             let canon = body.alias_groups.get(bi)
@@ -340,12 +340,12 @@ impl<'a> VM<'a> {
             let callee_module = self.fn_module.get(fi).cloned().flatten();
             let same_scope = caller_fi == callee_parent_fi
                 && caller_module == callee_module;
-            let captured_set: crate::modules::fx::FxHashSet<usize> = if same_scope {
-                crate::modules::fx::FxHashSet::default()
+            let captured_set: crate::util::fx::FxHashSet<usize> = if same_scope {
+                crate::util::fx::FxHashSet::default()
             } else if let HeapObj::Func(_, _, captures) = self.heap.get(callee) {
                 captures.iter().map(|(s, _)| *s).collect()
             } else {
-                crate::modules::fx::FxHashSet::default()
+                crate::util::fx::FxHashSet::default()
             };
             for (si, &v) in slots.iter().enumerate() {
                 if !v.is_undef()

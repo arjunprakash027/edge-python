@@ -12,7 +12,7 @@ mod init;
 
 use crate::s;
 use crate::modules::parser::{SSAChunk, BUILTIN_TYPES};
-use crate::modules::fx::FxHashMap as HashMap;
+use crate::util::fx::FxHashMap as HashMap;
 
 pub use types::{Val, HeapObj, HeapPool, VmErr, Limits};
 
@@ -230,7 +230,7 @@ impl<'a> VM<'a> {
         // True iff the body references names not in params/builtins/captures.
         vm.needs_caller_slots = (0..vm.functions.len()).map(|fi| {
             let (params, body, _, _) = vm.functions[fi];
-            let param_names: crate::modules::fx::FxHashSet<&str> = params.iter()
+            let param_names: crate::util::fx::FxHashSet<&str> = params.iter()
                 .map(|p| p.trim_start_matches(['*', '~'])).collect();
             body.names.iter().any(|n| {
                 let base = crate::modules::parser::ssa_strip(n);
@@ -255,7 +255,7 @@ impl<'a> VM<'a> {
         vm.body_free_loads = (0..vm.functions.len()).map(|fi| {
             let (_, body, _, _) = vm.functions[fi];
             let param_bm = &vm.is_param_slot[fi];
-            let mut written: crate::modules::fx::FxHashSet<usize> = crate::modules::fx::FxHashSet::default();
+            let mut written: crate::util::fx::FxHashSet<usize> = crate::util::fx::FxHashSet::default();
             for ins in &body.instructions {
                 if matches!(ins.opcode, crate::modules::parser::OpCode::StoreName | crate::modules::parser::OpCode::Phi) {
                     written.insert(ins.operand as usize);

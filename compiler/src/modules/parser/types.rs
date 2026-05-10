@@ -1,5 +1,5 @@
 use crate::s;
-use crate::modules::fx::FxHashMap as HashMap;
+use crate::util::fx::FxHashMap as HashMap;
 use crate::modules::vm::types::ExternFn;
 
 use alloc::{string::{String, ToString}, vec, vec::Vec};
@@ -355,9 +355,16 @@ impl Diagnostic {
     }
 }
 
+/* Scan only the prefix chars before the opening quote; the body itself may legally contain 'r'/'R'. */
+fn has_raw_prefix(s: &str) -> bool {
+    s.bytes()
+        .take_while(|b| !matches!(b, b'"' | b'\''))
+        .any(|b| matches!(b, b'r' | b'R'))
+}
+
 // Strip prefix + quotes and unescape (skipped for raw strings).
 pub(super) fn parse_string(s: &str) -> String {
-    let is_raw = s.contains('r') || s.contains('R');
+    let is_raw = has_raw_prefix(s);
     let s = s.trim_start_matches(|c: char| "bBrRuU".contains(c));
     let inner = if s.starts_with("\"\"\"") || s.starts_with("'''") {
         &s[3..s.len() - 3]
@@ -370,7 +377,7 @@ pub(super) fn parse_string(s: &str) -> String {
 /* Parses b"..." to raw bytes: non-ASCII pass through; \xHH=single byte; \u/\U/\N rejected. */
 pub(super) fn parse_bytes_literal(s: &str) -> alloc::vec::Vec<u8> {
     let bytes = s.as_bytes();
-    let is_raw = s.contains('r') || s.contains('R');
+    let is_raw = has_raw_prefix(s);
     // Skip b/B/r/R prefix chars.
     let mut i = 0;
     while i < bytes.len() && matches!(bytes[i], b'b' | b'B' | b'r' | b'R') {
@@ -395,6 +402,10 @@ pub(super) fn parse_bytes_literal(s: &str) -> alloc::vec::Vec<u8> {
             b'n' => { out.push(b'\n'); j += 2; }
             b't' => { out.push(b'\t'); j += 2; }
             b'r' => { out.push(b'\r'); j += 2; }
+            b'a' => { out.push(0x07); j += 2; }
+            b'b' => { out.push(0x08); j += 2; }
+            b'f' => { out.push(0x0C); j += 2; }
+            b'v' => { out.push(0x0B); j += 2; }
             b'\\' => { out.push(b'\\'); j += 2; }
             b'\'' => { out.push(b'\''); j += 2; }
             b'"' => { out.push(b'"'); j += 2; }
@@ -434,6 +445,10 @@ fn unescape(s: &str) -> String {
             Some('n') => out.push('\n'),
             Some('t') => out.push('\t'),
             Some('r') => out.push('\r'),
+            Some('a') => out.push('\u{07}'),
+            Some('b') => out.push('\u{08}'),
+            Some('f') => out.push('\u{0C}'),
+            Some('v') => out.push('\u{0B}'),
             Some('\\') => out.push('\\'),
             Some('\'') => out.push('\''),
             Some('"') => out.push('"'),

@@ -23,6 +23,18 @@ pub unsafe extern "C" fn wasm_alloc(size: u32) -> *mut u8 {
     Box::into_raw(v.into_boxed_slice()) as *mut u8
 }
 
+/* Releases a buffer previously returned by `wasm_alloc`. The host MUST pass
+   the exact same `size` it requested; mismatched lengths reconstruct the
+   wrong Box layout. Calling with a null pointer or `size == 0` is a no-op. */
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wasm_free(ptr: *mut u8, size: u32) {
+    if ptr.is_null() || size == 0 { return; }
+    unsafe {
+        let slice = core::slice::from_raw_parts_mut(ptr, size as usize);
+        let _ = Box::from_raw(slice as *mut [u8]);
+    }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn register_code_module(
     spec_ptr: *const u8, spec_len: u32,
@@ -68,12 +80,20 @@ pub unsafe extern "C" fn reset_modules() {
     error_stash().clear();
 }
 
+/* Reads up to SZ bytes from the host-owned SRC buffer and validates UTF-8.
+   `len` is capped so the slice never extends past the buffer; callers decide
+   how to surface a UTF-8 failure (silent vs. user-facing error). */
+unsafe fn read_src(len: usize) -> Result<&'static str, core::str::Utf8Error> {
+    let len = len.min(SZ);
+    let bytes = unsafe {
+        core::slice::from_raw_parts(core::ptr::addr_of!(SRC) as *const u8, len)
+    };
+    core::str::from_utf8(bytes)
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn extract_imports(len: usize) -> usize {
-    let len = len.min(SZ);
-    let src = match core::str::from_utf8(unsafe {
-        core::slice::from_raw_parts(core::ptr::addr_of!(SRC) as *const u8, len)
-    }) {
+    let src = match unsafe { read_src(len) } {
         Ok(s) => s,
         Err(_) => return unsafe { write_out("") },
     };
@@ -84,10 +104,7 @@ pub unsafe extern "C" fn extract_imports(len: usize) -> usize {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn run(len: usize) -> usize {
-    let len = len.min(SZ);
-    let src = match core::str::from_utf8(unsafe {
-        core::slice::from_raw_parts(core::ptr::addr_of!(SRC) as *const u8, len)
-    }) {
+    let src = match unsafe { read_src(len) } {
         Ok(s) => s,
         Err(e) => return unsafe {
             write_out(&s!("input rejected: invalid utf-8 at byte ", int e.valid_up_to()))
@@ -116,9 +133,12 @@ pub unsafe extern "C" fn run(len: usize) -> usize {
         vm.strict_input = true;
         let inp_len = unsafe { INP_LEN };
         if inp_len > 0 {
-            let inp = unsafe { core::str::from_utf8_unchecked(
+            /* Host-supplied buffer; validate UTF-8 to keep the FFI boundary safe.
+               Invalid bytes degrade to an empty input rather than UB. */
+            let bytes = unsafe {
                 core::slice::from_raw_parts(core::ptr::addr_of!(INP) as *const u8, inp_len)
-            )};
+            };
+            let inp = core::str::from_utf8(bytes).unwrap_or("");
             vm.input_buffer = inp.split('\n').map(alloc::string::String::from).collect();
             unsafe { INP_LEN = 0; }
         }

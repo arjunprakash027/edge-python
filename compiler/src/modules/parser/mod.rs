@@ -10,7 +10,7 @@ pub use types::*;
 
 use crate::s;
 use crate::modules::lexer::{Token, TokenType};
-use crate::modules::fx::FxHashMap as HashMap;
+use crate::util::fx::FxHashMap as HashMap;
 use crate::modules::packages::{Resolver, NoopResolver};
 
 use alloc::{boxed::Box, string::{String, ToString}, vec::Vec};

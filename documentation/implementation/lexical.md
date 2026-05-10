@@ -75,7 +75,7 @@ fr'raw fstring' # raw f-string
 """triple""" # triple-quoted, single or double
 ```
 
-A leading prefix is recognised before the opening quote by the identifier scanner and verified against `is_string_prefix`, `is_fstring_prefix`, or `is_bytes_prefix`. Triple-quoted strings span newlines and bump `line` for each `\n` inside. Backslash escapes are consumed at lex time but **decoded** by the parser, so escape semantics live alongside the literal type. Recognised escapes: `\n \t \r \\ \' \" \xHH \uHHHH \UHHHHHHHH` plus 1- to 3-digit octal escapes (`\012` -> `\n`, `\101` -> `A`). `\N{NAME}` Unicode-name escapes are not implemented and pass through as literal text — embedding the ~200 KB Unicode-name database is rejected as too costly for the WASM artifact.
+A leading prefix is recognised before the opening quote by the identifier scanner and verified against `is_string_prefix`, `is_fstring_prefix`, or `is_bytes_prefix`. Triple-quoted strings span newlines and bump `line` for each `\n` inside. Backslash escapes are consumed at lex time but **decoded** by the parser, so escape semantics live alongside the literal type. Recognised escapes: `\n \t \r \a \b \f \v \\ \' \" \xHH \uHHHH \UHHHHHHHH` plus 1- to 3-digit octal escapes (`\012` -> `\n`, `\101` -> `A`). `\N{NAME}` Unicode-name escapes are not implemented and pass through as literal text — embedding the ~200 KB Unicode-name database is rejected as too costly for the WASM artifact.
 
 Lex-time errors anchor on the opening quote so the user's `^` marker points at the offender, not at end-of-line:
 

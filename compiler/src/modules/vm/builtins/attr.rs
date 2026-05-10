@@ -124,8 +124,8 @@ impl<'a> VM<'a> {
         &mut self, chunk: &crate::modules::parser::SSAChunk, slots: &[Val],
     ) -> Result<(), VmErr> {
         // Builtin/type/module pairs from self.globals, deduped to bare names.
-        let mut out: crate::modules::fx::FxHashMap<String, Val> =
-            crate::modules::fx::FxHashMap::default();
+        let mut out: crate::util::fx::FxHashMap<String, Val> =
+            crate::util::fx::FxHashMap::default();
         for (k, v) in self.globals.iter() {
             // Drop SSA-mirrors (`x_0`, `x_1`); keep canonical bare name.
             if let Some((bare, suf)) = k.rsplit_once('_')
@@ -180,8 +180,8 @@ impl<'a> VM<'a> {
         &mut self, chunk: &crate::modules::parser::SSAChunk, slots: &[Val],
     ) -> Result<(), VmErr> {
         // Map bare-name -> (best version, val) so we keep only the latest.
-        let mut latest: crate::modules::fx::FxHashMap<String, (i64, Val)> =
-            crate::modules::fx::FxHashMap::default();
+        let mut latest: crate::util::fx::FxHashMap<String, (i64, Val)> =
+            crate::util::fx::FxHashMap::default();
         for (i, name) in chunk.names.iter().enumerate() {
             let v = match slots.get(i) {
                 Some(v) if !v.is_undef() => *v,

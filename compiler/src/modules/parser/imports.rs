@@ -8,8 +8,8 @@ use super::Parser;
 use super::types::{Diagnostic, ImportEntry, ImportKind, OpCode, SSAChunk, parse_string, ssa_strip};
 use crate::modules::lexer::{Token, TokenType, lex};
 use crate::modules::packages::{Resolved, binding_to_extern, parse_integrity};
-use crate::modules::sha256::{sha256, hex_encode};
-use crate::modules::fx::FxHashSet;
+use crate::util::sha256::{sha256, hex_encode};
+use crate::util::fx::FxHashSet;
 
 use alloc::{string::{String, ToString}, vec::Vec};
 

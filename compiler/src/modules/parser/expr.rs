@@ -280,7 +280,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         };
         match parsed {
             Some(v) => self.emit_const(Value::Int(v)),
-            None => self.error("integer literal too large for 47-bit Val (max \u{00b1}140737488355327)"),
+            None => self.error("integer literal too large to represent"),
         }
     }
 
@@ -387,7 +387,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             s.chunk.emit(OpCode::ReturnValue, 0);
         });
 
-        let param_slots: crate::modules::fx::FxHashSet<String> = params.iter().map(|p| s!(str p.trim_start_matches('*'), "_0")).collect();
+        let param_slots: crate::util::fx::FxHashSet<String> = params.iter().map(|p| s!(str p.trim_start_matches('*'), "_0")).collect();
         for name in &body.names {
             if !param_slots.contains(name.as_str()) {
                 self.chunk.push_name(name);

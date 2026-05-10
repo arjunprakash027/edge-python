@@ -51,7 +51,7 @@ pub fn plugin_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
             }
             FnArg::Receiver(_) => {
                 return TokenStream::from(quote! {
-                    compile_error!("#[edge] does not support methods (`self` parameter)");
+                    compile_error!("#[plugin_fn] does not support methods (`self` parameter)");
                 });
             }
         }
@@ -73,7 +73,7 @@ pub fn plugin_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
             let h = unsafe { *argv.add(#i) };
             let #name: #ty = match <#ty as ::edge_pdk::FromValue>::from_handle(h) {
                 Ok(v) => v,
-                Err(e) => { ::edge_pdk::__stash_error(e); return 1; }
+                Err(e) => { ::edge_pdk::__internals::stash_error(e); return 1; }
             };
         }
     }).collect();
@@ -83,7 +83,7 @@ pub fn plugin_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
         quote! {
             match #impl_name(#(#arg_names),*) {
                 Ok(v) => v,
-                Err(e) => { ::edge_pdk::__stash_error(e); return 1; }
+                Err(e) => { ::edge_pdk::__internals::stash_error(e); return 1; }
             }
         }
     } else {
@@ -105,7 +105,7 @@ pub fn plugin_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
             out: *mut u32,
         ) -> i32 {
             if (argc as usize) != #argc_expected {
-                ::edge_pdk::__stash_error(::edge_pdk::Error::Type(
+                ::edge_pdk::__internals::stash_error(::edge_pdk::Error::Type(
                     ::alloc::format!(
                         "{} expects {} positional args, got {}",
                         stringify!(#user_name), #argc_expected, argc)));
@@ -121,7 +121,7 @@ pub fn plugin_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     unsafe { *out = h.into_raw(); }
                     0
                 }
-                Err(e) => { ::edge_pdk::__stash_error(e); 1 }
+                Err(e) => { ::edge_pdk::__internals::stash_error(e); 1 }
             }
         }
     };

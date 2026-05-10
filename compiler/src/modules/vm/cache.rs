@@ -153,6 +153,19 @@ fn hash_args(args: &[Val]) -> u64 {
     h
 }
 
+/* True when every arg is value-stable across calls. Mutable containers
+   (List, Dict, Set, Instance) hash by raw heap-index bits, so a caller
+   that mutates the same container between two calls produces a stale
+   cache hit. Only memoize when every arg is byte-by-byte immutable. */
+fn args_memoizable(args: &[Val], heap: &super::types::HeapPool) -> bool {
+    use super::types::HeapObj;
+    args.iter().all(|v| {
+        if !v.is_heap() { return true; }
+        !matches!(heap.get(*v), HeapObj::List(_) | HeapObj::Dict(_)
+                              | HeapObj::Set(_) | HeapObj::Instance(..))
+    })
+}
+
 // Indexed by `fi` (function id, dense from 0..N). Vec gives O(1) lookup
 // without a HashMap monomorphization.
 pub struct Templates { slots: Vec<Vec<TplEntry>> }
@@ -168,6 +181,7 @@ impl Templates {
     }
 
     pub fn record(&mut self, fi: usize, args: &[Val], result: Val, heap: &super::types::HeapPool) {
+        if !args_memoizable(args, heap) { return; }
         if self.slots.len() <= fi { self.slots.resize_with(fi + 1, Vec::new); }
         let h = hash_args(args);
         let v = &mut self.slots[fi];

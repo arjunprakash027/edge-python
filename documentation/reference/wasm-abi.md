@@ -24,16 +24,23 @@ extern "C" fn <name>(argv: *const u32, argc: u32, out: *mut u32) -> i32;
 
 Handles in `argv` are owned by the host and live for the duration of the call. Handles the guest creates via `edge_encode` or `edge_op` are owned by the guest until released — the guest must call `edge_release` on each before returning, **except** for the one written into `*out`.
 
-## Required guest export
+## Required guest exports
 
 In addition to the user functions, every guest module MUST export:
 
 ```rust
 #[unsafe(no_mangle)]
 pub extern "C" fn __edge_alloc(size: u32) -> *mut u8;
+
+#[unsafe(no_mangle)]
+pub extern "C" fn __edge_abi_version() -> u32;
 ```
 
-The host calls this to stage `argv` arrays in the guest's linear memory before invoking each export. The reference `edge-pdk` crate emits it automatically.
+`__edge_alloc` lets the host stage `argv` arrays in the guest's linear memory before invoking each export.
+
+`__edge_abi_version` returns the wire-format version this module targets (currently `1`). The host MUST read this symbol once at instantiation and refuse modules whose version it does not understand. Without the handshake, a host that has evolved beyond v1 would load a v1 module and decode garbage silently.
+
+The reference `edge-pdk` crate emits both symbols automatically (`EDGE_ABI_VERSION` is a `pub const` in the same crate).
 
 ## Host imports (6 functions)
 
@@ -346,7 +353,7 @@ The Edge Python project distributes only this specification. The reference Rust 
 - `#[plugin_fn]` proc macro that turns a typed Rust function into a wire-conformant export.
 - `FromValue` / `IntoValue` traits with primitive impls (`i64`, `f64`, `bool`, `String`, `&str`, `Option<T>`, `Handle`).
 - `Handle` / `Value` / `Error` types wrapping handles with `Drop`-driven release.
-- The required `__edge_alloc` export emitted automatically.
+- The required `__edge_alloc` and `__edge_abi_version` exports emitted automatically.
 
 A typical author-side function with the macro:
 

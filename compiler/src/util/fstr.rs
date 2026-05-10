@@ -22,39 +22,15 @@ pub fn format_f64(f: f64) -> alloc::string::String {
     format_general(f)
 }
 
-/* 32-byte stack buffer fits any f64 default format. */
+/* f64 default format fits in ~24 bytes for most values; preallocate 32 to avoid
+   regrowth on the common case. Using String over a stack buffer trades a tiny
+   allocation for safety: no silent truncation, no from_utf8_unchecked. */
 fn format_general(f: f64) -> alloc::string::String {
-    let mut buf = FmtBuf::new();
-    let _ = core::fmt::write(&mut buf, core::format_args!("{}", f));
-    alloc::string::String::from(buf.as_str())
-}
-
-struct FmtBuf { buf: [u8; 32], len: usize }
-impl FmtBuf {
-    fn new() -> Self { Self { buf: [0u8; 32], len: 0 } }
-    fn as_str(&self) -> &str {
-        unsafe { core::str::from_utf8_unchecked(&self.buf[..self.len]) }
-    }
-}
-impl core::fmt::Write for FmtBuf {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        let bytes = s.as_bytes();
-        let end = (self.len + bytes.len()).min(self.buf.len());
-        let n = end - self.len;
-        self.buf[self.len..end].copy_from_slice(&bytes[..n]);
-        self.len = end;
-        Ok(())
-    }
-}
-
-#[macro_export]
-macro_rules! push {
-    ($s:ident, $v:literal) => { $s.push_str($v); };
-    ($s:ident, str $v:expr) => { $s.push_str($v); };
-    ($s:ident, int $v:expr) => {{ let mut b = itoa::Buffer::new(); $s.push_str(b.format($v)); }};
-    ($s:ident, float $v:expr) => { $s.push_str(&$crate::modules::fstr::format_f64($v)); };
-    ($s:ident, char $v:expr) => { $s.push($v); };
-    ($s:ident, bool $v:expr) => { $s.push_str(if $v { "true" } else { "false" }); };
+    use core::fmt::Write;
+    let mut out = alloc::string::String::with_capacity(32);
+    /* core::fmt::Write::write_fmt is infallible for a String. */
+    let _ = write!(&mut out, "{}", f);
+    out
 }
 
 #[macro_export]
@@ -63,7 +39,7 @@ macro_rules! s {
     (@b $s:ident; $l:literal $(, $($r:tt)*)?) => { $s.push_str($l); $($crate::s!(@b $s; $($r)*);)? };
     (@b $s:ident; str $v:expr $(, $($r:tt)*)?) => { $s.push_str($v); $($crate::s!(@b $s; $($r)*);)? };
     (@b $s:ident; int $v:expr $(, $($r:tt)*)?) => {{ let mut _b = itoa::Buffer::new(); $s.push_str(_b.format($v)); $($crate::s!(@b $s; $($r)*);)? }};
-    (@b $s:ident; float $v:expr $(, $($r:tt)*)?) => { $s.push_str(&$crate::modules::fstr::format_f64($v)); $($crate::s!(@b $s; $($r)*);)? };
+    (@b $s:ident; float $v:expr $(, $($r:tt)*)?) => { $s.push_str(&$crate::util::fstr::format_f64($v)); $($crate::s!(@b $s; $($r)*);)? };
     (@b $s:ident; char $v:expr $(, $($r:tt)*)?) => { $s.push($v); $($crate::s!(@b $s; $($r)*);)? };
     (@b $s:ident; bool $v:expr $(, $($r:tt)*)?) => { $s.push_str(if $v { "true" } else { "false" }); $($crate::s!(@b $s; $($r)*);)? };
     (cap: $c:expr; $($t:tt)*) => {{ let mut _s = alloc::string::String::with_capacity($c); $crate::s!(@b _s; $($t)*); _s }};
@@ -102,5 +78,5 @@ impl From<E> for alloc::string::String { fn from(e: E) -> Self { e.message() } }
 
 #[macro_export]
 macro_rules! err {
-    ($($t:tt)*) => { $crate::modules::fstr::E::Custom { msg: $crate::s!($($t)*) } };
+    ($($t:tt)*) => { $crate::util::fstr::E::Custom { msg: $crate::s!($($t)*) } };
 }

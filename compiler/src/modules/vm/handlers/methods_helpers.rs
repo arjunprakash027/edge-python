@@ -96,7 +96,7 @@ pub(super) fn set_clone(vm: &VM, recv: Val) -> Result<Vec<Val>, VmErr> {
    (add, remove, discard, pop, clear, update). */
 #[inline]
 pub(super) fn set_mut<F, R>(vm: &mut VM, recv: Val, err: &'static str, f: F) -> Result<R, VmErr>
-where F: FnOnce(&mut crate::modules::fx::FxHashSet<Val>) -> Result<R, VmErr>
+where F: FnOnce(&mut crate::util::fx::FxHashSet<Val>) -> Result<R, VmErr>
 {
     match vm.heap.get_mut(recv) {
         HeapObj::Set(rc) => f(&mut rc.borrow_mut()),

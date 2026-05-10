@@ -1,6 +1,6 @@
-use alloc::{rc::Rc, string::String, vec, vec::Vec};
+use alloc::{rc::Rc, string::String, vec::Vec};
 use core::cell::RefCell;
-use crate::modules::fx::{FxHashMap as HashMap, FxHashSet as HashSet};
+use crate::util::fx::{FxHashMap as HashMap, FxHashSet as HashSet};
 
 pub mod coro;
 pub mod eq;
@@ -62,15 +62,12 @@ impl ExternFn {
 }
 
 /* NaN-boxed 8-byte value: int (47-bit), float, bool, None, undef, or heap idx.
-   Tags live in the QNAN bit pattern; payload bits decide the variant. */
-const QNAN: u64 = 0x7FFC_0000_0000_0000;
-const SIGN: u64 = 0x8000_0000_0000_0000;
-const TAG_UNDEF: u64 = QNAN;        // payload all zero — distinct from None/True/False/Heap
-const TAG_NONE: u64 = QNAN | 1;
-const TAG_TRUE: u64 = QNAN | 2;
-const TAG_FALSE: u64 = QNAN | 3;
-const TAG_INT: u64 = QNAN | SIGN;
-const TAG_HEAP: u64 = QNAN | 4;
+   Layout sealed in `crate::abi::nan_box`; re-imported here as the single
+   source of truth across the wire codec and the VM. */
+use crate::abi::nan_box::{
+    QNAN, SIGN, TAG_UNDEF, TAG_NONE, TAG_TRUE, TAG_FALSE, TAG_INT, TAG_HEAP,
+    INT_PAYLOAD_MASK,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Val(pub(crate) u64);
@@ -112,7 +109,7 @@ impl Val {
     pub const INT_MAX: i64 =  0x0000_7FFF_FFFF_FFFF;
     pub const INT_MIN: i64 = -0x0000_8000_0000_0000;
     #[inline(always)] pub fn int(i: i64) -> Self {
-        Self(TAG_INT | (i as u64 & 0x0000_FFFF_FFFF_FFFF))
+        Self(TAG_INT | (i as u64 & INT_PAYLOAD_MASK))
     }
     #[inline(always)] pub fn int_checked(i: i64) -> Option<Self> {
         if !(Self::INT_MIN..=Self::INT_MAX).contains(&i) { None } else { Some(Self::int(i)) }
@@ -139,9 +136,12 @@ impl Val {
     #[inline(always)] pub fn as_float(&self) -> f64  { f64::from_bits(self.0) }
     /* Public accessors for wire-format marshalling (FFI / WASM loader / SDK). */
     #[inline(always)] pub fn raw(&self) -> u64 { self.0 }
-    #[inline(always)] pub fn from_raw(u: u64) -> Self { Self(u) }
+    /** # Safety
+     * `u` must come from `Val::raw()` on a live heap slot in the same VM. 
+     * */
+    #[inline(always)] pub unsafe fn from_raw(u: u64) -> Self { Self(u) }
     #[inline(always)] pub fn as_int(&self) -> i64  {
-        let raw = (self.0 & 0x0000_FFFF_FFFF_FFFF) as i64;
+        let raw = (self.0 & INT_PAYLOAD_MASK) as i64;
         (raw << 16) >> 16
     }
     #[inline(always)] pub fn as_bool(&self) -> bool { self.0 == TAG_TRUE }
@@ -354,6 +354,10 @@ pub struct HeapPool {
     bytes_intern: HashMap<Vec<u8>, u32>,
     // Cached Ellipsis slot index so `... is ...` is True (singleton parity).
     ellipsis_idx: Option<u32>,
+    /* Reused across every mark() call; capacity grows once and stays put so
+       GC never allocates from the same allocator it might be running short
+       of. Cleared, not freed, between traversals. */
+    mark_worklist: Vec<u32>,
 }
 
 impl HeapPool {
@@ -368,6 +372,7 @@ impl HeapPool {
             strings: HashMap::default(),
             bytes_intern: HashMap::default(),
             ellipsis_idx: None,
+            mark_worklist: Vec::with_capacity(64),
         }
     }
 
@@ -413,14 +418,16 @@ impl HeapPool {
 
     pub fn mark(&mut self, v: Val) {
         if !v.is_heap() { return; }
-        let mut worklist = vec![v.as_heap()];
-        while let Some(idx) = worklist.pop() {
+        /* Split borrow: closure needs &mut mark_worklist while we read slots. */
+        let HeapPool { slots, mark_worklist, .. } = self;
+        mark_worklist.push(v.as_heap());
+        while let Some(idx) = mark_worklist.pop() {
             let idx = idx as usize;
-            if self.slots[idx].marked { continue; }
-            self.slots[idx].marked = true;
-            if let Some(obj) = &self.slots[idx].obj {
+            if slots[idx].marked { continue; }
+            slots[idx].marked = true;
+            if let Some(obj) = &slots[idx].obj {
                 for_each_val(obj, |val| {
-                    if val.is_heap() { worklist.push(val.as_heap()); }
+                    if val.is_heap() { mark_worklist.push(val.as_heap()); }
                 });
             }
         }

@@ -426,7 +426,7 @@ pub fn display_inline(v: Val, heap: &HeapPool) -> String {
     }
     if v.is_bool() { return (if v.as_bool() { "True" } else { "False" }).to_string(); }
     if v.is_none() { return String::from("None"); }
-    if v.is_float() { return crate::modules::fstr::format_f64(v.as_float()); }
+    if v.is_float() { return crate::util::fstr::format_f64(v.as_float()); }
     if v.is_heap()
         && let HeapObj::Str(s) = heap.get(v) { return s.clone(); }
     /* Fall back to nothing — caller should use VM::display for full coverage. */

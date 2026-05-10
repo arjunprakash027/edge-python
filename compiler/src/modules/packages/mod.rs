@@ -65,7 +65,7 @@ pub fn parse_integrity(spec: &str) -> Result<(&str, Option<[u8; 32]>), String> {
             "sha256 fragment must be 64 hex chars in '", str spec,
             "'; got ", int hex.len() as i64));
     }
-    let hash = crate::modules::sha256::hex_decode_32(hex).ok_or_else(|| s!(
+    let hash = crate::util::sha256::hex_decode_32(hex).ok_or_else(|| s!(
         "invalid hex in sha256 fragment of '", str spec, "'"))?;
     Ok((url, Some(hash)))
 }
@@ -87,11 +87,6 @@ pub fn boxed<R: Resolver + 'static>(r: R) -> Box<dyn Resolver> {
 impl Default for Box<dyn Resolver> {
     fn default() -> Self { Box::new(NoopResolver) }
 }
-
-/* Re-exports core types; hosts get trait, enums, binding, and default resolver via glob import. */
-pub use NativeBinding as Binding;
-pub use Resolved as ResolvedModule;
-pub use NoopResolver as Default_;
 
 /* Converts public NativeBinding into internal ExternFn; two structs separate host API from VM storage. */
 pub(crate) fn binding_to_extern(b: &NativeBinding) -> crate::modules::vm::types::ExternFn {

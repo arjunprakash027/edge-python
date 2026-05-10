@@ -7,15 +7,24 @@ use super::{ExceptionFrame, VM, handlers};
 use super::types::*;
 use super::cache::{OpcodeCache, FastOp};
 
+/* Three-way result of a fast-path attempt; see exec_fast for semantics. */
+enum FastOutcome { Done, TypeMiss, Overflow }
+
 impl<'a> VM<'a> {
 
-    /* Inline-cache fast path. Peeks the stack and only pops on success;
-       returns Ok(false) with the stack untouched on a type-guard miss
-       so the caller can fall back to the generic handler and deopt the IC. */
+    /* Inline-cache fast path. Peeks the stack and only pops on success.
+       Three outcomes:
+         Done     — the op ran inline; stack consumed and result pushed.
+         TypeMiss — operands didn't match the speculation; deopt the IC.
+         Overflow — types matched but the result can't be represented (int
+                    overflow, division by zero); the slow handler will
+                    raise the proper Python exception. The IC stays warm
+                    because the speculation was correct: the op IS hot
+                    on these types, only this *one* input pair fell out. */
     #[inline]
-    fn exec_fast(&mut self, fast: FastOp) -> Result<bool, VmErr> {
+    fn exec_fast(&mut self, fast: FastOp) -> Result<FastOutcome, VmErr> {
         let len = self.stack.len();
-        if len < 2 { return Ok(false); }
+        if len < 2 { return Ok(FastOutcome::TypeMiss); }
 
         let a = self.stack[len - 2];
         let b = self.stack[len - 1];
@@ -25,28 +34,28 @@ impl<'a> VM<'a> {
             FastOp::AddInt if a.is_int() && b.is_int() => {
                 match a.as_int().checked_add(b.as_int()).and_then(Val::int_checked) {
                     Some(v) => v,
-                    None => return Ok(false),
+                    None => return Ok(FastOutcome::Overflow),
                 }
             }
             FastOp::SubInt if a.is_int() && b.is_int() => {
                 match a.as_int().checked_sub(b.as_int()).and_then(Val::int_checked) {
                     Some(v) => v,
-                    None => return Ok(false),
+                    None => return Ok(FastOutcome::Overflow),
                 }
             }
             FastOp::MulInt if a.is_int() && b.is_int() => {
                 let r = a.as_int() as i128 * b.as_int() as i128;
-                if r >= Val::INT_MIN as i128 && r <= Val::INT_MAX as i128 { Val::int(r as i64) } else { return Ok(false); }
+                if r >= Val::INT_MIN as i128 && r <= Val::INT_MAX as i128 { Val::int(r as i64) } else { return Ok(FastOutcome::Overflow); }
             }
             FastOp::MulFloat if a.is_float() && b.is_float() => Val::float(a.as_float() * b.as_float()),
             FastOp::ModInt if a.is_int() && b.is_int() => {
                 let bv = b.as_int();
-                if bv == 0 { return Ok(false); }
+                if bv == 0 { return Ok(FastOutcome::Overflow); }
                 Val::int(((a.as_int() % bv) + bv) % bv)
             }
             FastOp::FloorDivInt if a.is_int() && b.is_int() => {
                 let bv = b.as_int();
-                if bv == 0 { return Ok(false); }
+                if bv == 0 { return Ok(FastOutcome::Overflow); }
                 Val::int(a.as_int().div_euclid(bv))
             }
 
@@ -61,7 +70,7 @@ impl<'a> VM<'a> {
             FastOp::AddStr | FastOp::EqStr if a.is_heap() && b.is_heap() => {
                 let (sa, sb) = match (self.heap.get(a), self.heap.get(b)) {
                     (HeapObj::Str(x), HeapObj::Str(y)) => (x.clone(), y.clone()),
-                    _ => return Ok(false),
+                    _ => return Ok(FastOutcome::TypeMiss),
                 };
                 match fast {
                     FastOp::AddStr => {
@@ -73,12 +82,12 @@ impl<'a> VM<'a> {
                 }
             }
 
-            _ => return Ok(false),
+            _ => return Ok(FastOutcome::TypeMiss),
         };
 
         self.stack.truncate(len - 2);
         self.push(result);
-        Ok(true)
+        Ok(FastOutcome::Done)
     }
 
     /* Main dispatch loop. Walks the fused instruction stream (LoadAttr+Call
@@ -368,8 +377,13 @@ impl<'a> VM<'a> {
             | OpCode::Eq | OpCode::Lt | OpCode::NotEq
             | OpCode::Gt | OpCode::LtEq | OpCode::GtEq => {
                 if let Some(fast) = cache.get_fast(rip) {
-                    if self.exec_fast(fast)? { return Ok(None); }
-                    cache.invalidate(rip);
+                    match self.exec_fast(fast)? {
+                        FastOutcome::Done => return Ok(None),
+                        /* Speculation was right (matching types); the slow handler
+                           will raise the proper Python exception. Keep the IC. */
+                        FastOutcome::Overflow => {}
+                        FastOutcome::TypeMiss => cache.invalidate(rip),
+                    }
                 }
                 if matches!(ins.opcode, OpCode::Eq | OpCode::Lt | OpCode::NotEq
                     | OpCode::Gt | OpCode::LtEq | OpCode::GtEq)
@@ -652,9 +666,6 @@ impl<'a> VM<'a> {
             // Emitted by `break` inside a for-loop to drop the abandoned
             // iterator so the surrounding for-iter reads from its own iter.
             OpCode::PopIter => { self.iter_stack.pop(); }
-            OpCode::MakeClass | OpCode::StoreAttr => {
-                return Err(cold_runtime("MakeClass/StoreAttr must be in main dispatch"));
-            }
             _ => return Err(cold_runtime("unexpected opcode in generic dispatch")),
         }
         Ok(())

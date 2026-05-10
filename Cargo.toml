@@ -11,6 +11,19 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/dylan-sutton-chavez/edge-python/"
 
+# Single source of truth for third-party versions. Members opt in with
+# `dep = { workspace = true }` so a bump touches one line workspace-wide
+# and the lockfile cannot grow accidental version splits.
+[workspace.dependencies]
+hashbrown = { version = "0.17", default-features = false }
+itoa = "1"
+lol_alloc = "0.4"
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
 [profile.release]
 opt-level = "z"
 lto = true

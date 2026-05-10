@@ -15,7 +15,8 @@
 //!     `edge_throw` / `edge_take_error`.
 //!   * `FromValue` / `IntoValue` traits with primitive impls (`i64`,
 //!     `f64`, `bool`, `String`, `&str`, `Option<T>`, `Handle`).
-//!   * The `__edge_alloc` export the host shim needs for argv staging.
+//!   * The `__edge_alloc` export the host shim needs for argv staging
+//!     (lives in the hidden `__internals` module so glob imports stay clean).
 //!
 //! Author code:
 //!
@@ -28,16 +29,64 @@
 //! }
 //! ```
 //!
-//! The `#[plugin_fn]` attribute lives in the internal `macros`
+//! The `#[plugin_fn]` attribute lives in the internal `edge-pdk-macros`
 //! sub-crate and is re-exported from here.
 
 #![cfg_attr(not(test), no_std)]
 
 extern crate alloc;
 
-pub use macros::plugin_fn;
+pub use edge_pdk_macros::plugin_fn;
 
-use alloc::{string::{String, ToString}, vec::Vec};
+/* Curated public surface for plugin authors. Glob-importing the whole
+   crate exposes #[doc(hidden)] symbols (`__edge_alloc`, `__internals`)
+   which are part of the macro contract, not the user API. The prelude
+   re-exports just what `#[plugin_fn]` expansion needs and what most
+   plugins reach for: type wrappers, the attribute, the trait pair.
+   Recommended: `use edge_pdk::prelude::*;`. */
+pub mod prelude {
+    pub use crate::{plugin_fn, Handle, Value, Error, Result, FromValue, IntoValue};
+}
+
+/* ---------- Plugin bootstrap ----------------------------------------- */
+
+/* Re-exported under a hidden path so `module!` can name lol_alloc without
+   forcing the plugin author to add it to their own Cargo.toml. */
+#[cfg(target_arch = "wasm32")]
+#[doc(hidden)]
+pub use lol_alloc as __lol_alloc;
+
+/* Emits the wasm32-only boilerplate every Edge Python plugin needs:
+     - a #[global_allocator] backed by lol_alloc::LeakingPageAllocator
+       (single-threaded bump allocator that matches the host model),
+     - a #[panic_handler] that traps via wasm32::unreachable.
+
+   The plugin author still writes #![no_std] / #![no_main] / extern crate
+   alloc; at the crate root — those are crate-level attributes the macro
+   cannot inject from inside an item position.
+
+   Usage:
+     edge_pdk::module!();
+
+   On non-wasm targets (e.g. host-side unit tests for the plugin) the
+   macro expands to nothing so cargo test still works. */
+#[macro_export]
+macro_rules! module {
+    () => {
+        #[cfg(target_arch = "wasm32")]
+        #[global_allocator]
+        static __EDGE_PDK_ALLOC: $crate::__lol_alloc::LeakingPageAllocator
+            = $crate::__lol_alloc::LeakingPageAllocator;
+
+        #[cfg(target_arch = "wasm32")]
+        #[panic_handler]
+        fn __edge_pdk_panic(_: &core::panic::PanicInfo) -> ! {
+            core::arch::wasm32::unreachable()
+        }
+    };
+}
+
+use alloc::{string::String, vec::Vec};
 
 /* ---------- Wire imports --------------------------------------------- */
 
@@ -68,14 +117,17 @@ unsafe extern "C" {
     pub fn edge_throw(kind: u32, msg_ptr: *const u8, msg_len: u32);
 }
 
-/// Stash an error so the host sees it after the export returns 1.
-/// Used by the `#[edge]` macro when a user function returns Err(_).
-#[doc(hidden)]
-pub fn __stash_error(e: Error) {
-    let kind = e.kind();
-    let msg = e.message().to_string();
-    unsafe { edge_throw(kind, msg.as_ptr(), msg.len() as u32); }
-}
+/* ---------- ABI version handshake ------------------------------------ */
+
+/* Wire-format version this PDK targets. Bump on any breaking change to
+   op codes, value tags, codec layout, or error kinds. The host loader
+   reads `__edge_abi_version` and refuses to instantiate a plugin whose
+   version it does not understand — without this, an evolved host would
+   load an old plugin and decode garbage silently. */
+pub const EDGE_ABI_VERSION: u32 = 1;
+
+#[unsafe(no_mangle)]
+pub extern "C" fn __edge_abi_version() -> u32 { EDGE_ABI_VERSION }
 
 /* ---------- Op codes & tags (must match bridge.rs spec) -------------- */
 
@@ -100,17 +152,34 @@ pub mod tag {
     pub const BYTES: u32 = 4;
 }
 
-/* ---------- Allocator the host calls to stage argv buffers ----------- */
+/* ---------- Internals — macro contract surface, not user API --------- */
 
-/// Host-side argv stager. The shim allocates space in this module's
-/// linear memory before invoking each export; the layout is
-/// [u32; argc] for argv and a single u32 for `out`. We use a leak-free
-/// bump scheme — every call lives entirely on the heap, so the leak is
-/// reclaimed when the WASM instance is torn down.
-#[unsafe(no_mangle)]
-pub extern "C" fn __edge_alloc(size: u32) -> *mut u8 {
-    let v = alloc::vec![0u8; size as usize];
-    alloc::boxed::Box::into_raw(v.into_boxed_slice()) as *mut u8
+/* Sub-module so `use edge_pdk::*;` cannot pull these into a plugin
+   author's namespace. The `#[plugin_fn]` expansion qualifies the path
+   explicitly (`::edge_pdk::__internals::stash_error`), and `__edge_alloc`
+   stays a no_mangle WASM export regardless of Rust module nesting. */
+#[doc(hidden)]
+pub mod __internals {
+    use super::Error;
+    use alloc::string::ToString;
+
+    /* Used by #[plugin_fn] expansion when a user fn returns Err(_). */
+    pub fn stash_error(e: Error) {
+        let kind = e.kind();
+        let msg = e.message().to_string();
+        unsafe { super::edge_throw(kind, msg.as_ptr(), msg.len() as u32); }
+    }
+
+    /* Host-side argv stager. The shim allocates space in this module's
+       linear memory before invoking each export; the layout is
+       [u32; argc] for argv and a single u32 for `out`. We use a leak-free
+       bump scheme — every call lives entirely on the heap, so the leak is
+       reclaimed when the WASM instance is torn down. */
+    #[unsafe(no_mangle)]
+    pub extern "C" fn __edge_alloc(size: u32) -> *mut u8 {
+        let v = alloc::vec![0u8; size as usize];
+        alloc::boxed::Box::into_raw(v.into_boxed_slice()) as *mut u8
+    }
 }
 
 /* ---------- Errors --------------------------------------------------- */
@@ -456,8 +525,9 @@ impl Handle {
             )
         };
         if r != 0 { return Err(last_error()); }
-        let v = i64::from_handle(out)?;
-        unsafe { edge_release(out); }
-        Ok(v)
+        /* Wrap into a Handle so Drop releases on every exit path, including
+           the `?` from a future from_handle that fails between decode and release. */
+        let h = Handle::from_raw(out);
+        i64::from_handle(h.raw())
     }
 }
