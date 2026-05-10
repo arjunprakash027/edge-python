@@ -144,6 +144,33 @@ caught IndexError as Exception
 
 User-defined classes do not participate in the hierarchy — they're flat state containers, caught only by their own name or by a bare `except`. `raise X from Y` raises `X`; the cause is currently discarded (no `__cause__` / `__context__` chaining).
 
+### Exception arguments
+
+Caught exceptions expose their constructor arguments as `e.args`, a tuple. Both user-raised and runtime-raised exceptions populate it: `raise X("msg")` and `raise X(a, b)` carry their arguments through to the handler, runtime-raised errors (division by zero, attribute miss, ...) carry their message as the single arg, and bare `raise X` produces an empty tuple.
+
+```python
+try:
+    raise TypeError("bad input")
+except TypeError as e:
+    print(e.args)
+
+try:
+    1 / 0
+except ZeroDivisionError as e:
+    print(e.args)
+
+try:
+    raise ValueError
+except ValueError as e:
+    print(e.args)
+```
+
+```text Output
+('bad input',)
+('division by zero',)
+()
+```
+
 ### Catching errors
 
 ```python
