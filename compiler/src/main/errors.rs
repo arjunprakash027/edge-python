@@ -3,7 +3,7 @@ use crate::modules::vm::types::VmErr;
 use crate::s;
 use alloc::string::String;
 
-use super::error_stash;
+use super::with_runtime;
 
 /* VmErr classifier for the ABI boundary. */
 pub(super) fn err_to_kind(e: &VmErr) -> ErrorKind {
@@ -23,7 +23,9 @@ pub(super) fn err_to_kind(e: &VmErr) -> ErrorKind {
 }
 
 pub(super) fn stash_error(e: VmErr) {
-    error_stash().set_typed(err_to_kind(&e), e.render());
+    let kind = err_to_kind(&e);
+    let msg = e.render();
+    with_runtime(|rt| rt.error_stash.set_typed(kind, msg));
 }
 
 pub(super) fn error_from_kind(kind: u32, msg: String) -> VmErr {

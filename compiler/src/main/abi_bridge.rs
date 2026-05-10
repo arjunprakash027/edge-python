@@ -6,7 +6,7 @@ use alloc::{rc::Rc, string::{String, ToString}, sync::Arc, vec, vec::Vec};
 use core::cell::RefCell;
 use crate::s;
 
-use super::{error_stash, get_val, handles, host_call_native, put_val, with_recv, with_vm};
+use super::{get_val, host_call_native, put_val, with_recv, with_runtime, with_vm};
 use super::errors::{error_from_kind, stash_error};
 
 // Universal dispatch. Returns 0 + handle in `*out_handle`, or 1 + stashed error.
@@ -281,7 +281,7 @@ pub unsafe extern "C" fn host_edge_decode(h: u32, out_tag: *mut u32, dst: *mut u
 // Decrement refcount on a handle. No-op for invalid handles.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn host_edge_release(h: u32) {
-    handles().release(h);
+    with_runtime(|rt| rt.handles.release(h));
 }
 
 // Stash a guest error for the host. Overwrites any pending error.
@@ -292,16 +292,15 @@ pub unsafe extern "C" fn host_edge_throw(kind: u32, msg_ptr: *const u8, msg_len:
             core::slice::from_raw_parts(msg_ptr, msg_len as usize)
         }).unwrap_or("").to_string()
     };
-    error_stash().set(kind, msg);
+    with_runtime(|rt| rt.error_stash.set(kind, msg));
 }
 
 // Drain the most recent error.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn host_edge_take_error(out_kind: *mut u32, dst: *mut u8, dst_max: u32) -> i32 {
     // Peek first so buffer-too-small callers can retry.
-    let stash = error_stash();
-    let (kind, len) = match stash.peek() {
-        Some((k, m)) => (k, m.len()),
+    let (kind, len) = match with_runtime(|rt| rt.error_stash.peek().map(|(k, m)| (k, m.len()))) {
+        Some(p) => p,
         None => return -1,
     };
     if len > dst_max as usize { return -(len as i32); }
@@ -310,7 +309,7 @@ pub unsafe extern "C" fn host_edge_take_error(out_kind: *mut u32, dst: *mut u8, 
     // across the FFI boundary (the .expect() previously here violated
     // "panics never cross FFI"; in single-threaded WASM this is unreachable
     // today but we don't want a future scheduler change to weaponise it).
-    let Some((_, msg)) = stash.take() else { return -1; };
+    let Some((_, msg)) = with_runtime(|rt| rt.error_stash.take()) else { return -1; };
     let bytes = msg.as_bytes();
     unsafe {
         *out_kind = kind;
@@ -349,15 +348,19 @@ pub(super) fn make_native_binding(name: String, id: u32) -> NativeBinding {
            BEFORE releasing — argv release frees the slots `result` may
            reference if the guest returned one of its inputs. */
         if status != 0 {
-            for h in &argv { handles().release(*h); }
-            let (kind, msg) = error_stash().take()
+            with_runtime(|rt| {
+                for h in &argv { rt.handles.release(*h); }
+            });
+            let (kind, msg) = with_runtime(|rt| rt.error_stash.take())
                 .unwrap_or((ErrorKind::Runtime as u32, String::from("native call failed")));
             return Err(error_from_kind(kind, msg));
         }
         let result = get_val(out_handle)
             .ok_or(VmErr::Runtime("native returned invalid handle"))?;
-        for h in &argv { handles().release(*h); }
-        handles().release(out_handle);
+        with_runtime(|rt| {
+            for h in &argv { rt.handles.release(*h); }
+            rt.handles.release(out_handle);
+        });
         Ok(result)
     };
     NativeBinding { name, func: Arc::new(closure), pure: false }
