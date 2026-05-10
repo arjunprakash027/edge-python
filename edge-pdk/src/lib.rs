@@ -117,6 +117,18 @@ unsafe extern "C" {
     pub fn edge_throw(kind: u32, msg_ptr: *const u8, msg_len: u32);
 }
 
+/* ---------- ABI version handshake ------------------------------------ */
+
+/* Wire-format version this PDK targets. Bump on any breaking change to
+   op codes, value tags, codec layout, or error kinds. The host loader
+   reads `__edge_abi_version` and refuses to instantiate a plugin whose
+   version it does not understand — without this, an evolved host would
+   load an old plugin and decode garbage silently. */
+pub const EDGE_ABI_VERSION: u32 = 1;
+
+#[unsafe(no_mangle)]
+pub extern "C" fn __edge_abi_version() -> u32 { EDGE_ABI_VERSION }
+
 /* ---------- Op codes & tags (must match bridge.rs spec) -------------- */
 
 #[allow(non_camel_case_types)]
