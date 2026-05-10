@@ -5,6 +5,7 @@ use crate::s;
 
 use super::{ModuleEntry, host_fetch_bytes, with_runtime};
 use super::abi_bridge::make_native_binding;
+use super::exports::wasm_free;
 
 /* Hard cap on packages.json `extends` chain length. Prevents an attacker-
    crafted manifest from looping the resolver indefinitely; 32 is well above
@@ -36,7 +37,17 @@ impl Resolver for WasmHostResolver {
         if ptr.is_null() {
             return Err(s!("no bytes cached by host for '", str spec, "'"));
         }
-        Ok(unsafe { Vec::from_raw_parts(ptr, len as usize, len as usize) })
+        // The host MUST allocate the returned buffer via `wasm_alloc` (it's
+        // documented as such in wasm-abi.md and implemented that way in the
+        // canonical JS shim). Copy out into a guest-owned Vec so subsequent
+        // ownership lives entirely on this side, then release the host
+        // buffer through the symmetric `wasm_free` — a `Vec::from_raw_parts`
+        // here would silently deallocate Box-laid memory through Vec's
+        // layout assumptions and trigger UB if the layouts ever drift.
+        let len = len as usize;
+        let bytes: Vec<u8> = unsafe { core::slice::from_raw_parts(ptr, len) }.to_vec();
+        unsafe { wasm_free(ptr, len as u32) };
+        Ok(bytes)
     }
 
     fn child(&self, spec: &str) -> Box<dyn Resolver> {
