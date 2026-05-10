@@ -7,6 +7,23 @@ Sealed contract for modules.
 
 use alloc::{string::String, vec::Vec};
 
+/* Source-of-truth NaN-boxing layout. Both the wire codec below and
+   vm::types::Val import from here, so any change touches one site
+   instead of three. Reserved for the `Sealed contract — v1` set: a
+   layout change forces a wasm-abi version bump. */
+pub mod nan_box {
+    pub const QNAN: u64        = 0x7FFC_0000_0000_0000;
+    pub const SIGN: u64        = 0x8000_0000_0000_0000;
+    pub const TAG_UNDEF: u64   = QNAN;
+    pub const TAG_NONE: u64    = QNAN | 1;
+    pub const TAG_TRUE: u64    = QNAN | 2;
+    pub const TAG_FALSE: u64   = QNAN | 3;
+    pub const TAG_INT: u64     = QNAN | SIGN;
+    pub const TAG_HEAP: u64    = QNAN | 4;
+    /* 47-bit signed integer payload mask (two's-complement, sign bit at bit 47). */
+    pub const INT_PAYLOAD_MASK: u64 = 0x0000_FFFF_FFFF_FFFF;
+}
+
 /* Op codes (sealed) */
 
 #[allow(non_camel_case_types)]
@@ -184,27 +201,22 @@ pub enum EncodeRequest<'a> {
     Invalid,
 }
 
-// Maps (tag, bytes) to EncodeRequest. NaN-boxing layout is sealed here; changes require ABI bump.
+// Maps (tag, bytes) to EncodeRequest. NaN-boxing layout is sealed in `nan_box`; changes require ABI bump.
 pub fn classify_encode(tag: u32, bytes: &[u8]) -> EncodeRequest<'_> {
-    /* NaN-boxing constants; must match host Val impl. */
-    const QNAN: u64 = 0x7FFC_0000_0000_0000;
-    const TAG_NONE_BITS: u64 = QNAN | 1;
-    const TAG_TRUE_BITS: u64 = QNAN | 2;
-    const TAG_FALSE_BITS: u64 = QNAN | 3;
-    const TAG_INT_BITS: u64 = QNAN | 0x8000_0000_0000_0000;
+    use nan_box::*;
 
     match Tag::from_u32(tag) {
-        Some(Tag::None) => EncodeRequest::Direct(TAG_NONE_BITS),
+        Some(Tag::None) => EncodeRequest::Direct(TAG_NONE),
         Some(Tag::Bool) => {
             let b = !bytes.is_empty() && bytes[0] != 0;
-            EncodeRequest::Direct(if b { TAG_TRUE_BITS } else { TAG_FALSE_BITS })
+            EncodeRequest::Direct(if b { TAG_TRUE } else { TAG_FALSE })
         }
         Some(Tag::Int) => {
             if bytes.len() != 8 { return EncodeRequest::Invalid; }
             let mut buf = [0u8; 8];
             buf.copy_from_slice(bytes);
             let i = i64::from_le_bytes(buf);
-            EncodeRequest::Direct(TAG_INT_BITS | (i as u64 & 0x0000_FFFF_FFFF_FFFF))
+            EncodeRequest::Direct(TAG_INT | (i as u64 & INT_PAYLOAD_MASK))
         }
         Some(Tag::Float) => {
             if bytes.len() != 8 { return EncodeRequest::Invalid; }
@@ -245,10 +257,7 @@ impl PrimitiveBytes {
 
 // Classifies Val bits into Primitive/Heap/Invalid; Heap means host must read from HeapPool.
 pub fn classify_decode(val_bits: u64) -> DecodeBits {
-    /* Same NaN-boxing constants as classify_encode. */
-    const QNAN: u64 = 0x7FFC_0000_0000_0000;
-    const SIGN: u64 = 0x8000_0000_0000_0000;
-    const TAG_INT: u64 = QNAN | SIGN;
+    use nan_box::*;
 
     // Float: any non-QNAN-tagged pattern.
     if (val_bits & QNAN) != QNAN {
@@ -259,7 +268,7 @@ pub fn classify_decode(val_bits: u64) -> DecodeBits {
     }
     // Int: QNAN|SIGN with payload.
     if (val_bits & (QNAN | SIGN)) == TAG_INT {
-        let raw = (val_bits & 0x0000_FFFF_FFFF_FFFF) as i64;
+        let raw = (val_bits & INT_PAYLOAD_MASK) as i64;
         let sign_extended = (raw << 16) >> 16;
         return DecodeBits::Primitive {
             tag: Tag::Int as u32,
@@ -269,17 +278,17 @@ pub fn classify_decode(val_bits: u64) -> DecodeBits {
     // Singletons and heap handles.
     let lower = val_bits & 0xF;
     if (val_bits & QNAN) == QNAN && (val_bits & SIGN) == 0 {
-        if val_bits == QNAN | 1 {
+        if val_bits == TAG_NONE {
             return DecodeBits::Primitive {
                 tag: Tag::None as u32, bytes: PrimitiveBytes::None,
             };
         }
-        if val_bits == QNAN | 2 {
+        if val_bits == TAG_TRUE {
             return DecodeBits::Primitive {
                 tag: Tag::Bool as u32, bytes: PrimitiveBytes::Bool(1),
             };
         }
-        if val_bits == QNAN | 3 {
+        if val_bits == TAG_FALSE {
             return DecodeBits::Primitive {
                 tag: Tag::Bool as u32, bytes: PrimitiveBytes::Bool(0),
             };
