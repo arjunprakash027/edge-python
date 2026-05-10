@@ -65,6 +65,17 @@ print(total(*[10, 20, 30]))
 60
 ```
 
+```python
+def opts(**kwargs):
+    return sorted(kwargs.items())
+
+print(opts(host="api", port=443))
+```
+
+```text Output
+[('host', 'api'), ('port', 443)]
+```
+
 ### Keyword-only parameters
 
 A bare `*` in the parameter list marks every following parameter as keyword-only. They can never be filled by positional arguments.

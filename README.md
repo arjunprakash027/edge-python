@@ -2,7 +2,7 @@
 
 A compact, single-pass SSA bytecode compiler and stack VM for a functional subset of Python 3.13 syntax. Hand-written lexer, Pratt parser that emits bytecode directly, and a threaded-code interpreter with per-instruction inline caching and pure-function memoization.
 
-Edge Python is distributed as a WebAssembly module — `compiler.wasm`, ~130 KB. It runs anywhere WebAssembly runs: browsers, Cloudflare Workers, Fastly Compute, Wasmtime, Wasmer, Spin. Sandboxed by construction; no native release artifact.
+Edge Python is distributed as a WebAssembly module — `compiler.wasm`, ~153 KB. It runs anywhere WebAssembly runs: browsers, Cloudflare Workers, Fastly Compute, Wasmtime, Wasmer, Spin. Sandboxed by construction; no native release artifact.
 
 - **Demo:** [demo.edgepython.com](https://demo.edgepython.com/)
 - **Docs:** [edgepython.com](https://edgepython.com/)
