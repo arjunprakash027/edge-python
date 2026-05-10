@@ -90,6 +90,21 @@ pub enum ErrorKind {
     Custom = edge_abi::error_kind::CUSTOM,
 }
 
+impl ErrorKind {
+    pub fn from_u32(k: u32) -> Option<Self> {
+        match k {
+            edge_abi::error_kind::TYPE => Some(Self::Type),
+            edge_abi::error_kind::VALUE => Some(Self::Value),
+            edge_abi::error_kind::RUNTIME => Some(Self::Runtime),
+            edge_abi::error_kind::ATTRIBUTE => Some(Self::Attribute),
+            edge_abi::error_kind::INDEX => Some(Self::Index),
+            edge_abi::error_kind::KEY => Some(Self::Key),
+            edge_abi::error_kind::CUSTOM => Some(Self::Custom),
+            _ => None,
+        }
+    }
+}
+
 /* Handle table */
 
 // Handle slot; rc=0 means free. Exposed handle = index+1 (0 reserved as invalid).
