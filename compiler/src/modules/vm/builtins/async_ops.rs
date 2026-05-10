@@ -146,7 +146,7 @@ impl<'a> VM<'a> {
             return Ok(());
         }
         // Snapshot before resume so a yield during sleep() can read it.
-        self.pending_sleep_until_ns = None;
+        self.pending.sleep_until_ns = None;
         let result = self.resume_coroutine(coro);
         let yielded = self.yielded;
         self.yielded = false;
@@ -155,7 +155,7 @@ impl<'a> VM<'a> {
             Ok(v) if yielded => {
                 // sleep() set pending_sleep_until_ns; receive() may also
                 // park indefinitely (we keep it Ready and re-drain queue).
-                if let Some(until) = self.pending_sleep_until_ns.take() {
+                if let Some(until) = self.pending.sleep_until_ns.take() {
                     CoroState::Sleeping(until)
                 } else {
                     let _ = v;
@@ -177,7 +177,7 @@ impl<'a> VM<'a> {
                         else { 0.0 };
         let secs = if secs < 0.0 { 0.0 } else { secs };
         let until = self.now_ns().saturating_add((secs * 1_000_000_000.0) as u64);
-        self.pending_sleep_until_ns = Some(until);
+        self.pending.sleep_until_ns = Some(until);
         // Push None as the yield value; the scheduler ignores it.
         self.push(Val::none());
         self.yielded = true;

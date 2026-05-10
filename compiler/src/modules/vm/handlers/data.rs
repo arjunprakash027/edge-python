@@ -156,12 +156,12 @@ impl<'a> VM<'a> {
                 // can bind the actual instance. For Type, msg is the bare
                 // class name (no instance to bind). For anything else, fall
                 // through to display().
-                self.pending_exc_val = None;
+                self.pending.exc_val = None;
                 let msg = if exc.is_heap() {
                     match self.heap.get(exc) {
                         HeapObj::ExcInstance(n, _) => {
                             let n = n.clone();
-                            self.pending_exc_val = Some(exc);
+                            self.pending.exc_val = Some(exc);
                             n
                         }
                         HeapObj::Type(n) => n.clone(),

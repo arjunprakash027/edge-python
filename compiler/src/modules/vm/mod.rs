@@ -31,6 +31,39 @@ pub(crate) struct ExceptionFrame {
 #[derive(Clone, Copy)]
 pub(crate) enum ParamKind { Normal, Star, DoubleStar, KwOnly }
 
+/* Side-channel state set by one opcode and consumed by another inside
+   the same dispatch frame. Grouped here so the implicit "set here,
+   read there" coupling is auditable in one place — adding a new
+   pending flag goes through this struct, not the VM root. The
+   long-term direction is to convert each into an explicit return on
+   the producing opcode (see AGENT-1 #19 in the audit), but that's a
+   broader change touching every opcode handler. */
+pub(crate) struct Pending {
+    /* Star/double-star spread bumps the next Call's argument count. */
+    pub pos_delta: i32,
+    pub kw_delta: i32,
+    /* Source byte offset of the Call instruction currently dispatching;
+       picked up by the traceback renderer. */
+    pub call_byte_pos: Option<u32>,
+    /* Wakeup deadline set by `sleep()` and consumed by the scheduler. */
+    pub sleep_until_ns: Option<u64>,
+    /* `raise X("msg")` stashes the lifted ExcInstance here so a
+       matching `except X as e` handler can bind the actual instance. */
+    pub exc_val: Option<Val>,
+}
+
+impl Pending {
+    const fn new() -> Self {
+        Self {
+            pos_delta: 0,
+            kw_delta: 0,
+            call_byte_pos: None,
+            sleep_until_ns: None,
+            exc_val: None,
+        }
+    }
+}
+
 /* `bare_name -> [(version, slot), ...]` for one chunk's `chunk.names`. */
 pub(crate) type NameVersionIndex = crate::util::fx::FxHashMap<String, Vec<(i64, usize)>>;
 
@@ -94,8 +127,7 @@ pub struct VM<'a> {
        the budget decrement on every backward jump. */
     pub(crate) sandbox_off: bool,
     pub(crate) with_stack: Vec<Val>,
-    pub(crate) pending_pos_delta: i32,
-    pub(crate) pending_kw_delta: i32,
+    pub(crate) pending: Pending,
     pub(crate) yielded: bool,
     pub(crate) resume_ip: usize,
     pub output: Vec<String>,
@@ -106,14 +138,6 @@ pub struct VM<'a> {
     /* Source byte offset of the deepest frame that raised a propagating
        error in the most recent run(). */
     pub(crate) error_byte_pos: Option<u32>,
-    /* Byte offset of the Call instruction currently being dispatched. */
-    pub(crate) pending_call_byte_pos: Option<u32>,
-    /* When `sleep(s)` yields, it stores the wakeup time here so the
-       scheduler can move the handle to Sleeping(until_ns). */
-    pub(crate) pending_sleep_until_ns: Option<u64>,
-    /* When a `raise X("msg")` lifts an `ExcInstance`, we stash the Val here
-       so the matching `except X as e` handler can bind the actual instance. */
-    pub(crate) pending_exc_val: Option<Val>,
     /* spec -> Module Val map populated by `init_modules` before user
        bytecode runs. Both `OpCode::LoadModule` and the `import_module()`
        builtin look up here. */
@@ -164,8 +188,7 @@ impl<'a> VM<'a> {
             depth: 0,
             max_calls: limits.calls,
             with_stack: Vec::new(),
-            pending_pos_delta: 0,
-            pending_kw_delta: 0,
+            pending: Pending::new(),
             yielded: false,
             resume_ip: 0,
             strict_input: false,
@@ -176,9 +199,6 @@ impl<'a> VM<'a> {
             observed_impure: Vec::new(),
             exception_stack: Vec::new(),
             error_byte_pos: None,
-            pending_call_byte_pos: None,
-            pending_sleep_until_ns: None,
-            pending_exc_val: None,
             module_table: HashMap::default(),
             fn_module: Vec::new(),
             function_names: Vec::new(),

@@ -162,8 +162,8 @@ impl<'a> VM<'a> {
                             self.stack.truncate(frame.stack_depth);
                             self.iter_stack.truncate(frame.iter_depth);
                             self.with_stack.truncate(frame.with_depth);
-                            self.pending_pos_delta = 0;
-                            self.pending_kw_delta  = 0;
+                            self.pending.pos_delta = 0;
+                            self.pending.kw_delta  = 0;
                             self.error_byte_pos    = None;
                             // Caught exception: discard the partial traceback
                             // so a later unhandled error doesn't carry stale
@@ -191,7 +191,7 @@ impl<'a> VM<'a> {
                             // actual instance — `e.args` then works. Fall
                             // back to the Type from globals for bare-name
                             // raises and to a fresh Str for ad-hoc messages.
-                            let exc = if let Some(v) = self.pending_exc_val.take() {
+                            let exc = if let Some(v) = self.pending.exc_val.take() {
                                 v
                             } else if let Some(&type_val) = self.globals.get(&msg) {
                                 type_val
@@ -436,7 +436,7 @@ impl<'a> VM<'a> {
                 // Snapshot the byte_pos of this call site so exec_call can
                 // record it on the new CallFrame. Prefer call_byte_pos
                 // (instr-level) and fall back to the enclosing statement.
-                self.pending_call_byte_pos = chunk.resolve_call(rip as u32)
+                self.pending.call_byte_pos = chunk.resolve_call(rip as u32)
                     .or_else(|| chunk.resolve(rip as u32));
                 self.handle_function(ins.opcode, op, chunk, slots)?;
             }
@@ -632,14 +632,14 @@ impl<'a> VM<'a> {
                         let items = self.iter_to_vec_for_spread(val)?;
                         let n = items.len() as i32;
                         for v in items { self.push(v); }
-                        self.pending_pos_delta += n - 1;
+                        self.pending.pos_delta += n - 1;
                     }
                     2 => {
                         let pairs = self.mapping_to_kw_pairs(val)?;
                         let n = pairs.len() as i32;
                         for (k, v) in pairs { self.push(k); self.push(v); }
-                        self.pending_pos_delta -= 1;
-                        self.pending_kw_delta  += n;
+                        self.pending.pos_delta -= 1;
+                        self.pending.kw_delta  += n;
                     }
                     _ => return Err(cold_runtime("UnpackArgs: bad operand")),
                 }

@@ -213,10 +213,10 @@ impl<'a> VM<'a> {
 
         let base_pos = (raw & 0xFF)        as i32;
         let base_kw  = ((raw >> 8) & 0xFF) as i32;
-        let num_pos = (base_pos + self.pending_pos_delta).max(0) as usize;
-        let num_kw  = (base_kw  + self.pending_kw_delta ).max(0) as usize;
-        self.pending_pos_delta = 0;
-        self.pending_kw_delta  = 0;
+        let num_pos = (base_pos + self.pending.pos_delta).max(0) as usize;
+        let num_kw  = (base_kw  + self.pending.kw_delta ).max(0) as usize;
+        self.pending.pos_delta = 0;
+        self.pending.kw_delta  = 0;
 
         let total_items = num_pos + 2 * num_kw;
         let mut stack_items: Vec<Val> = (0..total_items)
@@ -564,7 +564,7 @@ impl<'a> VM<'a> {
 
         // The frame snapshots the caller's chunk source/path so render
         // works without holding a borrow on the live chunk pointers.
-        let call_byte_pos = self.pending_call_byte_pos.take().unwrap_or(0);
+        let call_byte_pos = self.pending.call_byte_pos.take().unwrap_or(0);
         self.call_stack.push(super::super::types::CallFrame {
             fi,
             call_byte_pos,
