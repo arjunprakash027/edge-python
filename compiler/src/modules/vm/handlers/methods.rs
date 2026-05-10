@@ -846,7 +846,7 @@ define_methods! {
         check_arity(&pos, 1, 1, "intersection takes 1 argument")?;
         let lhs = set_clone(vm, recv)?;
         let rhs_items = iter_to_vec(vm, pos[0])?;
-        let rhs: crate::modules::fx::FxHashSet<Val> = rhs_items.into_iter().collect();
+        let rhs: crate::util::fx::FxHashSet<Val> = rhs_items.into_iter().collect();
         let out: Vec<Val> = lhs.into_iter().filter(|v| rhs.contains(v)).collect();
         vm.alloc_and_push_set(out)
     }),
@@ -854,34 +854,34 @@ define_methods! {
         check_arity(&pos, 1, 1, "difference takes 1 argument")?;
         let lhs = set_clone(vm, recv)?;
         let rhs_items = iter_to_vec(vm, pos[0])?;
-        let rhs: crate::modules::fx::FxHashSet<Val> = rhs_items.into_iter().collect();
+        let rhs: crate::util::fx::FxHashSet<Val> = rhs_items.into_iter().collect();
         let out: Vec<Val> = lhs.into_iter().filter(|v| !rhs.contains(v)).collect();
         vm.alloc_and_push_set(out)
     }),
     (SetSymmetricDifference, "symmetric_difference", pure, |vm, recv, pos| {
         check_arity(&pos, 1, 1, "symmetric_difference takes 1 argument")?;
-        let lhs: crate::modules::fx::FxHashSet<Val> = set_clone(vm, recv)?.into_iter().collect();
-        let rhs: crate::modules::fx::FxHashSet<Val> = iter_to_vec(vm, pos[0])?.into_iter().collect();
+        let lhs: crate::util::fx::FxHashSet<Val> = set_clone(vm, recv)?.into_iter().collect();
+        let rhs: crate::util::fx::FxHashSet<Val> = iter_to_vec(vm, pos[0])?.into_iter().collect();
         let out: Vec<Val> = lhs.symmetric_difference(&rhs).copied().collect();
         vm.alloc_and_push_set(out)
     }),
     (SetIsSubset, "issubset", pure, |vm, recv, pos| {
         check_arity(&pos, 1, 1, "issubset takes 1 argument")?;
         let lhs = set_clone(vm, recv)?;
-        let rhs: crate::modules::fx::FxHashSet<Val> = iter_to_vec(vm, pos[0])?.into_iter().collect();
+        let rhs: crate::util::fx::FxHashSet<Val> = iter_to_vec(vm, pos[0])?.into_iter().collect();
         vm.push(Val::bool(lhs.iter().all(|v| rhs.contains(v))));
         Ok(())
     }),
     (SetIsSuperset, "issuperset", pure, |vm, recv, pos| {
         check_arity(&pos, 1, 1, "issuperset takes 1 argument")?;
-        let lhs: crate::modules::fx::FxHashSet<Val> = set_clone(vm, recv)?.into_iter().collect();
+        let lhs: crate::util::fx::FxHashSet<Val> = set_clone(vm, recv)?.into_iter().collect();
         let rhs = iter_to_vec(vm, pos[0])?;
         vm.push(Val::bool(rhs.iter().all(|v| lhs.contains(v))));
         Ok(())
     }),
     (SetIsDisjoint, "isdisjoint", pure, |vm, recv, pos| {
         check_arity(&pos, 1, 1, "isdisjoint takes 1 argument")?;
-        let lhs: crate::modules::fx::FxHashSet<Val> = set_clone(vm, recv)?.into_iter().collect();
+        let lhs: crate::util::fx::FxHashSet<Val> = set_clone(vm, recv)?.into_iter().collect();
         let rhs = iter_to_vec(vm, pos[0])?;
         vm.push(Val::bool(!rhs.iter().any(|v| lhs.contains(v))));
         Ok(())

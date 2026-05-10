@@ -19,7 +19,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use compiler_lib::modules::fx::FxHashMap;
+use compiler_lib::util::fx::FxHashMap;
 use compiler_lib::modules::packages::{
     NativeBinding, Resolved, Resolver,
     Manifest, walk_up_dirs, dir_of, join_relative,

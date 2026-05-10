@@ -1,5 +1,5 @@
 use crate::s;
-use crate::modules::fx::FxHashMap as HashMap;
+use crate::util::fx::FxHashMap as HashMap;
 use crate::modules::vm::types::ExternFn;
 
 use alloc::{string::{String, ToString}, vec, vec::Vec};

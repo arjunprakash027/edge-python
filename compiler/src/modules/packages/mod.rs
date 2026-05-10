@@ -65,7 +65,7 @@ pub fn parse_integrity(spec: &str) -> Result<(&str, Option<[u8; 32]>), String> {
             "sha256 fragment must be 64 hex chars in '", str spec,
             "'; got ", int hex.len() as i64));
     }
-    let hash = crate::modules::sha256::hex_decode_32(hex).ok_or_else(|| s!(
+    let hash = crate::util::sha256::hex_decode_32(hex).ok_or_else(|| s!(
         "invalid hex in sha256 fragment of '", str spec, "'"))?;
     Ok((url, Some(hash)))
 }

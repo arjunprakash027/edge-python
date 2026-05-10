@@ -1,6 +1,6 @@
 use alloc::{rc::Rc, string::String, vec, vec::Vec};
 use core::cell::RefCell;
-use crate::modules::fx::{FxHashMap as HashMap, FxHashSet as HashSet};
+use crate::util::fx::{FxHashMap as HashMap, FxHashSet as HashSet};
 
 pub mod coro;
 pub mod eq;

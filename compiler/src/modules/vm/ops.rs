@@ -189,7 +189,7 @@ impl<'a> VM<'a> {
                 if !(Val::INT_MIN..=Val::INT_MAX).contains(&i) { return b.format(i).into(); }
                 let mut s = String::new(); s.push_str(b.format(i)); s.push_str(".0"); return s;
             }
-            return crate::modules::fstr::format_f64(f);
+            return crate::util::fstr::format_f64(f);
         }
         if v.is_true() { return "True".into(); }
         if v.is_false() { return "False".into(); }
@@ -360,7 +360,7 @@ impl<'a> VM<'a> {
        push. Dedups via HashSet's bit-eq, consistent with how literals and
        method results are stored. */
     fn alloc_set_value(&mut self, items: Vec<Val>) -> Result<Val, VmErr> {
-        let mut s = crate::modules::fx::FxHashSet::default();
+        let mut s = crate::util::fx::FxHashSet::default();
         for v in items { s.insert(v); }
         self.heap.alloc(HeapObj::Set(Rc::new(RefCell::new(s))))
     }

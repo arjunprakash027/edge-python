@@ -88,10 +88,11 @@ compiler/src/
  │   ├── abi_bridge.rs   # host_edge_op + dispatch_*
  │   ├── resolver.rs     # walk-up packages.json + native bridge closure
  │   └── errors.rs
+ ├── util/         # Internal helpers shared across the compiler (not stdlib)
+ │   ├── fstr.rs       # numeric formatter + s!/push!/err! string macros
+ │   ├── fx.rs         # FxHasher + per-map seeded FxBuildHasher
+ │   └── sha256.rs     # in-tree FIPS 180-4 SHA-256 (used by integrity)
  └── modules/
-     ├── fstr.rs       # numeric formatter + s!/push!/err! string macros
-     ├── fx.rs         # FxHasher + per-map seeded FxBuildHasher
-     ├── sha256.rs     # in-tree FIPS 180-4 SHA-256 (used by integrity)
      ├── lexer/
      │   ├── mod.rs
      │   ├── scan.rs

@@ -12,8 +12,8 @@ use super::types::*;
    canonical slot; `seen` deduplicates so the latest value wins. */
 fn collect_module_attrs(chunk: &SSAChunk, slots: &[Val]) -> Vec<(String, Val)> {
     let mut attrs: Vec<(String, Val)> = Vec::new();
-    let mut seen: crate::modules::fx::FxHashSet<String> =
-        crate::modules::fx::FxHashSet::default();
+    let mut seen: crate::util::fx::FxHashSet<String> =
+        crate::util::fx::FxHashSet::default();
     for ins in &chunk.instructions {
         if !matches!(ins.opcode, OpCode::StoreName) { continue; }
         let Some(name) = chunk.names.get(ins.operand as usize) else { continue; };
@@ -97,8 +97,8 @@ impl<'a> VM<'a> {
         // user code dispatches. Topological order falls out of recursive
         // descent: a module's dependencies are seen + initialised before
         // its own top-level runs.
-        let mut in_progress: crate::modules::fx::FxHashSet<String> =
-            crate::modules::fx::FxHashSet::default();
+        let mut in_progress: crate::util::fx::FxHashSet<String> =
+            crate::util::fx::FxHashSet::default();
         self.init_modules(self.chunk, &mut in_progress)?;
         let mut slots = self.fill_builtins(&self.chunk.names);
         self.exec(self.chunk, &mut slots)
@@ -114,7 +114,7 @@ impl<'a> VM<'a> {
     fn init_modules(
         &mut self,
         chunk: &SSAChunk,
-        in_progress: &mut crate::modules::fx::FxHashSet<String>,
+        in_progress: &mut crate::util::fx::FxHashSet<String>,
     ) -> Result<(), VmErr> {
         for entry in &chunk.imports {
             if self.module_table.contains_key(&entry.spec) { continue; }

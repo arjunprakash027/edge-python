@@ -1,6 +1,6 @@
 use crate::modules::vm::types::{HeapPool, Val, VmErr};
 use crate::modules::packages::{NativeBinding, Resolved, Resolver, parse_manifest, walk_up_dirs, dir_of, join_relative};
-use crate::modules::fx::FxHashSet;
+use crate::util::fx::FxHashSet;
 use alloc::{boxed::Box, string::{String, ToString}, sync::Arc, vec::Vec};
 use crate::s;
 

@@ -52,7 +52,7 @@ macro_rules! push {
     ($s:ident, $v:literal) => { $s.push_str($v); };
     ($s:ident, str $v:expr) => { $s.push_str($v); };
     ($s:ident, int $v:expr) => {{ let mut b = itoa::Buffer::new(); $s.push_str(b.format($v)); }};
-    ($s:ident, float $v:expr) => { $s.push_str(&$crate::modules::fstr::format_f64($v)); };
+    ($s:ident, float $v:expr) => { $s.push_str(&$crate::util::fstr::format_f64($v)); };
     ($s:ident, char $v:expr) => { $s.push($v); };
     ($s:ident, bool $v:expr) => { $s.push_str(if $v { "true" } else { "false" }); };
 }
@@ -63,7 +63,7 @@ macro_rules! s {
     (@b $s:ident; $l:literal $(, $($r:tt)*)?) => { $s.push_str($l); $($crate::s!(@b $s; $($r)*);)? };
     (@b $s:ident; str $v:expr $(, $($r:tt)*)?) => { $s.push_str($v); $($crate::s!(@b $s; $($r)*);)? };
     (@b $s:ident; int $v:expr $(, $($r:tt)*)?) => {{ let mut _b = itoa::Buffer::new(); $s.push_str(_b.format($v)); $($crate::s!(@b $s; $($r)*);)? }};
-    (@b $s:ident; float $v:expr $(, $($r:tt)*)?) => { $s.push_str(&$crate::modules::fstr::format_f64($v)); $($crate::s!(@b $s; $($r)*);)? };
+    (@b $s:ident; float $v:expr $(, $($r:tt)*)?) => { $s.push_str(&$crate::util::fstr::format_f64($v)); $($crate::s!(@b $s; $($r)*);)? };
     (@b $s:ident; char $v:expr $(, $($r:tt)*)?) => { $s.push($v); $($crate::s!(@b $s; $($r)*);)? };
     (@b $s:ident; bool $v:expr $(, $($r:tt)*)?) => { $s.push_str(if $v { "true" } else { "false" }); $($crate::s!(@b $s; $($r)*);)? };
     (cap: $c:expr; $($t:tt)*) => {{ let mut _s = alloc::string::String::with_capacity($c); $crate::s!(@b _s; $($t)*); _s }};
@@ -102,5 +102,5 @@ impl From<E> for alloc::string::String { fn from(e: E) -> Self { e.message() } }
 
 #[macro_export]
 macro_rules! err {
-    ($($t:tt)*) => { $crate::modules::fstr::E::Custom { msg: $crate::s!($($t)*) } };
+    ($($t:tt)*) => { $crate::util::fstr::E::Custom { msg: $crate::s!($($t)*) } };
 }
