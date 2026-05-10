@@ -136,12 +136,9 @@ impl Val {
     #[inline(always)] pub fn as_float(&self) -> f64  { f64::from_bits(self.0) }
     /* Public accessors for wire-format marshalling (FFI / WASM loader / SDK). */
     #[inline(always)] pub fn raw(&self) -> u64 { self.0 }
-    /* # Safety
-       Callers must guarantee `u` was produced by `Val::raw()` on a Val whose
-       referenced heap slot is still live in *this* HeapPool. Constructing a
-       Val with an arbitrary u64 — or one obtained from a different VM
-       instance — violates the GC invariant and will cause `HeapPool::get`
-       to panic on first dereference. */
+    /** # Safety
+     * `u` must come from `Val::raw()` on a live heap slot in the same VM. 
+     * */
     #[inline(always)] pub unsafe fn from_raw(u: u64) -> Self { Self(u) }
     #[inline(always)] pub fn as_int(&self) -> i64  {
         let raw = (self.0 & INT_PAYLOAD_MASK) as i64;
