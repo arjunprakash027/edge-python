@@ -82,13 +82,12 @@ impl<'a> VM<'a> {
         // re-parsing each name on every miss.
         let mut name_versions: super::NameVersionIndex = crate::util::fx::FxHashMap::default();
         for (si, sname) in chunk.names.iter().enumerate() {
-            if let Some(p) = sname.rfind('_')
-                && let Ok(v) = sname[p+1..].parse::<i64>() {
-                    name_versions
-                        .entry(sname[..p].to_string())
-                        .or_default()
-                        .push((v, si));
-                }
+            if let Some(parsed) = crate::modules::parser::SsaName::parse(sname) {
+                name_versions
+                    .entry(parsed.bare.to_string())
+                    .or_default()
+                    .push((parsed.version as i64, si));
+            }
         }
         self.chunk_name_versions.insert(chunk as *const _, name_versions);
         for class_body in chunk.classes.iter() {

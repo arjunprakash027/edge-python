@@ -237,7 +237,7 @@ impl<'a> VM<'a> {
                 // we explicitly require the suffix-bearing form here, not
                 // ssa_strip's "fall through to bare on missing suffix" shape.
                 let canon = body.names.iter().enumerate()
-                    .find(|(_, n)| n.rfind('_').map(|p| &n[..p]) == Some(base.as_str()))
+                    .find(|(_, n)| crate::modules::parser::SsaName::parse(n).map(|s| s.bare) == Some(base.as_str()))
                     .map(|(i, _)| body.alias_groups.get(i).and_then(|g| g.first().copied()).unwrap_or(i as u16) as usize)?;
                 Some((canon, canon))
             }).collect()
@@ -284,9 +284,8 @@ impl<'a> VM<'a> {
                 if canon != slot { return None; }
                 if param_bm.get(slot).copied().unwrap_or(false) { return None; }
                 if written.contains(&slot) { return None; }
-                let p = name.rfind('_')?;
-                name[p+1..].parse::<u32>().ok()?;
-                Some((name[..p].to_string(), slot))
+                let parsed = crate::modules::parser::SsaName::parse(name)?;
+                Some((parsed.bare.to_string(), slot))
             }).collect()
         }).collect();
 

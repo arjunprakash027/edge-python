@@ -153,11 +153,7 @@ impl<'a> VM<'a> {
                 Some(v) if !v.is_undef() => *v,
                 _ => continue,
             };
-            let bare = match name.rfind('_') {
-                Some(p) if name[p + 1..].chars().all(|c| c.is_ascii_digit()) =>
-                    name[..p].to_string(),
-                _ => name.clone(),
-            };
+            let bare = crate::modules::parser::ssa_strip(name).to_string();
             // User assignment overrides the builtin entry of the same name.
             out.insert(bare, v);
         }
@@ -191,11 +187,8 @@ impl<'a> VM<'a> {
             // scratch — never user-visible.
             if name.starts_with('#') { continue; }
             // Strip SSA version suffix.
-            let (bare, ver) = match name.rfind('_') {
-                Some(p) if name[p + 1..].chars().all(|c| c.is_ascii_digit()) =>
-                    (&name[..p], name[p + 1..].parse::<i64>().unwrap_or(0)),
-                _ => (name.as_str(), 0),
-            };
+            let (bare, ver) = crate::modules::parser::SsaName::parse_or_bare(name);
+            let ver = ver as i64;
             // Skip unmodified builtins: if the global registration for this
             // name points at the *same* Val we'd return, the user never
             // rebound it locally — exclude from locals().
