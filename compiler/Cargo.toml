@@ -4,7 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Single-pass SSA compiler based on CPython 3.13: hand-written lexer, token-to-bytecode parser, threaded-code virtual machine with NaN-boxed values, inline caching, template memoization, and a mark-sweep garbage collector. Ships as a WebAssembly module."
+description = "Single-pass SSA compiler based on CPython syntax: hand-written lexer, token-to-bytecode parser, threaded-code virtual machine with NaN-boxed values, inline caching, template memoization, and a mark-sweep garbage collector. Ships as a WebAssembly module."
 readme = "README.md"
 autotests = false
 autobins = false
@@ -24,14 +24,11 @@ edge-abi = { workspace = true }
 hashbrown = { workspace = true }
 itoa = { workspace = true }
 
-# WASM-only global allocator. Pulled into wasm32 builds automatically; absent
-# on host builds (where std's allocator is fine and `compiler.wasm` is just a
-# library artifact, not the runtime target).
+# WASM-only global allocator. Pulled into wasm32 builds automatically; absent on host builds (where std's allocator is fine and `compiler.wasm` is just a library artifact, not the runtime target).
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 lol_alloc = { workspace = true }
 
-# Test-only deps for the JSON-driven test runner. None of these are pulled
-# into the release `compiler.wasm`.
+# Test-only deps for the JSON-driven test runner. None of these are pulled into the release `compiler.wasm`.
 [dev-dependencies]
 hashbrown = { workspace = true, features = ["serde"] }
 serde = { workspace = true }
