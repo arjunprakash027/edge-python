@@ -479,7 +479,7 @@ impl<'a> VM<'a> {
         // records `<base>_0` (the version current at body-compile time) but
         // the caller now stores `<base>` under a higher SSA version, exact-
         // name match misses. `resolve_free_name` walks the documented
-        // three-layer fallback (caller slots → callee module attrs →
+        // three-layer fallback (caller slots -> callee module attrs ->
         // globals) so the order lives in one place; capture-protected
         // slots are filtered here so closures keep their captured values.
         let free_loads = &self.body_free_loads[fi];

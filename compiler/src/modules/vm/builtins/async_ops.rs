@@ -5,9 +5,7 @@ use super::super::types::*;
 
 impl<'a> VM<'a> {
 
-    /* Resume a suspended coroutine. On yield: persists ip/slots/stack/iters
-       back into the Coroutine object and leaves self.yielded = true. On
-       return: restores caller stack/iter state and self.yielded. */
+    /* Resume a coroutine. On yield: persist ip/slots/stack/iters back into it. On return: restore caller stack/iter state. */
     pub fn resume_coroutine(&mut self, callee: Val) -> Result<Val, VmErr> {
         if let HeapObj::Coroutine(ip, saved_slots, saved_stack, fi, saved_iters) = self.heap.get(callee) {
             let (ip, fi) = (*ip, *fi);
@@ -45,10 +43,7 @@ impl<'a> VM<'a> {
         }
     }
 
-    /* `run(*coros)` — drive a cooperative scheduler until the *first*
-       argument finishes. Multiple positional args run concurrently;
-       additional ones are still drained until they resolve so caller
-       semantics match `gather`. Returns the first coroutine's result. */
+    /* `run(*coros)` — drive the scheduler until the *first* arg finishes; the rest still drain to completion (matches `gather` semantics). Returns the first result. */
     pub fn call_run(&mut self, argc: u16) -> Result<(), VmErr> {
         let tasks = self.pop_n(argc as usize)?;
         if tasks.is_empty() {
@@ -66,8 +61,7 @@ impl<'a> VM<'a> {
                 });
             }
         }
-        // Drain everything so concurrent coroutines all run to completion;
-        // remember the target handle's result for the return value.
+        // Drain everything so concurrent coroutines all run to completion; remember the target handle's result for the return value.
         self.run_until_all_done()?;
         let mut result = Val::none();
         if let Some(h) = self.scheduler.iter().find(|h| h.coro == target) {
@@ -86,8 +80,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Drive the scheduler until every handle is in a terminal state
-       (Done / Errored / Cancelled). */
+    // Drive the scheduler until every handle is terminal (Done / Errored / Cancelled).
     pub(crate) fn run_until_all_done(&mut self) -> Result<(), VmErr> {
         loop {
             let alive = self.scheduler.iter().any(|h| matches!(
@@ -97,9 +90,7 @@ impl<'a> VM<'a> {
                 | CoroState::Sleeping(_)
             ));
             if !alive { return Ok(()); }
-            // Pick a Ready handle; if none, advance clock to the earliest
-            // wakeup. If everyone is Done/Errored/Cancelled, bail out — we
-            // already returned target above so this means target is gone.
+            // Pick a Ready handle; otherwise advance the clock to the earliest wakeup.
             let mut next_ready: Option<usize> = None;
             let mut min_wake: Option<u64> = None;
             for (i, h) in self.scheduler.iter().enumerate() {
@@ -118,9 +109,7 @@ impl<'a> VM<'a> {
             match min_wake {
                 Some(w) => {
                     let now = self.now_ns();
-                    // With a real clock we don't busy-wait: we still
-                    // advance virtual_clock_ns logically so subsequent
-                    // sleeps are relative to the new "now".
+                    // Real clock: don't busy-wait, but advance virtual_clock_ns so later sleeps are relative.
                     if w > now && self.time_hook.is_none() {
                         self.virtual_clock_ns = w;
                     }
@@ -145,7 +134,7 @@ impl<'a> VM<'a> {
             self.scheduler[idx].state = CoroState::Cancelled;
             return Ok(());
         }
-        // Snapshot before resume so a yield during sleep() can read it.
+        // Snapshot before resume so a yield during `sleep()` can read it.
         self.pending.sleep_until_ns = None;
         let result = self.resume_coroutine(coro);
         let yielded = self.yielded;
@@ -153,8 +142,7 @@ impl<'a> VM<'a> {
         let new_state = match result {
             Err(e) => CoroState::Errored(e),
             Ok(v) if yielded => {
-                // sleep() set pending_sleep_until_ns; receive() may also
-                // park indefinitely (we keep it Ready and re-drain queue).
+                // `sleep()` sets `pending_sleep_until_ns`; `receive()` parks Ready and re-drains the queue.
                 if let Some(until) = self.pending.sleep_until_ns.take() {
                     CoroState::Sleeping(until)
                 } else {
@@ -172,9 +160,9 @@ impl<'a> VM<'a> {
     pub fn call_sleep(&mut self) -> Result<(), VmErr> {
         let n = self.pop()?;
         let secs: f64 = if n.is_int() { n.as_int() as f64 }
-                        else if n.is_float() { n.as_float() }
-                        else if n.is_bool() { n.as_bool() as i64 as f64 }
-                        else { 0.0 };
+            else if n.is_float() { n.as_float() }
+            else if n.is_bool() { n.as_bool() as i64 as f64 }
+            else { 0.0 };
         let secs = if secs < 0.0 { 0.0 } else { secs };
         let until = self.now_ns().saturating_add((secs * 1_000_000_000.0) as u64);
         self.pending.sleep_until_ns = Some(until);
@@ -184,7 +172,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* gather(*coros) — concurrent fan-out. */
+    /* `gather(*coros)` — concurrent fan-out. */
     pub fn call_gather(&mut self, argc: u16) -> Result<(), VmErr> {
         let tasks = self.pop_n(argc as usize)?;
         let coros: Vec<Val> = tasks.into_iter()
@@ -216,16 +204,13 @@ impl<'a> VM<'a> {
                 }).unwrap_or(Val::none());
             results.push(res);
         }
-        // Drop only the gather'd handles — leave any unrelated scheduler
-        // entries (set up by an outer run()) alone.
+        // Drop only the gather'd handles — leave any unrelated scheduler entries (set up by an outer `run()`) alone.
         self.scheduler.retain(|h| !coros.contains(&h.coro));
         if let Some(e) = first_err { return Err(e); }
         self.alloc_and_push_list(results)
     }
 
-    /* with_timeout(seconds, coro) — adds the coroutine to the scheduler,
-       drains it until terminal or `seconds` elapse. On timeout the
-       coroutine is cancelled and a TimeoutError is raised. */
+    /* `with_timeout(seconds, coro)` — drain `coro` until terminal or `seconds` elapse. On timeout: cancel the coroutine and raise TimeoutError. */
     pub fn call_with_timeout(&mut self) -> Result<(), VmErr> {
         let coro = self.pop()?;
         let secs_v = self.pop()?;
@@ -233,8 +218,8 @@ impl<'a> VM<'a> {
             return Err(cold_type("with_timeout() requires a coroutine"));
         }
         let secs: f64 = if secs_v.is_int() { secs_v.as_int() as f64 }
-                        else if secs_v.is_float() { secs_v.as_float() }
-                        else { return Err(cold_type("with_timeout() seconds must be a number")); };
+            else if secs_v.is_float() { secs_v.as_float() }
+            else { return Err(cold_type("with_timeout() seconds must be a number")); };
         let deadline = self.now_ns().saturating_add((secs.max(0.0) * 1_000_000_000.0) as u64);
         self.scheduler.push(CoroutineHandle {
             coro, state: CoroState::Ready,
@@ -254,7 +239,7 @@ impl<'a> VM<'a> {
                         self.scheduler_step(idx)?;
                         break;
                     }
-                    // Sleep wakes before deadline -> advance clock & wake.
+                    // Sleep wakes before deadline -> advance clock and wake.
                     if self.time_hook.is_none() && until > self.virtual_clock_ns {
                         self.virtual_clock_ns = until;
                     }

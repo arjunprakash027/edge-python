@@ -7,15 +7,13 @@ use super::super::types::*;
 
 impl<'a> VM<'a> {
 
-    /* Heap-alloc `s` and push the resulting Val. Used by ~10 builtins
-       (str / repr / chr / format / ...) that produce string results. */
+    /* Heap-alloc `s` and push the resulting Val. Used by builtins that produce string results. */
     pub(in crate::modules::vm::builtins) fn alloc_and_push_str(&mut self, s: String) -> Result<(), VmErr> {
         let v = self.heap.alloc(HeapObj::Str(s))?;
         self.push(v); Ok(())
     }
 
-    /* Allocate a List from items and push. Centralises the
-       Rc::new(RefCell::new(items)) construction inlined ~15 times. */
+    /* Allocate a List from items and push. Centralises the Rc::new(RefCell::new(items)) construction inlined. */
     pub(crate) fn alloc_list(&mut self, items: Vec<Val>) -> Result<Val, VmErr> {
         self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(items))))
     }
@@ -26,9 +24,7 @@ impl<'a> VM<'a> {
         self.push(v); Ok(())
     }
 
-    /* Allocate a Set from a Vec (deduping by Val's bit-eq), push, return
-       Ok. Mirrors `alloc_and_push_list`. Used by `set` methods that yield
-       a fresh set value (copy, union, intersection, difference, etc.). */
+    // Allocate a Set from `items` (deduped by Val bit-eq) and push. Mirrors `alloc_and_push_list`.
     pub(crate) fn alloc_and_push_set(&mut self, items: Vec<Val>) -> Result<(), VmErr> {
         let v = self.alloc_set(items)?;
         self.push(v); Ok(())
@@ -113,8 +109,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* frozenset() | frozenset(iter) — construct an immutable, hashable
-       set from an iterable. Without args returns the empty frozenset. */
+    /* `frozenset()` | `frozenset(iter)` — construct an immutable, hashable set from an iterable. Without args returns the empty frozenset. */
     pub fn call_frozenset(&mut self, argc: u16) -> Result<(), VmErr> {
         let args = self.pop_n(argc as usize)?;
         let items: Vec<Val> = match args.len() {
@@ -128,13 +123,7 @@ impl<'a> VM<'a> {
         self.push(v); Ok(())
     }
 
-    /* `bytes()` constructor — three forms, mirroring Python:
-         bytes()                    -> empty bytes
-         bytes(n)        if int     -> n zero bytes
-         bytes(iter)     if iter    -> bytes of those ints, each in 0..=255
-         bytes(s, "utf-8")          -> encode str s with the given encoding
-       Encodings recognised: "utf-8", "utf8", "ascii". Anything else errors
-       so silent encoding mismatches don't slip through. */
+    /* `bytes()` — empty, `n` zero bytes, iter of ints (0..=255), or `(str, encoding)`. Encodings limited to utf-8/utf8/ascii; unknown ones error so mismatches aren't silent. */
     pub fn call_bytes(&mut self, argc: u16) -> Result<(), VmErr> {
         let args = self.pop_n(argc as usize)?;
         let buf: Vec<u8> = match args.len() {
@@ -168,7 +157,7 @@ impl<'a> VM<'a> {
                 }
             }
             2 => {
-                // bytes(s, "utf-8") — string encoding form.
+                // `bytes(s, "utf-8")` — string encoding form.
                 let (s, enc) = (args[0], args[1]);
                 let HeapObj::Str(text) = self.heap.get(s).clone() else {
                     return Err(cold_type("bytes() first argument must be a string when encoding is given"));

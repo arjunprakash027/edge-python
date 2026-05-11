@@ -7,9 +7,7 @@ use super::super::types::*;
 
 impl<'a> VM<'a> {
 
-    /* bytes_fromhex(s) — decode a hex string into bytes. Whitespace is
-       tolerated. Errors on odd length or non-hex characters. Exposed as
-       a free builtin since Edge Python has no class methods. */
+    /* `bytes_fromhex(s)` — hex string -> bytes; tolerates whitespace, errors on odd length / non-hex. */
     pub fn call_bytes_fromhex(&mut self) -> Result<(), VmErr> {
         let v = self.pop()?;
         let s = match self.heap.get(v) {
@@ -24,10 +22,8 @@ impl<'a> VM<'a> {
         let bytes = cleaned.as_bytes();
         let mut i = 0;
         while i < bytes.len() {
-            let hi = (bytes[i] as char).to_digit(16)
-                .ok_or(cold_value("non-hexadecimal digit found"))?;
-            let lo = (bytes[i + 1] as char).to_digit(16)
-                .ok_or(cold_value("non-hexadecimal digit found"))?;
+            let hi = (bytes[i] as char).to_digit(16).ok_or(cold_value("non-hexadecimal digit found"))?;
+            let lo = (bytes[i + 1] as char).to_digit(16).ok_or(cold_value("non-hexadecimal digit found"))?;
             out.push(((hi << 4) | lo) as u8);
             i += 2;
         }
@@ -35,9 +31,7 @@ impl<'a> VM<'a> {
         self.push(v); Ok(())
     }
 
-    /* int_from_bytes(b, byteorder) — parse a bytes value as an integer.
-       byteorder is "big" or "little"; signedness is unsigned. Range check
-       against the 47-bit Val cap; OverflowError if out of range. */
+    /* `int_from_bytes(b, byteorder)` — unsigned bytes -> int ("big"/"little"). Bounded by the 47-bit Val cap; raises OverflowError if exceeded. */
     pub fn call_int_from_bytes(&mut self) -> Result<(), VmErr> {
         let order = self.pop()?;
         let v = self.pop()?;
@@ -66,8 +60,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* int_to_bytes(n, length, byteorder) — encode a non-negative int into
-       a bytes of given length. Errors if the value doesn't fit. */
+    // `int_to_bytes(n, length, byteorder)` — non-negative int -> bytes of `length`; errors if it overflows.
     pub fn call_int_to_bytes(&mut self) -> Result<(), VmErr> {
         let order = self.pop()?;
         let length = self.pop()?;
@@ -101,8 +94,7 @@ impl<'a> VM<'a> {
         self.push(v); Ok(())
     }
 
-    /* `import_module(name)` — look up an already-imported module by its
-       runtime alias and return the `HeapObj::Module` Val. */
+    // `import_module(name)` — fetch an already-imported module by alias; returns its `HeapObj::Module` Val.
     pub fn call_import_module(&mut self) -> Result<(), VmErr> {
         let spec = self.pop()?;
         if !spec.is_heap() {
@@ -112,14 +104,11 @@ impl<'a> VM<'a> {
             HeapObj::Str(s) => s.clone(),
             _ => return Err(cold_type("import_module() argument must be a string")),
         };
-        // The parser stores top-level bindings under both bare name and
-        // `<name>_0` (SSA version 0); look up either form so users can
-        // pass the natural alias they wrote in their `import` statement.
+        // Parser stores top-level bindings as both `name` and `name_0` — try both so the user's alias matches.
         let val = self.globals.get(&name)
             .or_else(|| self.globals.get(&s!(str &name, "_0")))
             .copied()
-            .ok_or_else(|| VmErr::Name(s!(
-                "module '", str &name, "' not imported in this scope")))?;
+            .ok_or_else(|| VmErr::Name(s!("module '", str &name, "' not imported in this scope")))?;
         if !val.is_heap() || !matches!(self.heap.get(val), HeapObj::Module(..)) {
             return Err(VmErr::TypeMsg(s!("'", str &name, "' is not a module")));
         }

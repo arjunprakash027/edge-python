@@ -5,8 +5,7 @@ use ops::cached_binop;
 
 impl<'a> VM<'a> {
 
-    /* Add/Sub/Mul/Div with IC; Mod/Pow/FloorDiv on i64 with overflow trap;
-       Minus is unary. */
+    /* Add/Sub/Mul/Div with IC; Mod/Pow/FloorDiv on i64 with overflow trap; Minus is unary. */
     pub(crate) fn handle_arith(&mut self, op: OpCode, rip: usize, cache: &mut OpcodeCache) -> Result<(), VmErr> {
         if op == OpCode::Minus {
             return self.exec_neg();
@@ -71,8 +70,7 @@ impl<'a> VM<'a> {
             // ffloor() handles all magnitudes; `as i64` would overflow for large floats.
             return Ok(Val::float(ffloor(af / bf)));
         }
-        let (Some(ai), Some(bi)) = (self.as_i64(a), self.as_i64(b))
-            else { return Err(cold_type("// requires numeric operands")); };
+        let (Some(ai), Some(bi)) = (self.as_i64(a), self.as_i64(b)) else { return Err(cold_type("// requires numeric operands")); };
         if bi == 0 { return Err(VmErr::ZeroDiv); }
         // Floor-div on i64: round toward negative infinity, matching Python.
         let q = ai.checked_div(bi).ok_or(cold_overflow())?;

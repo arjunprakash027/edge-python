@@ -5,13 +5,7 @@ use alloc::{vec, vec::Vec};
 use super::super::VM;
 use super::super::types::*;
 
-/* Lazy walker over any iterable Val. Used by `all`/`any`/`sum`/`min`/
-   `max` so a `range(10**6)` argument doesn't materialise 10 million Val
-   slots before the consumer touches the first one. The Vec variant
-   still copies once for list/set/dict (their items aren't streamable
-   without holding a mutable borrow on the heap), but Range and Bytes
-   produce items by index without pre-allocation, and short-circuiting
-   builtins exit on the first match without walking the rest. */
+// Lazy walker for short-circuit builtins; Vec variant copies because list/set/dict can't stream without a mutable heap borrow.
 pub(crate) enum IterCursor {
     Range { cur: i64, end: i64, step: i64 },
     Vec { items: Vec<Val>, idx: usize },
@@ -20,9 +14,7 @@ pub(crate) enum IterCursor {
 }
 
 impl IterCursor {
-    /* Yield the next value, allocating into `heap` only when the source
-       requires it (currently just StrChars). Returns Err for an
-       allocation failure; Ok(None) for exhaustion. */
+    // Next value; allocates only for StrChars. Err on alloc failure, Ok(None) on exhaustion.
     pub fn next(&mut self, heap: &mut HeapPool) -> Result<Option<Val>, VmErr> {
         match self {
             Self::Range { cur, end, step } => {
@@ -79,13 +71,8 @@ impl<'a> VM<'a> {
         self.alloc_and_push_list(items)
     }
 
-    /* sorted(iterable, key=fn). Decorate-sort-undecorate: pre-apply `key`
-       to every item, sort the parallel keys vec, then re-emit items in the
-       new order. Key=None falls back to the no-key path. */
-    pub fn call_sorted_with_key(
-        &mut self, key: Option<Val>,
-        chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val],
-    ) -> Result<(), VmErr> {
+    /* sorted(iterable, key=fn) — decorate-sort-undecorate via a parallel keys vec. key=None delegates to the no-key path. */
+    pub fn call_sorted_with_key(&mut self, key: Option<Val>, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let key = match key {
             Some(k) if !k.is_none() => k,
             _ => return self.call_sorted(),
@@ -118,9 +105,7 @@ impl<'a> VM<'a> {
         self.alloc_and_push_list(sorted)
     }
 
-    /* In-place sort using lt_vals for ordering. Captures the first error
-       and surfaces it after the sort completes — sort_by closures can't
-       return Result directly. */
+    /* In-place sort via `lt_vals`. Stashes the first error and surfaces it after the sort — `sort_by` closures can't return Result. */
     pub(crate) fn sort_by_lt(&self, items: &mut [Val]) -> Result<(), VmErr> {
         let mut sort_err: Option<VmErr> = None;
         items.sort_by(|&a, &b| {
@@ -179,10 +164,7 @@ impl<'a> VM<'a> {
         self.alloc_and_push_list(pairs)
     }
 
-    /* Build an IterCursor over any iterable Val. Used by short-circuit
-       builtins so `all(range(10**6))` walks at most until the first
-       falsy element instead of materialising 10M ints first. Returns
-       a TypeError for non-iterables, mirroring extract_iter. */
+    /* Build an IterCursor so short-circuit builtins (e.g. `all(range(10**6))`) stop at the first hit instead of pre-materialising. TypeError on non-iterables. */
     pub(in crate::modules::vm) fn iter_cursor(&self, o: Val) -> Result<IterCursor, VmErr> {
         if !o.is_heap() {
             return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable")));
@@ -200,29 +182,27 @@ impl<'a> VM<'a> {
         })
     }
 
-    /* Extract a Vec<Val> from any iterable: list/tuple/set/frozenset/dict
-       (yields keys)/range/str (yields one-char strs)/bytes (yields ints).
-       `include_range` is preserved for callers that need to reject Range. */
+    /* Vec<Val> from any iterable (dict yields keys, str yields one-char strs, bytes yields ints). `include_range = false` lets callers reject Range. */
     pub(in crate::modules::vm) fn extract_iter(&mut self, o: Val, include_range: bool) -> Result<Vec<Val>, VmErr> {
         if !o.is_heap() {
             return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable")));
         }
         // Snapshot the variant out so the &self borrow ends before any allocation.
         let snapshot = match self.heap.get(o) {
-            HeapObj::List(v)      => Some(v.borrow().clone()),
-            HeapObj::Tuple(v)     => Some(v.clone()),
-            HeapObj::Set(v)       => Some(v.borrow().iter().cloned().collect()),
+            HeapObj::List(v) => Some(v.borrow().clone()),
+            HeapObj::Tuple(v) => Some(v.clone()),
+            HeapObj::Set(v) => Some(v.borrow().iter().cloned().collect()),
             HeapObj::FrozenSet(v) => Some(v.iter().cloned().collect()),
             HeapObj::Range(s, e, st) if include_range => {
                 let (mut cur, end, step) = (*s, *e, *st);
                 let mut out = Vec::new();
                 if step > 0 { while cur < end { out.push(Val::int(cur)); cur += step; } }
-                else        { while cur > end { out.push(Val::int(cur)); cur += step; } }
+                else { while cur > end { out.push(Val::int(cur)); cur += step; } }
                 Some(out)
             }
-            HeapObj::Dict(d)      => Some(d.borrow().keys().collect()),
-            HeapObj::Bytes(b)     => Some(b.iter().map(|&x| Val::int(x as i64)).collect()),
-            HeapObj::Str(_)       => None, // handled below — needs heap allocation
+            HeapObj::Dict(d) => Some(d.borrow().keys().collect()),
+            HeapObj::Bytes(b) => Some(b.iter().map(|&x| Val::int(x as i64)).collect()),
+            HeapObj::Str(_) => None, // handled below — needs heap allocation
             _ => return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable"))),
         };
         if let Some(v) = snapshot { return Ok(v); }
@@ -234,10 +214,7 @@ impl<'a> VM<'a> {
         unreachable!()
     }
 
-    /* Flatten any iterable to a fresh `Vec<Val>` — the union of every
-       sequence-like type the VM exposes. Used by iter()/map()/filter() so
-       all three accept the same set of inputs (lists, tuples, sets, dicts
-       — keys —, ranges, and strings — chars allocated as length-1 Strs). */
+    /* Flatten any iterable to a fresh `Vec<Val>` — shared input path for iter/map/filter so all three accept the same set of sources. */
     pub(crate) fn iter_to_vec_general(&mut self, o: Val) -> Result<Vec<Val>, VmErr> {
         if !o.is_heap() {
             return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable")));
@@ -247,8 +224,7 @@ impl<'a> VM<'a> {
             return self.str_to_char_vals(&s);
         }
         if let HeapObj::Bytes(b) = self.heap.get(o) {
-            // bytes iterates as ints (the byte values), not as length-1
-            // bytes. Matches Python and the indexing behavior above.
+            // bytes iterates as ints (Python semantics; same as bytes[i]).
             return Ok(b.iter().map(|&byte| Val::int(byte as i64)).collect());
         }
         if let HeapObj::Dict(rc) = self.heap.get(o) {
@@ -257,9 +233,7 @@ impl<'a> VM<'a> {
         self.extract_iter(o, true)
     }
 
-    /* `iter(x)` — flatten any iterable into a fresh List that `next()`
-       drains front-to-back. Eager; the original collection is never
-       mutated. Mirrors the universal ABI's `Op::Iter` shape. */
+    /* `iter(x)` — eager flatten into a fresh List drained front-to-back by `next()`. Original isn't touched. Mirrors the universal ABI's `Op::Iter`. */
     pub fn call_iter(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         let items = self.iter_to_vec_general(o)?;
@@ -269,10 +243,7 @@ impl<'a> VM<'a> {
     pub fn call_next(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         if !o.is_heap() { return Err(cold_type("next() requires an iterator")); }
-        // Lists produced by `iter()` (or used directly) are consumed
-        // front-to-back. Matches the universal handle ABI's IterNext op
-        // (see `host.rs::dispatch_iter_next`) so script-side `next()` and
-        // host-side `Op::IterNext` exhibit identical semantics.
+        // List path mirrors the ABI's IterNext op so script `next()` and host `Op::IterNext` match.
         if let HeapObj::List(rc) = self.heap.get(o) {
             let rc = rc.clone();
             let mut v = rc.borrow_mut();
@@ -296,12 +267,8 @@ impl<'a> VM<'a> {
         }
     }
 
-    /* `map(fn, iter)` — eager: applies `fn` to each item, returns a list.
-       Re-enters `exec_call` per item so closures with captures behave like
-       native calls (caller chunk/slots match the surrounding frame). */
-    pub fn call_map(
-        &mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val],
-    ) -> Result<(), VmErr> {
+    /* `map(fn, iter)` — eager; returns a list. Re-enters `exec_call` per item so closures with captures see the caller's chunk/slots. */
+    pub fn call_map(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let iterable = self.pop()?;
         let fn_val = self.pop()?;
         let items = self.iter_to_vec_general(iterable)?;
@@ -315,12 +282,8 @@ impl<'a> VM<'a> {
         self.alloc_and_push_list(out)
     }
 
-    /* `filter(pred, iter)` — eager: keeps items where `pred(item)` is
-       truthy. Same call-shape as `map`. A `None` predicate behaves like
-       Python's identity-truthy filter. */
-    pub fn call_filter(
-        &mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val],
-    ) -> Result<(), VmErr> {
+    /* `filter(pred, iter)` — eager; keeps truthy `pred(item)`. Same call-shape as `map`. `pred=None` falls back to Python's identity-truthy filter. */
+    pub fn call_filter(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let iterable = self.pop()?;
         let fn_val = self.pop()?;
         let items = self.iter_to_vec_general(iterable)?;
@@ -368,8 +331,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Materialises an iterable to a list. Strings expand to chars;
-       ranges materialise eagerly; coroutines are drained by repeated resume. */
+    // Materialise an iterable to a list — strings -> chars, ranges eager, coroutines drained.
     pub fn call_list(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         if o.is_heap() {

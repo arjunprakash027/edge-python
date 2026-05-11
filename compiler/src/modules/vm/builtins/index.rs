@@ -13,9 +13,9 @@ enum SliceSource { List(Vec<Val>), Tuple(Vec<Val>), Str(Vec<char>), Bytes(Vec<u8
 impl SliceSource {
     fn len(&self) -> i64 {
         match self {
-            Self::List(v)  => v.len() as i64,
+            Self::List(v) => v.len() as i64,
             Self::Tuple(v) => v.len() as i64,
-            Self::Str(v)   => v.len() as i64,
+            Self::Str(v) => v.len() as i64,
             Self::Bytes(v) => v.len() as i64,
         }
     }
@@ -37,17 +37,15 @@ impl<'a> VM<'a> {
         if obj.is_heap() && idx.is_int()
             && let HeapObj::Str(s) = self.heap.get(obj) {
                 let chars: Vec<char> = s.chars().collect();
-                let i  = idx.as_int();
+                let i = idx.as_int();
                 let ui = normalize_index(i, chars.len());
-                let c  = chars.get(ui).copied().ok_or(cold_value("string index out of range"))?;
+                let c = chars.get(ui).copied().ok_or(cold_value("string index out of range"))?;
                 let val = self.heap.alloc(HeapObj::Str(c.to_string()))?;
                 self.push(val);
                 return Ok(true);
         }
 
-        // bytes[i] yields an int (the byte value 0..=255), distinct from
-        // str[i] which yields a length-1 str. Matches Python semantics —
-        // the principal reason `bytes` is a separate type.
+        // `bytes[i]` returns the byte as int (`0..=255`) — unlike `str[i]` (length-1 str).
         if obj.is_heap() && idx.is_int()
             && let HeapObj::Bytes(b) = self.heap.get(obj) {
                 let i = idx.as_int();
@@ -101,7 +99,7 @@ impl<'a> VM<'a> {
         };
 
         match source {
-            SliceSource::List(v)  => self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(pick(&v))))),
+            SliceSource::List(v) => self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(pick(&v))))),
             SliceSource::Tuple(v) => self.heap.alloc(HeapObj::Tuple(pick(&v))),
             SliceSource::Str(chars) => {
                 let sliced: String = indices.iter().filter_map(|&i| chars.get(i)).collect();
@@ -130,21 +128,19 @@ impl<'a> VM<'a> {
                 v.get(ui).copied().ok_or(cold_value("tuple index out of range"))
             }
             HeapObj::Dict(p) => {
-                p.borrow().get(&idx).copied()
-                    .ok_or(cold_value("key not found"))
+                p.borrow().get(&idx).copied().ok_or(cold_value("key not found"))
             }
             _ => Err(cold_type("object is not subscriptable")),
         }
     }
 
-    /* Reject mutable types (list/dict/set) used as dict/set keys.
-       Called wherever a Val crosses into a hash-keyed container. */
+    /* Reject mutable types (list/dict/set) used as dict/set keys. Called wherever a Val crosses into a hash-keyed container. */
     pub(in crate::modules::vm) fn require_hashable(&self, v: Val) -> Result<(), VmErr> {
         if v.is_heap() {
             match self.heap.get(v) {
                 HeapObj::List(_) => return Err(cold_type("unhashable type: 'list'")),
                 HeapObj::Dict(_) => return Err(cold_type("unhashable type: 'dict'")),
-                HeapObj::Set(_)  => return Err(cold_type("unhashable type: 'set'")),
+                HeapObj::Set(_) => return Err(cold_type("unhashable type: 'set'")),
                 _ => {}
             }
         }
@@ -156,8 +152,7 @@ impl<'a> VM<'a> {
         let idx_val = self.pop()?;
         let cont = self.pop()?;
         if !cont.is_heap() { return Err(cold_type("object does not support item assignment")); }
-        // Slice assignment: `xs[a:b] = iterable` (step must be 1 for resize).
-        // Resolves the target range, materialises RHS, and splices in place.
+        // Slice assignment: `xs[a:b] = iterable` (step must be 1 for resize). Resolves the target range, materialises RHS, and splices in place.
         if idx_val.is_heap()
             && let HeapObj::Slice(start, stop, step) = self.heap.get(idx_val).clone()
         {
@@ -186,10 +181,9 @@ impl<'a> VM<'a> {
 
     pub fn del_item(&mut self) -> Result<(), VmErr> {
         let idx_val = self.pop()?;
-        let cont    = self.pop()?;
+        let cont = self.pop()?;
         if !cont.is_heap() { return Err(cold_type("object does not support item deletion")); }
-        // Slice deletion: `del xs[a:b]` — same step=1 restriction as
-        // store_slice. Reuses store_slice with an empty replacement vec.
+        // Slice deletion: `del xs[a:b]` — same step=1 restriction as `store_slice`. Reuses `store_slice` with an empty replacement vec.
         if idx_val.is_heap()
             && let HeapObj::Slice(start, stop, step) = self.heap.get(idx_val).clone()
         {
@@ -214,15 +208,8 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Splice replacement for `xs[a:b] = items` and `del xs[a:b]`. Only
-       step=1 slices resize the list; step != 1 requires the replacement to
-       match the slice's element count exactly (Python's extended-slice
-       rule). For lists only — tuples/strings are immutable. */
-    fn store_slice(
-        &mut self, cont: Val,
-        start: Val, stop: Val, step: Val,
-        new_items: Vec<Val>,
-    ) -> Result<(), VmErr> {
+    /* Splice for `xs[a:b] = items` and `del xs[a:b]`. step=1 resizes; step≠1 demands exact-length RHS. Lists only — tuples/strings are immutable. */
+    fn store_slice(&mut self, cont: Val,start: Val, stop: Val, step: Val, new_items: Vec<Val>) -> Result<(), VmErr> {
         let st = if step.is_none() { 1 }
             else if step.is_int() { step.as_int() }
             else { return Err(cold_type("slice step must be an integer")); };
@@ -247,18 +234,16 @@ impl<'a> VM<'a> {
             return Ok(());
         }
 
-        // Extended slice (step != 1): collect target indices, require RHS
-        // length to match exactly.
+        // Extended slice (step!=1): collect indices; RHS length must match exactly.
         let (s, e) = if st > 0 { (clamp(start, 0), clamp(stop, len)) }
-                     else      { (clamp(start, len - 1), clamp(stop, -1)) };
+            else { (clamp(start, len - 1), clamp(stop, -1)) };
         let mut indices: Vec<usize> = Vec::new();
         let mut cur = s;
         if st > 0 { while cur < e { indices.push(cur as usize); cur += st; } }
-        else      { while cur > e { indices.push(cur as usize); cur += st; } }
+        else { while cur > e { indices.push(cur as usize); cur += st; } }
 
         if new_items.is_empty() {
-            // Extended-slice deletion: remove highest-index first to keep
-            // earlier indices valid.
+            // Remove highest-index first so earlier indices stay valid.
             let mut sorted = indices.clone();
             sorted.sort_unstable();
             for &i in sorted.iter().rev() { b.remove(i); }
@@ -271,9 +256,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* slice(stop) | slice(start, stop) | slice(start, stop, step). Constructs
-       a HeapObj::Slice from up to three numeric arguments. Mirrors Python's
-       slice() builtin; the result can be passed as a sequence index. */
+    // `slice(stop)` | `slice(start, stop)` | `slice(start, stop, step)` — builtin; usable as a sequence index.
     pub fn call_slice(&mut self, argc: u16) -> Result<(), VmErr> {
         let args = self.pop_n(argc as usize)?;
         let (start, stop, step) = match args.as_slice() {

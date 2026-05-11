@@ -7,7 +7,7 @@ use super::super::types::*;
 
 impl<'a> VM<'a> {
 
-    // getattr(obj, name [, default]).
+    // `getattr(obj, name [, default])`.
     pub fn call_getattr(&mut self, op: u16) -> Result<(), VmErr> {
         if op != 2 && op != 3 {
             return Err(cold_type("getattr() takes 2 or 3 arguments"));
@@ -29,7 +29,7 @@ impl<'a> VM<'a> {
         Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")))
     }
 
-    // hasattr(obj, name).
+    // `hasattr(obj, name)`.
     pub fn call_hasattr(&mut self) -> Result<(), VmErr> {
         let name = self.expect_str_arg("hasattr() name must be a string")?;
         let obj = self.pop()?;
@@ -39,9 +39,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* setattr(obj, name, value) — store an attribute on a user instance.
-       Mirrors `obj.name = value`. Errors on non-instances since builtin
-       types (str/list/dict/...) have no mutable attribute table. */
+    /* `setattr(obj, name, value)` — mirrors `obj.name = value`. Instance-only: builtin types have no mutable attribute table. */
     pub fn call_setattr(&mut self) -> Result<(), VmErr> {
         let value = self.pop()?;
         let name = self.expect_str_arg("setattr() name must be a string")?;
@@ -57,15 +55,14 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* delattr(obj, name) — remove an attribute from a user instance. */
+    /* `delattr(obj, name)` — remove an attribute from a user instance. */
     pub fn call_delattr(&mut self) -> Result<(), VmErr> {
         let name = self.expect_str_arg("delattr() name must be a string")?;
         let obj = self.pop()?;
         if !obj.is_heap() || !matches!(self.heap.get(obj), HeapObj::Instance(..)) {
             return Err(cold_type("delattr() target must be an instance"));
         }
-        // Strings <= 128 bytes are interned, so re-allocating the name yields
-        // the same Val that StoreAttr used as the key — bit-eq lookup hits.
+        // Strings ≤128 bytes are interned, so re-alloc'ing yields the same Val key StoreAttr used.
         let key = self.heap.alloc(HeapObj::Str(name))?;
         if let HeapObj::Instance(_, attrs) = self.heap.get(obj) {
             attrs.borrow_mut().remove(&key);
@@ -74,25 +71,21 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Pops the top of stack and returns its String contents, or errors with
-       `msg` if it is not a heap string. */
+    // Pops TOS and returns its String, or errors with `msg` if it isn't a heap string.
     fn expect_str_arg(&mut self, msg: &'static str) -> Result<String, VmErr> {
         let v = self.pop()?;
         if v.is_heap() && let HeapObj::Str(s) = self.heap.get(v) { return Ok(s.clone()); }
         Err(cold_type(msg))
     }
 
-    /* vars(obj) — Instance: copy of __dict__ as a dict; Module: dict from
-       its attrs table. The no-arg form (returning the local frame) is not
-       supported; use `locals()` instead. */
+    /* `vars(obj)` — Instance: copy of `__dict__`; Module: dict from its attrs. No-arg form is unsupported — use `locals()`. */
     pub fn call_vars(&mut self) -> Result<(), VmErr> {
         use alloc::vec::Vec;
         let obj = self.pop()?;
         if !obj.is_heap() {
             return Err(cold_type("vars() requires an instance or module"));
         }
-        // Two passes so we can drop the immutable borrow on heap before any
-        // alloc(). For modules, materialise the attr names first as Vec<String>.
+        // Two passes: drop the heap borrow before `alloc()`. Modules materialise names as `Vec<String>` first.
         enum Source { Instance(Vec<(Val, Val)>), Module(Vec<(String, Val)>) }
         let src = match self.heap.get(obj) {
             HeapObj::Instance(_, attrs) => Source::Instance(attrs.borrow().entries.clone()),
@@ -115,17 +108,10 @@ impl<'a> VM<'a> {
         self.alloc_and_push_dict(dm)
     }
 
-    /* globals() — module-level bindings as a dict. Combines the VM's
-       `globals` HashMap (builtins, types, module references) with the
-       entry-chunk slots (user-defined top-level names, which live in
-       chunk slots rather than the globals map). Returned dict is a
-       *copy* — mutating it does not change the VM. */
-    pub fn call_globals(
-        &mut self, chunk: &crate::modules::parser::SSAChunk, slots: &[Val],
-    ) -> Result<(), VmErr> {
-        // Builtin/type/module pairs from self.globals, deduped to bare names.
-        let mut out: crate::util::fx::FxHashMap<String, Val> =
-            crate::util::fx::FxHashMap::default();
+    /* `globals()` — module-level bindings as a dict. Merges `self.globals` (builtins/types/modules) with entry-chunk slots (user top-level names). Returned dict is a copy. */
+    pub fn call_globals(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &[Val]) -> Result<(), VmErr> {
+        // Builtin/type/module pairs from `self.globals`, deduped to bare names.
+        let mut out: crate::util::fx::FxHashMap<String, Val> = crate::util::fx::FxHashMap::default();
         for (k, v) in self.globals.iter() {
             // Drop SSA-mirrors (`x_0`, `x_1`); keep canonical bare name.
             if let Some((bare, suf)) = k.rsplit_once('_')
@@ -136,10 +122,7 @@ impl<'a> VM<'a> {
             }
             out.insert(k.clone(), *v);
         }
-        // Walk the entry chunk's slots. When we're already in the entry
-        // frame, `chunk == self.chunk` and `slots` is exactly its slot
-        // array. From inside a function, the entry slots live at the
-        // bottom of `live_slots`.
+        // Inside a function, entry slots sit at the bottom of `live_slots`; at top-level, use `slots` as-is.
         let (entry_chunk, entry_slots): (&crate::modules::parser::SSAChunk, &[Val]) =
             if core::ptr::eq(chunk as *const _, self.chunk as *const _) {
                 (chunk, slots)
@@ -165,33 +148,21 @@ impl<'a> VM<'a> {
         self.alloc_and_push_dict(dm)
     }
 
-    /* locals() — current frame's local bindings as a dict. Walks the
-       caller-supplied chunk.names + slots, deduping multiple SSA
-       versions of the same name (`x_0`, `x_1`, ...) by keeping the
-       highest-version live value. Filters out:
-         - synthetic slots (leading `#`, e.g. `#match0`)
-         - builtins that haven't been rebound in this frame (the slot
-           still holds the same Val as the global registration). */
-    pub fn call_locals(
-        &mut self, chunk: &crate::modules::parser::SSAChunk, slots: &[Val],
-    ) -> Result<(), VmErr> {
+    /* `locals()` — frame bindings as a dict. Dedupes SSA versions (`x_0`, `x_1`, ...) to the highest live one. Filters synthetic `#`-slots and unrebound builtins (same Val as the global). */
+    pub fn call_locals(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &[Val]) -> Result<(), VmErr> {
         // Map bare-name -> (best version, val) so we keep only the latest.
-        let mut latest: crate::util::fx::FxHashMap<String, (i64, Val)> =
-            crate::util::fx::FxHashMap::default();
+        let mut latest: crate::util::fx::FxHashMap<String, (i64, Val)> = crate::util::fx::FxHashMap::default();
         for (i, name) in chunk.names.iter().enumerate() {
             let v = match slots.get(i) {
                 Some(v) if !v.is_undef() => *v,
                 _ => continue,
             };
-            // Synthetic slots (`#match0`, `#match_item0`) are matcher
-            // scratch — never user-visible.
+            // Synthetic `#`-slots are matcher scratch — never user-visible.
             if name.starts_with('#') { continue; }
             // Strip SSA version suffix.
             let (bare, ver) = crate::modules::parser::SsaName::parse_or_bare(name);
             let ver = ver as i64;
-            // Skip unmodified builtins: if the global registration for this
-            // name points at the *same* Val we'd return, the user never
-            // rebound it locally — exclude from locals().
+            // Skip unrebound builtins: same Val as the global means the user never assigned locally.
             if let Some(&gv) = self.globals.get(bare)
                 && gv.0 == v.0 { continue; }
             let entry = latest.entry(bare.to_string()).or_insert((-1, Val::undef()));

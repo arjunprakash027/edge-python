@@ -5,8 +5,7 @@ use super::super::types::*;
 
 impl<'a> VM<'a> {
 
-    /* Pops N args, joins with single spaces. Calls `print_hook` if set (streaming),
-       otherwise buffers into `output`. */
+    /* Pops N args, joins with single spaces. Calls `print_hook` if set (streaming), otherwise buffers into `output`. */
     pub fn call_print(&mut self, op: u16) -> Result<(), VmErr> {
         let args = self.pop_n(op as usize)?;
         let mut out = String::new();
@@ -34,13 +33,15 @@ impl<'a> VM<'a> {
                 line
             }
             #[cfg(target_arch = "wasm32")]
-            { return Err(VmErr::Runtime("input() requires host data in WASM (use set_input)")); }
+            { 
+                return Err(VmErr::Runtime("input() requires host data in WASM (use set_input)")); 
+            }
         };
         let val = self.heap.alloc(HeapObj::Str(s))?;
         self.push(val); Ok(())
     }
 
-    // format(value [, spec]).
+    // `format(value [, spec])`.
     pub fn call_format(&mut self, op: u16) -> Result<(), VmErr> {
         if op != 1 && op != 2 {
             return Err(cold_type("format() takes 1 or 2 arguments"));

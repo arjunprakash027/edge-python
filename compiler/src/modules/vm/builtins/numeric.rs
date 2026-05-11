@@ -115,8 +115,7 @@ impl<'a> VM<'a> {
         self.push(m); Ok(())
     }
 
-    /* If a single arg is a list/tuple/set, return its items; otherwise pass
-       args through unchanged. Used by min/max / etc. for varargs vs iterable. */
+    /* If a single arg is a list/tuple/set, return its items; otherwise pass args through unchanged. Used by min/max / etc. for varargs vs iterable. */
     fn unwrap_single_iterable(&self, args: Vec<Val>) -> Result<Vec<Val>, VmErr> {
         if args.len() == 1 && args[0].is_heap() {
             match self.heap.get(args[0]) {
@@ -184,8 +183,7 @@ impl<'a> VM<'a> {
     pub fn call_divmod(&mut self) -> Result<(), VmErr> {
         let b = self.pop()?;
         let a = self.pop()?;
-        let (Some(ai), Some(bi)) = (self.as_i64(a), self.as_i64(b))
-            else { return Err(cold_type("divmod() requires integer operands")); };
+        let (Some(ai), Some(bi)) = (self.as_i64(a), self.as_i64(b)) else { return Err(cold_type("divmod() requires integer operands")); };
         if bi == 0 { return Err(VmErr::ZeroDiv); }
         let q = ai.checked_div(bi).ok_or(cold_overflow())?;
         let r = ai - q * bi;
@@ -238,16 +236,12 @@ impl<'a> VM<'a> {
         self.pow_vals(a, b, "pow() requires numeric operands")
     }
 
-    /* Two-arg power, shared between the pow() builtin and the `**` operator
-       handler. Integer ** non-negative integer stays i64 with overflow trap;
-       floats and negative exponents promote to f64. */
+    /* Two-arg power for `pow()` and `**`. int**non-neg int stays i64 (overflow trap); floats or negative exponents promote to f64. */
     pub(crate) fn pow_vals(&mut self, a: Val, b: Val, err_msg: &'static str) -> Result<Val, VmErr> {
         if let (Some(ai), true) = (self.as_i64(a), b.is_int()) {
             let exp = b.as_int();
             if exp >= 0 {
-                // Exponentiation by squaring on i64. Overflow at any step traps
-                // as OverflowError; bases ±1/0 finish without overflowing even
-                // with very large exponents.
+                // i64 exp-by-squaring; overflow at any step -> OverflowError. Bases +/- 1/0 never overflow.
                 let mut result: i64 = 1;
                 let mut base = ai;
                 let mut e = exp;

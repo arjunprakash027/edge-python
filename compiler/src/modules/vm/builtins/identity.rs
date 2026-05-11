@@ -24,7 +24,7 @@ impl<'a> VM<'a> {
 
     pub fn call_id(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
-        // Use the NaN-boxed bit pattern as identity. Truncate to fit INT_MAX.
+        // Use the NaN-boxed bit pattern as identity. Truncate to fit `INT_MAX`.
         let id = ((o.0 as i64).abs()) & Val::INT_MAX;
         self.push(Val::int(id));
         Ok(())
@@ -34,20 +34,16 @@ impl<'a> VM<'a> {
         use core::hash::{Hash, Hasher};
         let o = self.pop()?;
         let mut h = crate::util::fx::FxHasher::default();
-        if o.is_int()        { o.as_int().hash(&mut h); }
+        if o.is_int() { o.as_int().hash(&mut h); }
         else if o.is_float() { o.as_float().to_bits().hash(&mut h); }
-        else if o.is_bool()  { o.as_bool().hash(&mut h); }
-        else if o.is_none()  { 0u64.hash(&mut h); }
+        else if o.is_bool() { o.as_bool().hash(&mut h); }
+        else if o.is_none() { 0u64.hash(&mut h); }
         else if o.is_heap() {
             match self.heap.get(o) {
                 HeapObj::Str(s) => s.hash(&mut h),
                 HeapObj::Bytes(b) => b.hash(&mut h),
-                HeapObj::Tuple(items) => {
-                    for v in items { v.0.hash(&mut h); }
-                }
-                HeapObj::List(_) | HeapObj::Dict(_) | HeapObj::Set(_) => {
-                    return Err(cold_type("unhashable type"));
-                }
+                HeapObj::Tuple(items) => { for v in items { v.0.hash(&mut h); } }
+                HeapObj::List(_) | HeapObj::Dict(_) | HeapObj::Set(_) => { return Err(cold_type("unhashable type")); }
                 _ => o.0.hash(&mut h),
             }
         }
@@ -55,14 +51,12 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Type-name based isinstance check. Accepts Type or NativeFn (for the
-       builtins-as-types case) on the right; allows int↔bool aliasing. */
+    /* Type-name based isinstance check. Accepts Type or NativeFn (for the builtins-as-types case) on the right; allows int↔bool aliasing. */
     pub fn call_isinstance(&mut self) -> Result<(), VmErr> {
         let (arg2, obj) = (self.pop()?, self.pop()?);
         let obj_ty = self.type_name(obj);
 
-        // For exception matching: when `obj` is a Type itself or an
-        // ExcInstance, compare names against the asserted type.
+        // For exception matching: when `obj` is a Type itself or an ExcInstance, compare names against the asserted type.
         let obj_type_name: Option<String> = if obj.is_heap() {
             match self.heap.get(obj) {
                 HeapObj::Type(n) => Some(n.clone()),
