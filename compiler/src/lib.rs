@@ -8,10 +8,7 @@ pub mod abi;
 #[cfg(target_arch = "wasm32")]
 pub mod main;
 
-/* Internal helpers shared across the compiler — not Edge Python language
-   modules. Kept separate from `modules/` (which contains lexer/parser/vm/
-   packages — runtime components) so contributors don't mistake utility
-   code for built-in stdlib. */
+/* Internal compiler helpers (not Edge Python stdlib); separated from `modules/` runtime code. */
 pub mod util {
     pub mod fx;
     pub mod fstr;

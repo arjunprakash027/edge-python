@@ -1,15 +1,8 @@
-/*
-Sealed contract for modules.
-  Op codes, tags, error kinds, HandleTable, ErrorStash, and primitive codec are frozen.
-  Bug fixes only. New capabilities via new Op values — never new imports or signature changes.
-  See documentation/reference/wasm-abi.md for the user-facing spec.
-
-  The wire-level constants (op codes, value tags, NaN-boxing layout, error
-  kinds) live in the `edge-abi` crate so the host and the edge-pdk read
-  the same source of truth. The host-side enums below wrap those
-  constants for type-safe matching in the dispatch path; their
-  discriminants must equal the `edge-abi` constants byte for byte —
-  static_assert below catches any drift at compile time.
+/* 
+Sealed module contract: op codes / tags / error kinds / HandleTable / ErrorStash / primitive codec.
+Wire-level constants live in `edge-abi`; the enums below mirror them byte-for-byte.
+Add capabilities via new Op values, never new imports or signature changes.
+See documentation/reference/wasm-abi.md for the spec. 
 */
 
 use alloc::{string::String, vec::Vec};
@@ -107,14 +100,14 @@ impl ErrorKind {
 
 /* Handle table */
 
-// Handle slot; rc=0 means free. Exposed handle = index+1 (0 reserved as invalid).
+// Handle slot; rc=0 = free. Exposed handle = index+1 (0 reserved as invalid).
 struct HandleSlot {
-    // Raw Val bits; ABI never inspects — encode/decode go through classify_*.
+    // Raw Val bits, opaque to the ABI; encode/decode go through classify_*.
     val: u64,
     rc: u32,
 }
 
-// Refcounted u32->u64 (Val bits) map; single instance per script run, cleared between runs.
+// Refcounted handle -> Val-bits map; cleared between script runs.
 pub struct HandleTable {
     slots: Vec<HandleSlot>,
     free_list: Vec<u32>,
@@ -169,7 +162,7 @@ impl HandleTable {
 
 /* Error stash */
 
-// Single-slot error stash drained by edge_take_error; populated by dispatch failures and edge_throw.
+// Single-slot error stash; populated by dispatch failures / edge_throw, drained by edge_take_error.
 #[derive(Default)]
 pub struct ErrorStash(Option<(u32, String)>);
 
@@ -198,14 +191,14 @@ impl ErrorStash {
 
 /* Primitive codec helpers */
 
-// edge_encode decision: Direct=primitive Val bits, AllocStr=host heap alloc, Invalid=malformed.
+// edge_encode outcome: Direct (Val bits), AllocStr (host alloc), or Invalid.
 pub enum EncodeRequest<'a> {
     Direct(u64),
     AllocStr(&'a str),
     Invalid,
 }
 
-// Maps (tag, bytes) to EncodeRequest. NaN-boxing layout is sealed in `nan_box`; changes require ABI bump.
+// Maps (tag, bytes) to EncodeRequest using the sealed `nan_box` layout.
 pub fn classify_encode(tag: u32, bytes: &[u8]) -> EncodeRequest<'_> {
     use nan_box::*;
 
@@ -236,7 +229,7 @@ pub fn classify_encode(tag: u32, bytes: &[u8]) -> EncodeRequest<'_> {
     }
 }
 
-// edge_decode decision: Primitive=ready bytes, Heap=host materializes, Invalid=malformed Val.
+// edge_decode outcome: Primitive (ready bytes), Heap (host materializes), or Invalid.
 pub enum DecodeBits {
     Primitive { tag: u32, bytes: PrimitiveBytes },
     Heap,
@@ -259,7 +252,7 @@ impl PrimitiveBytes {
     }
 }
 
-// Classifies Val bits into Primitive/Heap/Invalid; Heap means host must read from HeapPool.
+// Classifies Val bits; Heap routes the host to HeapPool.
 pub fn classify_decode(val_bits: u64) -> DecodeBits {
     use nan_box::*;
 
