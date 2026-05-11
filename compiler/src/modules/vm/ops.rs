@@ -6,10 +6,7 @@ use crate::modules::parser::types::OpCode;
 use alloc::{string::{String, ToString}, vec::Vec, rc::Rc};
 use core::cell::RefCell;
 
-/* Render a `bytes` value as `b'...'` with Python's repr conventions:
-   printable ASCII verbatim, control / high-bit / quote / backslash as
-   `\xHH` or named escape. Always uses single quotes and escapes embedded
-   single quotes — matches CPython's `repr(b"...")` for the common path. */
+/* Render `bytes` as `b'...'` matching CPython's repr (printable ASCII verbatim, rest escaped). */
 fn format_bytes(buf: &[u8]) -> String {
     let mut out = String::with_capacity(buf.len() + 3);
     out.push_str("b'");
@@ -95,18 +92,14 @@ impl<'a> VM<'a> {
         self.int_to_val(Some(r))
     }
 
-    /* Set | Set, Set & Set, Set ^ Set. Caller has already verified both
-       operands are sets. Uses HashSet's bit-eq for membership (consistent
-       with how the Set is stored — same dedup semantics as a literal
-       `{a, b, c}`); a future move to value-eq would touch this and the
-       set methods uniformly. */
+    /* Set bitwise ops (|, &, ^); caller has verified both operands are sets. */
     pub(crate) fn set_binop_and_push(&mut self, a: Val, b: Val, op: OpCode) -> Result<(), VmErr> {
         let (sa, sb) = match (self.heap.get(a), self.heap.get(b)) {
             (HeapObj::Set(x), HeapObj::Set(y)) => (x.borrow().clone(), y.borrow().clone()),
             _ => return Err(cold_runtime("set_binop on non-set operands")),
         };
         let items: Vec<Val> = match op {
-            OpCode::BitOr  => sa.union(&sb).copied().collect(),
+            OpCode::BitOr => sa.union(&sb).copied().collect(),
             OpCode::BitAnd => sa.intersection(&sb).copied().collect(),
             OpCode::BitXor => sa.symmetric_difference(&sb).copied().collect(),
             _ => return Err(cold_runtime("set_binop with non-bitwise opcode")),
@@ -114,20 +107,19 @@ impl<'a> VM<'a> {
         self.alloc_and_push_set(items)
     }
 
-    /* Set < Set, <= , > , >= , == , != with subset / superset semantics.
-       Caller has verified both sides are sets. */
+    /* Set comparisons with subset/superset semantics; both sides verified as sets. */
     pub(crate) fn set_compare_and_push(&mut self, a: Val, b: Val, op: OpCode) -> Result<(), VmErr> {
         let (sa, sb) = match (self.heap.get(a), self.heap.get(b)) {
             (HeapObj::Set(x), HeapObj::Set(y)) => (x.borrow(), y.borrow()),
             _ => return Err(cold_runtime("set_compare on non-set operands")),
         };
         let result = match op {
-            OpCode::Eq    => *sa == *sb,
+            OpCode::Eq => *sa == *sb,
             OpCode::NotEq => *sa != *sb,
-            OpCode::Lt    => sa.is_subset(&sb) && *sa != *sb,
-            OpCode::LtEq  => sa.is_subset(&sb),
-            OpCode::Gt    => sb.is_subset(&sa) && *sa != *sb,
-            OpCode::GtEq  => sb.is_subset(&sa),
+            OpCode::Lt => sa.is_subset(&sb) && *sa != *sb,
+            OpCode::LtEq => sa.is_subset(&sb),
+            OpCode::Gt => sb.is_subset(&sa) && *sa != *sb,
+            OpCode::GtEq => sb.is_subset(&sa),
             _ => return Err(cold_runtime("set_compare with non-compare opcode")),
         };
         drop(sa); drop(sb);
@@ -172,9 +164,7 @@ impl<'a> VM<'a> {
     }
 
     pub fn display(&self, v: Val) -> String {
-        if v.is_int() {
-            let mut b = itoa::Buffer::new(); return b.format(v.as_int()).into();
-        }
+        if v.is_int() { let mut b = itoa::Buffer::new(); return b.format(v.as_int()).into(); }
         if v.is_float() {
             let f = v.as_float();
             if f == 0.0 && f.is_sign_negative() {
@@ -215,9 +205,7 @@ impl<'a> VM<'a> {
             HeapObj::Module(name, _) => s!("<module '", str name, "'>"),
             HeapObj::Extern(f) => s!("<extern function ", str &f.name, ">"),
             HeapObj::ExcInstance(name, args) => {
-                // Mirror CPython: `repr(ValueError("x"))` -> "ValueError('x')",
-                // `str(ValueError("x"))` -> "x". display() is the str() form
-                // here; `repr(...)` is handled by formatting overrides if any.
+                // `str(E("x"))` -> "x"; `repr(...)` handled elsewhere.
                 if args.len() == 1 {
                     self.display(args[0])
                 } else if args.is_empty() {
@@ -257,8 +245,7 @@ impl<'a> VM<'a> {
         self.display(v)
     }
 
-    // Stable ordering for set iteration/display: numerics ascending, then
-    // non-numerics by repr. Shared by display() and make_iter_frame().
+    // Stable set ordering: numerics ascending, then non-numerics by repr.
     pub(crate) fn sort_set_items(&self, items: &mut [Val]) {
         items.sort_by(|a, b| {
             match (a.is_int() || a.is_float(), b.is_int() || b.is_float()) {
@@ -279,11 +266,8 @@ impl<'a> VM<'a> {
         let b = if b.is_bool() { Val::int(b.as_bool() as i64) } else { b };
         if a.is_int() && b.is_int() { return Ok(a.as_int() < b.as_int()); }
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(af < bf); }
-        // Wide-int compare: any combination of inline int / LongInt — promote
-        // both to i128 and compare. Falls through when either side isn't int.
-        if let (Some(ai), Some(bi)) = (as_i128(a, &self.heap), as_i128(b, &self.heap)) {
-            return Ok(ai < bi);
-        }
+        // Wide-int compare in i128; falls through when either side isn't int-like.
+        if let (Some(ai), Some(bi)) = (as_i128(a, &self.heap), as_i128(b, &self.heap)) { return Ok(ai < bi); }
         if a.is_heap() && b.is_heap()
             && let (HeapObj::Str(x), HeapObj::Str(y)) = (self.heap.get(a), self.heap.get(b)) {
                 return Ok(x < y);
@@ -311,16 +295,14 @@ impl<'a> VM<'a> {
         }
     }
     pub fn add_vals(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
-        // Inline-int fast path: 99% of arithmetic stays here. i64 covers the
-        // 47-bit Val range losslessly; overflow falls through to the i128 path.
+        // Inline-int fast path; overflow falls through to the i128 slow path.
         if a.is_int() && b.is_int()
             && let Some(r) = a.as_int().checked_add(b.as_int())
             && (Val::INT_MIN..=Val::INT_MAX).contains(&r) {
             return Ok(Val::int(r));
         }
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(Val::float(af + bf)); }
-        // Wide-int slow path: at least one side is LongInt or the inline result
-        // didn't fit. Compute in i128 and let int_to_val pick the storage class.
+        // Wide-int slow path; int_to_val picks the narrowest storage class.
         if let (Some(ai), Some(bi)) = (as_i128(a, &self.heap), as_i128(b, &self.heap)) {
             return self.int_to_val(ai.checked_add(bi));
         }
@@ -360,8 +342,7 @@ impl<'a> VM<'a> {
         if let (Some(ai), Some(bi)) = (as_i128(a, &self.heap), as_i128(b, &self.heap)) {
             return self.int_to_val(ai.checked_sub(bi));
         }
-        // Set difference: `a - b` produces a fresh set with every element
-        // of `a` not present in `b`. Mirror Python's `set.difference`.
+        // Set difference: fresh set of `a` elements not in `b`.
         if a.is_heap() && b.is_heap()
             && let (HeapObj::Set(sa), HeapObj::Set(sb)) = (self.heap.get(a), self.heap.get(b)) {
             let items: Vec<Val> = sa.borrow().difference(&sb.borrow()).copied().collect();
@@ -373,10 +354,7 @@ impl<'a> VM<'a> {
         )))
     }
 
-    /* Same shape as `alloc_list` (in builtins.rs) for sets — used by
-       `sub_vals`'s set-difference path which needs a value back, not a
-       push. Dedups via HashSet's bit-eq, consistent with how literals and
-       method results are stored. */
+    /* Set counterpart of `alloc_list` for `sub_vals`'s set-difference path. */
     fn alloc_set_value(&mut self, items: Vec<Val>) -> Result<Val, VmErr> {
         let mut s = crate::util::fx::FxHashSet::default();
         for v in items { s.insert(v); }
@@ -390,14 +368,11 @@ impl<'a> VM<'a> {
             return Ok(Val::int(r));
         }
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(Val::float(af * bf)); }
-        // Wide-int slow path takes priority over sequence repetition: both
-        // sides numeric (int/bool/LongInt) -> i128 multiply. Repetition needs
-        // a sequence type on one side, which is_int/bool/LongInt aren't.
+        // Numeric multiply wins over sequence repetition when both sides are int-like.
         if let (Some(ai), Some(bi)) = (as_i128(a, &self.heap), as_i128(b, &self.heap)) {
             return self.int_to_val(ai.checked_mul(bi));
         }
-        // Sequence repetition: str/list/tuple * int. Count must fit in i64
-        // (i128 product of huge count would OOM long before completing).
+        // Sequence repetition: str/list/tuple * int (count clamped to i64).
         let (seq_val, count) = if a.is_heap() && b.is_int() && !matches!(self.heap.get(a), HeapObj::LongInt(_)) {
             (a, b.as_int())
         } else if a.is_int() && b.is_heap() && !matches!(self.heap.get(b), HeapObj::LongInt(_)) {
@@ -441,11 +416,7 @@ impl<'a> VM<'a> {
         Ok(Val::float(av / bv))
     }
 
-    /* Promote any int-like operand to i128 for the wide-int slow path.
-       Inline `Val::int` and bool widen losslessly; heap `LongInt` unwraps;
-       floats / non-int heap objects return None so callers can raise a
-       typed-operand error. Thin wrapper around the free `as_i128` so methods
-       can stay borrow-checker-friendly when self is already borrowed. */
+    /* Method wrapper around the free `as_i128` for borrow-checker ergonomics. */
     #[inline]
     pub(crate) fn as_i128(&self, v: Val) -> Option<i128> {
         as_i128(v, &self.heap)
@@ -459,12 +430,7 @@ impl<'a> VM<'a> {
         Err(cold_type("numeric operand required"))
     }
 
-    /* Wrap a wide-int result into a Val, picking the narrowest storage class:
-       - None (checked_* returned None): traps as OverflowError.
-       - In 47-bit Val range: stored inline. Preserves hash/eq with literals.
-       - Outside 47-bit but in i128: allocated as HeapObj::LongInt and interned
-         by value so equal values share an index.
-       Any value outside i128 already failed the checked_* upstream. */
+    /* Wrap an i128 into the narrowest Val: None→Overflow, 47-bit→inline, else LongInt. */
     #[inline]
     pub(crate) fn int_to_val(&mut self, r: Option<i128>) -> Result<Val, VmErr> {
         let i = r.ok_or(cold_overflow())?;
@@ -475,10 +441,7 @@ impl<'a> VM<'a> {
     }
 }
 
-/* Decimal rendering for i128. itoa handles up to i128 but the dedicated
-   `format!("{i}")` path pulls in too much fmt machinery for the hot path; a
-   tight handwritten loop matches the `u128_to_dec` helper in format.rs and
-   keeps display cost predictable. */
+/* i128 decimal render via itoa to avoid the heavier `format!` machinery on the hot path. */
 fn i128_to_dec(n: i128) -> String {
     let mut buf = itoa::Buffer::new();
     buf.format(n).to_string()

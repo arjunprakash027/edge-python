@@ -31,24 +31,16 @@ pub(crate) struct ExceptionFrame {
 #[derive(Clone, Copy)]
 pub(crate) enum ParamKind { Normal, Star, DoubleStar, KwOnly }
 
-/* Side-channel state set by one opcode and consumed by another inside
-   the same dispatch frame. Grouped here so the implicit "set here,
-   read there" coupling is auditable in one place — adding a new
-   pending flag goes through this struct, not the VM root. The
-   long-term direction is to convert each into an explicit return on
-   the producing opcode (see AGENT-1 #19 in the audit), but that's a
-   broader change touching every opcode handler. */
+/* Side-channel state passed between opcodes in one dispatch frame; grouped for auditability. */
 pub(crate) struct Pending {
     /* Star/double-star spread bumps the next Call's argument count. */
     pub pos_delta: i32,
     pub kw_delta: i32,
-    /* Source byte offset of the Call instruction currently dispatching;
-       picked up by the traceback renderer. */
+    /* Current Call's byte offset; consumed by the traceback renderer. */
     pub call_byte_pos: Option<u32>,
     /* Wakeup deadline set by `sleep()` and consumed by the scheduler. */
     pub sleep_until_ns: Option<u64>,
-    /* `raise X("msg")` stashes the lifted ExcInstance here so a
-       matching `except X as e` handler can bind the actual instance. */
+    /* Lifted ExcInstance from `raise X(...)` so `except X as e` binds the real instance. */
     pub exc_val: Option<Val>,
 }
 
@@ -82,13 +74,9 @@ pub struct VM<'a> {
     pub(crate) observed_impure: Vec<bool>,
     pub(crate) exception_stack: Vec<ExceptionFrame>,
     pub(crate) functions: Vec<&'a (Vec<String>, SSAChunk, u16, u16)>,
-    // (chunk_ptr, [global_fn_id; chunk.functions.len()]). Linear scan; one
-    // entry per chunk (typically <20). Avoids HashMap monomorphization for
-    // a tiny pointer-keyed map.
+    // (chunk_ptr, global fn ids); linear scan over a tiny list avoids HashMap monomorphization.
     pub(crate) fn_index: Vec<(*const SSAChunk, Vec<u32>)>,
-    // function_parents[fi] = the fi of the def that lexically encloses `fi`,
-    // or None for module-level. body_to_fi resolves a body chunk pointer to
-    // its owning fi (for caller identification). See build_function_table.
+    // function_parents: lexical enclosing fi (None at module level); body_to_fi: chunk->fi.
     pub(crate) function_parents: Vec<Option<usize>>,
     pub(crate) body_to_fi: HashMap<*const SSAChunk, usize>,
     pub(crate) body_maps: Vec<HashMap<String, usize>>,
@@ -96,35 +84,20 @@ pub struct VM<'a> {
     pub(crate) slot_templates: Vec<Vec<Val>>,
     pub(crate) nonlocal_tables: Vec<Vec<(usize, usize)>>,
     pub(crate) needs_caller_slots: Vec<bool>,
-    /* `is_param_slot[fi][slot]` — true when slot is bound to a formal
-       parameter and must NOT be overwritten by caller-slot propagation.
-       Replaces a per-call BTreeSet<usize> allocation in exec_call. */
+    /* Bitmap: slot bound to a formal parameter; protected from caller-slot propagation. */
     pub(crate) is_param_slot: Vec<Vec<bool>>,
-    /* Body slots holding free-variable references (canonical, version-0,
-       not a parameter). Each entry is `(bare_name, body_slot)`. exec_call
-       falls back to base-name lookup against the caller's chunk for these
-       slots so that names whose SSA version differs between body and caller
-       still late-bind correctly. */
+    /* Free-variable body slots (bare_name, slot); used for caller-chunk base-name fallback. */
     pub(crate) body_free_loads: Vec<Vec<(String, usize)>>,
     pub(crate) is_async: Vec<bool>,
     pub(crate) default_slots: Vec<Vec<(usize, Val)>>,
-    /* Pre-resolved body slot for each function's own name (`<name>_0`),
-       so the call path can bind the self-reference with a single
-       Option<usize> lookup instead of allocating a versioned key per
-       call. None for anonymous lambdas or names not present in the body. */
+    /* Pre-resolved `<name>_0` body slot for self-reference binding; None for lambdas. */
     pub(crate) self_ref_slot: Vec<Option<usize>>,
     pub(crate) opcode_caches: HashMap<*const SSAChunk, OpcodeCache>,
-    /* Per-chunk index for the call-site bare-name fallback. Keyed by
-       chunk pointer, value is `bare_name -> Vec<(version, slot)>` of
-       every SSA name in `chunk.names` carrying a `_<digits>` suffix.
-       Replaces the linear scan that re-parsed every name on every
-       free-load lookup. Populated by `build_function_table`. */
+    /* Per-chunk `bare -> [(version, slot)]` index for the free-load fallback. */
     pub(crate) chunk_name_versions: HashMap<*const SSAChunk, NameVersionIndex>,
-    /* Const pool slice ptrs for caches currently owned by a live exec()
-       frame (removed from `opcode_caches` for the duration of the call). */
+    /* Const-pool ptrs for caches currently checked out by live exec() frames. */
     pub(crate) active_const_pools: Vec<*const [Val]>,
-    /* Cached `Limits::ops == usize::MAX` so the hot dispatch path skips
-       the budget decrement on every backward jump. */
+    /* Cached `ops == usize::MAX` so the hot path skips the budget decrement. */
     pub(crate) sandbox_off: bool,
     pub(crate) with_stack: Vec<Val>,
     pub(crate) pending: Pending,
@@ -135,38 +108,21 @@ pub struct VM<'a> {
     pub input_buffer: Vec<String>,
     pub event_queue: Vec<Val>,
     pub strict_input: bool,
-    /* Source byte offset of the deepest frame that raised a propagating
-       error in the most recent run(). */
+    /* Byte offset of the deepest propagating error in the last run(). */
     pub(crate) error_byte_pos: Option<u32>,
-    /* spec -> Module Val map populated by `init_modules` before user
-       bytecode runs. Both `OpCode::LoadModule` and the `import_module()`
-       builtin look up here. */
+    /* spec -> Module Val, populated by `init_modules`; read by LoadModule / import_module(). */
     pub(crate) module_table: HashMap<String, Val>,
-    /* `fi -> module spec`. Tracks which module a function lives in so
-       the call-site free-load fallback resolves bare-name references
-       against the function's OWN module's bindings instead of the
-       global namespace. */
+    /* `fi -> module spec`; scopes the free-load fallback to the fn's own module. */
     pub(crate) fn_module: Vec<Option<String>>,
-    /* Function-name registry parallel to `functions`. Populated when
-       `MakeFunction` runs, consulted by the multi-frame traceback renderer
-       to fill the `<fname>` placeholder in `note: called from <fname>()`
-       lines. Empty string entries are anonymous lambdas. */
+    /* Function names parallel to `functions`; consumed by traceback render. Empty = lambda. */
     pub(crate) function_names: Vec<String>,
-    /* Active call frames pushed/popped by exec_call on every user-function
-       entry and exit. Drained on error to feed the traceback renderer; the
-       innermost (most recent) call is at the end of the Vec. */
+    /* Active call frames (innermost at end); drained by the traceback renderer on error. */
     pub(crate) call_stack: Vec<CallFrame>,
-    /* Cooperative scheduler for `run` / `gather` / `with_timeout`.
-       Empty between top-level invocations of `run`; each handle holds
-       a HeapObj::Coroutine Val plus its lifecycle state. */
+    /* Cooperative scheduler for `run` / `gather` / `with_timeout`; one handle per coroutine. */
     pub(crate) scheduler: Vec<CoroutineHandle>,
-    /* Host-installed wall-clock provider in nanoseconds. WASM hosts
-       wire this to `Date.now() * 1e6`; native hosts can use
-       `std::time::Instant`. */
+    /* Host-installed wall-clock (ns). */
     pub(crate) time_hook: Option<fn() -> u64>,
-    /* Internal monotonic counter used when `time_hook` is None: each
-       `sleep(s)` call moves it forward by `s * 1e9`, so coroutines still
-       wake in order even without a real clock. Resets at every `run()`. */
+    /* Fallback monotonic counter when `time_hook` is None; reset each `run()`. */
     pub(crate) virtual_clock_ns: u64,
 }
 
@@ -233,7 +189,7 @@ impl<'a> VM<'a> {
             let (params, _, _, _) = vm.functions[fi];
             let bm = &vm.body_maps[fi];
             params.iter().map(|p| {
-                // Prefix `~` marks parameters declared after a lone `*` separator.
+                // `~` prefix marks kw-only parameters (after a lone `*`).
                 let (kind, bare) = if let Some(stripped) = p.strip_prefix("**") {
                     (ParamKind::DoubleStar, stripped)
                 } else if let Some(stripped) = p.strip_prefix('*') {
@@ -251,11 +207,7 @@ impl<'a> VM<'a> {
         // Pre-compute nonlocal resolution: (canonical_body_slot, canonical_body_slot).
         vm.nonlocal_tables = vm.functions.iter().map(|(_, body, _, _)| {
             body.nonlocals.iter().filter_map(|base| {
-                // Must skip names that lack a `_<digits>` SSA suffix entirely:
-                // body.names also holds the bare `Nonlocal` opcode operand,
-                // and that slot isn't the variable's canonical SSA root. So
-                // we explicitly require the suffix-bearing form here, not
-                // ssa_strip's "fall through to bare on missing suffix" shape.
+                // Require an explicit `_<digits>` suffix; bare Nonlocal-operand slots aren't canonical.
                 let canon = body.names.iter().enumerate()
                     .find(|(_, n)| crate::modules::parser::SsaName::parse(n).map(|s| s.bare) == Some(base.as_str()))
                     .map(|(i, _)| body.alias_groups.get(i).and_then(|g| g.first().copied()).unwrap_or(i as u16) as usize)?;
@@ -266,28 +218,23 @@ impl<'a> VM<'a> {
         // True iff the body references names not in params/builtins/captures.
         vm.needs_caller_slots = (0..vm.functions.len()).map(|fi| {
             let (params, body, _, _) = vm.functions[fi];
-            let param_names: crate::util::fx::FxHashSet<&str> = params.iter()
-                .map(|p| p.trim_start_matches(['*', '~'])).collect();
+            let param_names: crate::util::fx::FxHashSet<&str> = params.iter().map(|p| p.trim_start_matches(['*', '~'])).collect();
             body.names.iter().any(|n| {
                 let base = crate::modules::parser::ssa_strip(n);
                 !param_names.contains(base) && !vm.globals.contains_key(n)
             })
         }).collect();
 
-        // Bitmap of slots bound to formal parameters — used to skip caller-slot
-        // propagation without allocating a BTreeSet per call.
+        // Bitmap of param-bound slots; avoids per-call BTreeSet allocation.
         vm.is_param_slot = (0..vm.functions.len()).map(|fi| {
             let (_, body, _, _) = vm.functions[fi];
             let n_slots = body.names.len();
             let mut bm = alloc::vec![false; n_slots];
-            for &(_, slot) in &vm.param_slots[fi] {
-                if slot < n_slots { bm[slot] = true; }
-            }
+            for &(_, slot) in &vm.param_slots[fi] { if slot < n_slots { bm[slot] = true; } }
             bm
         }).collect();
 
-        // Body free-load slots: canonical, non-parameter names that the body
-        // never writes to. Built once at VM init.
+        // Canonical, non-param, never-written slots — built once at VM init.
         vm.body_free_loads = (0..vm.functions.len()).map(|fi| {
             let (_, body, _, _) = vm.functions[fi];
             let param_bm = &vm.is_param_slot[fi];
@@ -298,9 +245,7 @@ impl<'a> VM<'a> {
                 }
             }
             body.names.iter().enumerate().filter_map(|(slot, name)| {
-                let canon = body.alias_groups.get(slot)
-                    .and_then(|g| g.first().copied())
-                    .unwrap_or(slot as u16) as usize;
+                let canon = body.alias_groups.get(slot).and_then(|g| g.first().copied()).unwrap_or(slot as u16) as usize;
                 if canon != slot { return None; }
                 if param_bm.get(slot).copied().unwrap_or(false) { return None; }
                 if written.contains(&slot) { return None; }
@@ -309,8 +254,7 @@ impl<'a> VM<'a> {
             }).collect()
         }).collect();
 
-        // Self-reference slot table: looked up once instead of allocating a
-        // `<base>_0` String per call inside `bind_self_reference`.
+        // Self-reference slot, resolved once to avoid per-call `<base>_0` allocation.
         vm.self_ref_slot = (0..vm.functions.len()).map(|fi| {
             let bare = vm.function_names.get(fi)?;
             if bare.is_empty() { return None; }
@@ -326,9 +270,7 @@ impl<'a> VM<'a> {
             let pslots = &vm.param_slots[fi];
             let n_params = params.len();
             let offset = n_params.saturating_sub(n_defaults);
-            (0..n_defaults).filter_map(|di| {
-                pslots.get(offset + di).map(|&(_, slot)| (slot, Val::none()))
-            }).collect()
+            (0..n_defaults).filter_map(|di| { pslots.get(offset + di).map(|&(_, slot)| (slot, Val::none())) }).collect()
         }).collect();
         for &name in BUILTIN_TYPES {
             if let Ok(type_obj) = vm.heap.alloc(HeapObj::Type(name.to_string())) {
@@ -336,16 +278,12 @@ impl<'a> VM<'a> {
                 vm.globals.insert(s!(str name, "_0"), type_obj);
             }
         }
-        // Module identity. The entry chunk always runs as "__main__" so the
-        // `if __name__ == "__main__":` guard works without special-casing in
-        // the parser. Inserted before slot_templates is built below so name
-        // references get pre-resolved into slots.
+        // Entry chunk's `__name__` is "__main__"; inserted before slot_templates is built.
         if let Ok(main_name) = vm.heap.alloc(HeapObj::Str("__main__".to_string())) {
             vm.globals.insert("__name__".to_string(), main_name);
             vm.globals.insert("__name___0".to_string(), main_name);
         }
-        // Register builtins as first-class NativeFn values so `print = print`,
-        // `f = len; f([1,2])`, etc. work without a separate dispatch path.
+        // Builtins as first-class NativeFn values so they can be rebound/passed around.
         let builtin_fns: &[NativeFnId] = &[
             NativeFnId::Print, NativeFnId::Len, NativeFnId::Abs, NativeFnId::Str,
             NativeFnId::Int, NativeFnId::Float, NativeFnId::Bool, NativeFnId::Type,
@@ -374,8 +312,7 @@ impl<'a> VM<'a> {
                 vm.globals.insert(s!(str name, "_0"), v);
             }
         }
-        // Slot templates need every global already populated — built once
-        // after the loop, not per builtin.
+        // Slot templates built after all globals are registered.
         vm.slot_templates = vm.functions.iter().map(|(_, body, _, _)| {
             vm.fill_builtins(&body.names)
         }).collect();

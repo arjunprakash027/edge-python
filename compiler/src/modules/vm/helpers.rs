@@ -6,26 +6,19 @@ use super::types::*;
 
 impl<'a> VM<'a> {
 
-    /* Source byte offset of the last propagating runtime error, or None if
-       run() succeeded / hasn't been called. */
+    /* Byte offset of the last propagating error, or None on success / before run(). */
     pub fn error_pos(&self) -> Option<usize> { self.error_byte_pos.map(|p| p as usize) }
     pub fn call_stack_frames(&self) -> &[CallFrame] { &self.call_stack }
     pub fn function_names_ref(&self) -> &[String] { &self.function_names }
 
-    /// Install a host-provided wall-clock function returning nanoseconds.
-    /// Without one, `sleep` advances a virtual clock so coroutines still
-    /// interleave deterministically but no real wait happens.
-    pub fn set_time_hook(&mut self, hook: fn() -> u64) {
-        self.time_hook = Some(hook);
-    }
+    /// Host-provided wall clock (ns); without one, `sleep` advances a deterministic virtual clock.
+    pub fn set_time_hook(&mut self, hook: fn() -> u64) { self.time_hook = Some(hook); }
     pub(crate) fn now_ns(&self) -> u64 {
         match self.time_hook { Some(h) => h(), None => self.virtual_clock_ns }
     }
 
     pub fn heap_usage(&self) -> usize { self.heap.usage() }
-    pub fn cache_stats(&self) -> (usize, usize) {
-        (self.templates.count(), self.chunk.instructions.len())
-    }
+    pub fn cache_stats(&self) -> (usize, usize) { (self.templates.count(), self.chunk.instructions.len()) }
 
     // Stack helpers.
 
@@ -38,27 +31,24 @@ impl<'a> VM<'a> {
         let b = self.pop()?; let a = self.pop()?; Ok((a, b))
     }
     #[inline] pub(crate) fn pop_n(&mut self, n: usize) -> Result<Vec<Val>, VmErr> {
-        let at = self.stack.len().checked_sub(n)
-            .ok_or(cold_runtime("stack underflow"))?;
+        let at = self.stack.len().checked_sub(n).ok_or(cold_runtime("stack underflow"))?;
         Ok(self.stack.split_off(at))
     }
 
     /* Materialise an iterable into Vec<Val> for `*args` positional spread. */
     pub(crate) fn iter_to_vec_for_spread(&self, v: Val) -> Result<Vec<Val>, VmErr> {
-        if !v.is_heap() {
-            return Err(VmErr::Type("argument after * must be an iterable"));
-        }
+        if !v.is_heap() { return Err(VmErr::Type("argument after * must be an iterable")); }
         Ok(match self.heap.get(v) {
-            HeapObj::List(rc)  => rc.borrow().clone(),
-            HeapObj::Tuple(t)  => t.clone(),
-            HeapObj::Set(rc)   => rc.borrow().iter().cloned().collect(),
+            HeapObj::List(rc) => rc.borrow().clone(),
+            HeapObj::Tuple(t) => t.clone(),
+            HeapObj::Set(rc) => rc.borrow().iter().cloned().collect(),
             HeapObj::Range(s, e, st) => {
                 let (s, e, st) = (*s, *e, *st);
                 if st == 0 { return Err(VmErr::Value("range() arg 3 must not be zero")); }
                 let mut out = Vec::new();
                 let mut i = s;
                 if st > 0 { while i < e { out.push(Val::int(i)); i += st; } }
-                else      { while i > e { out.push(Val::int(i)); i += st; } }
+                else { while i > e { out.push(Val::int(i)); i += st; } }
                 out
             }
             _ => return Err(VmErr::Type("argument after * must be an iterable")),
@@ -84,8 +74,7 @@ impl<'a> VM<'a> {
         }
     }
 
-    /* `Val::undef()` distinguishes unbound slots from None. LoadName
-       checks `is_undef()` to raise NameError, avoiding Option<Val> reads. */
+    /* Seed slots with `undef()` so LoadName can detect unbound names via a u64 compare. */
     pub(crate) fn fill_builtins(&self, names: &[String]) -> Vec<Val> {
         let mut slots = vec![Val::undef(); names.len()];
         for (i, name) in names.iter().enumerate() {
@@ -98,8 +87,7 @@ impl<'a> VM<'a> {
 
     #[inline]
     pub(crate) fn checked_jump(&mut self, target: usize, limit: usize) -> Result<usize, VmErr> {
-        // Non-sandboxed mode has unlimited budget; skip the decrement entirely.
-        // Bounds check stays — malformed bytecode could still produce bad targets.
+        // Sandbox-off skips the budget decrement; the bounds check still runs.
         if !self.sandbox_off {
             if self.budget == 0 { return Err(cold_budget()); }
             self.budget -= 1;
@@ -132,8 +120,7 @@ impl<'a> VM<'a> {
                 IterFrame::Seq { items, idx: 0 }
             },
             HeapObj::Bytes(b) => {
-                // for-loop over bytes yields ints, matching `iter()` and
-                // indexing semantics.
+                // Bytes iteration yields ints, matching `iter()` and indexing.
                 let items: Vec<Val> = b.iter().map(|&byte| Val::int(byte as i64)).collect();
                 IterFrame::Seq { items, idx: 0 }
             },
@@ -174,7 +161,7 @@ impl<'a> VM<'a> {
         let (ia, ib) = phi_sources[phi_map[rip]];
         let a = slots[ia as usize];
         let val = if !a.is_undef() { a }
-                  else { let b = slots[ib as usize]; if !b.is_undef() { b } else { Val::none() } };
+            else { let b = slots[ib as usize]; if !b.is_undef() { b } else { Val::none() } };
         slots[op as usize] = val;
     }
 }

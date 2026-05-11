@@ -29,9 +29,7 @@ struct CacheSlot {
 pub struct OpcodeCache {
     slots: Vec<CacheSlot>,
     fused: Option<Vec<Instruction>>,
-    /* Pre-materialised constant pool. Built once per chunk on first exec
-       so LoadConst is a single indexed load instead of a per-iteration
-       Value->Val conversion (strings/bigints would heap-alloc). */
+    /* Pre-materialised const pool so LoadConst is one indexed load, no per-iter alloc. */
     const_vals: Option<Vec<Val>>,
 }
 
@@ -57,10 +55,7 @@ impl OpcodeCache {
         self.fused.as_ref().expect("fused code not compiled")
     }
 
-    /* Materialise the constant pool. Int/Float/Bool/None become inline Vals
-       (no heap touch); Str/LongInt allocate once and are then shared.
-       Inline-int literals outside the 47-bit Val range get auto-promoted to
-       LongInt heap slots so the parser doesn't need to know Val's tag layout. */
+    /* Build the const pool: scalars inline, Str/LongInt heap-allocated once and shared. */
     pub fn ensure_const_vals(&mut self, chunk: &SSAChunk, heap: &mut HeapPool)
         -> Result<&[Val], VmErr>
     {
@@ -70,16 +65,11 @@ impl OpcodeCache {
                 let v = match c {
                     Value::Int(i) => {
                         if *i >= Val::INT_MIN && *i <= Val::INT_MAX { Val::int(*i) }
-                        // Defensive: this case shouldn't fire post-parser-fix since
-                        // out-of-Val-range literals now arrive as Value::LongInt,
-                        // but keep the promotion path here so manually constructed
-                        // chunks (FFI / wire format) still work.
+                        // Defensive path for FFI/wire-format chunks; parser now emits LongInt directly.
                         else { heap.alloc(HeapObj::LongInt(*i as i128))? }
                     }
                     Value::LongInt(i) => {
-                        // Demote if it actually fits — caller may emit LongInt
-                        // out of caution; keep the invariant that anything fitting
-                        // in Val::int is inline so hash/eq match literals.
+                        // Demote when it fits inline so hash/eq stay in sync with literals.
                         if *i >= Val::INT_MIN as i128 && *i <= Val::INT_MAX as i128 {
                             Val::int(*i as i64)
                         } else {
@@ -132,13 +122,13 @@ impl OpcodeCache {
 
     fn specialize(opcode: &OpCode, ta: u8, tb: u8) -> Option<FastOp> {
         match (opcode, ta, tb) {
-            (OpCode::Add, 1, 1) => Some(FastOp::AddInt),    (OpCode::Add, 2, 2) => Some(FastOp::AddFloat),
-            (OpCode::Add, 5, 5) => Some(FastOp::AddStr),    (OpCode::Sub, 1, 1) => Some(FastOp::SubInt),
-            (OpCode::Sub, 2, 2) => Some(FastOp::SubFloat),  (OpCode::Mul, 1, 1) => Some(FastOp::MulInt),
-            (OpCode::Mul, 2, 2) => Some(FastOp::MulFloat),  (OpCode::Lt, 1, 1) => Some(FastOp::LtInt),
-            (OpCode::Lt, 2, 2) => Some(FastOp::LtFloat),    (OpCode::Eq, 1, 1) => Some(FastOp::EqInt),
-            (OpCode::Eq, 5, 5) => Some(FastOp::EqStr),      (OpCode::Gt, 1, 1) => Some(FastOp::GtInt),
-            (OpCode::LtEq, 1, 1) => Some(FastOp::LtEqInt),  (OpCode::GtEq, 1, 1) => Some(FastOp::GtEqInt),
+            (OpCode::Add, 1, 1) => Some(FastOp::AddInt), (OpCode::Add, 2, 2) => Some(FastOp::AddFloat),
+            (OpCode::Add, 5, 5) => Some(FastOp::AddStr), (OpCode::Sub, 1, 1) => Some(FastOp::SubInt),
+            (OpCode::Sub, 2, 2) => Some(FastOp::SubFloat), (OpCode::Mul, 1, 1) => Some(FastOp::MulInt),
+            (OpCode::Mul, 2, 2) => Some(FastOp::MulFloat), (OpCode::Lt, 1, 1) => Some(FastOp::LtInt),
+            (OpCode::Lt, 2, 2) => Some(FastOp::LtFloat), (OpCode::Eq, 1, 1) => Some(FastOp::EqInt),
+            (OpCode::Eq, 5, 5) => Some(FastOp::EqStr), (OpCode::Gt, 1, 1) => Some(FastOp::GtInt),
+            (OpCode::LtEq, 1, 1) => Some(FastOp::LtEqInt), (OpCode::GtEq, 1, 1) => Some(FastOp::GtEqInt),
             (OpCode::NotEq, 1, 1) => Some(FastOp::NotEqInt),
             (OpCode::Mod, 1, 1) => Some(FastOp::ModInt),
             (OpCode::FloorDiv, 1, 1) => Some(FastOp::FloorDivInt),
@@ -168,10 +158,7 @@ fn hash_args(args: &[Val]) -> u64 {
     h
 }
 
-/* True when every arg is value-stable across calls. Mutable containers
-   (List, Dict, Set, Instance) hash by raw heap-index bits, so a caller
-   that mutates the same container between two calls produces a stale
-   cache hit. Only memoize when every arg is byte-by-byte immutable. */
+/* Memoize only when every arg is immutable; mutable containers hash by heap idx and go stale. */
 fn args_memoizable(args: &[Val], heap: &super::types::HeapPool) -> bool {
     use super::types::HeapObj;
     args.iter().all(|v| {
@@ -181,8 +168,7 @@ fn args_memoizable(args: &[Val], heap: &super::types::HeapPool) -> bool {
     })
 }
 
-// Indexed by `fi` (function id, dense from 0..N). Vec gives O(1) lookup
-// without a HashMap monomorphization.
+// Indexed by dense `fi`; Vec gives O(1) lookup with no HashMap monomorphization.
 pub struct Templates { slots: Vec<Vec<TplEntry>> }
 
 impl Templates {
@@ -221,16 +207,7 @@ impl Templates {
     }
 }
 
-/* Fuse adjacent LoadAttr+Call into CallMethod+CallMethodArgs in-place.
-   The two opcodes change but operands and instruction count stay, so
-   jump targets remain valid. Compiled once per chunk and then cached.
-
-   Only fires when Call's operand is zero (no args, no kwargs). When the
-   call has args, the parser interleaves them between LoadAttr and Call
-   (e.g. `x.foo(a)` -> LoadAttr foo, LoadName a, Call(1)) and adjacent
-   LoadAttr+Call signals an attribute access in the LAST argument
-   position (e.g. `f(self.n)` -> LoadName self, LoadAttr n, Call(1)) —
-   fusing that mis-treats the arg expression as the call target. */
+/* Fuse adjacent LoadAttr+Call(0) into CallMethod+CallMethodArgs; only safe when Call has no args. */
 fn fuse_method_calls(chunk: &SSAChunk) -> Vec<Instruction> {
     let src = &chunk.instructions;
     let n = src.len();

@@ -12,15 +12,7 @@ enum FastOutcome { Done, TypeMiss, Overflow }
 
 impl<'a> VM<'a> {
 
-    /* Inline-cache fast path. Peeks the stack and only pops on success.
-       Three outcomes:
-         Done     — the op ran inline; stack consumed and result pushed.
-         TypeMiss — operands didn't match the speculation; deopt the IC.
-         Overflow — types matched but the result can't be represented (int
-                    overflow, division by zero); the slow handler will
-                    raise the proper Python exception. The IC stays warm
-                    because the speculation was correct: the op IS hot
-                    on these types, only this *one* input pair fell out. */
+    /* IC fast path: Done (consumed+pushed) / TypeMiss (deopt) / Overflow (keep IC, slow handler raises). */
     #[inline]
     fn exec_fast(&mut self, fast: FastOp) -> Result<FastOutcome, VmErr> {
         let len = self.stack.len();
@@ -90,29 +82,23 @@ impl<'a> VM<'a> {
         Ok(FastOutcome::Done)
     }
 
-    /* Main dispatch loop. Walks the fused instruction stream (LoadAttr+Call
-       already collapsed to CallMethod+CallMethodArgs); checks the IC inline
-       for hot arith/compare opcodes. */
+    /* Main dispatch loop. Walks the fused instruction stream (LoadAttr+Call already collapsed to CallMethod+CallMethodArgs); checks the IC inline for hot arith/compare opcodes. */
     pub(crate) fn exec(&mut self, chunk: &SSAChunk, slots: &mut [Val]) -> Result<Val, VmErr> {
 
         let slots_base = self.live_slots.len();
-        let exc_base   = self.exception_stack.len();
-        let key        = chunk as *const _;
+        let exc_base = self.exception_stack.len();
+        let key = chunk as *const _;
 
         let mut cache = self.opcode_caches.remove(&key)
             .unwrap_or_else(|| OpcodeCache::new(chunk));
         cache.ensure_fused(chunk);
-        // Pre-materialise the constant pool here (not in OpcodeCache::new)
-        // because Str allocates into the live HeapPool.
+        // Pre-materialise the constant pool here (not in OpcodeCache::new) because Str allocates into the live HeapPool.
         if let Err(e) = cache.ensure_const_vals(chunk, &mut self.heap) {
             self.opcode_caches.insert(key, cache);
             return Err(e);
         }
 
-        // Hoist immutable views out of the loop so the inner dispatch doesn't
-        // re-unwrap `cache.fused_ref()` / `const_vals_ref()` per instruction.
-        // SAFETY: the slices borrow from `cache`, which is a stack local that
-        // lives for the entire exec() call; no other path mutates the cache.
+        // Hoist slices out of the loop; cache outlives exec() and isn't mutated meanwhile.
         let insns_ptr: *const [Instruction] = cache.fused_ref();
         let consts_ptr: *const [Val] = cache.const_vals_ref();
         self.active_const_pools.push(consts_ptr);
@@ -120,8 +106,8 @@ impl<'a> VM<'a> {
             // SAFETY: see comment above.
             let insns: &[Instruction] = unsafe { &*insns_ptr };
             let consts: &[Val] = unsafe { &*consts_ptr };
-            let n          = insns.len();
-            let mut ip     = self.resume_ip;
+            let n = insns.len();
+            let mut ip = self.resume_ip;
             self.resume_ip = 0;
 
             loop {
@@ -135,8 +121,7 @@ impl<'a> VM<'a> {
                     Ok(None) => {
                         if self.yielded {
                             let val = self.pop().unwrap_or(Val::none());
-                            // Skip the PopTop following Yield on resume so the
-                            // yielded value isn't discarded twice.
+                            // Skip the PopTop after Yield on resume to avoid double-discard.
                             self.resume_ip = if ip < n && matches!(insns.get(ip), Some(ins) if ins.opcode == OpCode::PopTop) { ip + 1 } else { ip };
                             self.live_slots.truncate(slots_base);
                             self.exception_stack.truncate(exc_base);
@@ -149,11 +134,7 @@ impl<'a> VM<'a> {
                         return Ok(v);
                     }
                     Err(e) => {
-                        // Record the deepest frame's source position. The first
-                        // dispatch loop to catch an error (the innermost) wins;
-                        // outer dispatches that re-catch the propagating Err see
-                        // Some(_) and skip. Reset on swallow below so a later
-                        // unhandled error in the same run anchors correctly.
+                        // Innermost frame wins; cleared below on swallow so later errors re-anchor.
                         if self.error_byte_pos.is_none() {
                             self.error_byte_pos = chunk.resolve(rip as u32);
                         }
@@ -163,39 +144,26 @@ impl<'a> VM<'a> {
                             self.iter_stack.truncate(frame.iter_depth);
                             self.with_stack.truncate(frame.with_depth);
                             self.pending.pos_delta = 0;
-                            self.pending.kw_delta  = 0;
-                            self.error_byte_pos    = None;
-                            // Caught exception: discard the partial traceback
-                            // so a later unhandled error doesn't carry stale
-                            // frames from the swallowed one.
+                            self.pending.kw_delta = 0;
+                            self.error_byte_pos = None;
+                            // Drop partial traceback so a later error doesn't inherit stale frames.
                             self.call_stack.clear();
-                            // Cold path: allocate-once String for the lookup
-                            // key. `Raised` carries the user-supplied class
-                            // name so `except <Type>` can match it.
+                            // Class-name lookup key; `Raised` carries the user-supplied name.
                             let msg: String = match &e {
-                                VmErr::ZeroDiv     => "ZeroDivisionError".into(),
-                                VmErr::Overflow    => "OverflowError".into(),
-                                VmErr::Type(_)     => "TypeError".into(),
-                                VmErr::TypeMsg(_)  => "TypeError".into(),
-                                VmErr::Value(_)    => "ValueError".into(),
+                                VmErr::ZeroDiv => "ZeroDivisionError".into(),
+                                VmErr::Overflow => "OverflowError".into(),
+                                VmErr::Type(_) => "TypeError".into(),
+                                VmErr::TypeMsg(_) => "TypeError".into(),
+                                VmErr::Value(_) => "ValueError".into(),
                                 VmErr::Attribute(_)=> "AttributeError".into(),
-                                VmErr::Name(_)     => "NameError".into(),
-                                VmErr::CallDepth   => "RecursionError".into(),
-                                VmErr::Heap        => "MemoryError".into(),
-                                VmErr::Budget      => "RuntimeError".into(),
-                                VmErr::Runtime(_)  => "RuntimeError".into(),
-                                VmErr::Raised(s)   => s.clone(),
+                                VmErr::Name(_) => "NameError".into(),
+                                VmErr::CallDepth => "RecursionError".into(),
+                                VmErr::Heap => "MemoryError".into(),
+                                VmErr::Budget => "RuntimeError".into(),
+                                VmErr::Runtime(_) => "RuntimeError".into(),
+                                VmErr::Raised(s) => s.clone(),
                             };
-                            // Prefer the pending ExcInstance Val (built by
-                            // `raise X("msg")` or `raise X`) so `except X
-                            // as e` binds the actual instance. For native
-                            // errors (`1/0`, type mismatches, ...) build a
-                            // fresh ExcInstance carrying the message as
-                            // args[0] — this matches CPython where
-                            // `except ZeroDivisionError as e: print(e.args)`
-                            // yields `('division by zero',)` even when the
-                            // exception was raised by the runtime, not by
-                            // user `raise` syntax.
+                            // Prefer the user-raised instance; synthesize one for native errors (CPython parity).
                             let exc = if let Some(v) = self.pending.exc_val.take() {
                                 v
                             } else {
@@ -222,27 +190,21 @@ impl<'a> VM<'a> {
         self.exec(chunk, slots)
     }
 
-    /* Resolve the bound method on the receiver and call it directly,
-       avoiding a BoundMethod heap allocation. Args come from the paired
-       CallMethodArgs instruction. */
+    /* Resolve the receiver's method and call directly; args come from CallMethodArgs. */
     fn exec_call_method(&mut self, attr_idx: u16, call_op: u16, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let raw = call_op as usize;
-        let num_kw  = (raw >> 8) & 0xFF;
+        let num_kw = (raw >> 8) & 0xFF;
         let num_pos = raw & 0xFF;
         let total = num_pos + 2 * num_kw;
 
-        let mut stack_items: Vec<Val> = (0..total)
-            .map(|_| self.pop())
-            .collect::<Result<_, _>>()?;
+        let mut stack_items: Vec<Val> = (0..total).map(|_| self.pop()).collect::<Result<_, _>>()?;
         stack_items.reverse();
 
         let kw_flat: Vec<Val> = stack_items.split_off(num_pos);
         let positional = stack_items;
 
         let obj = self.pop()?;
-        let name = chunk.names.get(attr_idx as usize)
-            .ok_or(VmErr::Runtime("CallMethod: bad name index"))?
-            .clone();
+        let name = chunk.names.get(attr_idx as usize).ok_or(VmErr::Runtime("CallMethod: bad name index"))?.clone();
 
         match self.resolve_attr(obj, &name)? {
             handlers::methods::AttrLookup::ModuleAttr(callee)
@@ -250,17 +212,13 @@ impl<'a> VM<'a> {
                 // Direct call on the resolved value, no `self` prepended.
                 self.push(callee);
                 for a in &positional { self.push(*a); }
-                for a in &kw_flat   { self.push(*a); }
+                for a in &kw_flat { self.push(*a); }
                 let argc = positional.len() as u16;
                 let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
                 self.exec_call(encoded, chunk, slots)
             }
             handlers::methods::AttrLookup::InstanceMethod { recv, func } => {
-                // Prepend `self`. Pre-existing behaviour: kwargs aren't
-                // forwarded — see the encoded num_kw below mirrors the
-                // original code path so any call site that ever passed
-                // kwargs through this branch keeps the same observable
-                // shape.
+                // Prepend `self`; kwargs aren't forwarded (preserved behaviour).
                 self.push(func);
                 self.push(recv);
                 for a in &positional { self.push(*a); }
@@ -272,33 +230,21 @@ impl<'a> VM<'a> {
                 self.exec_bound_method(obj, id, &positional, &kw_flat)
             }
             handlers::methods::AttrLookup::InstanceField(_) => {
-                // `inst.field()` where `field` isn't a class method falls
-                // through to "no such method" — pre-existing semantics
-                // had no Instance-field-as-callable path here.
+                // No Instance-field-as-callable path; reports as missing attribute.
                 let ty = self.type_name(obj);
-                Err(VmErr::Attribute(s!(
-                    "'", str ty, "' object has no attribute '", str &name, "'")))
+                Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")))
             }
             handlers::methods::AttrLookup::ExcArgs(_) => {
-                // `e.args()` was an AttributeError under the previous
-                // implementation; preserve that.
+                // `e.args()` reports as missing attribute (preserved).
                 let ty = self.type_name(obj);
-                Err(VmErr::Attribute(s!(
-                    "'", str ty, "' object has no attribute '", str &name, "'")))
+                Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")))
             }
         }
     }
 
-    /* Hot dispatch. Takes the fused instruction slice and constants slice as
-       borrowed parameters so the inner loop never re-unwraps cache.fused_ref()
-       or cache.const_vals_ref(). */
+    /* Hot dispatch; slices passed in so the loop never re-unwraps the cache views. */
     #[inline]
-    fn dispatch(
-        &mut self, chunk: &SSAChunk, slots: &mut [Val],
-        cache: &mut OpcodeCache,
-        insns: &[Instruction], consts: &[Val],
-        ip: &mut usize,
-    ) -> Result<Option<Val>, VmErr> {
+    fn dispatch(&mut self, chunk: &SSAChunk, slots: &mut [Val], cache: &mut OpcodeCache, insns: &[Instruction], consts: &[Val], ip: &mut usize) -> Result<Option<Val>, VmErr> {
         let n = insns.len();
         let ins = insns[*ip];
         let rip = *ip;
@@ -329,12 +275,7 @@ impl<'a> VM<'a> {
             }
             OpCode::StoreName => {
                 self.handle_store(op, slots)?;
-                // Mirror entry-chunk Module stores to `globals` so
-                // `import_module(name)` (and any cross-frame accessor)
-                // finds the alias the user wrote in their `import`
-                // statement. Restricted to entry chunk + Module Vals
-                // so user-level assignments to plain values don't
-                // pollute globals.
+                // Mirror entry-chunk Module stores into `globals` so import_module() finds the alias.
                 if core::ptr::eq(chunk, self.chunk) {
                     let v = slots[op as usize];
                     if v.is_heap()
@@ -347,17 +288,13 @@ impl<'a> VM<'a> {
                 }
             }
             OpCode::LoadConst => {
-                // Constants are pre-materialised at exec entry, so this is a
-                // single bounds-checked index instead of a Value->Val conversion.
+                // Constants are pre-materialised at exec entry, so this is a single bounds-checked index instead of a Value->Val conversion.
                 let v = *consts.get(op as usize)
                     .ok_or(cold_runtime("constant index out of bounds"))?;
                 self.push(v);
             }
 
-            // Arith / compare with inline cache. Add/Sub/Mul/Mod/FloorDiv
-            // and every comparison op share the same fast-path / record /
-            // deopt cycle, so they collapse into one branch with handler
-            // selection at the bottom.
+            // Arith/compare share the IC fast-path/deopt cycle; handler selected at the tail.
             OpCode::Add | OpCode::Sub | OpCode::Mul
             | OpCode::Mod | OpCode::FloorDiv
             | OpCode::Eq | OpCode::Lt | OpCode::NotEq
@@ -365,8 +302,7 @@ impl<'a> VM<'a> {
                 if let Some(fast) = cache.get_fast(rip) {
                     match self.exec_fast(fast)? {
                         FastOutcome::Done => return Ok(None),
-                        /* Speculation was right (matching types); the slow handler
-                           will raise the proper Python exception. Keep the IC. */
+                        /* Types matched; slow handler raises the exception. Keep the IC. */
                         FastOutcome::Overflow => {}
                         FastOutcome::TypeMiss => cache.invalidate(rip),
                     }
@@ -437,11 +373,8 @@ impl<'a> VM<'a> {
             | OpCode::CallHex | OpCode::CallDivmod | OpCode::CallPow | OpCode::CallRepr
             | OpCode::CallReversed | OpCode::CallCallable | OpCode::CallId | OpCode::CallHash
             | OpCode::CallExtern => {
-                // Snapshot the byte_pos of this call site so exec_call can
-                // record it on the new CallFrame. Prefer call_byte_pos
-                // (instr-level) and fall back to the enclosing statement.
-                self.pending.call_byte_pos = chunk.resolve_call(rip as u32)
-                    .or_else(|| chunk.resolve(rip as u32));
+                // Snapshot call-site byte_pos for the new CallFrame; falls back to enclosing stmt.
+                self.pending.call_byte_pos = chunk.resolve_call(rip as u32).or_else(|| chunk.resolve(rip as u32));
                 self.handle_function(ins.opcode, op, chunk, slots)?;
             }
 
@@ -450,9 +383,9 @@ impl<'a> VM<'a> {
                 let frame = self.make_iter_frame(obj)?;
                 self.iter_stack.push(frame);
             }
-            OpCode::LoadTrue  => self.push(Val::bool(true)),
+            OpCode::LoadTrue => self.push(Val::bool(true)),
             OpCode::LoadFalse => self.push(Val::bool(false)),
-            OpCode::LoadNone  => self.push(Val::none()),
+            OpCode::LoadNone => self.push(Val::none()),
             OpCode::Not => self.handle_logic(OpCode::Not)?,
 
             OpCode::Phi => {
@@ -475,8 +408,7 @@ impl<'a> VM<'a> {
 
             // Cold opcodes.
             OpCode::And | OpCode::Or => {
-                // Both should be short-circuited via JumpIfFalseOrPop / JumpIfTrueOrPop
-                // by the parser; reaching here is a codegen bug.
+                // Parser should short-circuit these via JumpIf*OrPop; reaching here is a codegen bug.
                 return Err(cold_runtime("And/Or reached VM dispatch (should be short-circuited)"));
             }
 
@@ -485,17 +417,13 @@ impl<'a> VM<'a> {
                 let body = &chunk.classes[ci];
                 let mut class_slots = self.fill_builtins(&body.names);
                 self.exec(body, &mut class_slots)?;
-                // Collect every defined slot as a class member: methods (Func),
-                // class-level constants (`Status.IDLE = 0`), and any other Val
-                // produced by class-body execution.
+                // Every defined slot becomes a class member (methods + class-level constants).
                 let mut methods: Vec<(String, Val)> = Vec::new();
                 for (i, name) in body.names.iter().enumerate() {
                     if let Some(&v) = class_slots.get(i)
                         && !v.is_undef() {
                             let base = ssa_strip(name);
-                            // Builtin globals also live in class_slots (filled
-                            // by fill_builtins). Skip them so `MyClass.print`
-                            // doesn't shadow the global builtin.
+                            // Skip builtin globals so `MyClass.print` doesn't shadow them.
                             let is_builtin_shadow = v.is_heap()
                                 && matches!(self.heap.get(v), HeapObj::NativeFn(_))
                                 && self.globals.get(base).copied() == Some(v);
@@ -506,9 +434,7 @@ impl<'a> VM<'a> {
                         }
                 }
                 let next_op = cache.fused_ref().get(*ip).map(|i| i.operand).unwrap_or(0);
-                let name_str = chunk.names.get(next_op as usize)
-                    .map(|n| ssa_strip(n))
-                    .unwrap_or("?").to_string();
+                let name_str = chunk.names.get(next_op as usize).map(|n| ssa_strip(n)).unwrap_or("?").to_string();
                 let cls = self.heap.alloc(HeapObj::Class(name_str, methods))?;
                 self.push(cls);
             }
@@ -528,25 +454,19 @@ impl<'a> VM<'a> {
             }
 
             OpCode::LoadExtern => {
-                let f = chunk.extern_table.get(op as usize)
-                    .ok_or(cold_runtime("LoadExtern: extern index out of bounds"))?
-                    .clone();
+                let f = chunk.extern_table.get(op as usize).ok_or(cold_runtime("LoadExtern: extern index out of bounds"))?.clone();
                 let v = self.heap.alloc(HeapObj::Extern(f))?;
                 self.push(v);
             }
 
             OpCode::LoadModule => {
-                let entry = chunk.imports.get(op as usize)
-                    .ok_or(cold_runtime("LoadModule: import index out of range"))?;
-                let v = *self.module_table.get(&entry.spec)
-                    .ok_or(cold_runtime("LoadModule: module not initialised"))?;
+                let entry = chunk.imports.get(op as usize).ok_or(cold_runtime("LoadModule: import index out of range"))?;
+                let v = *self.module_table.get(&entry.spec).ok_or(cold_runtime("LoadModule: module not initialised"))?;
                 self.push(v);
             }
 
             OpCode::BuildModule => {
-                /* Stack on entry, top->bottom: module-name, then `op` pairs of
-                   (attr_name_str, attr_value). Build the attr vec preserving
-                   declaration order (innermost-first when popped). */
+                /* Stack (top->bottom): module-name, then `op` (name, value) pairs in decl order. */
                 let total = (op as usize) * 2 + 1;
                 let mut frame = self.pop_n(total)?;
                 let module_name_val = frame.pop().ok_or(cold_runtime("BuildModule: empty stack"))?;
@@ -573,10 +493,7 @@ impl<'a> VM<'a> {
         Ok(None)
     }
 
-    fn dispatch_generic(
-        &mut self, opcode: OpCode, operand: u16,
-        slots: &mut [Val],
-    ) -> Result<(), VmErr> {
+    fn dispatch_generic(&mut self, opcode: OpCode, operand: u16, slots: &mut [Val]) -> Result<(), VmErr> {
         match opcode {
             OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor
             | OpCode::BitNot | OpCode::Shl | OpCode::Shr => self.handle_bitwise(opcode)?,
@@ -610,10 +527,10 @@ impl<'a> VM<'a> {
             }
             OpCode::SetupExcept => {
                 self.exception_stack.push(ExceptionFrame {
-                    handler_ip:  operand as usize,
+                    handler_ip: operand as usize,
                     stack_depth: self.stack.len(),
-                    iter_depth:  self.iter_stack.len(),
-                    with_depth:  self.with_stack.len(),
+                    iter_depth: self.iter_stack.len(),
+                    with_depth: self.with_stack.len(),
                 });
             }
             OpCode::SetupWith => {
@@ -643,14 +560,13 @@ impl<'a> VM<'a> {
                         let n = pairs.len() as i32;
                         for (k, v) in pairs { self.push(k); self.push(v); }
                         self.pending.pos_delta -= 1;
-                        self.pending.kw_delta  += n;
+                        self.pending.kw_delta += n;
                     }
                     _ => return Err(cold_runtime("UnpackArgs: bad operand")),
                 }
             }
             OpCode::PopExcept => { self.exception_stack.pop(); }
-            // Emitted by `break` inside a for-loop to drop the abandoned
-            // iterator so the surrounding for-iter reads from its own iter.
+            // Emitted by `break` to drop the abandoned for-loop iterator.
             OpCode::PopIter => { self.iter_stack.pop(); }
             _ => return Err(cold_runtime("unexpected opcode in generic dispatch")),
         }

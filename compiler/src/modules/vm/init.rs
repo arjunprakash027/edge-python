@@ -5,22 +5,15 @@ use crate::modules::parser::{OpCode, SSAChunk, ssa_strip, ImportKind};
 use super::VM;
 use super::types::*;
 
-/* Walk a module chunk's top-level instructions for every `StoreName` op
-   and read the corresponding slot value. Each unique bare name (after
-   SSA strip) becomes one attribute on the resulting Module Val.
-   Repeated assignments to the same name post-coalescing share a
-   canonical slot; `seen` deduplicates so the latest value wins. */
+/* Collect top-level StoreName bindings as module attrs; `seen` keeps the latest per bare name. */
 fn collect_module_attrs(chunk: &SSAChunk, slots: &[Val]) -> Vec<(String, Val)> {
     let mut attrs: Vec<(String, Val)> = Vec::new();
-    let mut seen: crate::util::fx::FxHashSet<String> =
-        crate::util::fx::FxHashSet::default();
+    let mut seen: crate::util::fx::FxHashSet<String> = crate::util::fx::FxHashSet::default();
     for ins in &chunk.instructions {
         if !matches!(ins.opcode, OpCode::StoreName) { continue; }
         let Some(name) = chunk.names.get(ins.operand as usize) else { continue; };
         let bare = ssa_strip(name).to_string();
-        // Dunders are private: __name__, __main__, etc. exposed as attrs
-        // would leak the framing CPython uses. Match Python's `from m
-        // import *` semantics that skip names starting with `_`.
+        // Skip `_`-prefixed names, mirroring `from m import *` semantics.
         if bare.starts_with('_') { continue; }
         if !seen.insert(bare.clone()) { continue; }
         if let Some(&v) = slots.get(ins.operand as usize)
@@ -34,30 +27,8 @@ fn collect_module_attrs(chunk: &SSAChunk, slots: &[Val]) -> Vec<(String, Val)> {
 
 impl<'a> VM<'a> {
 
-    /* Recursively flatten nested `def`s into a single global function table,
-       depth-first so closures defined inside nested functions still resolve.
-       Class bodies are walked too, since they may host method `def`s.
-
-       Also populates two reverse maps used by the call-site propagation to
-       distinguish "calling our own lexical-parent's def" (late-binding —
-       captures may be overwritten) from "calling a closure created elsewhere"
-       (closure semantics — captures must stick):
-
-         function_parents[fi]      -> fi of the def that emitted MakeFunction
-                                     for `fi`, None for module-level defs
-         body_to_fi[body_chunk_ptr]-> fi whose body that chunk is, used to
-                                     resolve the caller's own fi at call time
-
-       Together they let `exec_call` answer: "is the caller the lexical
-       parent of the callee?". When yes, propagation overwrites freely
-       (Python late-binding); when no, captured slots are protected
-       (fixes stacked decorators where each `w` captures its own `f`). */
-    pub(crate) fn build_function_table(
-        &mut self,
-        chunk: &'a SSAChunk,
-        parent_fi: Option<usize>,
-        module_spec: Option<&str>,
-    ) {
+    /* Flatten nested defs into one table (DFS); also build parent/body-pointer maps so `exec_call` can tell lexical-parent calls (late-bind) from foreign closures (captures stick). */
+    pub(crate) fn build_function_table(&mut self, chunk: &'a SSAChunk, parent_fi: Option<usize>, module_spec: Option<&str>) {
         let mut indices = Vec::with_capacity(chunk.functions.len());
         for desc in chunk.functions.iter() {
             let global = self.functions.len() as u32;
@@ -65,21 +36,15 @@ impl<'a> VM<'a> {
             self.function_parents.push(parent_fi);
             self.fn_module.push(module_spec.map(String::from));
             self.body_to_fi.insert(&desc.1 as *const _, global as usize);
-            // Resolve the function's bare name from its parent chunk: desc.3
-            // is the name slot index into chunk.names. ssa_strip drops the
-            // SSA version suffix so the traceback shows `f`, not `f_2`.
-            let name = chunk.names.get(desc.3 as usize)
-                .map(|n| ssa_strip(n).to_string())
-                .unwrap_or_default();
+            // Bare function name (SSA suffix stripped) for tracebacks.
+            let name = chunk.names.get(desc.3 as usize).map(|n| ssa_strip(n).to_string()).unwrap_or_default();
             self.function_names.push(name);
             indices.push(global);
             self.build_function_table(&desc.1, Some(global as usize), module_spec);
         }
         self.fn_index.push((chunk as *const _, indices));
 
-        // Index every SSA name in this chunk by its bare prefix so the
-        // call-site free-load fallback can do O(1) lookups instead of
-        // re-parsing each name on every miss.
+        // Bare-name index so the free-load fallback is O(1) instead of re-parsing per miss.
         let mut name_versions: super::NameVersionIndex = crate::util::fx::FxHashMap::default();
         for (si, sname) in chunk.names.iter().enumerate() {
             if let Some(parsed) = crate::modules::parser::SsaName::parse(sname) {
@@ -93,11 +58,7 @@ impl<'a> VM<'a> {
         for class_body in chunk.classes.iter() {
             self.build_function_table(class_body, parent_fi, module_spec);
         }
-        // Register imported code-modules so their MakeFunction ops at
-        // top-level resolve correctly when `init_modules` runs them.
-        // Each imported module's functions carry its spec, so free-load
-        // fallback at call time stays inside that module's namespace
-        // and cross-module helpers with the same name don't collide.
+        // Recurse into code-module imports; each fn carries its spec so namespaces stay separate.
         for entry in chunk.imports.iter() {
             if let ImportKind::Code(sub) = &entry.kind {
                 self.build_function_table(sub, None, Some(&entry.spec));
@@ -107,29 +68,15 @@ impl<'a> VM<'a> {
 
     pub fn run(&mut self) -> Result<Val, VmErr> {
         self.error_byte_pos = None;
-        // Initialise every imported module (top-level runs once) BEFORE
-        // user code dispatches. Topological order falls out of recursive
-        // descent: a module's dependencies are seen + initialised before
-        // its own top-level runs.
-        let mut in_progress: crate::util::fx::FxHashSet<String> =
-            crate::util::fx::FxHashSet::default();
+        // Initialise imports before user code; DFS gives topological order naturally.
+        let mut in_progress: crate::util::fx::FxHashSet<String> = crate::util::fx::FxHashSet::default();
         self.init_modules(self.chunk, &mut in_progress)?;
         let mut slots = self.fill_builtins(&self.chunk.names);
         self.exec(self.chunk, &mut slots)
     }
 
-    /* Walk every import declared by `chunk` (and transitively by code
-       modules), initialising each unique spec exactly once. Code modules
-       run their top-level in a fresh slot frame and capture stored
-       top-level names as the resulting Module's attrs. Native modules
-       skip the run step — their bindings are already concrete. Cycle
-       detection: re-entering an in-progress spec errors out cleanly
-       rather than looping forever. */
-    fn init_modules(
-        &mut self,
-        chunk: &SSAChunk,
-        in_progress: &mut crate::util::fx::FxHashSet<String>,
-    ) -> Result<(), VmErr> {
+    /* Init each unique import once; code modules run their top-level, native ones just bind. `in_progress` catches cycles cleanly. */
+    fn init_modules(&mut self, chunk: &SSAChunk, in_progress: &mut crate::util::fx::FxHashSet<String>) -> Result<(), VmErr> {
         for entry in &chunk.imports {
             if self.module_table.contains_key(&entry.spec) { continue; }
             if !in_progress.insert(entry.spec.clone()) {
@@ -148,9 +95,7 @@ impl<'a> VM<'a> {
                 ImportKind::Code(sub_chunk) => {
                     self.init_modules(sub_chunk, in_progress)?;
                     let mut sub_slots = self.fill_builtins(&sub_chunk.names);
-                    // Each module sees its own spec in `__name__`, so
-                    // `if __name__ == "__main__":` blocks correctly skip
-                    // when a file is imported.
+                    // Set `__name__` to the module spec so `if __name__ == "__main__":` works.
                     let spec_val = self.heap.alloc(HeapObj::Str(entry.spec.clone()))?;
                     for (i, name) in sub_chunk.names.iter().enumerate() {
                         if ssa_strip(name) == "__name__" {

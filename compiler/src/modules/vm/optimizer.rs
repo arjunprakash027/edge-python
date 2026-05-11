@@ -1,19 +1,6 @@
-/* Bytecode optimisation passes, run after parsing and SSA finalisation.
-
-   Constant folding:
-     LoadConst a, LoadConst b, BinOp -> LoadConst (a OP b)
-     LoadConst v, Not                -> LoadTrue / LoadFalse
-     LoadConst v, Minus              -> LoadConst (-v)
-   Phi-noop elimination: after coalescing, a Phi whose source and dest
-   slots collapse to the same canonical index is slots[X] = slots[X] —
-   pure overhead in hot loops, so we drop it.
-
-   LoadName is intentionally NOT folded even when the value is statically
-   known: SSA name loads are visible to tier-1 IC, super-op detection, and
-   template memoisation; replacing them with constants would pessimise
-   those paths.
-
-   After any pass, dead instructions are removed and jump operands remapped.
+/* 
+Post-SSA optimisation passes: constant folding (binop / Not / Minus on LoadConst) and Phi-noop elimination. LoadName is left alone so IC/super-ops/templates still see it.
+After any pass, dead instructions are removed and jump operands remapped. 
 */
 
 use crate::modules::parser::{OpCode, SSAChunk, Instruction, Value};
@@ -37,8 +24,8 @@ pub fn constant_fold(chunk: &mut SSAChunk) {
         match opcode {
             OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div
             | OpCode::Mod | OpCode::FloorDiv
-            | OpCode::Eq  | OpCode::NotEq
-            | OpCode::Lt  | OpCode::Gt | OpCode::LtEq | OpCode::GtEq
+            | OpCode::Eq | OpCode::NotEq
+            | OpCode::Lt | OpCode::Gt | OpCode::LtEq | OpCode::GtEq
             | OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor
             | OpCode::Shl | OpCode::Shr => {
                 try_fold_binop(chunk, &mut dead, ip);
@@ -49,16 +36,14 @@ pub fn constant_fold(chunk: &mut SSAChunk) {
         }
     }
 
-    // Pass 2: Phi-noop elimination. Capture each Phi's source pair *before*
-    // marking it dead so we can rebuild phi_sources in pre-compaction order.
+    // Pass 2: Phi-noop elimination; capture source pairs before marking dead.
     let mut surviving_pairs: Vec<(u16, u16)> = Vec::new();
     if !chunk.phi_map.is_empty() && !chunk.phi_sources.is_empty() {
         for (ip, ins) in chunk.instructions.iter().enumerate() {
             if dead[ip] || ins.opcode != OpCode::Phi { continue; }
             let phi_idx = chunk.phi_map[ip];
             let Some(&(a, b)) = chunk.phi_sources.get(phi_idx) else { continue };
-            // Both sources and dest collapsed to the same canonical slot ->
-            // `slots[X] = slots[X]`, safely removable.
+            // Sources + dest collapsed to one slot — `slots[X] = slots[X]` is a no-op.
             if a == b && a == ins.operand {
                 dead[ip] = true;
             } else {
@@ -69,9 +54,7 @@ pub fn constant_fold(chunk: &mut SSAChunk) {
 
     if dead.iter().any(|&d| d) {
         compact_with_jump_remap(chunk, &dead);
-        // Rebuild phi_map for the new instruction layout. Surviving Phis appear
-        // in the same relative order they had pre-compaction, so we can match
-        // each to its captured source pair sequentially.
+        // Rebuild phi_map; surviving Phis keep their relative order, so pair them sequentially.
         if !surviving_pairs.is_empty() {
             chunk.phi_sources = surviving_pairs;
             chunk.phi_map = vec![0; chunk.instructions.len()];
@@ -110,9 +93,7 @@ fn is_jump_op(op: OpCode) -> bool {
     )
 }
 
-/* Build remap[i] = new index of instruction i after compaction. Dead
-   targets forward to the next live instruction; one-past-end (i == n)
-   maps to the new chunk length so fall-through jumps stay valid. */
+/* Build remap[i] = new index after compaction; dead entries forward to next live, n→new_len. */
 fn compact_with_jump_remap(chunk: &mut SSAChunk, dead: &[bool]) {
     let n = chunk.instructions.len();
     let alive_count: usize = dead.iter().filter(|&&d| !d).count();
@@ -125,12 +106,9 @@ fn compact_with_jump_remap(chunk: &mut SSAChunk, dead: &[bool]) {
     }
     remap.push(alive_count);
 
-    // Walk back-to-front so each dead entry forwards to the already-corrected
-    // next entry — yielding the next live successor in one pass.
+    // Back-to-front so each dead entry forwards to the next live successor in one pass.
     for i in (0..n).rev() {
-        if dead[i] {
-            remap[i] = remap[i + 1];
-        }
+        if dead[i] { remap[i] = remap[i + 1]; }
     }
 
     for (ip, _) in dead.iter().enumerate().take(n) {
@@ -144,9 +122,7 @@ fn compact_with_jump_remap(chunk: &mut SSAChunk, dead: &[bool]) {
         }
     }
 
-    // Remap stmt_pos ips: every entry's ip refers to the position of a live
-    // statement opener. Compaction may shift it forward; remap[] gives the
-    // new index in one lookup.
+    // Remap stmt_pos ips through `remap[]` to follow compaction shifts.
     for (ip_at, _) in chunk.stmt_pos.iter_mut() {
         let old = *ip_at as usize;
         if old < remap.len() { *ip_at = remap[old] as u32; }
@@ -203,9 +179,7 @@ fn const_to_val(constants: &[Value], idx: u16) -> Option<Val> {
     }
 }
 
-/* Most recent live instruction strictly before `from`. Constant folding
-   leaves gaps (the operands of an inner fold are dead), so a naive
-   `from - 1` would read instructions that no longer exist. */
+/* Nearest live instruction before `from`; skips entries already marked dead by inner folds. */
 fn prev_live(dead: &[bool], from: usize) -> Option<usize> {
     let mut i = from;
     while i > 0 {
@@ -295,12 +269,12 @@ fn fold_binop(op: OpCode, a: Val, b: Val) -> Option<Val> {
             return None;
         };
         return Some(Val::bool(match op {
-            OpCode::Eq    => af == bf,
+            OpCode::Eq => af == bf,
             OpCode::NotEq => af != bf,
-            OpCode::Lt    => af <  bf,
-            OpCode::Gt    => af >  bf,
-            OpCode::LtEq  => af <= bf,
-            OpCode::GtEq  => af >= bf,
+            OpCode::Lt => af < bf,
+            OpCode::Gt => af > bf,
+            OpCode::LtEq => af <= bf,
+            OpCode::GtEq => af >= bf,
             _ => return None,
         }));
     }
@@ -308,16 +282,16 @@ fn fold_binop(op: OpCode, a: Val, b: Val) -> Option<Val> {
     if a.is_int() && b.is_int() {
         let (ai, bi) = (a.as_int() as i128, b.as_int() as i128);
         let r = match op {
-            OpCode::Add      => ai.checked_add(bi)?,
-            OpCode::Sub      => ai.checked_sub(bi)?,
-            OpCode::Mul      => ai.checked_mul(bi)?,
-            OpCode::Mod      => if bi == 0 { return None; } else { ai.rem_euclid(bi) },
+            OpCode::Add => ai.checked_add(bi)?,
+            OpCode::Sub => ai.checked_sub(bi)?,
+            OpCode::Mul => ai.checked_mul(bi)?,
+            OpCode::Mod => if bi == 0 { return None; } else { ai.rem_euclid(bi) },
             OpCode::FloorDiv => if bi == 0 { return None; } else { ai.div_euclid(bi) },
-            OpCode::BitAnd   => ai & bi,
-            OpCode::BitOr    => ai | bi,
-            OpCode::BitXor   => ai ^ bi,
-            OpCode::Shl      => if !(0..63).contains(&bi) { return None; } else { ai.checked_shl(bi as u32)? },
-            OpCode::Shr      => if !(0..63).contains(&bi) { return None; } else { ai >> bi },
+            OpCode::BitAnd => ai & bi,
+            OpCode::BitOr => ai | bi,
+            OpCode::BitXor => ai ^ bi,
+            OpCode::Shl => if !(0..63).contains(&bi) { return None; } else { ai.checked_shl(bi as u32)? },
+            OpCode::Shr => if !(0..63).contains(&bi) { return None; } else { ai >> bi },
             _ => return None,
         };
         if (Val::INT_MIN as i128..=Val::INT_MAX as i128).contains(&r) {
