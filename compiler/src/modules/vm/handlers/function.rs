@@ -6,10 +6,7 @@ use crate::alloc::string::ToString;
 
 impl<'a> VM<'a> {
     /* Dispatch every function-shaped opcode (Call, MakeFunction, builtins). */
-    pub(crate) fn handle_function(
-        &mut self, op: OpCode, operand: u16,
-        chunk: &SSAChunk, slots: &mut [Val]
-    ) -> Result<(), VmErr> {
+    pub(crate) fn handle_function(&mut self, op: OpCode, operand: u16, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         match op {
             OpCode::Call => self.exec_call(operand, chunk, slots),
             OpCode::MakeFunction | OpCode::MakeCoroutine => self.exec_make_function(op, operand, chunk, slots),
@@ -37,28 +34,24 @@ impl<'a> VM<'a> {
             OpCode::CallSet => self.call_set(operand),
             OpCode::CallPrint => { self.mark_impure(); self.call_print(operand) }
             OpCode::CallInput => { self.mark_impure(); self.call_input() }
-            OpCode::CallAll      => self.call_all(operand),
-            OpCode::CallAny      => self.call_any(operand),
-            OpCode::CallBin      => self.call_bin(),
-            OpCode::CallOct      => self.call_oct(),
-            OpCode::CallHex      => self.call_hex(),
-            OpCode::CallDivmod   => self.call_divmod(),
-            OpCode::CallPow      => self.call_pow(operand),
-            OpCode::CallRepr     => self.call_repr(),
+            OpCode::CallAll => self.call_all(operand),
+            OpCode::CallAny => self.call_any(operand),
+            OpCode::CallBin => self.call_bin(),
+            OpCode::CallOct => self.call_oct(),
+            OpCode::CallHex => self.call_hex(),
+            OpCode::CallDivmod => self.call_divmod(),
+            OpCode::CallPow => self.call_pow(operand),
+            OpCode::CallRepr => self.call_repr(),
             OpCode::CallReversed => self.call_reversed(),
             OpCode::CallCallable => self.call_callable(),
-            OpCode::CallId       => self.call_id(),
-            OpCode::CallHash     => self.call_hash(),
-            OpCode::CallExtern   => self.call_extern(operand, chunk),
+            OpCode::CallId => self.call_id(),
+            OpCode::CallHash => self.call_hash(),
+            OpCode::CallExtern => self.call_extern(operand, chunk),
             _ => Err(cold_runtime("non-function opcode in handle_function")),
         }
     }
 
-    pub(crate) fn exec_bound_method(
-        &mut self, recv: Val,
-        id: super::methods::BuiltinMethodId,
-        pos: &[Val], kw: &[Val],
-    ) -> Result<(), VmErr> {
+    pub(crate) fn exec_bound_method(&mut self, recv: Val, id: super::methods::BuiltinMethodId, pos: &[Val], kw: &[Val]) -> Result<(), VmErr> {
         super::methods::dispatch_method(self, id, recv, pos, kw)
     }
 
@@ -73,16 +66,14 @@ impl<'a> VM<'a> {
             if self.is_async.len() <= global { self.is_async.resize(global + 1, false); }
             self.is_async[global] = true;
         }
+
         let n_defaults = self.functions[global].2 as usize;
         let defaults = if n_defaults > 0 { self.pop_n(n_defaults)? } else { vec![] };
 
         let (params, body, _, _) = self.functions[global];
         let param_names: crate::util::fx::FxHashSet<String> = params.iter().map(|p| s!(str p.trim_start_matches(['*', '~']), "_0")).collect();
         let mut captures: Vec<(usize, Val)> = Vec::new();
-        // Capture closure values once per canonical (coalesced) slot, skipping
-        // names already bound as formal parameters. The body.names list is
-        // typically <30, so a linear scan over chunk.names is competitive
-        // with a HashMap and avoids a per-call monomorphization.
+        // Capture once per canonical slot, skipping formal params. Linear scan over `chunk.names` beats a HashMap at typical body sizes (<30) and avoids a per-call monomorphisation.
         let mut seen_canonical: crate::util::fx::FxHashSet<usize> = crate::util::fx::FxHashSet::default();
         for (bi, bname) in body.names.iter().enumerate() {
             if param_names.contains(bname.as_str()) { continue; }
@@ -99,14 +90,7 @@ impl<'a> VM<'a> {
 
         let val = self.heap.alloc(HeapObj::Func(global, defaults, captures))?;
 
-        // Top-level defs in the entry chunk go into `globals` so the
-        // call-site free-load fallback in `exec_call` resolves forward
-        // references — `def is_even` defined before `def is_odd` in
-        // the same module captures nothing useful at MakeFunction time,
-        // but at CALL time is_odd is in globals and the lookup succeeds.
-        // Module-level defs are NOT registered here: they live in the
-        // module's bindings (looked up via `fn_module[fi]` at call time)
-        // so cross-module helpers with the same name stay isolated.
+        // Entry-chunk top-level defs go into `globals` so forward refs resolve at call time. Module-level defs stay in the module's bindings (via `fn_module[fi]`) to keep cross-module helpers with the same name isolated.
         if core::ptr::eq(chunk, self.chunk) {
             let name_idx = self.functions[global].3 as usize;
             if name_idx < chunk.names.len() {
@@ -119,13 +103,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Top-level orchestrator for the `Call` opcode. Pops the callee + its
-       arguments off the stack, then routes through the appropriate
-       sub-helper based on what the callee actually is. The user-defined
-       `Func` path is the only one that builds a fresh `fn_slots` frame and
-       runs the body inline; every other kind (BoundMethod, NativeFn,
-       Extern, exception Type, Class instantiation, BoundUserMethod,
-       Coroutine resume) short-circuits in `try_dispatch_non_func_callable`. */
+    /* `Call` orchestrator. Only user `Func` callees build a fresh `fn_slots` and run the body inline; every other callee kind short-circuits in `try_dispatch_non_func_callable`. */
     pub(crate) fn exec_call(&mut self, operand: u16, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let (positional, kw_flat, _num_pos, num_kw) = self.parse_call_args(operand)?;
 
@@ -138,19 +116,13 @@ impl<'a> VM<'a> {
             return Ok(());
         }
 
-        // Snapshot the Func's defaults/captures once. Both are typically
-        // empty or tiny (<10 entries), so cloning beats the 3+ separate
-        // heap reads the original called for across binding + propagation.
-        // Back-propagation still uses `heap.get_mut` because it writes.
+        // Snapshot defaults/captures once — both are tiny (<10), and cloning beats the 3+ heap re-reads later phases would do. Back-prop still uses `get_mut` since it writes.
         let (fi, defaults, captures) = match self.heap.get(callee) {
             HeapObj::Func(i, d, c) => (*i, d.clone(), c.clone()),
             _ => return Err(cold_type("object is not callable")),
         };
 
-        // Pure-call memoisation: skip the whole body if a prior call with
-        // the same args already produced a result. Disabled when an outer
-        // frame is impure (would memoise a stale view of the world) or
-        // when kwargs are in play (cache key only spans positional args).
+        // Pure-call memoisation. Disabled under impure outer frames (stale-view risk) or kwargs (cache key only spans positionals).
         let outer_impure = self.observed_impure.last().copied().unwrap_or(false);
         if num_kw == 0 && !outer_impure
             && let Some(cached) = self.templates.lookup(fi, &positional, &self.heap) {
@@ -170,9 +142,7 @@ impl<'a> VM<'a> {
 
         self.bind_self_reference(fi, callee, &mut fn_slots);
 
-        // Generator/coroutine functions return a suspended Coroutine instead
-        // of running. `is_generator` is set at parse time, `is_async` at VM
-        // init — both O(1) lookups, no per-call body scan.
+        // Generator/coroutine: return a suspended Coroutine instead of running. Both flags are O(1).
         let is_async_fn = self.is_async.get(fi).copied().unwrap_or(false);
         if is_async_fn || body.is_generator {
             let coro = self.heap.alloc(HeapObj::Coroutine(0, fn_slots, Vec::new(), fi, Vec::new()))?;
@@ -203,11 +173,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Decode the call's `operand` (low 8 bits = positional count, high 8
-       bits = keyword pairs), apply pending star-spread deltas, then pop
-       `num_pos + 2 * num_kw` items off the stack into separate
-       positional/kw buffers. The kw vector is alternating name/value pairs
-       as the parser emits it. */
+    /* Decode `operand` (lo=positional, hi=kw pairs) + star-spread deltas, then pop into positional/kw buffers. kw is flat alternating name/value as the parser emits. */
     fn parse_call_args(&mut self, operand: u16) -> Result<(Vec<Val>, Vec<Val>, usize, usize), VmErr> {
         let raw = operand as usize;
 
@@ -219,26 +185,15 @@ impl<'a> VM<'a> {
         self.pending.kw_delta  = 0;
 
         let total_items = num_pos + 2 * num_kw;
-        let mut stack_items: Vec<Val> = (0..total_items)
-            .map(|_| self.pop())
-            .collect::<Result<_, _>>()?;
+        let mut stack_items: Vec<Val> = (0..total_items).map(|_| self.pop()).collect::<Result<_, _>>()?;
         stack_items.reverse();
 
         let kw_flat: Vec<Val> = stack_items.split_off(num_pos);
         Ok((stack_items, kw_flat, num_pos, num_kw))
     }
 
-    /* Handle every callee kind that ISN'T a user-defined `Func`. Returns
-       Ok(true) when the callee was dispatched here; Ok(false) means the
-       caller should continue with the user-Func code path. The early
-       returns mirror the original exec_call layout: each kind clones what
-       it needs out of the heap borrow before invoking helpers that need
-       `&mut self`. */
-    fn try_dispatch_non_func_callable(
-        &mut self, callee: Val,
-        positional: &[Val], kw_flat: &[Val], num_kw: usize,
-        chunk: &SSAChunk, slots: &mut [Val],
-    ) -> Result<bool, VmErr> {
+    /* Dispatch non-Func callees. Returns Ok(true) when handled here; Ok(false) means the caller falls through to the Func path. */
+    fn try_dispatch_non_func_callable(&mut self, callee: Val, positional: &[Val], kw_flat: &[Val], num_kw: usize, chunk: &SSAChunk, slots: &mut [Val]) -> Result<bool, VmErr> {
         if let HeapObj::BoundMethod(recv, id) = self.heap.get(callee) {
             let recv = *recv;
             let id = *id;
@@ -264,11 +219,7 @@ impl<'a> VM<'a> {
             return Ok(true);
         }
 
-        // Calling a builtin Type: build an ExcInstance carrying the type name
-        // and args. Used for `raise ValueError("msg")` and friends; `e.args`
-        // exposes the args tuple. Conversion-style types (int/float/...) are
-        // routed through specialised opcodes by the parser, so this path is
-        // overwhelmingly hit by exception construction in practice.
+        // Builtin Type: build an ExcInstance for `raise X("msg")`; `e.args` is the args tuple. Conversion types (int/float/...) use specialised opcodes, so this is mostly exceptions.
         if let HeapObj::Type(name) = self.heap.get(callee) {
             let name = name.clone();
             if !kw_flat.is_empty() {
@@ -281,19 +232,14 @@ impl<'a> VM<'a> {
 
         // Calling a class: create an instance and run __init__ if defined.
         if let HeapObj::Class(_, methods) = self.heap.get(callee) {
-            // The recursive `exec_call(argc, ...)` below only encodes
-            // positional count, so kwargs would silently disappear before
-            // reaching `__init__`. Surface that explicitly.
+            // The recursive `exec_call` below only encodes positional count — kwargs would silently disappear before reaching `__init__`, so reject them here.
             if !kw_flat.is_empty() {
                 return Err(cold_type("class constructor takes no keyword arguments"));
             }
             let methods = methods.clone();
             let instance = self.heap.alloc(HeapObj::Instance(callee, Rc::new(RefCell::new(DictMap::new()))))?;
             if let Some((_, init_fn)) = methods.iter().find(|(n, _)| n == "__init__") {
-                // Fail-fast on deep init chains before pushing anything onto
-                // the stack: the recursive exec_call below would catch this
-                // too, but only after parse_call_args has already popped
-                // the args we just pushed.
+                // Fail-fast before pushing — the inner check fires only after parse_call_args pops.
                 if self.depth >= self.max_calls { return Err(cold_depth()); }
                 let init_fn = *init_fn;
                 self.push(init_fn);
@@ -302,7 +248,7 @@ impl<'a> VM<'a> {
                 for a in &args { self.push(*a); }
                 let argc = args.len() as u16;
                 self.exec_call(argc, chunk, slots)?;
-                // Discard __init__'s return value.
+                // Discard `__init__` return value.
                 self.pop()?;
             }
             self.push(instance);
@@ -311,8 +257,7 @@ impl<'a> VM<'a> {
 
         // Bound user method: prepend `self` to the arg list and re-dispatch.
         if let HeapObj::BoundUserMethod(recv, func) = self.heap.get(callee) {
-            // Same rationale as the Class branch: stop deep recursion
-            // chains before mutating the stack.
+            // Same as Class branch: depth check before mutating the stack.
             if self.depth >= self.max_calls { return Err(cold_depth()); }
             let (recv, func) = (*recv, *func);
             self.push(func);
@@ -324,8 +269,7 @@ impl<'a> VM<'a> {
             return Ok(true);
         }
 
-        // Resume a suspended coroutine; the inner yield must NOT propagate
-        // to the surrounding function call.
+        // Resume a suspended coroutine; the inner yield must NOT propagate to the caller.
         if let HeapObj::Coroutine(..) = self.heap.get(callee) {
             let result = self.resume_coroutine(callee)?;
             if self.yielded { self.yielded = false; }
@@ -336,22 +280,9 @@ impl<'a> VM<'a> {
         Ok(false)
     }
 
-    /* Bind formal parameters from the popped positional/kw buffers, then
-       fill remaining un-bound slots with any defaults and closure captures.
-       `defaults` and `captures` are snapshots from the callee Func; the
-       caller takes them once at the top of `exec_call` so the binding
-       phase doesn't re-read the heap for them. Operates on the
-       freshly-cloned `fn_slots` for the callee body. */
-    fn bind_function_args(
-        &mut self, fi: usize,
-        defaults: &[Val], captures: &[(usize, Val)],
-        positional: &[Val], kw_flat: &[Val],
-        fn_slots: &mut [Val],
-    ) -> Result<(), VmErr> {
-        // Index by position so we don't hold an iterator borrow on
-        // self.param_slots across the heap.alloc calls in the
-        // DoubleStar/Star arms. (ParamKind, usize) is Copy, so per-iteration
-        // reads are essentially free.
+    /* Bind formal params from positional/kw buffers, then fill remaining undef slots with defaults and captures. `defaults`/`captures` are pre-snapshotted by `exec_call`. */
+    fn bind_function_args(&mut self, fi: usize, defaults: &[Val], captures: &[(usize, Val)], positional: &[Val], kw_flat: &[Val], fn_slots: &mut [Val]) -> Result<(), VmErr> {
+        // Index by position to avoid an iterator borrow on `param_slots` across `heap.alloc`.
         let n_params = self.param_slots[fi].len();
         let mut pos_idx = 0usize;
         for i in 0..n_params {
@@ -387,8 +318,7 @@ impl<'a> VM<'a> {
                     HeapObj::Str(s) => s.clone(),
                     _ => return Err(cold_runtime("malformed kwarg on stack")),
                 };
-                // Param prefixes (`*`, `**`, `~`) decorate the declared name —
-                // strip them to compare with the keyword arg key.
+                // Strip `*`/`**`/`~` prefixes from the declared name before matching the kw key.
                 if params.iter().any(|p| p.trim_start_matches(['*', '~']) == key.as_str()) {
                     let pname = s!(str &key, "_0");
                     if let Some(&s) = body_map.get(pname.as_str()) {
@@ -419,46 +349,16 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Propagate caller slots into matching body slots, then fall back on
-       bare-name + module-attr + globals lookups for free-load slots that
-       didn't find a name match. Two regimes, selected by whether the
-       caller is the callee's lexical parent:
-
-         same scope (caller_fi == callee.parent_fi)
-           Late-binding: overwrite freely so a lambda inside `def f`
-           reading an outer-scope var sees the current value, not the
-           snapshot taken at MakeFunction time.
-
-         different scope
-           Closure semantics: skip slots filled by captures so a closure
-           created elsewhere keeps its captured values when invoked. Fixes
-           stacked decorators where each layer's `w` captures its own
-           `f` — without the guard the outer caller's `f` overwrote the
-           inner's captured `f` and the closure recursed forever.
-
-       is_param_slot remains the hard guard for formal parameters bound
-       by the call. */
-    fn apply_caller_slot_propagation(
-        &self, fi: usize, captures: &[(usize, Val)],
-        chunk: &SSAChunk, slots: &[Val], fn_slots: &mut [Val],
-    ) {
+    /* Push caller slots into body slots. Same scope: late-binding, overwrite freely. Different scope: skip capture-filled slots (fixes stacked-decorator clobber). */
+    fn apply_caller_slot_propagation(&self, fi: usize, captures: &[(usize, Val)], chunk: &SSAChunk, slots: &[Val], fn_slots: &mut [Val]) {
         let body_map = &self.body_maps[fi];
         let param_bm = &self.is_param_slot[fi];
         let caller_fi = self.body_to_fi.get(&(chunk as *const _)).copied();
         let callee_parent_fi = self.function_parents.get(fi).and_then(|x| *x);
-        // "Same scope" means the callee was defined in the caller's
-        // OWN scope — late-binding via caller slots is then correct
-        // (it's mutual recursion of sibling defs). Crossing a module
-        // boundary breaks that assumption: a function imported from
-        // module M shouldn't have its captured free vars rebound by
-        // the importer's slots, even if both happen to be top-level
-        // (parent_fi == None). Comparing fn_module on both sides
-        // restores per-module isolation that the old splice path
-        // achieved via name mangling.
+        // Same-scope also requires same module — keeps top-level imports (`parent_fi == None`) isolated.
         let caller_module = caller_fi.and_then(|cf| self.fn_module.get(cf).cloned().flatten());
         let callee_module = self.fn_module.get(fi).cloned().flatten();
-        let same_scope = caller_fi == callee_parent_fi
-            && caller_module == callee_module;
+        let same_scope = caller_fi == callee_parent_fi && caller_module == callee_module;
         let captured_set: crate::util::fx::FxHashSet<usize> = if same_scope {
             crate::util::fx::FxHashSet::default()
         } else {
@@ -475,13 +375,7 @@ impl<'a> VM<'a> {
             }
         }
 
-        // Bare-name fallback for free-load slots: when the body's reference
-        // records `<base>_0` (the version current at body-compile time) but
-        // the caller now stores `<base>` under a higher SSA version, exact-
-        // name match misses. `resolve_free_name` walks the documented
-        // three-layer fallback (caller slots -> callee module attrs ->
-        // globals) so the order lives in one place; capture-protected
-        // slots are filtered here so closures keep their captured values.
+        // Bare-name fallback: body refs `<base>_0` but caller may store a higher SSA version. `resolve_free_name` centralises the three-layer order; captured slots are skipped.
         let free_loads = &self.body_free_loads[fi];
         for (bare, bs) in free_loads {
             if captured_set.contains(bs) { continue; }
@@ -491,18 +385,10 @@ impl<'a> VM<'a> {
         }
     }
 
-    /* Documented three-layer fallback for a bare free-load name: walk the
-       caller's most-recent SSA slot, then the callee's own module
-       bindings, then the entry-chunk globals. Returns the first hit.
-       Centralised so the order is auditable in one place — call_globals
-       and the call-site loop above both rely on this exact shape. */
-    fn resolve_free_name(
-        &self, fi: usize, bare: &str,
-        chunk: &SSAChunk, slots: &[Val],
-    ) -> Option<Val> {
+    /* Three-layer fallback for a bare free-load name: caller's latest SSA → callee module attrs -> entry globals. First hit wins. Centralised so the order is auditable. */
+    fn resolve_free_name(&self, fi: usize, bare: &str, chunk: &SSAChunk, slots: &[Val]) -> Option<Val> {
         // Layer 1: caller's most-recent SSA version of `bare`.
-        if let Some(idx) = self.chunk_name_versions.get(&(chunk as *const _))
-            && let Some(versions) = idx.get(bare)
+        if let Some(idx) = self.chunk_name_versions.get(&(chunk as *const _)) && let Some(versions) = idx.get(bare)
         {
             let mut latest_ver: i64 = -1;
             let mut latest_v: Val = Val::undef();
@@ -514,9 +400,7 @@ impl<'a> VM<'a> {
             }
             if !latest_v.is_undef() { return Some(latest_v); }
         }
-        // Layer 2: callee's own module attrs. Cross-module name
-        // collisions stay isolated — `a.helper` and `b.helper` resolve
-        // to their own module's helper instead of clobbering each other.
+        // Layer 2: callee's module attrs — keeps `a.helper` and `b.helper` isolated.
         if let Some(Some(spec)) = self.fn_module.get(fi).cloned()
             && let Some(mod_val) = self.module_table.get(&spec).copied()
             && mod_val.is_heap()
@@ -525,19 +409,11 @@ impl<'a> VM<'a> {
         {
             return Some(*v);
         }
-        // Layer 3: globals. Catches forward-ref module-level mutual
-        // recursion in the entry chunk (where module_table doesn't
-        // apply because the entry isn't a "module"); top-level defs
-        // register themselves at MakeFunction time for this lookup.
+        // Layer 3: globals — catches forward-ref mutual recursion in the entry chunk.
         self.globals.get(bare).copied()
     }
 
-    /* Bind the function's own name slot to `callee` so recursive calls
-       resolve without a global lookup. No-op for anonymous lambdas or
-       when the slot was already filled by an earlier phase (params,
-       captures, caller-slot propagation). The lookup is pre-resolved
-       at VM init (`self_ref_slot[fi]`), so this is a single indexed
-       read with no allocation. */
+    /* Bind the function's own name slot to `callee` so recursive calls skip the global lookup. No-op for lambdas or when an earlier phase already filled the slot. */
     fn bind_self_reference(&self, fi: usize, callee: Val, fn_slots: &mut [Val]) {
         if let Some(slot) = self.self_ref_slot.get(fi).copied().flatten()
             && slot < fn_slots.len()
@@ -547,23 +423,13 @@ impl<'a> VM<'a> {
         }
     }
 
-    /* Run the callee body with a snapshot of the caller's slots pinned in
-       `live_slots` (so the GC can mark them) and a CallFrame on
-       `call_stack` (so the traceback renderer can walk the chain). On
-       success the frame is popped; on error we leave it in place — the
-       error catch in dispatch is responsible for clearing the chain on
-       swallowed exceptions. Returns `(callee_impure, exec_result)` so the
-       caller can propagate impurity and inspect the body's outcome. */
-    fn run_body_with_frame(
-        &mut self, fi: usize, body: &SSAChunk, chunk: &SSAChunk,
-        fn_slots: &mut [Val], slots: &[Val],
-    ) -> (bool, Result<Val, VmErr>) {
-        // mark() short-circuits on non-heap values, so the whole slice is fine.
+    /* Run the body with caller slots pinned in `live_slots` (GC roots) and a CallFrame on `call_stack` (traceback). Frame popped on success only; the dispatch catch clears it on swallowed exceptions. Returns `(callee_impure, exec_result)`. */
+    fn run_body_with_frame(&mut self, fi: usize, body: &SSAChunk, chunk: &SSAChunk, fn_slots: &mut [Val], slots: &[Val]) -> (bool, Result<Val, VmErr>) {
+        // `mark()` short-circuits on non-heap values, so the whole slice is fine.
         let snap = self.live_slots.len();
         self.live_slots.extend_from_slice(slots);
 
-        // The frame snapshots the caller's chunk source/path so render
-        // works without holding a borrow on the live chunk pointers.
+        // Frame snapshots caller's source/path so render doesn't borrow live chunk pointers.
         let call_byte_pos = self.pending.call_byte_pos.take().unwrap_or(0);
         self.call_stack.push(super::super::types::CallFrame {
             fi,
@@ -582,16 +448,10 @@ impl<'a> VM<'a> {
         (callee_impure, exec_result)
     }
 
-    /* Back-propagate `nonlocal` writes from the callee's `fn_slots` to
-       the caller's matching slots, and sync any closure-capture entries
-       attached to the callee Func so a subsequent invocation sees the
-       new value. No-op for bodies that don't declare `nonlocal`. */
-    fn back_propagate_nonlocals(
-        &mut self, fi: usize, body: &SSAChunk, callee: Val,
-        chunk: &SSAChunk, slots: &mut [Val], fn_slots: &[Val],
-    ) {
+    /* Back-propagate `nonlocal` writes to the caller's slots and sync the callee Func's capture entries so the next call sees the new value. No-op if no `nonlocal`. */
+    fn back_propagate_nonlocals(&mut self, fi: usize, body: &SSAChunk, callee: Val, chunk: &SSAChunk, slots: &mut [Val], fn_slots: &[Val]) {
         if self.nonlocal_tables[fi].is_empty() { return; }
-        // Snapshot to release borrows on self before the heap.get_mut writes.
+        // Snapshot to release borrows on self before the `heap.get_mut` writes.
         let nl_pairs: Vec<(usize, usize)> = self.nonlocal_tables[fi].clone();
         let name_index = self.chunk_name_versions.get(&(chunk as *const _));
         for (canon_body, _) in nl_pairs {
@@ -619,23 +479,12 @@ impl<'a> VM<'a> {
     }
 
 
-    /* Dispatch a `CallExtern` opcode: pop `argc` positional args, look up the
-       extern function pointer in the chunk's extern_table, invoke it with
-       direct heap access, and push the result. Operand encoding mirrors the
-       parser's emit at literals.rs::call: high 8 bits = extern_idx, low 8
-       bits = argc.
-
-       Purity: impure externs taint the enclosing user function via
-       `mark_impure`, mirroring the runtime tracking that enables template
-       memoization to skip non-cacheable bodies. Pure externs leave the
-       impurity flag untouched, so a user `def` whose only side-effects are
-       calls to pure externs remains memoizable. */
+    /* CallExtern: operand = (extern_idx<<8)|argc. Pure externs leave the impurity flag alone — bodies whose only side-effects are pure externs stay memoizable. */
     pub(crate) fn call_extern(&mut self, operand: u16, chunk: &SSAChunk) -> Result<(), VmErr> {
         let extern_idx = (operand >> 8) as usize;
-        let argc       = (operand & 0xFF) as usize;
-        let extern_fn  = chunk.extern_table.get(extern_idx)
-            .ok_or(cold_runtime("CallExtern: extern index out of bounds"))?;
-        let func = extern_fn.func.clone();   // Arc clone — refcount bump only
+        let argc = (operand & 0xFF) as usize;
+        let extern_fn  = chunk.extern_table.get(extern_idx).ok_or(cold_runtime("CallExtern: extern index out of bounds"))?;
+        let func = extern_fn.func.clone(); // Arc clone — refcount bump only
         let pure = extern_fn.pure;
         let args = self.pop_n(argc)?;
         if !pure { self.mark_impure(); }
@@ -644,16 +493,10 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    pub(crate) fn dispatch_native(
-        &mut self, id: super::super::types::NativeFnId,
-        positional: &[Val], kw: &[Val],
-        chunk: &SSAChunk, slots: &mut [Val],
-    ) -> Result<(), VmErr> {
+    pub(crate) fn dispatch_native(&mut self, id: super::super::types::NativeFnId, positional: &[Val], kw: &[Val], chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         use super::super::types::NativeFnId::*;
 
-        // sorted() is the one builtin that accepts keyword arguments
-        // (`sorted(xs, key=fn)`). Pull the key out of kw_flat (slice of
-        // alternating name/value) before the generic "no kwargs" check.
+        // `sorted()` is the only builtin taking kwargs (`key=fn`); extract it before the no-kw guard.
         let mut sort_key: Option<Val> = None;
         let leftover_storage: Vec<Val>;
         let kw_remaining: &[Val] = if id == Sorted {
@@ -693,8 +536,8 @@ impl<'a> VM<'a> {
             IntFromBytes => Some(2),
             IntToBytes => Some(3),
             Globals | Locals => Some(0),
-            Bytes => None,  // 0/1/2-arg: bytes() | bytes(n|iter) | bytes(str, "utf-8")
-            Slice => None,  // 1/2/3-arg
+            Bytes => None, // 0/1/2-arg: bytes() | bytes(n|iter) | bytes(str, "utf-8")
+            Slice => None, // 1/2/3-arg
             Gather => None, // variadic
             FrozenSet => None, // 0/1-arg
             Vars => Some(1),
@@ -702,19 +545,14 @@ impl<'a> VM<'a> {
             _ => None,
         };
         if let Some(n) = expected
-            && argc != n {
-                return Err(cold_type("wrong number of arguments to builtin"));
-        }
+            && argc != n { return Err(cold_type("wrong number of arguments to builtin")); }
 
         for &v in positional { self.push(v); }
 
         match id {
             // Variadic
             Print => {
-                // CallPrint is statement-shaped: the dedicated opcode is emitted
-                // without a trailing Pop. When `print` is reached via Call (e.g.
-                // `p = print; p(42)`), the parser does emit Pop, so we must push
-                // an explicit None to keep the stack balanced.
+                // CallPrint is statement-shaped (no trailing Pop); when reached via Call the parser emits Pop, so push None to keep the stack balanced.
                 self.call_print(argc)?;
                 self.push(Val::none());
                 Ok(())

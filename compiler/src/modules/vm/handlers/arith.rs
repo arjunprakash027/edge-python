@@ -53,10 +53,9 @@ impl<'a> VM<'a> {
             let r = af - ffloor(af / bf) * bf;
             return Ok(Val::float(r));
         }
-        let (Some(ai), Some(bi)) = (self.as_i64(a), self.as_i64(b))
-            else { return Err(cold_type("% requires numeric operands")); };
+        let (Some(ai), Some(bi)) = (self.as_i64(a), self.as_i64(b)) else { return Err(cold_type("% requires numeric operands")); };
         if bi == 0 { return Err(VmErr::ZeroDiv); }
-        // Floor-mod on i64: result takes the divisor's sign, matching Python.
+        // Floor-mod on i64: result takes the divisor's sign.
         let r = ai.rem_euclid(bi.abs());
         let r = if bi < 0 && r != 0 { r - bi.abs() } else { r };
         self.int_or_overflow(Some(r))
@@ -72,7 +71,7 @@ impl<'a> VM<'a> {
         }
         let (Some(ai), Some(bi)) = (self.as_i64(a), self.as_i64(b)) else { return Err(cold_type("// requires numeric operands")); };
         if bi == 0 { return Err(VmErr::ZeroDiv); }
-        // Floor-div on i64: round toward negative infinity, matching Python.
+        // Floor-div on i64: round toward negative infinity.
         let q = ai.checked_div(bi).ok_or(cold_overflow())?;
         let r = ai - q * bi;
         let q = if (r != 0) && ((r < 0) != (bi < 0)) { q - 1 } else { q };
@@ -83,10 +82,7 @@ impl<'a> VM<'a> {
         self.pow_vals(a, b, "** requires numeric operands")
     }
 
-    /* BitAnd/Or/Xor via closure on i64; BitNot is unary; Shl/Shr on i64 with
-       overflow trap. Set/Set operands hijack |, &, ^ to mean union, intersection,
-       and symmetric difference (Python semantics); other type combinations
-       fall through to the integer bitwise path. */
+    /* i64 bitwise + Shl/Shr (overflow trap); BitNot unary. Set/Set on |/&/^ means union/intersection/symmetric-diff; other types use the bitwise path. */
     pub(crate) fn handle_bitwise(&mut self, op: OpCode) -> Result<(), VmErr> {
         if op == OpCode::BitNot {
             let v = self.pop()?;
@@ -134,15 +130,10 @@ impl<'a> VM<'a> {
 
     pub(crate) fn handle_compare(&mut self, op: OpCode, rip: usize, cache: &mut OpcodeCache) -> Result<(), VmErr> {
         let (a, b) = self.pop2()?;
-        // Record type-key for every compare op; cache::specialize() decides
-        // which ones have a FastOp variant (all of them currently).
+        // Record type-key for every compare op; `cache::specialize` picks the FastOp variant.
         cached_binop!(self.heap, rip, &op, a, b, cache);
 
-        // Set/Set comparison: subset / superset semantics, NOT total order.
-        // The `LtEq = !lt_vals(b, a)` translation that works for numbers
-        // would silently mis-answer here ({1,2} <= {2,3} would come back
-        // True), so set comparisons are computed directly from set
-        // membership and bypass lt_vals entirely.
+        // Set/Set uses subset/superset, NOT total order — the numeric `LtEq = !lt_vals(b, a)` identity is wrong here ({1,2} <= {2,3} would come back True), so we bypass `lt_vals`.
         if a.is_heap() && b.is_heap()
             && matches!(self.heap.get(a), HeapObj::Set(_))
             && matches!(self.heap.get(b), HeapObj::Set(_)) {
@@ -162,8 +153,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Short-circuiting is done by the parser via Jump-If-Or-Pop opcodes; this
-       only handles plain `not`. And/Or never reach here. */
+    // Only plain `not`; And/Or are short-circuited by the parser via Jump-If-Or-Pop.
     pub(crate) fn handle_logic(&mut self, op: OpCode) -> Result<(), VmErr> {
         match op {
             OpCode::Not => {

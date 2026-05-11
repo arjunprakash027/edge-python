@@ -1,72 +1,51 @@
-/* Single source of truth for built-in methods (str/list/dict). The
-   define_methods! macro at the bottom generates the BuiltinMethodId
-   enum, name lookup, and dispatcher from one declarative table — adding
-   a new method is one row. */
+/*
+Built-in methods (str/list/dict). The `define_methods!` macro generates the enum, lookup, and dispatcher from one table — adding a method is one row.
+*/
 
 use super::*;
 use super::methods_helpers::*;
 use crate::alloc::string::ToString;
 use crate::s;
 
-/* Result of `resolve_attr` — every shape the LoadAttr / CallMethod
-   path needs to dispatch on. Centralising the shape eliminates the
-   3-branch + builtin-fallback duplication that previously lived in
-   both `handle_load_attr` and `exec_call_method`, including the six
-   hand-formatted `'X' object has no attribute 'Y'` messages. */
+// `resolve_attr` result — every shape LoadAttr / CallMethod dispatches on.
 pub(crate) enum AttrLookup {
     ModuleAttr(Val),
     ClassMember(Val),
     InstanceField(Val),
     InstanceMethod { recv: Val, func: Val },
     BuiltinMethod(BuiltinMethodId),
-    /* `e.args` on an ExcInstance: caller decides whether to materialise
-       the tuple (LoadAttr) or treat it as a non-callable attribute
-       (CallMethod, preserving the pre-existing AttributeError). */
+    // `e.args` on ExcInstance — caller picks: LoadAttr materialises the tuple, CallMethod errors.
     ExcArgs(Vec<Val>),
 }
 
 impl<'a> VM<'a> {
-    /* Single source of truth for `obj.<name>` resolution. Walks the
-       heap object kind, returning the appropriate `AttrLookup` variant
-       or an `AttributeError`. Both `handle_load_attr` and
-       `exec_call_method` consume the result. */
+    // `obj.<name>` resolution shared by `handle_load_attr` and `exec_call_method`.
     pub(crate) fn resolve_attr(&self, obj: Val, name: &str) -> Result<AttrLookup, VmErr> {
         let bare = crate::modules::parser::ssa_strip(name);
 
-        // Module attribute lookup: linear scan over the attr table. Sized
-        // for ~30 entries; any module larger than that is unusual.
+        // Module attr: linear scan; the table is sized for around 30 entries.
         if obj.is_heap()
             && let HeapObj::Module(mod_name, attrs) = self.heap.get(obj) {
                 if let Some((_, v)) = attrs.iter().find(|(n, _)| n == bare) {
                     return Ok(AttrLookup::ModuleAttr(*v));
                 }
-                return Err(VmErr::Attribute(s!(
-                    "module '", str mod_name, "' has no attribute '", str bare, "'")));
+                return Err(VmErr::Attribute(s!("module '", str mod_name, "' has no attribute '", str bare, "'")));
             }
 
-        // ExcInstance attribute lookup: `e.args` returns the constructor
-        // args; everything else is "no such attribute".
+        // ExcInstance attr: only `e.args` is defined.
         if obj.is_heap()
             && let HeapObj::ExcInstance(_, args) = self.heap.get(obj) {
-                if bare == "args" {
-                    return Ok(AttrLookup::ExcArgs(args.clone()));
-                }
+                if bare == "args" { return Ok(AttrLookup::ExcArgs(args.clone())); }
                 let ty = self.type_name(obj);
-                return Err(VmErr::Attribute(s!(
-                    "'", str ty, "' object has no attribute '", str bare, "'")));
+                return Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str bare, "'")));
             }
 
-        // Class attribute lookup: `MyClass.method` returns the unbound
-        // function directly (no `self` prepended). Useful for class-as-namespace
-        // patterns and for accessing class-level constants.
+        // Class attr: `MyClass.method` returns the unbound function (no `self` prepended).
         if obj.is_heap()
             && let HeapObj::Class(cls_name, members) = self.heap.get(obj) {
-                if let Some((_, v)) = members.iter().find(|(n, _)| n == bare) {
-                    return Ok(AttrLookup::ClassMember(*v));
-                }
+                if let Some((_, v)) = members.iter().find(|(n, _)| n == bare) { return Ok(AttrLookup::ClassMember(*v)); }
                 let cls_name = cls_name.clone();
-                return Err(VmErr::Attribute(s!(
-                    "type object '", str &cls_name, "' has no attribute '", str bare, "'")));
+                return Err(VmErr::Attribute(s!("type object '", str &cls_name, "' has no attribute '", str bare, "'")));
             }
 
         // Instance attribute lookup: check `__dict__` first, then class methods.
@@ -76,31 +55,25 @@ impl<'a> VM<'a> {
                 let found = attrs.borrow().entries.iter()
                     .find(|(k, _)| k.is_heap() && matches!(self.heap.get(*k), HeapObj::Str(s) if s == name))
                     .map(|(_, v)| *v);
-                if let Some(v) = found {
-                    return Ok(AttrLookup::InstanceField(v));
-                }
+                if let Some(v) = found { return Ok(AttrLookup::InstanceField(v)); }
                 if cls_val.is_heap()
                     && let HeapObj::Class(_, methods) = self.heap.get(cls_val)
                     && let Some((_, mv)) = methods.iter().find(|(n, _)| n == name) {
                         return Ok(AttrLookup::InstanceMethod { recv: obj, func: *mv });
                     }
                 let ty = self.type_name(obj);
-                return Err(VmErr::Attribute(s!(
-                    "'", str ty, "' object has no attribute '", str name, "'")));
+                return Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str name, "'")));
             }
 
         // Builtin type method.
         let ty = self.type_name(obj);
         lookup_method(ty, name)
             .map(AttrLookup::BuiltinMethod)
-            .ok_or_else(|| VmErr::Attribute(s!(
-                "'", str ty, "' object has no attribute '", str name, "'")))
+            .ok_or_else(|| VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str name, "'")))
     }
 
     pub(crate) fn handle_load_attr(&mut self, name_idx: u16, chunk: &SSAChunk) -> Result<(), VmErr> {
-        let name = chunk.names.get(name_idx as usize)
-            .ok_or(VmErr::Runtime("LoadAttr: bad name index"))?
-            .clone();
+        let name = chunk.names.get(name_idx as usize).ok_or(VmErr::Runtime("LoadAttr: bad name index"))?.clone();
         let obj = self.pop()?;
         match self.resolve_attr(obj, &name)? {
             AttrLookup::ModuleAttr(v)
@@ -128,13 +101,7 @@ impl<'a> VM<'a> {
     }
 }
 
-/* Generates the BuiltinMethodId enum, name lookup, dispatcher, AND the
-   (type, attr) -> BuiltinMethodId resolver in one go. Each row:
-   (Variant, "name", category, |vm, recv, pos| body).
-   Category `mutating` auto-emits mark_impure() on success.
-   Receiver type is derived from the variant prefix: Str* -> "str",
-   List* -> "list", Dict* -> "dict". Add new prefixes to `lookup_method` if
-   you introduce methods on a new receiver type. */
+// Row: (Variant, "name", category, body). `mutating` auto-emits mark_impure; variant prefix picks the receiver.
 macro_rules! define_methods {
     ( $( ($variant:ident, $name:literal, $cat:ident, |$vm:ident, $recv:ident, $pos:ident| $body:block) ),* $(,)? ) => {
 
@@ -151,10 +118,7 @@ macro_rules! define_methods {
             }
         }
 
-        pub(crate) fn dispatch_method(
-            vm: &mut VM, id: BuiltinMethodId,
-            recv: Val, pos: &[Val], kw: &[Val],
-        ) -> Result<(), VmErr> {
+        pub(crate) fn dispatch_method(vm: &mut VM, id: BuiltinMethodId, recv: Val, pos: &[Val], kw: &[Val]) -> Result<(), VmErr> {
             if !kw.is_empty() {
                 return Err(cold_type("builtin method takes no keyword arguments"));
             }
@@ -169,15 +133,14 @@ macro_rules! define_methods {
             }
         }
 
-        /* Single source of truth — derived from the entries above. Off the
-           hot path: CallMethod fusion bypasses LoadAttr+Call entirely. */
+        // Off the hot path — CallMethod fusion bypasses LoadAttr+Call entirely.
         pub fn lookup_method(ty: &str, attr: &str) -> Option<BuiltinMethodId> {
             let prefix = match ty {
-                "str"   => "Str",
+                "str" => "Str",
                 "bytes" => "Bytes",
-                "list"  => "List",
-                "dict"  => "Dict",
-                "set"   => "Set",
+                "list" => "List",
+                "dict" => "Dict",
+                "set" => "Set",
                 _ => return None,
             };
             $(
@@ -197,10 +160,7 @@ macro_rules! define_methods {
 }
 
 define_methods! {
-    // str.encode([encoding]) — to bytes. Default and only supported
-    // encoding is UTF-8 (ASCII is a strict subset that succeeds when the
-    // string is pure ASCII; any other name errors out so silent
-    // mismatches don't sneak through).
+    // `str.encode([encoding])` — UTF-8/ASCII only; other names error to block silent mismatches.
     (StrEncode, "encode", pure, |vm, recv, pos| {
         check_arity(pos, 0, 1, "encode takes 0 or 1 arguments")?;
         let s = recv_str(vm, recv)?;
@@ -219,9 +179,7 @@ define_methods! {
         vm.push(v); Ok(())
     }),
 
-    // bytes.decode([encoding]) — back to str. Validates UTF-8 and errors
-    // on invalid sequences (Python raises UnicodeDecodeError; we surface
-    // it as a ValueError to keep the error taxonomy compact).
+    // `bytes.decode([encoding])` — invalid UTF-8 errors as ValueError.
     (BytesDecode, "decode", pure, |vm, recv, pos| {
         check_arity(pos, 0, 1, "decode takes 0 or 1 arguments")?;
         let buf = recv_bytes(vm, recv)?;
@@ -237,7 +195,7 @@ define_methods! {
         vm.push(v); Ok(())
     }),
 
-    // bytes.hex() — lowercase hex of every byte. No separator.
+    // `bytes.hex()` — lowercase hex of every byte. No separator.
     (BytesHex, "hex", pure, |vm, recv, pos| {
         check_arity(pos, 0, 0, "hex takes no arguments")?;
         let buf = recv_bytes(vm, recv)?;
@@ -251,8 +209,7 @@ define_methods! {
         vm.push(v); Ok(())
     }),
 
-    // bytes.startswith(prefix) / bytes.endswith(suffix) — bytes-only
-    // prefix matching (str.startswith handles strings).
+    // `bytes.startswith` / `bytes.endswith` — bytes-only; strings go through `str.startswith`.
     (BytesStartswith, "startswith", pure, |vm, recv, pos| {
         check_arity(pos, 1, 1, "startswith takes 1 argument")?;
         let buf = recv_bytes(vm, recv)?;
@@ -423,8 +380,7 @@ define_methods! {
         vm.push(v); Ok(())
     }),
 
-    /* str.removeprefix(p) — strip leading prefix if present, else return
-       unchanged. str.removesuffix(s) — same for trailing suffix. */
+    // `str.removeprefix` / `removesuffix` — strip if present, else return unchanged.
     (StrRemovePrefix, "removeprefix", pure, |vm, recv, pos| {
         check_arity(pos, 1, 1, "removeprefix takes 1 argument")?;
         let s = recv_str(vm, recv)?;
@@ -442,8 +398,7 @@ define_methods! {
         vm.push(v); Ok(())
     }),
 
-    /* str.splitlines() — split on every \n, \r, or \r\n, dropping the
-       separator. Mirrors Python's keepends=False default. */
+    // `str.splitlines()` — split on \n / \r / \r\n, dropping the separator (keepends=False).
     (StrSplitlines, "splitlines", pure, |vm, recv, pos| {
         check_arity(pos, 0, 0, "splitlines takes no arguments")?;
         let s = recv_str(vm, recv)?;
@@ -452,9 +407,7 @@ define_methods! {
             let trimmed = line.trim_end_matches(['\n', '\r']).to_string();
             parts.push(vm.heap.alloc(HeapObj::Str(trimmed))?);
         }
-        // split_inclusive does not yield an empty trailing chunk, but if the
-        // last char is a separator the loop above produces one extra empty
-        // segment — drop it to match Python.
+        // Drop the trailing empty segment that split_inclusive leaves when the input ends in a separator.
         if let Some(last) = parts.last()
             && let HeapObj::Str(t) = vm.heap.get(*last)
             && t.is_empty() && s.ends_with(['\n', '\r']) {
@@ -463,8 +416,7 @@ define_methods! {
         vm.alloc_and_push_list(parts)
     }),
 
-    /* str.partition(sep) — find sep, return (head, sep, tail). If sep is
-       absent: (s, "", ""). rpartition splits at the last occurrence. */
+    // `str.partition` / `rpartition` — (head, sep, tail); on miss returns (s,"","") / ("","",s).
     (StrPartition, "partition", pure, |vm, recv, pos| {
         check_arity(pos, 1, 1, "partition takes 1 argument")?;
         let s = recv_str(vm, recv)?;
@@ -494,8 +446,7 @@ define_methods! {
         vm.alloc_and_push_tuple(vec![av, bv, cv])
     }),
 
-    /* bytes.find(sub) / bytes.index(sub) / bytes.count(sub) / bytes.replace(old, new)
-       — byte-oriented analogs of the str methods. */
+    // `bytes.find` / index / count / replace — byte-oriented analogs of str methods.
     (BytesFind, "find", pure, |vm, recv, pos| {
         check_arity(pos, 1, 1, "find takes 1 argument")?;
         let buf = recv_bytes(vm, recv)?;
@@ -509,8 +460,7 @@ define_methods! {
         check_arity(pos, 1, 1, "index takes 1 argument")?;
         let buf = recv_bytes(vm, recv)?;
         let sub = recv_bytes(vm, pos[0])?;
-        let idx = buf.windows(sub.len()).position(|w| w == sub.as_slice())
-            .ok_or(cold_value("subsection not found"))?;
+        let idx = buf.windows(sub.len()).position(|w| w == sub.as_slice()).ok_or(cold_value("subsection not found"))?;
         vm.push(Val::int(idx as i64));
         Ok(())
     }),
@@ -733,8 +683,7 @@ define_methods! {
         }
         vm.alloc_and_push_list(items)
     }),
-    /* dict.copy() — shallow copy. Mutations to the result don't affect
-       the original. */
+    // `dict.copy()` — shallow copy; mutations don't affect the original.
     (DictCopy, "copy", pure, |vm, recv, pos| {
         check_arity(pos, 0, 0, "copy takes no arguments")?;
         let entries = dict_entries(vm, recv)?;
@@ -742,8 +691,7 @@ define_methods! {
         for (k, v) in entries { dm.insert(k, v); }
         vm.alloc_and_push_dict(dm)
     }),
-    /* dict.popitem() — remove and return the last (key, value) tuple.
-       Raises KeyError on an empty dict. */
+    // `dict.popitem()` — pop the last (k, v); KeyError on empty dict.
     (DictPopItem, "popitem", mutating, |vm, recv, pos| {
         check_arity(pos, 0, 0, "popitem takes no arguments")?;
         let pair = dict_mut(vm, recv, "popitem: receiver is not a dict", |dict| {
@@ -764,8 +712,7 @@ define_methods! {
     }),
     (DictUpdate, "update", mutating, |vm, recv, pos| {
         check_arity(pos, 1, 1, "update takes 1 argument")?;
-        // Accept either a dict (entries reused directly) or an iterable of
-        // 2-element pair sequences ([(k, v), ...]) — matches CPython contract.
+        // Accept a dict or an iterable of 2-element pairs.
         let pairs: Vec<(Val, Val)> = if let HeapObj::Dict(rc) = vm.heap.get(pos[0]) {
             rc.borrow().entries.clone()
         } else {
@@ -835,8 +782,7 @@ define_methods! {
     (SetPop, "pop", mutating, |vm, recv, pos| {
         check_arity(pos, 0, 0, "pop takes no arguments")?;
         let popped = set_mut(vm, recv, "pop: receiver is not a set", |set| {
-            // Pop an arbitrary element. HashSet doesn't expose pop(), so we
-            // grab one via iter() and remove it. Empty set raises like CPython.
+            // HashSet has no pop() — grab via `iter()` and remove. Empty set raises.
             let pick = set.iter().next().copied()
                 .ok_or(cold_value("pop from an empty set"))?;
             set.remove(&pick);

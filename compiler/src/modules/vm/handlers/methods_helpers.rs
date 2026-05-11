@@ -1,7 +1,6 @@
-/* Shared helpers for the method dispatcher (handlers/methods.rs).
-   Extracted so methods.rs stays focused on the macro-generated dispatcher
-   table; these are the receiver-type unwrap / arity-check primitives the
-   macro bodies reuse. */
+/*
+Receiver-type unwrap / arity-check primitives shared by the method dispatcher (methods.rs)
+*/
 
 use alloc::{string::{String, ToString}, vec::Vec};
 
@@ -55,11 +54,7 @@ pub(super) fn dict_entries(vm: &VM, recv: Val) -> Result<Vec<(Val, Val)>, VmErr>
     }
 }
 
-/* Borrow the list inside `recv` mutably for the duration of `f`. The closure
-   can't touch `vm` (it's borrowed by `heap.get_mut`), so any subsequent push
-   has to happen after the helper returns. Replaces an 8× repeated
-   `match heap.get_mut { HeapObj::List(rc) => ..., _ => err }` cascade in the
-   list-mutating method bodies. */
+/* Borrow `recv`'s list mutably for `f`. The closure can't touch `vm` (held by `heap.get_mut`), so any push must happen after this returns. */
 #[inline]
 pub(super) fn list_mut<F, R>(vm: &mut VM, recv: Val, err: &'static str, f: F) -> Result<R, VmErr>
 where F: FnOnce(&mut Vec<Val>) -> Result<R, VmErr>
@@ -70,8 +65,7 @@ where F: FnOnce(&mut Vec<Val>) -> Result<R, VmErr>
     }
 }
 
-/* Same shape as `list_mut` for dict receivers. Used by the three mutating
-   dict methods (update, pop, setdefault). */
+// Same shape as `list_mut` for dict receivers.
 #[inline]
 pub(super) fn dict_mut<F, R>(vm: &mut VM, recv: Val, err: &'static str, f: F) -> Result<R, VmErr>
 where F: FnOnce(&mut DictMap) -> Result<R, VmErr>
@@ -82,8 +76,7 @@ where F: FnOnce(&mut DictMap) -> Result<R, VmErr>
     }
 }
 
-/* Snapshot of a set's contents. Returned as a Vec rather than loaning a
-   borrow of the heap so the heap is free during subsequent allocations. */
+// Snapshot a set as Vec so the heap stays free for subsequent allocations.
 #[inline]
 pub(super) fn set_clone(vm: &VM, recv: Val) -> Result<Vec<Val>, VmErr> {
     match vm.heap.get(recv) {
@@ -92,8 +85,7 @@ pub(super) fn set_clone(vm: &VM, recv: Val) -> Result<Vec<Val>, VmErr> {
     }
 }
 
-/* Same shape as `list_mut` for set receivers. Used by mutating set methods
-   (add, remove, discard, pop, clear, update). */
+// Same shape as `list_mut` for set receivers.
 #[inline]
 pub(super) fn set_mut<F, R>(vm: &mut VM, recv: Val, err: &'static str, f: F) -> Result<R, VmErr>
 where F: FnOnce(&mut crate::util::fx::FxHashSet<Val>) -> Result<R, VmErr>
@@ -104,8 +96,7 @@ where F: FnOnce(&mut crate::util::fx::FxHashSet<Val>) -> Result<R, VmErr>
     }
 }
 
-/* Pull a Vec<Val> from any iterable (list/tuple/set). Used by set ops that
-   accept a non-set iterable (e.g. `s.update([1, 2])`, `s.union((3, 4))`). */
+// `Vec<Val>` from any iterable (list/tuple/set) — for set ops accepting non-set iterables.
 #[inline]
 pub(super) fn iter_to_vec(vm: &VM, v: Val) -> Result<Vec<Val>, VmErr> {
     if !v.is_heap() { return Err(cold_type("expected an iterable")); }
@@ -131,9 +122,7 @@ pub(super) fn title_case(s: &str) -> String {
     s.split_whitespace()
         .map(|w| {
             let mut cs = w.chars();
-            cs.next()
-                .map(|c| c.to_uppercase().to_string() + cs.as_str())
-                .unwrap_or_default()
+            cs.next().map(|c| c.to_uppercase().to_string() + cs.as_str()).unwrap_or_default()
         })
         .collect::<Vec<_>>()
         .join(" ")

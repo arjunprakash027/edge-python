@@ -57,8 +57,7 @@ impl<'a> VM<'a> {
             OpCode::UnpackSequence => self.exec_unpack_seq(operand as usize)?,
             OpCode::UnpackEx => self.unpack_ex(operand)?,
             OpCode::FormatValue => {
-                /* Operand layout: bit 0 has_spec, bits 1..=2 conversion
-                   (0 none, 1 !r, 2 !s, 3 !a). See parser/literals.rs. */
+                /* Operand layout: bit 0 has_spec, bits 1..=2 conversion (0 none, 1 !r, 2 !s, 3 !a). See parser/literals.rs. */
                 let has_spec = (operand & 1) != 0;
                 let conv = (operand >> 1) & 0b11;
                 let spec_val = if has_spec { Some(self.pop()?) } else { None };
@@ -100,15 +99,15 @@ impl<'a> VM<'a> {
     pub(crate) fn handle_comprehension(&mut self, op: OpCode) -> Result<(), VmErr> {
         let (kind, value, key) = match op {
             OpCode::ListAppend => ("list",  self.pop()?, None),
-            OpCode::SetAdd     => ("set",   self.pop()?, None),
-            OpCode::MapAdd     => { let v = self.pop()?; let k = self.pop()?; ("dict", v, Some(k)) }
+            OpCode::SetAdd => ("set", self.pop()?, None),
+            OpCode::MapAdd => { let v = self.pop()?; let k = self.pop()?; ("dict", v, Some(k)) }
             _ => return Err(cold_runtime("non-comprehension opcode in handle_comprehension")),
         };
         let acc = *self.stack.last().ok_or(VmErr::Runtime("stack underflow"))?;
         let corrupt = || VmErr::Runtime(match kind {
             "list" => "list accumulator corrupted",
-            "set"  => "set accumulator corrupted",
-            _      => "dict accumulator corrupted",
+            "set" => "set accumulator corrupted",
+            _ => "dict accumulator corrupted",
         });
         if !acc.is_heap() { return Err(corrupt()); }
         match (kind, self.heap.get(acc)) {
@@ -133,8 +132,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Side-effecting / impure ops: assert, del, global/nonlocal, import,
-       type alias, raise, await. */
+    /* Side-effecting / impure ops: assert, del, global/nonlocal, import, type alias, raise, await. */
     pub(crate) fn handle_side(&mut self, op: OpCode, operand: u16, slots: &mut [Val]) -> Result<(), VmErr> {
         match op {
             OpCode::Assert => {
@@ -148,14 +146,10 @@ impl<'a> VM<'a> {
             OpCode::Global | OpCode::Nonlocal => self.mark_impure(),
             OpCode::Raise | OpCode::RaiseFrom => {
                 self.mark_impure();
-                // RaiseFrom emits both `expr` then `from expr` — the topmost
-                // value is the cause, but the exception to raise is the LHS.
+                // RaiseFrom emits both `expr` then `from expr` — the topmost value is the cause, but the exception to raise is the LHS.
                 if op == OpCode::RaiseFrom { let _cause = self.pop()?; }
                 let exc = self.pop()?;
-                // For ExcInstance, stash the Val so the `except as e` handler
-                // can bind the actual instance. For Type, msg is the bare
-                // class name (no instance to bind). For anything else, fall
-                // through to display().
+                // Stash the Val for `except as e` binding; non-Exc values use `display()`.
                 self.pending.exc_val = None;
                 let msg = if exc.is_heap() {
                     match self.heap.get(exc) {
@@ -165,10 +159,7 @@ impl<'a> VM<'a> {
                             n
                         }
                         HeapObj::Type(n) => {
-                            // Bare `raise X` (no args): construct an empty
-                            // ExcInstance so `except X as e: print(e.args)`
-                            // returns `()` matching CPython, instead of
-                            // binding the Type itself.
+                            // Bare `raise X`: build empty ExcInstance so `e.args` is `()`.
                             let n = n.clone();
                             let inst = self.heap.alloc(
                                 HeapObj::ExcInstance(n.clone(), Vec::new()))?;
@@ -183,9 +174,7 @@ impl<'a> VM<'a> {
                 return Err(VmErr::Raised(msg));
             }
             OpCode::Await => {
-                // Awaiting a coroutine resumes it; its yield (if any)
-                // propagates up via `self.yielded` (set by resume_coroutine).
-                // Sync values pass through unchanged.
+                // Coroutine: resume it (yield propagates via `self.yielded`); sync values pass through.
                 let val = self.pop()?;
                 if val.is_heap() && matches!(self.heap.get(val), HeapObj::Coroutine(..)) {
                     self.push(val);

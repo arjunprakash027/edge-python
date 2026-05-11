@@ -1,26 +1,9 @@
-/* Python-compatible f-string format spec engine.
-
-   Mini-language (subset of PEP 3101 sufficient for typical numeric/string
-   formatting): `[[fill]align][sign][#][0][width][,][.precision][type]`.
-
-   Supported types:
-     d/none — decimal int
-     b/o/x/X — base 2/8/16
-     f/F/e/E — fixed / exponential float
-     g/G    — general (Rust default for floats)
-     %      — percentage (multiply by 100, append '%')
-     s      — string (only valid for str values)
-     c      — int -> unicode codepoint
-
-   Layout features:
-     fill+align (`<`, `>`, `^`)
-     `0` zero-pad shortcut
-     width (digits)
-     `,` thousands separator (decimal int / float)
-     `.precision` (float precision, or str truncation)
-     sign (`+`, `-`, ` `)
-
-   Returns Ok(formatted) or Err(message) so the caller can raise ValueError. */
+/* 
+f-string format spec engine — PEP 3101 subset:
+`[[fill]align][sign][#][0][width][,][.precision][type]`.
+Types: d/b/o/x/X (ints), f/F/e/E/g/G (floats), % (percent), s (str), c (codepoint).
+Returns Err(message) so the caller can raise ValueError. 
+*/
 
 use alloc::string::{String, ToString};
 use crate::modules::vm::types::{Val, HeapObj, HeapPool, fabs, ffloor, flog10, fsignum, ftrunc};
@@ -36,13 +19,13 @@ pub fn format_value(v: Val, spec: &str, heap: &HeapPool) -> Result<String, &'sta
 #[derive(Default, Clone)]
 struct Spec {
     fill: char,
-    align: Option<u8>,   // b'<' b'>' b'^' b'='
-    sign: u8,            // 0, b'+', b'-', b' '
+    align: Option<u8>, // b'<' b'>' b'^' b'='
+    sign: u8, // 0, b'+', b'-', b' '
     zero_pad: bool,
     width: usize,
     thousands: bool,
     precision: Option<usize>,
-    ty: u8,              // 0 means default
+    ty: u8, // 0 means default
 }
 
 fn parse_spec(spec: &str) -> Result<Spec, &'static str> {
@@ -65,9 +48,7 @@ fn parse_spec(spec: &str) -> Result<Spec, &'static str> {
         i += 1;
     }
 
-    /* '#' alternate form is parsed but ignored — emitted by Python for `0b…`
-       prefixes. We emit prefixes unconditionally for `b/o/x` so behaviour
-       matches `bin()`/`hex()` builtins. */
+    // '#' parsed but ignored — we emit prefixes for `b/o/x` unconditionally (matches `bin()`/`hex()`).
     if i < bytes.len() && bytes[i] == b'#' { i += 1; }
 
     if i < bytes.len() && bytes[i] == b'0' {
@@ -109,14 +90,12 @@ fn parse_spec(spec: &str) -> Result<Spec, &'static str> {
 }
 
 fn apply(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static str> {
-    /* Dispatch by inferred kind: integer types route through int formatters;
-       float types coerce ints up; string types accept strings only. */
+    // Dispatch by type char: int types -> int formatter, float types coerce ints up, `s` only strings.
     match s.ty {
         0 | b's' => {
             if v.is_int() || v.is_float() || v.is_bool() || v.is_none() {
                 if s.ty == b's' { return Err("'s' format spec requires a string"); }
-                /* No type char + numeric: format like default unless precision/
-                   thousands present, in which case treat as float fixed. */
+                // No type char + numeric: default render, unless precision/thousands forces float-fixed.
                 if s.precision.is_some() || s.thousands {
                     return format_float(v, s, b'f', heap);
                 }
@@ -134,7 +113,7 @@ fn apply(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static str> {
             };
             Ok(pad_string(s, &truncated))
         }
-        // `n` is locale-aware decimal in CPython; paradigm has no locale, so alias to `d`.
+        // `n` is locale-aware decimal; paradigm has no locale, so alias to `d`.
         b'd' | b'b' | b'o' | b'x' | b'X' | b'n' => {
             let mut s2 = s.clone();
             if s2.ty == b'n' { s2.ty = b'd'; }
@@ -193,7 +172,7 @@ fn format_float(v: Val, s: &Spec, ty: u8, heap: &HeapPool) -> Result<String, &'s
     let f = require_float(v, heap)?;
     let prec = s.precision.unwrap_or(6);
 
-    /* NaN/inf go through unchanged (Python emits "nan"/"inf" before padding). */
+    /* NaN/inf go through unchanged (emits "nan"/"inf" before padding). */
     if f.is_nan() {
         let body = if ty == b'F' { "NAN" } else { "nan" };
         return Ok(pad_string(s, body));
@@ -209,15 +188,14 @@ fn format_float(v: Val, s: &Spec, ty: u8, heap: &HeapPool) -> Result<String, &'s
     let mag = f.abs();
     let body = match ty {
         b'f' | b'F' => fixed(mag, prec),
-        // Scientific and general formats fall back to Rust's f64 formatter.
-        // Custom round-half-to-even applies only to fixed; e/g use library defaults.
+        // e/g delegate to Rust's f64 formatter; round-half-to-even applies only to `f`.
         b'e' => format_with_e(mag, prec, false),
         b'E' => format_with_e(mag, prec, true),
-        // `g/G` in CPython: pick `e` for very small/large, `f` otherwise.
+        // `g/G`: pick `e` for very small/large, `f` otherwise.
         b'g' | b'G' => {
             let upper = ty == b'G';
             let exp = if mag == 0.0 { 0 } else { ffloor(flog10(mag)) as i32 };
-            // CPython rule: -4 <= exp < precision uses fixed; else scientific.
+            // rule: -4 <= exp < precision uses fixed; else scientific.
             let p = prec.max(1);
             if exp < -4 || exp >= p as i32 {
                 format_with_e(mag, p.saturating_sub(1), upper)
@@ -238,12 +216,11 @@ fn format_float(v: Val, s: &Spec, ty: u8, heap: &HeapPool) -> Result<String, &'s
 }
 
 fn format_with_e(mag: f64, prec: usize, upper: bool) -> String {
-    /* Rust's "{:.*e}" produces e.g. "3.14e0"; CPython expects "e+00". Re-pad
-       the exponent to at least two digits and inject the sign. */
+    // Rust emits "3.14e0"; expects "e+00" — inject the sign and pad exponent to >=2 digits.
     let raw = alloc::format!("{:.*e}", prec, mag);
     let (mant, exp_str) = raw.split_once('e').unwrap_or((raw.as_str(), "0"));
     let (esign, edigs) = if let Some(rest) = exp_str.strip_prefix('-') { ('-', rest) }
-                         else { ('+', exp_str) };
+        else { ('+', exp_str) };
     let mut out = String::new();
     out.push_str(mant);
     out.push(if upper { 'E' } else { 'e' });
@@ -265,8 +242,7 @@ fn int_to_decimal_parts(v: Val, _heap: &HeapPool) -> Result<(bool, String), &'st
         let i = v.as_int();
         let neg = i < 0;
         let mut b = itoa::Buffer::new();
-        // i.unsigned_abs() handles i64::MIN — but Val ints are bounded to ±2^47
-        // so this can't overflow.
+        // `i.unsigned_abs()` is safe even at i64::MIN; Val ints are bounded to +/- 2^47 anyway.
         let mag = b.format(i.unsigned_abs()).to_string();
         return Ok((neg, mag));
     }
@@ -275,8 +251,7 @@ fn int_to_decimal_parts(v: Val, _heap: &HeapPool) -> Result<(bool, String), &'st
 }
 
 fn decimal_to_radix(mag: &str, radix: u32) -> String {
-    /* Convert a non-negative decimal magnitude string to the given radix.
-       Operates on u64 since Val ints are bounded to ±2^47. */
+    // Non-neg decimal string -> `radix`. Fits in u64 since Val ints are bounded to +/- 2^47.
     if mag == "0" { return String::from("0"); }
     let mut n: u64 = mag.parse().unwrap_or(0);
     let mut out = String::new();
@@ -375,8 +350,7 @@ fn pad_with(body: &str, pad: usize, align: u8, fill: char, sign_prefix_len: usiz
 }
 
 fn fixed(mag: f64, prec: usize) -> String {
-    /* Round-half-to-even to a given decimal precision, then render as
-       integer-part '.' fractional-part. Avoids alloc::format!'s %f. */
+    // Round-half-to-even to `prec` decimals; renders manually to avoid `alloc::format!`'s %f.
     let scale = pow10(prec);
     let scaled = mag * scale;
     let rounded = if fabs(scaled - ftrunc(scaled)) == 0.5 {
@@ -418,7 +392,7 @@ fn u128_to_dec(n: u128) -> String {
     out.chars().rev().collect()
 }
 
-/* Plain str() rendering inlined here so the hot path doesn't borrow from VM. */
+/* Plain `str()` rendering inlined here so the hot path doesn't borrow from VM. */
 pub fn display_inline(v: Val, heap: &HeapPool) -> String {
     if v.is_int() {
         let mut b = itoa::Buffer::new();
