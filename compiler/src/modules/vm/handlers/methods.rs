@@ -12,13 +12,36 @@ pub(crate) enum AttrLookup {
     ModuleAttr(Val),
     ClassMember(Val),
     InstanceField(Val),
-    InstanceMethod { recv: Val, func: Val },
+    // `class` is where `func` was found; the called frame needs it so `super()` knows where to resume.
+    InstanceMethod { recv: Val, func: Val, class: Val },
     BuiltinMethod(BuiltinMethodId),
     // `e.args` on ExcInstance — caller picks: LoadAttr materialises the tuple, CallMethod errors.
     ExcArgs(Vec<Val>),
 }
 
 impl<'a> VM<'a> {
+    // Direct-then-DFS member lookup; first hit wins. Cycles are impossible: bases are validated at `MakeClass` time and `HeapObj::Class` is immutable, so the class graph is a static DAG.
+    // Returns `(value, defining_class)` so callers building `BoundUserMethod` / `InstanceMethod` can record where the method came from for `super()`.
+    pub(crate) fn lookup_class_member(&self, cls: Val, name: &str) -> Option<(Val, Val)> {
+        if !cls.is_heap() { return None; }
+        let HeapObj::Class(_, bases, members) = self.heap.get(cls) else { return None; };
+        if let Some((_, v)) = members.iter().find(|(n, _)| n == name) { return Some((*v, cls)); }
+        for &b in bases {
+            if let Some(found) = self.lookup_class_member(b, name) { return Some(found); }
+        }
+        None
+    }
+
+    // Same lookup but skipping `cls` itself; powers `super()` which must search strictly above the current class.
+    pub(crate) fn lookup_class_member_after(&self, cls: Val, name: &str) -> Option<(Val, Val)> {
+        if !cls.is_heap() { return None; }
+        let HeapObj::Class(_, bases, _) = self.heap.get(cls) else { return None; };
+        for &b in bases {
+            if let Some(found) = self.lookup_class_member(b, name) { return Some(found); }
+        }
+        None
+    }
+
     // `obj.<name>` resolution shared by `handle_load_attr` and `exec_call_method`.
     pub(crate) fn resolve_attr(&self, obj: Val, name: &str) -> Result<AttrLookup, VmErr> {
         let bare = crate::modules::parser::ssa_strip(name);
@@ -42,13 +65,13 @@ impl<'a> VM<'a> {
 
         // Class attr: `MyClass.method` returns the unbound function (no `self` prepended).
         if obj.is_heap()
-            && let HeapObj::Class(cls_name, members) = self.heap.get(obj) {
-                if let Some((_, v)) = members.iter().find(|(n, _)| n == bare) { return Ok(AttrLookup::ClassMember(*v)); }
+            && let HeapObj::Class(cls_name, _, _) = self.heap.get(obj) {
+                if let Some((v, _)) = self.lookup_class_member(obj, bare) { return Ok(AttrLookup::ClassMember(v)); }
                 let cls_name = cls_name.clone();
                 return Err(VmErr::Attribute(s!("type object '", str &cls_name, "' has no attribute '", str bare, "'")));
             }
 
-        // Instance attribute lookup: check `__dict__` first, then class methods.
+        // Instance attribute lookup: check `__dict__` first, then the class chain (direct + bases).
         if obj.is_heap()
             && let HeapObj::Instance(cls_val, attrs) = self.heap.get(obj) {
                 let cls_val = *cls_val;
@@ -56,13 +79,21 @@ impl<'a> VM<'a> {
                     .find(|(k, _)| k.is_heap() && matches!(self.heap.get(*k), HeapObj::Str(s) if s == name))
                     .map(|(_, v)| *v);
                 if let Some(v) = found { return Ok(AttrLookup::InstanceField(v)); }
-                if cls_val.is_heap()
-                    && let HeapObj::Class(_, methods) = self.heap.get(cls_val)
-                    && let Some((_, mv)) = methods.iter().find(|(n, _)| n == name) {
-                        return Ok(AttrLookup::InstanceMethod { recv: obj, func: *mv });
-                    }
+                if let Some((mv, defining)) = self.lookup_class_member(cls_val, name) {
+                    return Ok(AttrLookup::InstanceMethod { recv: obj, func: mv, class: defining });
+                }
                 let ty = self.type_name(obj);
                 return Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str name, "'")));
+            }
+
+        // `super().<name>`: search strictly above the proxy's stored class; methods bind to the proxy's `recv`.
+        if obj.is_heap()
+            && let HeapObj::Super(cls_val, recv) = self.heap.get(obj) {
+                let (cls_val, recv) = (*cls_val, *recv);
+                if let Some((mv, defining)) = self.lookup_class_member_after(cls_val, name) {
+                    return Ok(AttrLookup::InstanceMethod { recv, func: mv, class: defining });
+                }
+                return Err(VmErr::Attribute(s!("'super' object has no attribute '", str name, "'")));
             }
 
         // Builtin type method.
@@ -93,8 +124,8 @@ impl<'a> VM<'a> {
                 self.push(v);
                 Ok(())
             }
-            AttrLookup::InstanceMethod { recv, func } => {
-                let bound = self.heap.alloc(HeapObj::BoundUserMethod(recv, func))?;
+            AttrLookup::InstanceMethod { recv, func, class } => {
+                let bound = self.heap.alloc(HeapObj::BoundUserMethod(recv, func, class))?;
                 self.push(bound);
                 Ok(())
             }

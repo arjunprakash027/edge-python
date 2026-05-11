@@ -396,9 +396,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             "<missing>".to_string()
         };
 
+        // Bases are pushed left-to-right; `MakeClass` pops `num_bases` and stores them in the Class.
+        let mut num_bases: u16 = 0;
         if self.eat_if(TokenType::Lpar) {
             while !matches!(self.peek(), Some(TokenType::Rpar) | None) {
                 self.expr();
+                num_bases = num_bases.saturating_add(1);
                 if !self.eat_if(TokenType::Comma) { break; }
             }
             self.eat(TokenType::Rpar);
@@ -409,8 +412,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let body = self.with_fresh_chunk(|s| s.compile_block());
 
         let ci = self.chunk.classes.len() as u16;
+        // Operand packs `(num_bases << 8) | class_idx`; each field is one byte to keep the dispatch decode cheap.
+        if ci > 0xFF { self.error("too many classes in this scope (limit 255)"); return; }
+        if num_bases > 0xFF { self.error("too many base classes (limit 255)"); return; }
         self.chunk.classes.push(body);
-        self.chunk.emit(OpCode::MakeClass, ci);
+        self.chunk.emit(OpCode::MakeClass, (num_bases << 8) | ci);
 
         // Each decorator Calls with the previous result, same as for functions.
         for _ in 0..decorators {

@@ -217,8 +217,9 @@ impl<'a> VM<'a> {
                 let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
                 self.exec_call(encoded, chunk, slots)
             }
-            handlers::methods::AttrLookup::InstanceMethod { recv, func } => {
-                // Prepend `self`; kwargs aren't forwarded (preserved behaviour).
+            handlers::methods::AttrLookup::InstanceMethod { recv, func, class } => {
+                // Prepend `self`; kwargs aren't forwarded (preserved behaviour). `super()` reads the binding off `pending`.
+                self.pending.method_binding = Some((class, recv));
                 self.push(func);
                 self.push(recv);
                 for a in &positional { self.push(*a); }
@@ -413,8 +414,18 @@ impl<'a> VM<'a> {
             }
 
             OpCode::MakeClass => {
-                let ci = op as usize;
-                let body = &chunk.classes[ci];
+                // Operand layout mirrors `class_def_with`: low byte = class chunk index, high byte = base count.
+                let class_idx = (op & 0xFF) as usize;
+                let num_bases = (op >> 8) as usize;
+                // Pop bases first so a misencoded operand fails before we touch the body.
+                let bases = self.pop_n(num_bases)?;
+                // Reject non-class bases up-front; otherwise inherited lookups silently miss.
+                for &b in &bases {
+                    if !b.is_heap() || !matches!(self.heap.get(b), HeapObj::Class(..)) {
+                        return Err(cold_type("base class must be a class object"));
+                    }
+                }
+                let body = &chunk.classes[class_idx];
                 let mut class_slots = self.fill_builtins(&body.names);
                 self.exec(body, &mut class_slots)?;
                 // Every defined slot becomes a class member (methods + class-level constants).
@@ -435,7 +446,7 @@ impl<'a> VM<'a> {
                 }
                 let next_op = cache.fused_ref().get(*ip).map(|i| i.operand).unwrap_or(0);
                 let name_str = chunk.names.get(next_op as usize).map(|n| ssa_strip(n)).unwrap_or("?").to_string();
-                let cls = self.heap.alloc(HeapObj::Class(name_str, methods))?;
+                let cls = self.heap.alloc(HeapObj::Class(name_str, bases, methods))?;
                 self.push(cls);
             }
             OpCode::StoreAttr => {

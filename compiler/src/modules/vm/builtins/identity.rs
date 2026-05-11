@@ -6,6 +6,18 @@ use super::matches_exc_class;
 
 impl<'a> VM<'a> {
 
+    // `super()` zero-arg: reads the running method's `(class, self)` off the top frame and returns a Super proxy.
+    pub fn call_super(&mut self) -> Result<(), VmErr> {
+        let binding = self.call_stack.last()
+            .and_then(|f| f.current_class.zip(f.current_self));
+        let Some((class, recv)) = binding else {
+            return Err(VmErr::Runtime("super() must be called inside a method"));
+        };
+        let proxy = self.heap.alloc(HeapObj::Super(class, recv))?;
+        self.push(proxy);
+        Ok(())
+    }
+
     pub fn call_repr(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         self.alloc_and_push_str(self.repr(o))
@@ -51,7 +63,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Type-name based isinstance check. Accepts Type or NativeFn (for the builtins-as-types case) on the right; allows int↔bool aliasing. */
+    /* Type-name based isinstance check. Accepts Type / NativeFn (builtin types) / user Class on the right; allows int↔bool aliasing and walks user inheritance via `is_subclass`. */
     pub fn call_isinstance(&mut self) -> Result<(), VmErr> {
         let (arg2, obj) = (self.pop()?, self.pop()?);
         let obj_ty = self.type_name(obj);
@@ -63,6 +75,11 @@ impl<'a> VM<'a> {
                 HeapObj::ExcInstance(n, _) => Some(n.clone()),
                 _ => None,
             }
+        } else { None };
+
+        // User-class membership uses heap identity, not type names, so capture the instance's class up-front.
+        let obj_class: Option<Val> = if obj.is_heap() {
+            if let HeapObj::Instance(cls, _) = self.heap.get(obj) { Some(*cls) } else { None }
         } else { None };
 
         let check_one = |t: Val, heap: &HeapPool| -> Result<bool, VmErr> {
@@ -90,6 +107,7 @@ impl<'a> VM<'a> {
                         || (obj_ty == "bool" && name == "int")
                         )
                 }
+                HeapObj::Class(..) => Ok(obj_class.is_some_and(|c| heap.is_subclass(c, t))),
                 _ => Err(VmErr::Type("isinstance() arg 2 must be a type or tuple of types")),
             }
         };
@@ -99,7 +117,7 @@ impl<'a> VM<'a> {
         }
 
         let result = match self.heap.get(arg2) {
-            HeapObj::Type(_) | HeapObj::NativeFn(_) => check_one(arg2, &self.heap)?,
+            HeapObj::Type(_) | HeapObj::NativeFn(_) | HeapObj::Class(..) => check_one(arg2, &self.heap)?,
             HeapObj::Tuple(items) => {
                 let items: Vec<Val> = items.clone();
                 items.iter().any(|&t| check_one(t, &self.heap).unwrap_or(false))

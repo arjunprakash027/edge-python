@@ -34,6 +34,9 @@ pub struct CallFrame {
     pub call_byte_pos: u32,
     pub caller_source: alloc::sync::Arc<alloc::string::String>,
     pub caller_path: alloc::sync::Arc<alloc::string::String>,
+    // Class where the running method was found and its implicit `self`; consumed by `super()` to walk one level up. `None` for plain function calls.
+    pub current_class: Option<Val>,
+    pub current_self: Option<Val>,
 }
 
 /* ForIter state, consumed one item per `next_item`. */

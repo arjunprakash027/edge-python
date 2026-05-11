@@ -13,11 +13,12 @@ impl<'a> VM<'a> {
         if !recv.is_heap() { return Ok(None); }
         if !matches!(self.heap.get(recv), HeapObj::Instance(..)) { return Ok(None); }
 
-        let Some(AttrLookup::InstanceMethod { recv, func }) = self.resolve_attr_silent(recv, name)? else { return Ok(None); };
+        let Some(AttrLookup::InstanceMethod { recv, func, class }) = self.resolve_attr_silent(recv, name)? else { return Ok(None); };
 
         // Mirror `__init__` dispatch: depth guard before pushing so a recursive blow-up leaves no half-built frame.
         if self.depth >= self.max_calls { return Err(cold_depth()); }
 
+        self.pending.method_binding = Some((class, recv));
         self.push(func);
         self.push(recv);
         for &a in args { self.push(a); }

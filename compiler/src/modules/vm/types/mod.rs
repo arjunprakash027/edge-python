@@ -151,9 +151,13 @@ pub enum HeapObj {
     ExcInstance(String, Vec<Val>),
     BoundMethod(Val, BuiltinMethodId),
     NativeFn(NativeFnId),
-    Class(String, Vec<(String, Val)>),
+    // `bases` lists direct parents in declared order; `resolve_attr` DFS-walks them on miss.
+    Class(String, Vec<Val>, Vec<(String, Val)>),
     Instance(Val, Rc<RefCell<DictMap>>),
-    BoundUserMethod(Val, Val),
+    // `(recv, func, class)`; `class` is where `func` was found so the called frame knows what `super()` should skip past.
+    BoundUserMethod(Val, Val, Val),
+    // `super()` proxy: attribute access walks the bases of `cls` (skipping `cls` itself); methods bind to `recv`.
+    Super(Val, Val),
     Coroutine(usize, Vec<Val>, Vec<Val>, usize, Vec<IterFrame>),
     /* Produced by `import m`; attr access via LoadAttr, calls fuse through CallMethod. */
     Module(String, Vec<(String, Val)>),
@@ -175,6 +179,7 @@ pub enum NativeFnId {
     Gather, WithTimeout, Cancel,
     BytesFromHex, IntFromBytes, IntToBytes, FrozenSet,
     Globals, Locals,
+    Super,
 }
 
 impl NativeFnId {
@@ -192,6 +197,7 @@ impl NativeFnId {
             "gather", "with_timeout", "cancel",
             "bytes_fromhex", "int_from_bytes", "int_to_bytes", "frozenset",
             "globals", "locals",
+            "super",
         ];
         NAMES[self as usize]
     }
@@ -280,8 +286,12 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
         HeapObj::Set(rc) => for &v in rc.borrow().iter() { f(v); },
         HeapObj::FrozenSet(rc) => for &v in rc.iter() { f(v); },
         HeapObj::BoundMethod(recv, _) => f(*recv),
-        HeapObj::Class(_, methods) => for (_, v) in methods { f(*v); },
-        HeapObj::BoundUserMethod(r, fu) => { f(*r); f(*fu); }
+        HeapObj::Class(_, bases, methods) => {
+            for &v in bases { f(v); }
+            for (_, v) in methods { f(*v); }
+        }
+        HeapObj::BoundUserMethod(r, fu, cls) => { f(*r); f(*fu); f(*cls); }
+        HeapObj::Super(cls, recv) => { f(*cls); f(*recv); }
         HeapObj::Instance(cls, attrs) => {
             f(*cls);
             for (k, v) in attrs.borrow().iter() { f(k); f(v); }
@@ -522,6 +532,7 @@ impl HeapPool {
                 Some(HeapObj::ExcInstance(..)) => 24,
                 Some(HeapObj::Ellipsis) => 26,
                 Some(HeapObj::NotImplemented) => 27,
+                Some(HeapObj::Super(..)) => 28,
                 None => 0,
             }
         } else { 0 }
@@ -532,6 +543,14 @@ impl HeapPool {
     pub fn is_not_implemented(&self, v: Val) -> bool {
         v.is_heap()
             && matches!(self.slots[v.as_heap() as usize].obj.as_ref(), Some(HeapObj::NotImplemented))
+    }
+
+    /* `child` is `ancestor` or has it in its transitive bases. Identity on heap idx — classes are interned per-MakeClass and never mutated, so direct equality suffices. */
+    pub fn is_subclass(&self, child: Val, ancestor: Val) -> bool {
+        if child.0 == ancestor.0 { return true; }
+        if !child.is_heap() { return false; }
+        let HeapObj::Class(_, bases, _) = self.get(child) else { return false; };
+        bases.iter().any(|&b| self.is_subclass(b, ancestor))
     }
 }
 

@@ -76,6 +76,7 @@ impl<'a> VM<'a> {
             HeapObj::NativeFn(_) => true,
             HeapObj::Class(..) => true,
             HeapObj::BoundUserMethod(..) => true,
+            HeapObj::Super(..) => true,
             HeapObj::Instance(..) => true,
             HeapObj::Coroutine(..) => true,
             HeapObj::Module(..) => true,
@@ -148,8 +149,9 @@ impl<'a> VM<'a> {
             HeapObj::Slice(..) => "slice",
             HeapObj::BoundMethod(..) => "builtin_function_or_method",
             HeapObj::NativeFn(_) => "builtin_function_or_method",
-            HeapObj::Class(_name, _) => "type",
-            HeapObj::BoundUserMethod(_, _) => "<bound method>",
+            HeapObj::Class(_name, _, _) => "type",
+            HeapObj::BoundUserMethod(..) => "<bound method>",
+            HeapObj::Super(..) => "super",
             HeapObj::Instance(..) => "object",
             HeapObj::Coroutine(..) => "coroutine",
             HeapObj::Module(..) => "module",
@@ -197,12 +199,13 @@ impl<'a> VM<'a> {
             HeapObj::Dict(d) => { let mut o = s!(cap: 32; "{"); for (i,(k,v)) in d.borrow().iter().enumerate() { if i>0 { o.push_str(", "); } o.push_str(&self.repr(k)); o.push_str(": "); o.push_str(&self.repr(v)); } o.push('}'); o },
             HeapObj::BoundMethod(_, id) => s!("<built-in method ", str id.name(), ">"),
             HeapObj::NativeFn(id) => s!("<built-in function ", str id.name(), ">"),
-            HeapObj::Class(name, _) => crate::s!("<class '", str name, "'>"  ),
+            HeapObj::Class(name, _, _) => crate::s!("<class '", str name, "'>"  ),
             HeapObj::Instance(cls, _) => {
-                if cls.is_heap() && let HeapObj::Class(name, _) = self.heap.get(*cls) { return crate::s!("<", str name, " instance>"); }
+                if cls.is_heap() && let HeapObj::Class(name, _, _) = self.heap.get(*cls) { return crate::s!("<", str name, " instance>"); }
                 "<instance>".into()
             }
-            HeapObj::BoundUserMethod(_, _) => "<bound method>".into(),
+            HeapObj::BoundUserMethod(..) => "<bound method>".into(),
+            HeapObj::Super(..) => "<super object>".into(),
             HeapObj::Coroutine(..) => "<coroutine>".into(),
             HeapObj::Module(name, _) => s!("<module '", str name, "'>"),
             HeapObj::Extern(f) => s!("<extern function ", str &f.name, ">"),

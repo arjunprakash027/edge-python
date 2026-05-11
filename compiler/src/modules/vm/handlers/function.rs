@@ -230,23 +230,21 @@ impl<'a> VM<'a> {
             return Ok(true);
         }
 
-        // Calling a class: create an instance and run __init__ if defined.
-        if let HeapObj::Class(_, methods) = self.heap.get(callee) {
+        // Calling a class: create an instance and run __init__ if defined (walks bases).
+        if let HeapObj::Class(..) = self.heap.get(callee) {
             // The recursive `exec_call` below only encodes positional count — kwargs would silently disappear before reaching `__init__`, so reject them here.
             if !kw_flat.is_empty() {
                 return Err(cold_type("class constructor takes no keyword arguments"));
             }
-            let methods = methods.clone();
             let instance = self.heap.alloc(HeapObj::Instance(callee, Rc::new(RefCell::new(DictMap::new()))))?;
-            if let Some((_, init_fn)) = methods.iter().find(|(n, _)| n == "__init__") {
+            if let Some((init_fn, defining)) = self.lookup_class_member(callee, "__init__") {
                 // Fail-fast before pushing — the inner check fires only after parse_call_args pops.
                 if self.depth >= self.max_calls { return Err(cold_depth()); }
-                let init_fn = *init_fn;
+                self.pending.method_binding = Some((defining, instance));
                 self.push(init_fn);
-                let mut args = vec![instance];
-                args.extend_from_slice(positional);
-                for a in &args { self.push(*a); }
-                let argc = args.len() as u16;
+                self.push(instance);
+                for a in positional { self.push(*a); }
+                let argc = (1 + positional.len()) as u16;
                 self.exec_call(argc, chunk, slots)?;
                 // Discard `__init__` return value.
                 self.pop()?;
@@ -256,10 +254,11 @@ impl<'a> VM<'a> {
         }
 
         // Bound user method: prepend `self` to the arg list and re-dispatch.
-        if let HeapObj::BoundUserMethod(recv, func) = self.heap.get(callee) {
+        if let HeapObj::BoundUserMethod(recv, func, class) = self.heap.get(callee) {
             // Same as Class branch: depth check before mutating the stack.
             if self.depth >= self.max_calls { return Err(cold_depth()); }
-            let (recv, func) = (*recv, *func);
+            let (recv, func, class) = (*recv, *func, *class);
+            self.pending.method_binding = Some((class, recv));
             self.push(func);
             self.push(recv);
             for a in positional { self.push(*a); }
@@ -431,11 +430,18 @@ impl<'a> VM<'a> {
 
         // Frame snapshots caller's source/path so render doesn't borrow live chunk pointers.
         let call_byte_pos = self.pending.call_byte_pos.take().unwrap_or(0);
+        // Method-call paths set `method_binding` immediately before invoking `exec_call`; plain function calls leave it `None`.
+        let (current_class, current_self) = match self.pending.method_binding.take() {
+            Some((c, s)) => (Some(c), Some(s)),
+            None => (None, None),
+        };
         self.call_stack.push(super::super::types::CallFrame {
             fi,
             call_byte_pos,
             caller_source: chunk.source.clone(),
             caller_path: chunk.path.clone(),
+            current_class,
+            current_self,
         });
 
         self.observed_impure.push(false);
@@ -535,7 +541,7 @@ impl<'a> VM<'a> {
             BytesFromHex => Some(1),
             IntFromBytes => Some(2),
             IntToBytes => Some(3),
-            Globals | Locals => Some(0),
+            Globals | Locals | Super => Some(0),
             Bytes => None, // 0/1/2-arg: bytes() | bytes(n|iter) | bytes(str, "utf-8")
             Slice => None, // 1/2/3-arg
             Gather => None, // variadic
@@ -618,6 +624,7 @@ impl<'a> VM<'a> {
             FrozenSet => self.call_frozenset(argc),
             Globals => self.call_globals(chunk, slots),
             Locals => self.call_locals(chunk, slots),
+            Super => self.call_super(),
         }
     }
 }
