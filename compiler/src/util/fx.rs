@@ -3,9 +3,7 @@ use core::hash::{BuildHasher, Hasher};
 /* FxHash multiplier from rustc-hash. */
 const K: u64 = 0x517cc1b727220a95;
 
-/* Fixed seed: deterministic across runs so map iteration order is reproducible.
-   The compiler is single-threaded in trusted contexts (host-driven WASM), so
-   per-instance randomisation buys nothing here and breaks golden tests. */
+/* Fixed seed for deterministic iteration order across runs. */
 const FIXED_SEED: u64 = 0x9e3779b97f4a7c15;
 
 #[derive(Clone, Default)]

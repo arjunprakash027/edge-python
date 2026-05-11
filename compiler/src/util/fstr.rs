@@ -1,6 +1,6 @@
-/* f64 -> Python-style string: nan/±inf/±0.0/whole->".0" suffix/else default. */
+/* f64 -> string: nan/±inf/±0.0/whole->".0" suffix/else default. */
 pub fn format_f64(f: f64) -> alloc::string::String {
-    // Lowercase per CPython semantics; "NaN" was a mismatch.
+    // Lowercase tokens to match CPython.
     if f.is_nan() { return alloc::string::String::from("nan"); }
     if f == f64::INFINITY { return alloc::string::String::from("inf"); }
     if f == f64::NEG_INFINITY { return alloc::string::String::from("-inf"); }
@@ -22,9 +22,7 @@ pub fn format_f64(f: f64) -> alloc::string::String {
     format_general(f)
 }
 
-/* f64 default format fits in ~24 bytes for most values; preallocate 32 to avoid
-   regrowth on the common case. Using String over a stack buffer trades a tiny
-   allocation for safety: no silent truncation, no from_utf8_unchecked. */
+/* Default f64 format; 32-byte preallocation fits the common case without regrowth. */
 fn format_general(f: f64) -> alloc::string::String {
     use core::fmt::Write;
     let mut out = alloc::string::String::with_capacity(32);
@@ -46,7 +44,7 @@ macro_rules! s {
     ($($t:tt)*) => {{ let mut _s = alloc::string::String::new(); $crate::s!(@b _s; $($t)*); _s }};
 }
 
-/* Formats little-endian base-10⁹ groups as decimal; highest unpadded, rest zero-padded to 9. */
+/* Formats little-endian base-10^9 groups as decimal; highest unpadded, rest zero-padded to 9. */
 pub fn format_dec_groups(groups: &[u32]) -> alloc::string::String {
     let mut out = alloc::string::String::new();
     for (i, &g) in groups.iter().rev().enumerate() {
@@ -60,7 +58,7 @@ pub fn format_dec_groups(groups: &[u32]) -> alloc::string::String {
 }
 
 pub enum E {
-    Parse  { ctx: &'static str },
+    Parse { ctx: &'static str },
     Custom { msg: alloc::string::String },
 }
 

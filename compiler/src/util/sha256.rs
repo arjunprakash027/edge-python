@@ -1,4 +1,6 @@
-/* FIPS 180-4 SHA-256 for parser #sha256- fragment verification. Hand-rolled to keep deps at two crates. */
+/* 
+FIPS 180-4 SHA-256 for parser #sha256- fragment verification. Hand-rolled to keep deps at two crates. 
+*/
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -71,9 +73,7 @@ pub fn sha256(input: &[u8]) -> [u8; 32] {
     }
 
     let mut out = [0u8; 32];
-    for i in 0..8 {
-        out[i * 4..i * 4 + 4].copy_from_slice(&h[i].to_be_bytes());
-    }
+    for i in 0..8 { out[i * 4..i * 4 + 4].copy_from_slice(&h[i].to_be_bytes()); }
     out
 }
 
