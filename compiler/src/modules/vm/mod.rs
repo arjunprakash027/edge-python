@@ -283,6 +283,11 @@ impl<'a> VM<'a> {
             vm.globals.insert("__name__".to_string(), main_name);
             vm.globals.insert("__name___0".to_string(), main_name);
         }
+        // `NotImplemented` singleton; dunders return it to delegate to the reflected operator.
+        if let Ok(ni) = vm.heap.alloc(HeapObj::NotImplemented) {
+            vm.globals.insert("NotImplemented".to_string(), ni);
+            vm.globals.insert("NotImplemented_0".to_string(), ni);
+        }
         // Builtins as first-class NativeFn values so they can be rebound/passed around.
         let builtin_fns: &[NativeFnId] = &[
             NativeFnId::Print, NativeFnId::Len, NativeFnId::Abs, NativeFnId::Str,

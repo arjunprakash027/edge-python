@@ -1548,5 +1548,13 @@
   {"src": "print(pow(2, 100, 2 ** 100))", "output": [], "error": "modulus too large"},
   {"src": "print(2 ** 128)", "output": [], "error": "OverflowError"},
   {"src": "print(170141183460469231731687303715884105727 + 1)", "output": [], "error": "OverflowError"},
-  {"src": "print(99999999999999999999999999999999999999999)", "output": [], "error": "integer literal too large"}
+  {"src": "print(99999999999999999999999999999999999999999)", "output": [], "error": "integer literal too large"},
+  {"src": "print(NotImplemented)", "output": ["NotImplemented"]},
+  {"src": "print(type(NotImplemented))", "output": ["<class 'NotImplementedType'>"]},
+  {"src": "print(NotImplemented is NotImplemented)", "output": ["True"]},
+  {"src": "x = NotImplemented\ny = NotImplemented\nprint(x is y)", "output": ["True"]},
+  {"src": "print(NotImplemented is None)", "output": ["False"]},
+  {"src": "print(NotImplemented == None)", "output": ["False"]},
+  {"src": "print(bool(NotImplemented))", "output": ["True"]},
+  {"src": "def f():\n    return NotImplemented\nprint(f() is NotImplemented)", "output": ["True"]}
 ]

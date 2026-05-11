@@ -143,6 +143,8 @@ pub enum HeapObj {
     // True `...` singleton, distinct from any string.
     Ellipsis,
     Type(String),
+    // `NotImplemented` singleton; dunder return sentinel that triggers the reflected operator fallback.
+    NotImplemented,
     /* Wide-int slow path (i128); `int_to_val` canonicalises so 47-bit values stay inline. */
     LongInt(i128),
     /* Exception instance: type name + ctor args (exposed via `.args`). */
@@ -302,7 +304,7 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
         // Variants without Val payloads — terminal, nothing to trace.
         HeapObj::Str(_) | HeapObj::Bytes(_) | HeapObj::LongInt(_)
         | HeapObj::Type(_) | HeapObj::NativeFn(_) | HeapObj::Range(..)
-        | HeapObj::Extern(_) | HeapObj::Ellipsis => {}
+        | HeapObj::Extern(_) | HeapObj::Ellipsis | HeapObj::NotImplemented => {}
     }
 }
 
@@ -326,6 +328,8 @@ pub struct HeapPool {
     longints: HashMap<i128, u32>,
     // Cached Ellipsis slot index so `... is ...` is True (singleton parity).
     ellipsis_idx: Option<u32>,
+    // Same singleton invariant as `ellipsis_idx`, but for `NotImplemented`.
+    notimpl_idx: Option<u32>,
     /* Reused across mark() calls; cleared not freed, so GC never re-allocates under pressure. */
     mark_worklist: Vec<u32>,
 }
@@ -343,6 +347,7 @@ impl HeapPool {
             bytes_intern: HashMap::default(),
             longints: HashMap::default(),
             ellipsis_idx: None,
+            notimpl_idx: None,
             mark_worklist: Vec::with_capacity(64),
         }
     }
@@ -367,6 +372,11 @@ impl HeapPool {
             && let Some(idx) = self.ellipsis_idx {
                 return Ok(Val::heap(idx));
         }
+        // `NotImplemented` follows the same singleton rule so `is` and dunder checks agree.
+        if matches!(obj, HeapObj::NotImplemented)
+            && let Some(idx) = self.notimpl_idx {
+                return Ok(Val::heap(idx));
+        }
         if self.live >= self.limit { return Err(cold_heap()); }
         if self.slots.len() >= (1 << 28) { return Err(VmErr::Heap); }
 
@@ -384,6 +394,7 @@ impl HeapPool {
             HeapObj::Bytes(b) if b.len() <= 128 => { self.bytes_intern.insert(b.clone(), idx); }
             HeapObj::LongInt(i) => { self.longints.insert(*i, idx); }
             HeapObj::Ellipsis => { self.ellipsis_idx = Some(idx); }
+            HeapObj::NotImplemented => { self.notimpl_idx = Some(idx); }
             _ => {}
         }
 
@@ -434,6 +445,13 @@ impl HeapPool {
                 Some(HeapObj::Ellipsis) => {
                     // Cached singleton index becomes stale when its slot is freed.
                     if self.ellipsis_idx == Some(idx as u32) { self.ellipsis_idx = None; }
+                    slot.obj = None;
+                    self.free_list.push(idx as u32);
+                    self.live -= 1;
+                }
+                Some(HeapObj::NotImplemented) => {
+                    // Singleton index becomes stale when its slot is freed.
+                    if self.notimpl_idx == Some(idx as u32) { self.notimpl_idx = None; }
                     slot.obj = None;
                     self.free_list.push(idx as u32);
                     self.live -= 1;
@@ -503,9 +521,17 @@ impl HeapPool {
                 Some(HeapObj::Bytes(_)) => 22,
                 Some(HeapObj::ExcInstance(..)) => 24,
                 Some(HeapObj::Ellipsis) => 26,
+                Some(HeapObj::NotImplemented) => 27,
                 None => 0,
             }
         } else { 0 }
+    }
+
+    /* Identity probe for the `NotImplemented` singleton; consumed by the dunder dispatch protocol. */
+    #[inline(always)]
+    pub fn is_not_implemented(&self, v: Val) -> bool {
+        v.is_heap()
+            && matches!(self.slots[v.as_heap() as usize].obj.as_ref(), Some(HeapObj::NotImplemented))
     }
 }
 
