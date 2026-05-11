@@ -1,6 +1,6 @@
-/* Spec / URL helpers. Kept in lockstep with the Rust bridge's
-   modules::packages::manifest helpers so a transitively-imported module's
-   relative path canonicalizes identically on both sides. */
+/* 
+Spec/URL helpers. Mirror the Rust bridge's modules::packages::manifest so transitively-imported relative paths canonicalize identically on both sides. 
+*/
 
 export const sha256Hex = async (bytes) => {
     const digest = await crypto.subtle.digest('SHA-256', bytes);
@@ -18,8 +18,7 @@ export const parentDir = (dir) => {
     const sch = trimmed.indexOf('://');
     if (sch !== -1 && !trimmed.slice(sch + 3).includes('/')) return null;
     const i = trimmed.lastIndexOf('/');
-    if (i === -1) return '';
-    return trimmed.slice(0, i + 1);
+    return i === -1 ? '' : trimmed.slice(0, i + 1);
 };
 
 export const joinRel = (base, target) => {
@@ -39,18 +38,5 @@ export const joinRel = (base, target) => {
     return b + t;
 };
 
-/* Match the Rust bridge's `scan_string_imports` — collect every quoted spec
-   appearing after a `from`. Used to drive BFS pre-fetch without involving
-   the WASM compiler for transitive specs. */
-export const scanStringImports = (src) => {
-    const out = [];
-    for (const line of src.split('\n')) {
-        const t = line.trimStart();
-        if (!t.startsWith('from ')) continue;
-        const rest = t.slice(5).trimStart();
-        if (rest[0] !== '"') continue;
-        const end = rest.indexOf('"', 1);
-        if (end > 1) out.push(rest.slice(1, end));
-    }
-    return out;
-};
+/* Mirrors Rust bridge `scan_string_imports`. `[ \t]` (not `\s`) keeps the per-line scan from spanning `\n`. */
+export const scanStringImports = (src) => [...src.matchAll(/^[ \t]*from [ \t]*"([^"]+)"/gm)].map(m => m[1]);

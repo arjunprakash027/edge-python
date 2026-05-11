@@ -97,7 +97,7 @@ fn apply(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static str> {
         0 | b's' => {
             if is_int_like || v.is_float() || v.is_none() {
                 if s.ty == b's' { return Err("'s' format spec requires a string"); }
-                // Precision on int → float-fixed; thousands stays in int path to keep LongInt precision.
+                // Precision on int -> float-fixed; thousands stays in int path to keep LongInt precision.
                 if s.precision.is_some() && !is_int_like {
                     return format_float(v, s, b'f', heap);
                 }

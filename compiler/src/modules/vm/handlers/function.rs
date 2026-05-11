@@ -385,7 +385,7 @@ impl<'a> VM<'a> {
         }
     }
 
-    /* Three-layer fallback for a bare free-load name: caller's latest SSA → callee module attrs -> entry globals. First hit wins. Centralised so the order is auditable. */
+    /* Three-layer fallback for a bare free-load name: caller's latest SSA -> callee module attrs -> entry globals. First hit wins. Centralised so the order is auditable. */
     fn resolve_free_name(&self, fi: usize, bare: &str, chunk: &SSAChunk, slots: &[Val]) -> Option<Val> {
         // Layer 1: caller's most-recent SSA version of `bare`.
         if let Some(idx) = self.chunk_name_versions.get(&(chunk as *const _)) && let Some(versions) = idx.get(bare)

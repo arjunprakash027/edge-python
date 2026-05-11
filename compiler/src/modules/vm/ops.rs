@@ -430,7 +430,7 @@ impl<'a> VM<'a> {
         Err(cold_type("numeric operand required"))
     }
 
-    /* Wrap an i128 into the narrowest Val: None→Overflow, 47-bit→inline, else LongInt. */
+    /* Wrap an i128 into the narrowest Val: None->Overflow, 47-bit->inline, else LongInt. */
     #[inline]
     pub(crate) fn int_to_val(&mut self, r: Option<i128>) -> Result<Val, VmErr> {
         let i = r.ok_or(cold_overflow())?;

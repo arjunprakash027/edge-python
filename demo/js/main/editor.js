@@ -1,7 +1,6 @@
-/* Pure-text editor over CodeJar.
-   We own Backspace, Tab/Shift+Tab, Enter, `:` (Python dedent), bracket auto-pair,
-   selection-wrap, paste/drop normalisation, and copy/cut markdown fencing.
-   CodeJar handles render, save/restore and history. */
+/* 
+Pure-text editor on CodeJar. We own keys, auto-pair, selection-wrap, paste/drop, copy/cut fencing; CodeJar renders + history. 
+*/
 
 import { CodeJar } from 'https://esm.sh/codejar@4';
 import { Highlighter } from './highlighter.js';
@@ -11,19 +10,19 @@ const TAB_SIZE = 4;
 
 export function createEditor({ ed, ln, defaultCode, onRun }) {
 
-    // --- constants ---
+    // constants
 
     const PAIRS = { '(': ')', '[': ']', '{': '}', '"': '"', "'": "'" };
     const OPENERS = new Set(Object.keys(PAIRS));
     const CLOSERS = new Set(Object.values(PAIRS));
     const STRING_START = /^([fFrRbBuU]{0,2})("""|'''|"|')/;
-    const WS = /[ \t ]/;
-    // Python `decreaseIndentPattern` (VSCode-compatible subset). Dedent on `:`.
+    const WS = /[ \t]/;
+    // `decreaseIndentPattern` (VSCode-compatible subset). Dedent on `:`.
     const DEDENT_RE = /^\s*(?:elif|else|except|finally|case)\b[^:]*:$/;
     const HTML_ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
     const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => HTML_ESC[c]);
 
-    // --- pure helpers ---
+    // pure helpers
 
     // Walk from 0 to caret toggling code/string. `quote === ''` means code.
     const stringCtx = (src, caret) => {
@@ -62,8 +61,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
     // VSCode `prevIndentTabStop`: distance to the previous tab stop from `col`.
     const prevTabDist = (col) => { const r = col % TAB_SIZE; return r === 0 ? TAB_SIZE : r; };
 
-    // Range of full lines touched by `sel`. Excludes a trailing line whose
-    // start is exactly at sel.end (selection ends just past a `\n`).
+    // Full lines covered by `sel`; excludes the trailing line if `sel.end` sits exactly past a `\n`.
     const lineRange = (text, sel) => {
         const start = text.lastIndexOf('\n', sel.start - 1) + 1;
         const anchor = (sel.end > sel.start && text[sel.end - 1] === '\n') ? sel.end - 1 : sel.end;
@@ -72,8 +70,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
         return { start, end };
     };
 
-    // Strip the common leading-whitespace prefix from non-empty lines so a
-    // snippet pasted from a deeper context lands flush with the cursor.
+    // Strip common leading-whitespace from non-empty lines so a snippet pasted from deeper context lands flush.
     const dedentCommon = (s) => {
         const lines = s.split('\n');
         const nonEmpty = lines.filter(l => l.trim().length > 0);
@@ -88,20 +85,18 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
         return m ? m[1] : s;
     };
 
-    // AltGr produces a printable symbol while reporting Ctrl+Alt — distinguish
-    // from real Ctrl+Alt shortcuts (which produce a letter/digit `key`).
+    // AltGr emits a printable char while flagging Ctrl+Alt; real Ctrl+Alt shortcuts produce a letter/digit `key`.
     const isAltGrChar = (e) =>
         e.ctrlKey && e.altKey && e.key.length === 1 && !/^[A-Za-z0-9]$/.test(e.key);
 
-    // --- mutable state ---
+    // mutable state
 
-    /* Caret right after the last auto-inserted pair; pair-collapse on Backspace
-       only fires while caret still matches. Cleared on any non-our text mutation. */
+    /* Caret right after last auto-pair; Backspace pair-collapse fires only when caret still matches. Cleared on external mutation. */
     let autoPairCaret = -1;
     // True while the IME has an open composition; we must stay out of the way.
     let composing = false;
 
-    // --- transitions ---
+    // transitions
 
     const transitions = {
         // Typed character: skip existing closer, or auto-close an opener.
@@ -111,8 +106,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
             }
             if (!OPENERS.has(key)) return null;
             const { inStr, isF } = stringCtx(text, caret);
-            // Inside a regular string don't auto-close anything; inside an f-string
-            // we still expand `{` to `{}` so expression interpolation works.
+            // Regular strings skip auto-close; f-strings still expand `{` to `{}` for expression interpolation.
             if (inStr && !(isF && key === '{')) return null;
             // Triple-quote opening: "" + " -> """""" (or '' + ' -> '''''').
             if ((key === '"' || key === "'") && caret >= 2 && text[caret - 2] === key && text[caret - 1] === key) {
@@ -129,17 +123,13 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
         },
 
         // Wrap a non-empty selection in opener/closer (VSCode `autoSurround`).
-        wrapSelection: (text, sel, key) => {
-            const closer = PAIRS[key];
-            return {
-                text: text.slice(0, sel.start) + key + text.slice(sel.start, sel.end) + closer + text.slice(sel.end),
-                caretStart: sel.start + 1,
-                caretEnd: sel.end + 1,
-            };
-        },
+        wrapSelection: (text, sel, key) => ({
+            text: text.slice(0, sel.start) + key + text.slice(sel.start, sel.end) + PAIRS[key] + text.slice(sel.end),
+            caretStart: sel.start + 1,
+            caretEnd: sel.end + 1,
+        }),
 
-        // Backspace: collapse a fresh auto-pair, else VSCode `useTabStops` snap
-        // when the caret is inside the line's leading whitespace.
+        // Backspace: collapse fresh auto-pair, else VSCode `useTabStops` snap when caret sits inside leading whitespace.
         backspace: (text, caret) => {
             if (caret === 0) return null;
             if (caret === autoPairCaret && PAIRS[text[caret - 1]] === text[caret]) {
@@ -164,8 +154,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
             const lnRow = lineAt(text, caret);
             const indent = firstNonWS(lnRow.body);
             if (indent === 0) return null;
-            const newIndent = Math.floor((indent - 1) / TAB_SIZE) * TAB_SIZE;
-            const removed = indent - newIndent;
+            const removed = indent - Math.floor((indent - 1) / TAB_SIZE) * TAB_SIZE;
             const newCaret = lnRow.col >= removed ? caret - removed : lnRow.start;
             return {
                 text: text.slice(0, lnRow.start) + lnRow.body.slice(removed) + text.slice(lnRow.end),
@@ -173,34 +162,25 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
             };
         },
 
-        // Enter: inherit previous indent, +1 level after `:` / `[` / `(` / `{`.
-        // Between an opener and its matching closer, split the closer onto its
-        // own line (VSCode `IndentOutdent` 3-line block).
+        // Enter: inherit indent, +1 level after `:`/openers. Between opener and matching closer, split closer (VSCode `IndentOutdent`).
         enter: (text, caret) => {
             const lnRow = lineAt(text, caret);
             const before = lnRow.body.slice(0, lnRow.col);
-            const indent = (before.match(/^[ \t ]*/) || [''])[0];
+            const indent = before.match(/^[ \t]*/)[0];
             const extra = /[:\[({][ \t]*$/.test(before) ? ' '.repeat(TAB_SIZE) : '';
             const pad = indent + extra;
             const opener = before.replace(/[ \t]+$/, '').slice(-1);
             const splitBracket = '[({'.includes(opener) && PAIRS[opener] === text[caret];
-            if (splitBracket) {
-                return {
-                    text: text.slice(0, caret) + '\n' + pad + '\n' + indent + text.slice(caret),
-                    caret: caret + 1 + pad.length,
-                };
-            }
-            return { text: text.slice(0, caret) + '\n' + pad + text.slice(caret), caret: caret + 1 + pad.length };
+            const tail = splitBracket ? `\n${pad}\n${indent}` : `\n${pad}`;
+            return { text: text.slice(0, caret) + tail + text.slice(caret), caret: caret + 1 + pad.length };
         },
 
-        // `:` after `else` / `elif` / `except` / `finally` / `case` head —
-        // insert the colon then dedent the line by one tab stop.
+        // `:` after `else`/`elif`/`except`/`finally`/`case` head — insert the colon, then dedent the line by one tab stop.
         colon: (text, caret) => {
             const inserted = text.slice(0, caret) + ':' + text.slice(caret);
             const lnRow = lineAt(inserted, caret + 1);
             if (!DEDENT_RE.test(lnRow.body)) return null;
-            const indent = firstNonWS(lnRow.body);
-            const remove = Math.min(indent, TAB_SIZE);
+            const remove = Math.min(firstNonWS(lnRow.body), TAB_SIZE);
             if (remove === 0) return { text: inserted, caret: caret + 1 };
             return {
                 text: inserted.slice(0, lnRow.start) + inserted.slice(lnRow.start + remove),
@@ -226,8 +206,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
             const lines = text.slice(start, end).split('\n');
             let firstRm = 0, totalRm = 0;
             const dedented = lines.map((l, i) => {
-                const indent = firstNonWS(l);
-                const rm = Math.min(indent, TAB_SIZE);
+                const rm = Math.min(firstNonWS(l), TAB_SIZE);
                 totalRm += rm;
                 if (i === 0) firstRm = rm;
                 return l.slice(rm);
@@ -241,19 +220,23 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
         },
     };
 
-    // --- CodeJar wiring ---
+    // CodeJar wiring
 
     const jar = CodeJar(ed,
         (node) => { node.innerHTML = Highlighter.highlight(node.textContent); },
         { spellcheck: false, addClosing: false, catchTab: false, preserveIdent: false }
     );
 
+    // Write `text` and place the caret at [start, end]; clear auto-pair marker.
+    const writeAndRestore = (text, start, end = start) => {
+        jar.updateCode(text);
+        jar.restore({ start, end });
+        autoPairCaret = -1;
+    };
+
     const apply = (result) => {
         if (!result) return false;
-        jar.updateCode(result.text);
-        const start = result.caretStart ?? result.caret;
-        const end = result.caretEnd ?? result.caret;
-        jar.restore({ start, end });
+        writeAndRestore(result.text, result.caretStart ?? result.caret, result.caretEnd ?? result.caret);
         autoPairCaret = result.autoPair ?? -1;
         return true;
     };
@@ -265,31 +248,30 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
         ln.scrollTop = ed.scrollTop;
     };
 
-    // Insert plain text at the caret, replacing any selection. Used by paste
-    // and drop after normalisation; enforces MAX_LINES on the resulting text.
+    // Insert plain text at caret, replacing any selection; used by paste/drop after normalisation. Enforces MAX_LINES.
     const insertAtCaret = (str) => {
         const pos = jar.save();
         const text = jar.toString();
         let next = text.slice(0, pos.start) + str + text.slice(pos.end);
         const all = next.split('\n');
         if (all.length > MAX_LINES) next = all.slice(0, MAX_LINES).join('\n');
-        jar.updateCode(next);
-        const caret = Math.min(pos.start + str.length, next.length);
-        jar.restore({ start: caret, end: caret });
-        autoPairCaret = -1;
+        writeAndRestore(next, Math.min(pos.start + str.length, next.length));
     };
 
-    // --- listeners ---
+    // Paste/drop pipeline: strip ```python fence, normalise CRLF+tabs, smart-dedent common indent, enforce MAX_LINES.
+    const insertNormalized = (raw) => {
+        const norm = unwrapFence(raw).replace(/\r\n?/g, '\n').replace(/\t/g, ' '.repeat(TAB_SIZE));
+        insertAtCaret(dedentCommon(norm));
+    };
 
-    /* IME composition flag mirrors `event.isComposing`. We track it explicitly
-       because the `keydown` right after `compositionend` still needs to be a
-       no-op on some platforms (Linux/Wayland) where the bridge re-fires. */
+    // listeners
+
+    /* Mirrors `event.isComposing`. Tracked explicitly so the post-`compositionend` `keydown` no-ops on Linux/Wayland where it re-fires. */
     ed.addEventListener('compositionstart', () => { composing = true; });
-    ed.addEventListener('compositionend',   () => { composing = false; });
+    ed.addEventListener('compositionend', () => { composing = false; });
 
     ed.addEventListener('keydown', (e) => {
-        // IME in progress, dead-key sequence, or AltGr producing a printable char:
-        // never intercept. Each path corrupts accents/CJK input otherwise.
+        // IME, dead-key, or AltGr printable: never intercept — each path corrupts accents/CJK input otherwise.
         if (composing || e.isComposing || e.keyCode === 229) return;
         if (e.key === 'Dead') return;
         if (isAltGrChar(e)) return;
@@ -298,8 +280,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
             e.preventDefault(); onRun(jar.toString()); return;
         }
-        // Any other modifier-bearing keystroke (Ctrl+S, Cmd+C, Alt+arrow, …)
-        // belongs to the browser / CodeJar.
+        // Any other modifier-bearing keystroke (Ctrl+S, Cmd+C, Alt+arrow, …) belongs to the browser / CodeJar.
         if (e.ctrlKey || e.metaKey || e.altKey) return;
 
         // Hard cap on document size: block Enter once we'd exceed MAX_LINES.
@@ -313,40 +294,34 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
         if (pos.start !== pos.end) {
             // Selection-aware: multi-line indent/dedent + bracket wrap.
             if (e.key === 'Tab' && e.shiftKey) result = transitions.shiftTabSelection(text, pos);
-            else if (e.key === 'Tab')          result = transitions.tabSelection(text, pos);
-            else if (OPENERS.has(e.key))       result = transitions.wrapSelection(text, pos, e.key);
+            else if (e.key === 'Tab') result = transitions.tabSelection(text, pos);
+            else if (OPENERS.has(e.key)) result = transitions.wrapSelection(text, pos, e.key);
             else return;
         } else {
             result =
                 e.key === 'Backspace' ? transitions.backspace(text, pos.start) :
-                e.key === 'Enter'     ? transitions.enter(text, pos.start) :
+                e.key === 'Enter' ? transitions.enter(text, pos.start) :
                 e.key === 'Tab' && e.shiftKey ? transitions.shiftTab(text, pos.start) :
-                e.key === 'Tab'       ? transitions.tab(text, pos.start) :
-                e.key === ':'         ? transitions.colon(text, pos.start) :
+                e.key === 'Tab' ? transitions.tab(text, pos.start) :
+                e.key === ':' ? transitions.colon(text, pos.start) :
                 (OPENERS.has(e.key) || CLOSERS.has(e.key)) ? transitions.char(text, pos.start, e.key) :
                 null;
         }
 
-        // stopImmediatePropagation also blocks CodeJar's bubble-phase keydown
-        // listener on the same element; without it CodeJar can re-run indent
-        // logic on the freshly-mutated DOM and drift our caret.
+        // stopImmediatePropagation blocks CodeJar's bubble keydown on the same element; otherwise it re-runs indent and drifts the caret.
         if (apply(result)) { e.preventDefault(); e.stopImmediatePropagation(); }
     }, true);
 
     ed.addEventListener('scroll', () => { ln.scrollTop = ed.scrollTop; });
 
-    // Any text mutation outside our `apply()` invalidates the auto-pair marker
-    // so a manually-typed pair never collapses on backspace.
+    // Text mutation outside `apply()` invalidates the auto-pair marker so manually-typed pairs don't collapse on backspace.
     ed.addEventListener('input', () => { autoPairCaret = -1; });
 
-    // Paste: strip our own ```python fence (round-trip), normalise CRLF + tabs,
-    // smart-dedent the common indent, enforce MAX_LINES.
     ed.addEventListener('paste', (e) => {
         const raw = (e.clipboardData ?? window.clipboardData)?.getData('text');
         if (raw == null) return;
         e.preventDefault();
-        const normalized = unwrapFence(raw).replace(/\r\n?/g, '\n').replace(/\t/g, ' '.repeat(TAB_SIZE));
-        insertAtCaret(dedentCommon(normalized));
+        insertNormalized(raw);
     });
 
     // Drag-and-drop of text or .py files. Fires `drop`, not `paste`.
@@ -368,22 +343,16 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
         } else {
             raw = dt.getData('text/plain') ?? '';
         }
-        if (!raw) return;
-        const normalized = unwrapFence(raw).replace(/\r\n?/g, '\n').replace(/\t/g, ' '.repeat(TAB_SIZE));
-        insertAtCaret(dedentCommon(normalized));
+        if (raw) insertNormalized(raw);
     });
 
-    /* Build the clipboard payload for copy/cut. On collapsed selection we
-       fall back to the whole current line (VSCode parity); otherwise we use
-       the visible selection. Returns plain (```python fence) + html (<pre>) so
-       rich-text targets get a styled block. */
+    /* Clipboard payload for copy/cut: collapsed selection falls back to current line (VSCode parity); returns plain + html. */
     const copyPayload = () => {
         const sel = window.getSelection();
         let snippet = sel?.toString() ?? '';
         let collapsed = false;
         if (!snippet) {
-            const pos = jar.save();
-            const lnRow = lineAt(jar.toString(), pos.start);
+            const lnRow = lineAt(jar.toString(), jar.save().start);
             snippet = lnRow.body;
             collapsed = true;
             if (!snippet) return null;
@@ -396,20 +365,20 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
         };
     };
 
-    ed.addEventListener('copy', (e) => {
-        const p = copyPayload(); if (!p) return;
+    const writeClipboard = (e, p) => {
         e.preventDefault();
         e.clipboardData.setData('text/plain', p.plain);
         e.clipboardData.setData('text/html', p.html);
+    };
+
+    ed.addEventListener('copy', (e) => {
+        const p = copyPayload(); if (p) writeClipboard(e, p);
     });
 
     ed.addEventListener('cut', (e) => {
         const p = copyPayload(); if (!p) return;
-        e.preventDefault();
-        e.clipboardData.setData('text/plain', p.plain);
-        e.clipboardData.setData('text/html', p.html);
-        // Now actually remove the source. Collapsed-cut deletes the whole line
-        // (including its trailing newline) so consecutive cuts compact upward.
+        writeClipboard(e, p);
+        // Now remove source. Collapsed-cut deletes the whole line (newline included) so consecutive cuts compact upward.
         const text = jar.toString();
         const pos = jar.save();
         let next, caret;
@@ -422,9 +391,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
             next = text.slice(0, pos.start) + text.slice(pos.end);
             caret = pos.start;
         }
-        jar.updateCode(next);
-        jar.restore({ start: caret, end: caret });
-        autoPairCaret = -1;
+        writeAndRestore(next, caret);
     });
 
     jar.onUpdate(syncLines);

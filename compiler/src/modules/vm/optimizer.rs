@@ -93,7 +93,7 @@ fn is_jump_op(op: OpCode) -> bool {
     )
 }
 
-/* Build remap[i] = new index after compaction; dead entries forward to next live, n→new_len. */
+/* Build remap[i] = new index after compaction; dead entries forward to next live, n->new_len. */
 fn compact_with_jump_remap(chunk: &mut SSAChunk, dead: &[bool]) {
     let n = chunk.instructions.len();
     let alive_count: usize = dead.iter().filter(|&&d| !d).count();
