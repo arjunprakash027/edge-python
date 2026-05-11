@@ -3,42 +3,31 @@ use alloc::vec::Vec;
 use super::Val;
 use super::err::VmErr;
 
-/* Cooperative scheduler state for one coroutine living in `vm.scheduler`.
-   The scheduler steps each Ready handle once per round-robin pass, swaps
-   it to Sleeping/Done/Errored/Cancelled depending on what happened, and
-   ends the run when the target handle leaves the Ready/Sleeping pool. */
+/* Scheduler state per coroutine; stepped round-robin until the target leaves Ready/Sleeping. */
 #[derive(Clone, Debug)]
 pub enum CoroState {
-    /// Resumable on the next scheduler tick.
+    /// Resumable on next tick.
     Ready,
-    /// Suspended until `until_ns` (per `vm.time_hook`). When all live
-    /// handles are Sleeping the scheduler advances the clock to the
-    /// minimum `until_ns` rather than spinning.
+    /// Suspended until `until_ns`; the scheduler fast-forwards when all are Sleeping.
     Sleeping(u64),
-    /// Resumed-on-next-tick state used while a `cancel()` request is
-    /// pending: the next resume injects a `CancelledError` raise into the
-    /// coroutine instead of advancing it normally.
+    /// Next resume injects a `CancelledError` raise.
     CancelPending,
-    /// Coroutine returned with this Val.
+    /// Returned with this Val.
     Done(Val),
-    /// Coroutine raised an exception. Stored verbatim so `gather` /
-    /// `with_timeout` can propagate it to the caller.
+    /// Raised; stored verbatim for `gather` / `with_timeout`.
     Errored(VmErr),
-    /// Coroutine was cancelled and its CancelledError was already
-    /// observed (or it never ran). Returns `None` to gather()s peers.
+    /// Cancellation already observed; yields `None` to gather() peers.
     Cancelled,
 }
 
 #[derive(Clone, Debug)]
 pub struct CoroutineHandle {
-    /// The Coroutine HeapObj Val passed by the user.
+    /// User-provided Coroutine HeapObj.
     pub coro: Val,
     pub state: CoroState,
 }
 
-/* One snapshot of a user-function call site, pushed when `exec_call` enters
-   a HeapObj::Func and popped on return/error. Carries everything the
-   traceback renderer needs without requiring a chunk lookup at error time. */
+/* Call-site snapshot for traceback rendering; pushed by `exec_call`, popped on return/error. */
 #[derive(Clone, Debug)]
 pub struct CallFrame {
     pub fi: usize,
@@ -47,7 +36,7 @@ pub struct CallFrame {
     pub caller_path: alloc::sync::Arc<alloc::string::String>,
 }
 
-/* Iterator state for ForIter. Consumed one item at a time. */
+/* ForIter state, consumed one item per `next_item`. */
 #[derive(Clone, Debug)]
 pub enum IterFrame {
     Seq { items: Vec<Val>, idx: usize },

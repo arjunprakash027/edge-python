@@ -12,7 +12,7 @@ pub use eq::*;
 pub use err::*;
 pub use math::*;
 
-/* Per-execution resource caps: max recursion depth, op budget, heap quota. */
+/* Per-execution caps: recursion depth, op budget, heap quota. */
 pub struct Limits { pub calls: usize, pub ops: usize, pub heap: usize }
 
 impl Limits {
@@ -20,19 +20,7 @@ impl Limits {
     pub fn sandbox() -> Self { Self { calls: 256, ops: 100_000_000, heap: 100_000 } }
 }
 
-/* Native function callable from EdgePython via `from <pkg> import <name>`.
-   Resolved at compile time by the host's Resolver, stored in SSAChunk's
-   extern_table, and dispatched by `CallExtern`.
-
-   `func` is `Arc<dyn Fn>` rather than a plain `fn` pointer so loaders that
-   wrap external binaries (.wasm via wasmtime, .so via libloading) can capture
-   a stateful instance handle in the closure — a `fn` pointer alone can't
-   carry context. Pure-Rust hosts that just want to register existing `fn`
-   pointers use `from_fn`, which adds a single Arc allocation at registration
-   time and zero runtime overhead per call.
-
-   `pure = true` lets the VM memoize the result and skip impurity propagation
-   that would taint enclosing functions. */
+/* Host-provided callable, resolved at compile time and dispatched by `CallExtern`. `Arc<dyn Fn>` lets loaders capture stateful handles; `pure` enables memoization. */
 pub type ExternCallable =
     alloc::sync::Arc<dyn Fn(&mut HeapPool, &[Val]) -> Result<Val, VmErr> + Send + Sync>;
 
@@ -50,20 +38,13 @@ impl core::fmt::Debug for ExternFn {
 }
 
 impl ExternFn {
-    /* Build an ExternFn from a plain `fn` pointer — common case for hand-written
-       Rust natives that don't need to capture state. */
-    pub fn from_fn(
-        name: impl Into<String>,
-        func: fn(&mut HeapPool, &[Val]) -> Result<Val, VmErr>,
-        pure: bool,
-    ) -> Self {
+    /* Build from a plain `fn` pointer (stateless Rust natives). */
+    pub fn from_fn(name: impl Into<String>, func: fn(&mut HeapPool, &[Val]) -> Result<Val, VmErr>, pure: bool) -> Self {
         Self { name: name.into(), func: alloc::sync::Arc::new(func), pure }
     }
 }
 
-/* NaN-boxed 8-byte value: int (47-bit), float, bool, None, undef, or heap idx.
-   Layout sealed in `crate::abi::nan_box`; re-imported here as the single
-   source of truth across the wire codec and the VM. */
+/* NaN-boxed 8-byte value (47-bit int, float, bool, None, undef, heap idx); layout in `abi::nan_box`. */
 use crate::abi::nan_box::{
     QNAN, SIGN, TAG_UNDEF, TAG_NONE, TAG_TRUE, TAG_FALSE, TAG_INT, TAG_HEAP,
     INT_PAYLOAD_MASK,
@@ -75,9 +56,9 @@ pub struct Val(pub(crate) u64);
 impl PartialEq for Val {
     #[inline] fn eq(&self, o: &Self) -> bool {
         if self.0 == o.0 { return true; }
-        // Numeric unification mirrors Hash so dicts/sets see 1 == 1.0 as one key.
-        if self.is_int()   && o.is_float() { return (self.as_int() as f64) == o.as_float(); }
-        if self.is_float() && o.is_int()   { return self.as_float() == (o.as_int() as f64); }
+        // Mirror Hash: 1 == 1.0 must dedupe in dict/set keys.
+        if self.is_int() && o.is_float() { return (self.as_int() as f64) == o.as_float(); }
+        if self.is_float() && o.is_int() { return self.as_float() == (o.as_int() as f64); }
         false
     }
 }
@@ -86,17 +67,15 @@ impl Eq for Val {}
 impl core::hash::Hash for Val {
     #[inline]
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        // Numeric unification: int and float that are value-equal must hash
-        // equal so dict/set treat 1 and 1.0 as the same key.
-        // 47-bit ints fit losslessly in f64, so funnel both through f64 bits.
-        if self.is_int()        { (self.as_int() as f64).to_bits().hash(state); }
+        // Funnel int/float through f64 bits so 1 and 1.0 share a key (47-bit ints fit losslessly).
+        if self.is_int() { (self.as_int() as f64).to_bits().hash(state); }
         else if self.is_float() { self.as_float().to_bits().hash(state); }
-        else                    { self.0.hash(state); }
+        else { self.0.hash(state); }
     }
 }
 
 impl Val {
-    /* Canonical NaN stored outside the tag space so is_float() stays true. */
+    /* Canonical NaN kept outside the tag space so is_float() stays true. */
     const CANON_NAN: u64 = 0x7FF8_0000_0000_0000;
     #[inline(always)] pub fn float(f: f64) -> Self {
         let bits = f.to_bits();
@@ -117,9 +96,7 @@ impl Val {
     #[inline(always)] pub fn none() -> Self { Self(TAG_NONE) }
     #[inline(always)] pub fn bool(b: bool) -> Self { Self(if b { TAG_TRUE } else { TAG_FALSE }) }
     #[inline(always)] pub fn heap(idx: u32) -> Self { Self(TAG_HEAP | ((idx as u64) << 4)) }
-    /* Unbound-local sentinel, distinct from none(). Lets slot storage be
-       Vec<Val> instead of Vec<Option<Val>>; LoadName raises NameError
-       via a single u64 compare. */
+    /* Unbound-local sentinel; lets slots stay Vec<Val> and LoadName check via one u64 compare. */
     #[inline(always)] pub fn undef() -> Self { Self(TAG_UNDEF) }
 
     #[inline(always)] pub fn is_float(&self) -> bool { (self.0 & QNAN) != QNAN }
@@ -133,14 +110,14 @@ impl Val {
         (self.0 & QNAN) == QNAN && (self.0 & SIGN) == 0 && (self.0 & 0xF) >= 4
     }
 
-    #[inline(always)] pub fn as_float(&self) -> f64  { f64::from_bits(self.0) }
-    /* Public accessors for wire-format marshalling (FFI / WASM loader / SDK). */
+    #[inline(always)] pub fn as_float(&self) -> f64 { f64::from_bits(self.0) }
+    /* Wire-format accessors (FFI / WASM loader / SDK). */
     #[inline(always)] pub fn raw(&self) -> u64 { self.0 }
     /** # Safety
      * `u` must come from `Val::raw()` on a live heap slot in the same VM. 
      * */
     #[inline(always)] pub unsafe fn from_raw(u: u64) -> Self { Self(u) }
-    #[inline(always)] pub fn as_int(&self) -> i64  {
+    #[inline(always)] pub fn as_int(&self) -> i64 {
         let raw = (self.0 & INT_PAYLOAD_MASK) as i64;
         (raw << 16) >> 16
     }
@@ -149,8 +126,7 @@ impl Val {
 }
 
 
-/* Heap-allocated value variants. Stored in HeapPool's arena; addressed
-   by index via the Val::heap tag. */
+/* Heap-allocated value variants in HeapPool's arena, indexed via Val::heap. */
 #[derive(Clone, Debug)]
 pub enum HeapObj {
     Str(String),
@@ -158,25 +134,18 @@ pub enum HeapObj {
     List(Rc<RefCell<Vec<Val>>>),
     Dict(Rc<RefCell<DictMap>>),
     Set(Rc<RefCell<HashSet<Val>>>),
-    /* Immutable, hashable counterpart of Set. Built once via the
-       `frozenset(iter)` builtin and then read-only. */
+    /* Immutable, hashable counterpart of Set; built via `frozenset(iter)`. */
     FrozenSet(Rc<HashSet<Val>>),
     Tuple(Vec<Val>),
     Func(usize, Vec<Val>, Vec<(usize, Val)>),
     Range(i64, i64, i64),
     Slice(Val, Val, Val),
-    // True ellipsis singleton, distinct from any string `...`.
+    // True `...` singleton, distinct from any string.
     Ellipsis,
     Type(String),
-    /* Wide integer slow path. Holds i128 values whose magnitude exceeds the
-       47-bit Val payload but fits in ±2^127. Strictly canonicalised by
-       `int_to_val`: any i128 that fits in 47-bit Val is stored inline, so
-       LongInt heap slots never carry a value Val::int could represent. This
-       invariant keeps hash/eq consistent — same-valued ints always share the
-       same Val representation (inline) and dict/set lookups work as expected. */
+    /* Wide-int slow path (i128); `int_to_val` canonicalises so 47-bit values stay inline. */
     LongInt(i128),
-    /* Constructed exception value with type name + constructor args
-       (exposed via `.args` as a tuple). */
+    /* Exception instance: type name + ctor args (exposed via `.args`). */
     ExcInstance(String, Vec<Val>),
     BoundMethod(Val, BuiltinMethodId),
     NativeFn(NativeFnId),
@@ -184,8 +153,7 @@ pub enum HeapObj {
     Instance(Val, Rc<RefCell<DictMap>>),
     BoundUserMethod(Val, Val),
     Coroutine(usize, Vec<Val>, Vec<Val>, usize, Vec<IterFrame>),
-    /* `import m` materialises this. Attribute access (`m.x`) goes through
-       LoadAttr; calls (`m.x(...)`) fuse via CallMethod. */
+    /* Produced by `import m`; attr access via LoadAttr, calls fuse through CallMethod. */
     Module(String, Vec<(String, Val)>),
     /* A native binding lifted to a first-class callable. */
     Extern(ExternFn),
@@ -208,8 +176,7 @@ pub enum NativeFnId {
 }
 
 impl NativeFnId {
-    /* Static name table indexed by `self as usize`. The order MUST match
-       the enum declaration above; #[repr(u8)] keeps discriminants stable. */
+    /* Name table indexed by `self as usize`; order MUST match the enum above. */
     pub fn name(self) -> &'static str {
         const NAMES: &[&str] = &[
             "print", "len", "abs", "str", "int", "float", "bool", "type", "chr", "ord",
@@ -301,18 +268,17 @@ impl DictMap {
     }
 }
 
-/* Visit every `Val` field reachable from `obj` exactly once. Single source
-   of truth for the GC's traversal schema. */
+/* Visits every reachable `Val` once; single source of truth for GC traversal. */
 pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
     match obj {
-        HeapObj::Tuple(items)         => for &v in items { f(v); },
-        HeapObj::Slice(a, b, c)       => { f(*a); f(*b); f(*c); }
-        HeapObj::List(rc)             => for &v in rc.borrow().iter() { f(v); },
-        HeapObj::Dict(rc)             => for (k, v) in rc.borrow().iter() { f(k); f(v); },
-        HeapObj::Set(rc)              => for &v in rc.borrow().iter() { f(v); },
-        HeapObj::FrozenSet(rc)        => for &v in rc.iter() { f(v); },
+        HeapObj::Tuple(items) => for &v in items { f(v); },
+        HeapObj::Slice(a, b, c) => { f(*a); f(*b); f(*c); }
+        HeapObj::List(rc) => for &v in rc.borrow().iter() { f(v); },
+        HeapObj::Dict(rc) => for (k, v) in rc.borrow().iter() { f(k); f(v); },
+        HeapObj::Set(rc) => for &v in rc.borrow().iter() { f(v); },
+        HeapObj::FrozenSet(rc) => for &v in rc.iter() { f(v); },
         HeapObj::BoundMethod(recv, _) => f(*recv),
-        HeapObj::Class(_, methods)    => for (_, v) in methods { f(*v); },
+        HeapObj::Class(_, methods) => for (_, v) in methods { f(*v); },
         HeapObj::BoundUserMethod(r, fu) => { f(*r); f(*fu); }
         HeapObj::Instance(cls, attrs) => {
             f(*cls);
@@ -354,21 +320,13 @@ pub struct HeapPool {
     alloc_count: usize,
     limit: usize,
     strings: HashMap<String, u32>,
-    /* Interns short bytes literals so that two `b"key"` allocations
-       collapse to the same Val. Required because Val's Hash uses raw
-       bits — without interning, a dict's `d[b"key"]` lookup hashes a
-       different slot than the one that was inserted. Mirrors `strings`. */
+    /* Interns short bytes literals so equal `b"..."` share a Val (Hash uses raw bits). */
     bytes_intern: HashMap<Vec<u8>, u32>,
-    /* Interns LongInt slots by value. Two `2**60` allocations must collapse
-       to the same Val so `{long: "x"}[long]` finds the entry — Val's Hash
-       uses raw bits, so different heap indices for equal values would
-       desync hash from eq. Mirrors `strings` / `bytes_intern`. */
+    /* Interns LongInt by value so equal i128s share a Val and stay hash/eq consistent. */
     longints: HashMap<i128, u32>,
     // Cached Ellipsis slot index so `... is ...` is True (singleton parity).
     ellipsis_idx: Option<u32>,
-    /* Reused across every mark() call; capacity grows once and stays put so
-       GC never allocates from the same allocator it might be running short
-       of. Cleared, not freed, between traversals. */
+    /* Reused across mark() calls; cleared not freed, so GC never re-allocates under pressure. */
     mark_worklist: Vec<u32>,
 }
 
@@ -444,9 +402,7 @@ impl HeapPool {
             if slots[idx].marked { continue; }
             slots[idx].marked = true;
             if let Some(obj) = &slots[idx].obj {
-                for_each_val(obj, |val| {
-                    if val.is_heap() { mark_worklist.push(val.as_heap()); }
-                });
+                for_each_val(obj, |val| { if val.is_heap() { mark_worklist.push(val.as_heap()); } });
             }
         }
     }
@@ -491,7 +447,7 @@ impl HeapPool {
         }
 
         self.gc_threshold = (self.live * 2).max(512);
-        self.alloc_count  = 0;
+        self.alloc_count = 0;
 
         // Cap free list at 512K slots; sort to prefer low indices and reduce fragmentation.
         if self.free_list.len() > 524_288 {
@@ -519,8 +475,7 @@ impl HeapPool {
     }
 
 
-    /* Stable per-type tag used by the inline cache to specialise binops.
-       Returns 0 for unknown / freed values. */
+    /* Stable per-type tag for inline-cache binop specialisation; 0 for unknown/freed. */
     #[inline(always)]
     pub fn val_tag(&self, v: Val) -> u8 {
         if v.is_int() { 1 } else if v.is_float() { 2 } else if v.is_bool() { 3 }
@@ -560,12 +515,7 @@ pub fn p_store_ssa(slots: &mut [Val], slot: usize, v: Val) {
     slots[slot] = v;
 }
 
-/* Widen any integer-flavoured Val to i128 for the slow path. Inline Val::int
-   (47-bit) and bool widen losslessly; heap LongInt unwraps. Floats and other
-   heap types return None so callers can raise a typed-operand error.
-
-   Free function rather than a method so handler/format code can reach it
-   without going through VM. */
+/* Widens int/bool/LongInt to i128 for the slow path; None on non-integer operands. */
 #[inline]
 pub fn as_i128(v: Val, heap: &HeapPool) -> Option<i128> {
     if v.is_int() { Some(v.as_int() as i128) }
