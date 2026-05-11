@@ -66,7 +66,7 @@ if (n := len(data)) > 0:
 
 ## Numbers
 
-Integers are 47-bit signed (range ±2⁴⁷). Anything beyond that range — at the literal or the result of arithmetic — raises `OverflowError`. Hex (`0x`), octal (`0o`), and binary (`0b`) prefixes are supported, with `_` digit separators between digits.
+Integers are 47-bit signed inline (range ±2⁴⁷) with automatic promotion to 128-bit when arithmetic overflows the inline range. Values up to ±2¹²⁷ work transparently; anything beyond raises `OverflowError`. Hex (`0x`), octal (`0o`), and binary (`0b`) prefixes are supported, with `_` digit separators between digits.
 
 ```python
 print(0xDEAD_BEEF)

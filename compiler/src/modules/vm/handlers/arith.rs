@@ -33,10 +33,11 @@ impl<'a> VM<'a> {
 
     fn exec_neg(&mut self) -> Result<(), VmErr> {
         let v = self.pop()?;
-        let result = if v.is_int() {
-            self.int_or_overflow(v.as_int().checked_neg())?
-        } else if v.is_float() {
+        let result = if v.is_float() {
             Val::float(-v.as_float())
+        } else if let Some(i) = self.as_i128(v) {
+            // -i128::MIN overflows; everything else fits.
+            self.int_to_val(i.checked_neg())?
         } else {
             return Err(cold_type("unary - requires a number"));
         };
@@ -53,12 +54,12 @@ impl<'a> VM<'a> {
             let r = af - ffloor(af / bf) * bf;
             return Ok(Val::float(r));
         }
-        let (Some(ai), Some(bi)) = (self.as_i64(a), self.as_i64(b)) else { return Err(cold_type("% requires numeric operands")); };
+        let (Some(ai), Some(bi)) = (self.as_i128(a), self.as_i128(b)) else { return Err(cold_type("% requires numeric operands")); };
         if bi == 0 { return Err(VmErr::ZeroDiv); }
-        // Floor-mod on i64: result takes the divisor's sign.
-        let r = ai.rem_euclid(bi.abs());
-        let r = if bi < 0 && r != 0 { r - bi.abs() } else { r };
-        self.int_or_overflow(Some(r))
+        // Floor-mod on i128: result takes the divisor's sign. `checked_rem` guards against i128::MIN % -1 (which would overflow).
+        let r = ai.checked_rem(bi).ok_or(cold_overflow())?;
+        let r = if (r != 0) && ((r < 0) != (bi < 0)) { r + bi } else { r };
+        self.int_to_val(Some(r))
     }
 
     fn exec_floordiv(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
@@ -69,25 +70,25 @@ impl<'a> VM<'a> {
             // ffloor() handles all magnitudes; `as i64` would overflow for large floats.
             return Ok(Val::float(ffloor(af / bf)));
         }
-        let (Some(ai), Some(bi)) = (self.as_i64(a), self.as_i64(b)) else { return Err(cold_type("// requires numeric operands")); };
+        let (Some(ai), Some(bi)) = (self.as_i128(a), self.as_i128(b)) else { return Err(cold_type("// requires numeric operands")); };
         if bi == 0 { return Err(VmErr::ZeroDiv); }
-        // Floor-div on i64: round toward negative infinity.
+        // Floor-div on i128: round toward negative infinity. checked_div guards i128::MIN / -1 overflow.
         let q = ai.checked_div(bi).ok_or(cold_overflow())?;
         let r = ai - q * bi;
         let q = if (r != 0) && ((r < 0) != (bi < 0)) { q - 1 } else { q };
-        self.int_or_overflow(Some(q))
+        self.int_to_val(Some(q))
     }
 
     fn exec_pow(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
         self.pow_vals(a, b, "** requires numeric operands")
     }
 
-    /* i64 bitwise + Shl/Shr (overflow trap); BitNot unary. Set/Set on |/&/^ means union/intersection/symmetric-diff; other types use the bitwise path. */
+    /* i128 bitwise + Shl/Shr (overflow trap); BitNot unary. Set/Set on |/&/^ means union/intersection/symmetric-diff; other types use the bitwise path. */
     pub(crate) fn handle_bitwise(&mut self, op: OpCode) -> Result<(), VmErr> {
         if op == OpCode::BitNot {
             let v = self.pop()?;
-            let i = self.as_i64(v).ok_or(cold_type("~ requires an integer"))?;
-            let out = self.int_or_overflow(Some(!i))?;
+            let i = self.as_i128(v).ok_or(cold_type("~ requires an integer"))?;
+            let out = self.int_to_val(Some(!i))?;
             self.push(out);
             return Ok(());
         }
@@ -115,17 +116,18 @@ impl<'a> VM<'a> {
         if !b.is_int() { return Err(cold_type("shift count must be an integer")); }
         let shift = b.as_int();
         if shift < 0 { return Err(cold_value("negative shift count")); }
-        if shift >= 47 { return Err(cold_overflow()); }
-        let ai = self.as_i64(a).ok_or(cold_type("<< requires an integer"))?;
-        self.int_or_overflow(ai.checked_shl(shift as u32))
+        if shift >= 128 { return Err(cold_overflow()); }
+        let ai = self.as_i128(a).ok_or(cold_type("<< requires an integer"))?;
+        self.int_to_val(ai.checked_shl(shift as u32))
     }
 
     fn exec_shr(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
         if !b.is_int() { return Err(cold_type("shift count must be an integer")); }
         let shift = b.as_int();
         if shift < 0 { return Err(cold_value("negative shift count")); }
-        let ai = self.as_i64(a).ok_or(cold_type(">> requires an integer"))?;
-        Ok(Val::int(ai >> shift.min(63)))
+        let ai = self.as_i128(a).ok_or(cold_type(">> requires an integer"))?;
+        // i128 >> is arithmetic (floor on negatives); `.min(127)` dodges shift-count UB.
+        self.int_to_val(Some(ai >> shift.min(127)))
     }
 
     pub(crate) fn handle_compare(&mut self, op: OpCode, rip: usize, cache: &mut OpcodeCache) -> Result<(), VmErr> {

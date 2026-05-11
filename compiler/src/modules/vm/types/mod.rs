@@ -168,6 +168,13 @@ pub enum HeapObj {
     // True ellipsis singleton, distinct from any string `...`.
     Ellipsis,
     Type(String),
+    /* Wide integer slow path. Holds i128 values whose magnitude exceeds the
+       47-bit Val payload but fits in ±2^127. Strictly canonicalised by
+       `int_to_val`: any i128 that fits in 47-bit Val is stored inline, so
+       LongInt heap slots never carry a value Val::int could represent. This
+       invariant keeps hash/eq consistent — same-valued ints always share the
+       same Val representation (inline) and dict/set lookups work as expected. */
+    LongInt(i128),
     /* Constructed exception value with type name + constructor args
        (exposed via `.args` as a tuple). */
     ExcInstance(String, Vec<Val>),
@@ -327,7 +334,7 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
         HeapObj::Module(_, attrs) => for (_, v) in attrs { f(*v); },
         HeapObj::ExcInstance(_, args) => for &v in args { f(v); },
         // Variants without Val payloads — terminal, nothing to trace.
-        HeapObj::Str(_) | HeapObj::Bytes(_)
+        HeapObj::Str(_) | HeapObj::Bytes(_) | HeapObj::LongInt(_)
         | HeapObj::Type(_) | HeapObj::NativeFn(_) | HeapObj::Range(..)
         | HeapObj::Extern(_) | HeapObj::Ellipsis => {}
     }
@@ -352,6 +359,11 @@ pub struct HeapPool {
        bits — without interning, a dict's `d[b"key"]` lookup hashes a
        different slot than the one that was inserted. Mirrors `strings`. */
     bytes_intern: HashMap<Vec<u8>, u32>,
+    /* Interns LongInt slots by value. Two `2**60` allocations must collapse
+       to the same Val so `{long: "x"}[long]` finds the entry — Val's Hash
+       uses raw bits, so different heap indices for equal values would
+       desync hash from eq. Mirrors `strings` / `bytes_intern`. */
+    longints: HashMap<i128, u32>,
     // Cached Ellipsis slot index so `... is ...` is True (singleton parity).
     ellipsis_idx: Option<u32>,
     /* Reused across every mark() call; capacity grows once and stays put so
@@ -371,6 +383,7 @@ impl HeapPool {
             limit,
             strings: HashMap::default(),
             bytes_intern: HashMap::default(),
+            longints: HashMap::default(),
             ellipsis_idx: None,
             mark_worklist: Vec::with_capacity(64),
         }
@@ -385,6 +398,10 @@ impl HeapPool {
         if let HeapObj::Bytes(ref b) = obj
             && b.len() <= 128
             && let Some(&idx) = self.bytes_intern.get(b) {
+                return Ok(Val::heap(idx));
+        }
+        if let HeapObj::LongInt(i) = obj
+            && let Some(&idx) = self.longints.get(&i) {
                 return Ok(Val::heap(idx));
         }
         // Ellipsis is a true singleton — every `...` literal returns the same Val.
@@ -407,6 +424,7 @@ impl HeapPool {
         match self.slots[idx as usize].obj.as_ref().unwrap() {
             HeapObj::Str(s) if s.len() <= 128 => { self.strings.insert(s.clone(), idx); }
             HeapObj::Bytes(b) if b.len() <= 128 => { self.bytes_intern.insert(b.clone(), idx); }
+            HeapObj::LongInt(i) => { self.longints.insert(*i, idx); }
             HeapObj::Ellipsis => { self.ellipsis_idx = Some(idx); }
             _ => {}
         }
@@ -447,6 +465,12 @@ impl HeapPool {
                 }
                 Some(HeapObj::Bytes(b)) => {
                     self.bytes_intern.remove(b);
+                    slot.obj = None;
+                    self.free_list.push(idx as u32);
+                    self.live -= 1;
+                }
+                Some(HeapObj::LongInt(i)) => {
+                    self.longints.remove(i);
                     slot.obj = None;
                     self.free_list.push(idx as u32);
                     self.live -= 1;
@@ -512,6 +536,7 @@ impl HeapPool {
                 Some(HeapObj::Range(..)) => 11,
                 Some(HeapObj::Slice(..)) => 12,
                 Some(HeapObj::Type(_)) => 13,
+                Some(HeapObj::LongInt(_)) => 14,
                 Some(HeapObj::BoundMethod(_, _)) => 15,
                 Some(HeapObj::NativeFn(_)) => 16,
                 Some(HeapObj::BoundUserMethod(..)) => 17,
@@ -533,4 +558,23 @@ impl HeapPool {
 #[inline(always)]
 pub fn p_store_ssa(slots: &mut [Val], slot: usize, v: Val) {
     slots[slot] = v;
+}
+
+/* Widen any integer-flavoured Val to i128 for the slow path. Inline Val::int
+   (47-bit) and bool widen losslessly; heap LongInt unwraps. Floats and other
+   heap types return None so callers can raise a typed-operand error.
+
+   Free function rather than a method so handler/format code can reach it
+   without going through VM. */
+#[inline]
+pub fn as_i128(v: Val, heap: &HeapPool) -> Option<i128> {
+    if v.is_int() { Some(v.as_int() as i128) }
+    else if v.is_bool() { Some(v.as_bool() as i128) }
+    else if v.is_heap() {
+        match heap.get(v) {
+            HeapObj::LongInt(i) => Some(*i),
+            _ => None,
+        }
+    }
+    else { None }
 }

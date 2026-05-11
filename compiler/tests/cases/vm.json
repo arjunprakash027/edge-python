@@ -244,7 +244,10 @@
   {"src": "for i in range(5):\n    if i == 2:\n        continue\n    print(i)", "output": ["0", "1", "3", "4"]},
   {"src": "x = 5\nprint('big' if x > 3 else 'small')", "output": ["big"]},
   {"src": "f = lambda x: x * 2\nprint(f(21))", "output": ["42"]},
-  {"src": "print(2 ** 100)", "output": [], "error": "OverflowError"},
+  {"src": "print(2 ** 100)", "output": ["1267650600228229401496703205376"]},
+  {"src": "print(2 ** 127)", "output": [], "error": "OverflowError"},
+  {"src": "print(2 ** 47)", "output": ["140737488355328"]},
+  {"src": "print(2 ** 62 + 2 ** 62)", "output": ["9223372036854775808"]},
   {"src": "print(-0.0)", "output": ["-0.0"]},
   {"src": "print(f'{{x}}')", "output": ["{x}"]},
   {"src": "counter: int = 0\nfor _ in range(10_000): counter += 1\nprint(counter)", "output": ["10000"]},
@@ -1552,7 +1555,7 @@
 
   {"src": "import asyncio", "output": [], "error": "asyncio"},
 
-  {"src": "print(2 ** 47)", "output": [], "error": "OverflowError"},
+  {"src": "print(2 ** 127)", "output": [], "error": "OverflowError"},
 
   {"src": "def deco(c):\n    print('decorated')\n    return c\n@deco\nclass A: pass", "output": ["decorated"]},
 
@@ -1562,5 +1565,37 @@
 
   {"src": "class A:\n    def m(self):\n        return 'A'\nclass B(A):\n    def m(self):\n        return super().m() + 'B'\nprint(B().m())", "output": [], "error": "name 'super' is not defined"},
 
-  {"src": "class A: pass", "output": []}
+  {"src": "class A: pass", "output": []},
+
+  {"src": "print(140737488355328)", "output": ["140737488355328"]},
+  {"src": "print(-140737488355329)", "output": ["-140737488355329"]},
+  {"src": "print(140737488355327 + 1)", "output": ["140737488355328"]},
+  {"src": "print(140737488355328 - 1)", "output": ["140737488355327"]},
+  {"src": "print(1000000000000 * 1000000000000)", "output": ["1000000000000000000000000"]},
+  {"src": "print(2 ** 100 + 1)", "output": ["1267650600228229401496703205377"]},
+  {"src": "print(2 ** 100 - 2 ** 100)", "output": ["0"]},
+  {"src": "print(-(2 ** 100))", "output": ["-1267650600228229401496703205376"]},
+  {"src": "print(abs(-(2 ** 100)))", "output": ["1267650600228229401496703205376"]},
+  {"src": "print((10 ** 30) // (10 ** 10))", "output": ["100000000000000000000"]},
+  {"src": "print((10 ** 30) % 7)", "output": ["1"]},
+  {"src": "print((-(2 ** 100)) % 3)", "output": ["2"]},
+  {"src": "print(divmod(10 ** 30, 10 ** 10))", "output": ["(100000000000000000000, 0)"]},
+  {"src": "print((2 ** 100) >> 50)", "output": ["1125899906842624"]},
+  {"src": "print((1 << 80))", "output": ["1208925819614629174706176"]},
+  {"src": "print((2 ** 100) & ((1 << 50) - 1))", "output": ["0"]},
+  {"src": "print(int('99999999999999999999999999'))", "output": ["99999999999999999999999999"]},
+  {"src": "print(float(2 ** 60) == 2.0 ** 60)", "output": ["True"]},
+  {"src": "print(hex(2 ** 80))", "output": ["0x100000000000000000000"]},
+  {"src": "print(bin(2 ** 70))", "output": ["0b10000000000000000000000000000000000000000000000000000000000000000000000"]},
+  {"src": "print(f'{2 ** 100:,}')", "output": ["1,267,650,600,228,229,401,496,703,205,376"]},
+  {"src": "print(2 ** 100 == 2 ** 100)", "output": ["True"]},
+  {"src": "print((2 ** 100) > (2 ** 99))", "output": ["True"]},
+  {"src": "d = {2 ** 100: 'x'}\nprint(d[2 ** 100])", "output": ["x"]},
+  {"src": "s = {2 ** 100, 2 ** 100}\nprint(len(s))", "output": ["1"]},
+  {"src": "print(pow(3, 200, 1000))", "output": ["1"]},
+  {"src": "print(pow(2, 100, 1000000007))", "output": ["976371285"]},
+  {"src": "print(pow(2, 100, 2 ** 100))", "output": [], "error": "modulus too large"},
+  {"src": "print(2 ** 128)", "output": [], "error": "OverflowError"},
+  {"src": "print(170141183460469231731687303715884105727 + 1)", "output": [], "error": "OverflowError"},
+  {"src": "print(99999999999999999999999999999999999999999)", "output": [], "error": "integer literal too large"}
 ]

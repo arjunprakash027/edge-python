@@ -43,15 +43,19 @@ True
 
 ## Integer
 
-47-bit signed inline. The full range is `-140_737_488_355_328` to `140_737_488_355_327` (±2⁴⁷). Edge Python does **not** have arbitrary-precision (bigint) integers — this is a NaN-boxing tradeoff that keeps int arithmetic to one ALU instruction with no heap allocation. Any arithmetic that escapes the range raises `OverflowError`; literals outside the range are rejected by the parser. Complex literals (`1j`, `2+3j`) are unsupported.
+Two-tier representation. **Inline** (fast path) is 47-bit signed packed in a NaN-boxed `Val` — one ALU instruction per arithmetic op, zero allocation. **LongInt** (slow path) is i128 in a heap slot, used automatically when a literal or arithmetic result exceeds 47-bit. The boundary is invisible: same `int` type, same operators. The hard cap is `±2¹²⁷`; anything wider raises `OverflowError`. Edge Python does **not** offer CPython-style unbounded ints, and complex literals (`1j`, `2+3j`) are unsupported.
 
 ```python
-# Inside the supported range
+# Inline range
 print(2 ** 46)
 print(2 ** 46 - 1)
 
+# Auto-promoted to LongInt
+print(2 ** 100)
+
+# Past the 128-bit cap
 try:
-    print(2 ** 47)
+    print(2 ** 127)
 except OverflowError:
     print("overflow")
 ```
@@ -59,6 +63,7 @@ except OverflowError:
 ```text Output
 70368744177664
 70368744177663
+1267650600228229401496703205376
 overflow
 ```
 

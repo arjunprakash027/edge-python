@@ -15,22 +15,35 @@ Edge Python supports two limit profiles. Pick one when constructing the VM via `
 
 ## Integer width
 
-Edge Python integers are inline 47-bit signed values inside a NaN-boxed `Val`. The range is `±140_737_488_355_327` (`±2^47 - 1`); literal or arithmetic results outside that range raise `OverflowError`.
+Edge Python integers have a two-tier representation:
+
+- **Inline (fast path)**: 47-bit signed values stored directly in a NaN-boxed `Val`. Range `±140_737_488_355_327` (`±2^47`). One ALU op per arithmetic, no heap allocation.
+- **Wide (slow path)**: i128 values stored as `HeapObj::LongInt`. Range `±170_141_183_460_469_231_731_687_303_715_884_105_727` (`±2^127 - 1`). Used automatically when a literal exceeds 47-bit, or when arithmetic overflows the inline path.
+
+Anything outside `±2^127` raises `OverflowError`. The promotion is automatic — user code doesn't see the boundary except for the error class.
 
 ```python
-print(140737488355327)    # max value, fine
+print(140737488355327)              # inline, fast path
+print(2 ** 47)                      # 140737488355328 — auto-promotes to LongInt
+print(2 ** 100)                     # 1267650600228229401496703205376
 try:
-    print(2 ** 47)        # 140737488355328 — past the cap
+    print(2 ** 127)                 # past the i128 cap
 except OverflowError:
     print("overflow")
 ```
 
 ```text Output
 140737488355327
+140737488355328
+1267650600228229401496703205376
 overflow
 ```
 
-This is architectural. Bigint would either need a secondary heap variant (every arith op pays a type check on the overflow path) or abandoning NaN-boxing (slower hot path, larger `Val`). Both regress the WASM-size and inner-loop performance goals that motivated the project.
+### Caveats
+
+- **`pow(a, b, m)` modular**: the modulus must be `< 2^63`. Larger moduli raise `ValueError` because `(a * b) % m` would overflow i128 during the multiply. This is a hard cap unless arbitrary-precision arithmetic is reintroduced.
+- **No CPython-style unbounded ints**: this is by design. Edge workloads (validation, transformation, routing) don't need wider than 128 bits. Crypto-scale integer math is out of scope.
+- **Float vs LongInt mixing**: `==` works (LongInt to f64), but dict/set hashing follows Val raw bits, so `{long_int: x}` indexed by a float value of the same magnitude misses. Coerce explicitly when needed.
 
 ### Triggering limits
 

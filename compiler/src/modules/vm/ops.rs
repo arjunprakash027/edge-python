@@ -3,7 +3,7 @@ use crate::s;
 use super::types::*;
 use crate::modules::parser::types::OpCode;
 
-use alloc::{string::String, vec::Vec, rc::Rc};
+use alloc::{string::{String, ToString}, vec::Vec, rc::Rc};
 use core::cell::RefCell;
 
 /* Render a `bytes` value as `b'...'` with Python's repr conventions:
@@ -65,6 +65,7 @@ impl<'a> VM<'a> {
         match self.heap.get(v) {
             HeapObj::Str(s) => !s.is_empty(),
             HeapObj::Bytes(b) => !b.is_empty(),
+            HeapObj::LongInt(i) => *i != 0,
             HeapObj::List(l) => !l.borrow().is_empty(),
             HeapObj::Tuple(t) => !t.is_empty(),
             HeapObj::Dict(d) => !d.borrow().is_empty(),
@@ -87,15 +88,11 @@ impl<'a> VM<'a> {
         }
     }
 
-    pub fn bitwise_op(&mut self, a: Val, b: Val, op: impl Fn(i64, i64) -> i64) -> Result<Val, VmErr> {
-        let ai = if a.is_int() { a.as_int() }
-                 else if a.is_bool() { a.as_bool() as i64 }
-                 else { return Err(cold_type("bitwise op requires integer operands")); };
-        let bi = if b.is_int() { b.as_int() }
-                 else if b.is_bool() { b.as_bool() as i64 }
-                 else { return Err(cold_type("bitwise op requires integer operands")); };
+    pub fn bitwise_op(&mut self, a: Val, b: Val, op: impl Fn(i128, i128) -> i128) -> Result<Val, VmErr> {
+        let ai = as_i128(a, &self.heap).ok_or(cold_type("bitwise op requires integer operands"))?;
+        let bi = as_i128(b, &self.heap).ok_or(cold_type("bitwise op requires integer operands"))?;
         let r = op(ai, bi);
-        Val::int_checked(r).ok_or(cold_overflow())
+        self.int_to_val(Some(r))
     }
 
     /* Set | Set, Set & Set, Set ^ Set. Caller has already verified both
@@ -146,6 +143,7 @@ impl<'a> VM<'a> {
         else { match self.heap.get(v) {
             HeapObj::Str(_) => "str",
             HeapObj::Bytes(_) => "bytes",
+            HeapObj::LongInt(_) => "int",
             HeapObj::List(_) => "list",
             HeapObj::Dict(_) => "dict",
             HeapObj::Set(_) => "set",
@@ -197,6 +195,7 @@ impl<'a> VM<'a> {
         match self.heap.get(v) {
             HeapObj::Str(s) => s.clone(),
             HeapObj::Bytes(b) => format_bytes(b),
+            HeapObj::LongInt(i) => i128_to_dec(*i),
             HeapObj::Type(name) => s!("<class '", str name, "'>"),
             HeapObj::Func(i,_,_) => s!("<function ", int *i),
             HeapObj::Slice(s,e,st) => s!("slice(", str &self.display(*s), ", ", str &self.display(*e), ", ", str &self.display(*st), ")"),
@@ -280,6 +279,11 @@ impl<'a> VM<'a> {
         let b = if b.is_bool() { Val::int(b.as_bool() as i64) } else { b };
         if a.is_int() && b.is_int() { return Ok(a.as_int() < b.as_int()); }
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(af < bf); }
+        // Wide-int compare: any combination of inline int / LongInt — promote
+        // both to i128 and compare. Falls through when either side isn't int.
+        if let (Some(ai), Some(bi)) = (as_i128(a, &self.heap), as_i128(b, &self.heap)) {
+            return Ok(ai < bi);
+        }
         if a.is_heap() && b.is_heap()
             && let (HeapObj::Str(x), HeapObj::Str(y)) = (self.heap.get(a), self.heap.get(b)) {
                 return Ok(x < y);
@@ -307,10 +311,19 @@ impl<'a> VM<'a> {
         }
     }
     pub fn add_vals(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
-        if a.is_int() && b.is_int() {
-            return self.int_or_overflow(a.as_int().checked_add(b.as_int()));
+        // Inline-int fast path: 99% of arithmetic stays here. i64 covers the
+        // 47-bit Val range losslessly; overflow falls through to the i128 path.
+        if a.is_int() && b.is_int()
+            && let Some(r) = a.as_int().checked_add(b.as_int())
+            && (Val::INT_MIN..=Val::INT_MAX).contains(&r) {
+            return Ok(Val::int(r));
         }
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(Val::float(af + bf)); }
+        // Wide-int slow path: at least one side is LongInt or the inline result
+        // didn't fit. Compute in i128 and let int_to_val pick the storage class.
+        if let (Some(ai), Some(bi)) = (as_i128(a, &self.heap), as_i128(b, &self.heap)) {
+            return self.int_to_val(ai.checked_add(bi));
+        }
         if a.is_heap() && b.is_heap() {
             match (self.heap.get(a), self.heap.get(b)) {
                 (HeapObj::Str(sa), HeapObj::Str(sb)) => {
@@ -338,10 +351,15 @@ impl<'a> VM<'a> {
     }
 
     pub fn sub_vals(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
-        if a.is_int() && b.is_int() {
-            return self.int_or_overflow(a.as_int().checked_sub(b.as_int()));
+        if a.is_int() && b.is_int()
+            && let Some(r) = a.as_int().checked_sub(b.as_int())
+            && (Val::INT_MIN..=Val::INT_MAX).contains(&r) {
+            return Ok(Val::int(r));
         }
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(Val::float(af - bf)); }
+        if let (Some(ai), Some(bi)) = (as_i128(a, &self.heap), as_i128(b, &self.heap)) {
+            return self.int_to_val(ai.checked_sub(bi));
+        }
         // Set difference: `a - b` produces a fresh set with every element
         // of `a` not present in `b`. Mirror Python's `set.difference`.
         if a.is_heap() && b.is_heap()
@@ -366,18 +384,30 @@ impl<'a> VM<'a> {
     }
 
     pub fn mul_vals(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
-        if a.is_int() && b.is_int() {
-            return self.int_or_overflow(a.as_int().checked_mul(b.as_int()));
+        if a.is_int() && b.is_int()
+            && let Some(r) = a.as_int().checked_mul(b.as_int())
+            && (Val::INT_MIN..=Val::INT_MAX).contains(&r) {
+            return Ok(Val::int(r));
         }
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(Val::float(af * bf)); }
-        let (seq_val, count) = if a.is_heap() && b.is_int() { (a, b.as_int()) }
-                else if a.is_int() && b.is_heap() { (b, a.as_int()) }
-                else {
-                    return Err(VmErr::TypeMsg(s!(
-                        "unsupported operand type(s) for *: '",
-                        str self.type_name(a), "' and '", str self.type_name(b), "'"
-                    )));
-                };
+        // Wide-int slow path takes priority over sequence repetition: both
+        // sides numeric (int/bool/LongInt) -> i128 multiply. Repetition needs
+        // a sequence type on one side, which is_int/bool/LongInt aren't.
+        if let (Some(ai), Some(bi)) = (as_i128(a, &self.heap), as_i128(b, &self.heap)) {
+            return self.int_to_val(ai.checked_mul(bi));
+        }
+        // Sequence repetition: str/list/tuple * int. Count must fit in i64
+        // (i128 product of huge count would OOM long before completing).
+        let (seq_val, count) = if a.is_heap() && b.is_int() && !matches!(self.heap.get(a), HeapObj::LongInt(_)) {
+            (a, b.as_int())
+        } else if a.is_int() && b.is_heap() && !matches!(self.heap.get(b), HeapObj::LongInt(_)) {
+            (b, a.as_int())
+        } else {
+            return Err(VmErr::TypeMsg(s!(
+                "unsupported operand type(s) for *: '",
+                str self.type_name(a), "' and '", str self.type_name(b), "'"
+            )));
+        };
         let n = count.max(0) as usize;
         match self.heap.get(seq_val) {
             HeapObj::Str(s) => {
@@ -411,30 +441,45 @@ impl<'a> VM<'a> {
         Ok(Val::float(av / bv))
     }
 
-    /* Promote any int-like operand to a plain i64 for the integer fast-path.
-       Returns None for floats / heap objects so callers can fall through to
-       a typed-operand error. */
-    pub(crate) fn as_i64(&self, v: Val) -> Option<i64> {
-        if v.is_int() { Some(v.as_int()) }
-        else if v.is_bool() { Some(v.as_bool() as i64) }
-        else { None }
+    /* Promote any int-like operand to i128 for the wide-int slow path.
+       Inline `Val::int` and bool widen losslessly; heap `LongInt` unwraps;
+       floats / non-int heap objects return None so callers can raise a
+       typed-operand error. Thin wrapper around the free `as_i128` so methods
+       can stay borrow-checker-friendly when self is already borrowed. */
+    #[inline]
+    pub(crate) fn as_i128(&self, v: Val) -> Option<i128> {
+        as_i128(v, &self.heap)
     }
 
     pub(crate) fn to_f64_coerce(&self, v: Val) -> Result<f64, VmErr> {
         if v.is_int() { return Ok(v.as_int() as f64); }
         if v.is_float() { return Ok(v.as_float()); }
         if v.is_bool() { return Ok(v.as_bool() as i64 as f64); }
+        if v.is_heap() && let HeapObj::LongInt(i) = self.heap.get(v) { return Ok(*i as f64); }
         Err(cold_type("numeric operand required"))
     }
 
-    /* Wrap a checked-arith result into a Val, or raise OverflowError. The
-       inner range check is ±2^47 because the NaN-boxed Val tag uses 47 bits
-       for the integer payload — values outside that range can't fit. */
+    /* Wrap a wide-int result into a Val, picking the narrowest storage class:
+       - None (checked_* returned None): traps as OverflowError.
+       - In 47-bit Val range: stored inline. Preserves hash/eq with literals.
+       - Outside 47-bit but in i128: allocated as HeapObj::LongInt and interned
+         by value so equal values share an index.
+       Any value outside i128 already failed the checked_* upstream. */
     #[inline]
-    pub(crate) fn int_or_overflow(&self, r: Option<i64>) -> Result<Val, VmErr> {
-        match r {
-            Some(i) if (Val::INT_MIN..=Val::INT_MAX).contains(&i) => Ok(Val::int(i)),
-            _ => Err(cold_overflow()),
+    pub(crate) fn int_to_val(&mut self, r: Option<i128>) -> Result<Val, VmErr> {
+        let i = r.ok_or(cold_overflow())?;
+        if (Val::INT_MIN as i128..=Val::INT_MAX as i128).contains(&i) {
+            return Ok(Val::int(i as i64));
         }
+        self.heap.alloc(HeapObj::LongInt(i))
     }
+}
+
+/* Decimal rendering for i128. itoa handles up to i128 but the dedicated
+   `format!("{i}")` path pulls in too much fmt machinery for the hot path; a
+   tight handwritten loop matches the `u128_to_dec` helper in format.rs and
+   keeps display cost predictable. */
+fn i128_to_dec(n: i128) -> String {
+    let mut buf = itoa::Buffer::new();
+    buf.format(n).to_string()
 }

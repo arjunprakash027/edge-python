@@ -1,4 +1,4 @@
-use super::{DictMap, HeapObj, HeapPool, Val};
+use super::{DictMap, HeapObj, HeapPool, Val, as_i128};
 
 pub(in crate::modules::vm) fn eq_seq(a: &[Val], b: &[Val], eq: impl Fn(Val,Val)->bool) -> bool {
     a.len() == b.len() && a.iter().zip(b).all(|(x,y)| eq(*x,*y))
@@ -8,8 +8,12 @@ pub(in crate::modules::vm) fn eq_dict(a: &DictMap, b: &DictMap, eq: impl Fn(Val,
 }
 
 pub fn eq_vals_with_heap(a: Val, b: Val, heap: &HeapPool) -> bool {
+    // Unify all int-flavoured pairs through i128 (LongInt, inline int, bool).
+    if let (Some(ai), Some(bi)) = (as_i128(a, heap), as_i128(b, heap)) {
+        return ai == bi;
+    }
+
     if !a.is_heap() || !b.is_heap() {
-        if a.is_int() && b.is_int() { return a.as_int() == b.as_int(); }
         if a.is_float() && b.is_float() { return a.as_float() == b.as_float(); }
         if a.is_int() && b.is_float() { return (a.as_int() as f64) == b.as_float(); }
         if a.is_float() && b.is_int() { return a.as_float() == (b.as_int() as f64); }
@@ -26,8 +30,7 @@ pub fn eq_vals_with_heap(a: Val, b: Val, heap: &HeapPool) -> bool {
         (HeapObj::Set(x), HeapObj::FrozenSet(y)) => *x.borrow() == **y,
         (HeapObj::FrozenSet(x), HeapObj::Set(y)) => **x == *y.borrow(),
         (HeapObj::Dict(x), HeapObj::Dict(y)) => eq_dict(&x.borrow(), &y.borrow(), |a,b| eq_vals_with_heap(a, b, heap)),
-        // Cross-type comparisons fall through to false. Notably `bytes == str`
-        // is False in Python, even when the bytes are valid UTF-8 of the str.
+        // Cross-type comparisons fall through to false. Notably `bytes == str` is False, even when the bytes are valid UTF-8 of the str.
         _ => false,
     }
 }

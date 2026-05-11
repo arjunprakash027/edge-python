@@ -273,14 +273,24 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let s = raw.replace('_', "");
         if kind == TokenType::Float { self.emit_const(Value::Float(s.parse().unwrap_or(0.0))); return; }
         let (digits, base) = Self::parse_int_prefix(&s);
-        let parsed = if base == 10 {
+        let parsed_i64 = if base == 10 {
             digits.parse::<i64>().ok()
         } else {
             i64::from_str_radix(digits, base).ok()
         };
-        match parsed {
-            Some(v) => self.emit_const(Value::Int(v)),
-            None => self.error("integer literal too large to represent"),
+        if let Some(v) = parsed_i64 {
+            self.emit_const(Value::Int(v));
+            return;
+        }
+        // Doesn't fit in i64 — try i128 for the wide-int path.
+        let parsed_i128 = if base == 10 {
+            digits.parse::<i128>().ok()
+        } else {
+            i128::from_str_radix(digits, base).ok()
+        };
+        match parsed_i128 {
+            Some(v) => self.emit_const(Value::LongInt(v)),
+            None => self.error("integer literal too large to represent (max ±2^127)"),
         }
     }
 

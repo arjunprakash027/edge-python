@@ -41,7 +41,7 @@ The hot loop reads `cache.fused_ref()[ip]` — a snapshot of the instruction str
 
 For arithmetic and comparison opcodes, the loop first checks `cache.get_fast(ip)`. If a `FastOp` is present, the speculative path runs inline and pops two operands without a function call. On a type-guard miss the cache is invalidated and execution falls back to the generic handler. The IC is per-instruction, so monomorphic call sites stabilise independently.
 
-`LoadConst` reads a pre-materialised `Vec<Val>` (`OpcodeCache::const_vals`) built once on first dispatch. Integer constants outside the 47-bit range raise `OverflowError` at materialisation, not at run time.
+`LoadConst` reads a pre-materialised `Vec<Val>` (`OpcodeCache::const_vals`) built once on first dispatch. Integer constants inside the 47-bit Val range are stored inline; literals between 2⁴⁷ and 2¹²⁷ allocate a `HeapObj::LongInt` heap slot at materialisation. Literals beyond ±2¹²⁷ are rejected by the parser, so the const pool itself can never overflow.
 
 ## Memory model
 
@@ -50,18 +50,18 @@ For arithmetic and comparison opcodes, the loop first checks `cache.get_fast(ip)
 | Tag       | Pattern                                 | Notes                                |
 |-----------|-----------------------------------------|--------------------------------------|
 | Float     | any non-canonical IEEE-754              | Quiet NaNs remapped to `0x7FF8…`     |
-| Int       | `QNAN \| SIGN \| i48`                   | 47-bit signed inline; `OverflowError` above |
+| Int       | `QNAN \| SIGN \| i48`                   | 47-bit signed inline; auto-promotes to `HeapObj::LongInt` (i128) on overflow |
 | Undef     | `QNAN`                                  | Unbound-local sentinel               |
 | None      | `QNAN \| 1`                             |                                      |
 | True      | `QNAN \| 2`                             |                                      |
 | False     | `QNAN \| 3`                             |                                      |
 | Heap      | `QNAN \| 4 \| (i28 << 4)`               | 28-bit index into `HeapPool` (max `1 << 28` slots) |
 
-`INT_MAX = 140_737_488_355_327`, `INT_MIN = -140_737_488_355_328`. The 47-bit cap is architectural: NaN-boxed inline ints turn arithmetic into one ALU op with no boxing, and bigints would either need a `HeapObj::Bignum` variant (heap round-trip on every overflow) or abandoning NaN-boxing entirely (much wider `Val`, slower hot path).
+`INT_MAX = 140_737_488_355_327`, `INT_MIN = -140_737_488_355_328`. Integers below this fit inline (one ALU op per arithmetic, no allocation); above it, the result is stored in `HeapObj::LongInt(i128)` and the i128 path is used until the result fits inline again. `LongInt` slots are interned by value, so equal LongInts share a heap index and `hash`/`eq` stay consistent. The hard cap is ±2¹²⁷; anything wider raises `OverflowError`. Arbitrary-precision bigints would either need a `Vec<u32>`-limb variant (heap-allocs on every wide op and Knuth D / Karatsuba code) or abandoning NaN-boxing entirely — both regress the WASM-size and inner-loop goals.
 
 `PartialEq` and `Hash` for `Val` funnel value-equal numerics through `f64` bits so `1 == 1.0` and `hash(1) == hash(1.0)` hold — dicts and sets see them as a single key. The internal `FxBuildHasher` uses a fixed seed, so dict/set iteration order is reproducible across runs and process boundaries.
 
-The heap is a `Vec<HeapSlot>` arena with a free list (capped at 524,288 slots and sorted to prefer low indices). String and bytes values up to 128 bytes are interned in side hashes (`strings`, `bytes_intern`) so short literal compares short-circuit through identity. The hard cap on live heap objects comes from `Limits.heap` (default 10M; sandbox 100K). Integer arithmetic stays strictly within ±2⁴⁷; any overflow raises `OverflowError` instead of promoting to a heap variant. The collector is a single-colour mark-and-sweep that runs when `live >= gc_threshold` or `alloc_count >= max(live/4, 4096)`; cycles are reclaimed natively (there is no refcount).
+The heap is a `Vec<HeapSlot>` arena with a free list (capped at 524,288 slots and sorted to prefer low indices). String, bytes (≤128 bytes), and LongInt values are interned in side hashes (`strings`, `bytes_intern`, `longints`) so equal values collapse to the same slot — short literal compares short-circuit through identity, and dict/set lookups stay consistent across heap allocations of the same i128 value. The hard cap on live heap objects comes from `Limits.heap` (default 10M; sandbox 100K). Integer arithmetic stays within ±2¹²⁷ (inline ±2⁴⁷ + LongInt ±2¹²⁷); anything beyond raises `OverflowError`. The collector is a single-colour mark-and-sweep that runs when `live >= gc_threshold` or `alloc_count >= max(live/4, 4096)`; cycles are reclaimed natively (there is no refcount).
 
 `HeapObj` variants: `Str`, `Bytes`, `List` (`Rc<RefCell<Vec<Val>>>`), `Dict` (insertion-ordered), `Set`, `FrozenSet`, `Tuple`, `Func(fn_idx, defaults, captures)`, `Range`, `Slice`, `Ellipsis` (true singleton, distinct from `'...'`), `Type`, `ExcInstance`, `BoundMethod`, `NativeFn`, `Class(name, members)`, `Instance(class, attrs)`, `BoundUserMethod(recv, fn)`, `Coroutine(ip, slots, stack, fi, iter_stack)` (shared by generators and `async def`), `Module(spec, attrs)`, `Extern(Arc<dyn Fn>)`.
 

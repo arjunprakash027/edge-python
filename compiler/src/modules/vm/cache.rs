@@ -1,4 +1,4 @@
-use super::types::{Val, HeapObj, HeapPool, VmErr, eq_vals_with_heap, cold_overflow};
+use super::types::{Val, HeapObj, HeapPool, VmErr, eq_vals_with_heap};
 use crate::modules::parser::{OpCode, SSAChunk, Instruction, Value};
 
 use alloc::{vec, vec::Vec, string::ToString};
@@ -58,8 +58,9 @@ impl OpcodeCache {
     }
 
     /* Materialise the constant pool. Int/Float/Bool/None become inline Vals
-       (no heap touch); Str allocates once and is then shared. Ints outside
-       the 47-bit Val range trap as OverflowError at materialisation. */
+       (no heap touch); Str/LongInt allocate once and are then shared.
+       Inline-int literals outside the 47-bit Val range get auto-promoted to
+       LongInt heap slots so the parser doesn't need to know Val's tag layout. */
     pub fn ensure_const_vals(&mut self, chunk: &SSAChunk, heap: &mut HeapPool)
         -> Result<&[Val], VmErr>
     {
@@ -69,7 +70,21 @@ impl OpcodeCache {
                 let v = match c {
                     Value::Int(i) => {
                         if *i >= Val::INT_MIN && *i <= Val::INT_MAX { Val::int(*i) }
-                        else { return Err(cold_overflow()); }
+                        // Defensive: this case shouldn't fire post-parser-fix since
+                        // out-of-Val-range literals now arrive as Value::LongInt,
+                        // but keep the promotion path here so manually constructed
+                        // chunks (FFI / wire format) still work.
+                        else { heap.alloc(HeapObj::LongInt(*i as i128))? }
+                    }
+                    Value::LongInt(i) => {
+                        // Demote if it actually fits — caller may emit LongInt
+                        // out of caution; keep the invariant that anything fitting
+                        // in Val::int is inline so hash/eq match literals.
+                        if *i >= Val::INT_MIN as i128 && *i <= Val::INT_MAX as i128 {
+                            Val::int(*i as i64)
+                        } else {
+                            heap.alloc(HeapObj::LongInt(*i))?
+                        }
                     }
                     Value::Float(f) => Val::float(*f),
                     Value::Bool(b) => Val::bool(*b),

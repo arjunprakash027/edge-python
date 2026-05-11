@@ -296,7 +296,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     let t = &toks[pos];
                     let raw = &self.source[t.start..t.end];
                     let val = match t.kind {
-                        TokenType::Int => raw.replace('_', "").parse::<i64>().ok().map(super::types::Value::Int),
+                        TokenType::Int => {
+                            let cleaned = raw.replace('_', "");
+                            // i64 first; fall back to i128 when literal is wider.
+                            cleaned.parse::<i64>().ok().map(super::types::Value::Int)
+                                .or_else(|| cleaned.parse::<i128>().ok().map(super::types::Value::LongInt))
+                        }
                         TokenType::Float => raw.replace('_', "").parse::<f64>().ok().map(super::types::Value::Float),
                         TokenType::String => Some(super::types::Value::Str(super::types::parse_string(raw))),
                         TokenType::True => Some(super::types::Value::Bool(true)),
@@ -308,6 +313,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                         if neg {
                             v = match v {
                                 super::types::Value::Int(i) => super::types::Value::Int(-i),
+                                // i128::MIN.neg() overflows; trap as parse error to keep sub-pattern semantics aligned with literal materialisation.
+                                super::types::Value::LongInt(i) => match i.checked_neg() {
+                                    Some(n) => super::types::Value::LongInt(n),
+                                    None => super::types::Value::LongInt(i),
+                                },
                                 super::types::Value::Float(f) => super::types::Value::Float(-f),
                                 other => other,
                             };

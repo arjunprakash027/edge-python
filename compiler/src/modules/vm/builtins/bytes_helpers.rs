@@ -31,7 +31,7 @@ impl<'a> VM<'a> {
         self.push(v); Ok(())
     }
 
-    /* `int_from_bytes(b, byteorder)` — unsigned bytes -> int ("big"/"little"). Bounded by the 47-bit Val cap; raises OverflowError if exceeded. */
+    /* `int_from_bytes(b, byteorder)` — unsigned bytes -> int ("big"/"little"). Up to 8 bytes (u64); values above 47-bit Val auto-promote to LongInt. */
     pub fn call_int_from_bytes(&mut self) -> Result<(), VmErr> {
         let order = self.pop()?;
         let v = self.pop()?;
@@ -55,8 +55,9 @@ impl<'a> VM<'a> {
         } else {
             for (i, &b) in buf.iter().enumerate() { acc |= (b as u64) << (i * 8); }
         }
-        if acc > Val::INT_MAX as u64 { return Err(cold_overflow()); }
-        self.push(Val::int(acc as i64));
+        // u64 always fits in i128; int_to_val picks inline-Val or LongInt storage.
+        let val = self.int_to_val(Some(acc as i128))?;
+        self.push(val);
         Ok(())
     }
 
@@ -65,12 +66,11 @@ impl<'a> VM<'a> {
         let order = self.pop()?;
         let length = self.pop()?;
         let n = self.pop()?;
-        if !n.is_int() { return Err(cold_type("int_to_bytes() value must be an int")); }
-        let n = n.as_int();
+        let n_i128 = self.as_i128(n).ok_or(cold_type("int_to_bytes() value must be an int"))?;
         if !length.is_int() { return Err(cold_type("int_to_bytes() length must be an int")); }
         let length = length.as_int() as usize;
         if length > 8 { return Err(cold_value("int_to_bytes() length must be <= 8")); }
-        if n < 0 { return Err(cold_value("int_to_bytes() requires a non-negative int")); }
+        if n_i128 < 0 { return Err(cold_value("int_to_bytes() requires a non-negative int")); }
         let order_s = match self.heap.get(order) {
             HeapObj::Str(s) => s.clone(),
             _ => return Err(cold_type("int_to_bytes() byteorder must be 'big' or 'little'")),
@@ -80,10 +80,11 @@ impl<'a> VM<'a> {
             "little" => false,
             _ => return Err(cold_value("byteorder must be 'big' or 'little'")),
         };
-        let val = n as u64;
-        if length < 8 && val >= (1u64 << (length * 8)) {
+        // Value must fit in `length` bytes (u64::MAX for length=8). Length cap makes the comparison overflow-free in u128.
+        if n_i128 as u128 >= (1u128 << (length * 8).min(127)) {
             return Err(cold_overflow());
         }
+        let val = n_i128 as u64;
         let mut out = Vec::with_capacity(length);
         if big {
             for i in (0..length).rev() { out.push((val >> (i * 8) & 0xff) as u8); }

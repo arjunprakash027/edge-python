@@ -47,7 +47,7 @@ hello world
 
 ### abs
 
-`abs(x)` — absolute value of an int or float. `abs("hello")` raises `TypeError` ("abs() requires a number"). Edge Python's int is 47-bit, so very large literals overflow at parse time before `abs` ever sees them.
+`abs(x)` — absolute value of an int or float. `abs("hello")` raises `TypeError` ("abs() requires a number"). Works on both inline ints and `LongInt`-promoted i128 values; literals beyond ±2¹²⁷ are rejected at parse time before `abs` sees them.
 
 ```python
 print(abs(-7))
@@ -111,7 +111,7 @@ print(sum(x * x for x in range(5)))
 
 ### pow
 
-`pow(base, exp)` or `pow(base, exp, mod)` for modular exponentiation. The 3-arg form requires int operands and a non-negative exponent (`pow(a, b, 0)` raises `ZeroDivisionError`; `pow(a, -1, m)` raises `ValueError`).
+`pow(base, exp)` or `pow(base, exp, mod)` for modular exponentiation. The 3-arg form requires int operands and a non-negative exponent (`pow(a, b, 0)` raises `ZeroDivisionError`; `pow(a, -1, m)` raises `ValueError`). The modulus must be `< 2⁶³` — larger moduli would overflow i128 during the internal `(result * base) % m` step and raise `ValueError("pow() modulus too large; must be < 2^63")`.
 
 ```python
 print(pow(2, 10))
@@ -161,7 +161,7 @@ print(hex(-256))
 
 ### int
 
-`int(x)` — single-argument constructor. Accepts `int`, `bool`, `float` (truncates toward zero), or a numeric string. Strings outside that shape raise `ValueError` ("int(): invalid literal"). Integers are clamped to a 47-bit signed range; literals or arithmetic exceeding `±140_737_488_355_327` raise `OverflowError`. **There is no `int(x, base)` form** — parse hex/oct/bin strings yourself or use the `0x`/`0o`/`0b` literal syntax.
+`int(x)` — single-argument constructor. Accepts `int`, `bool`, `float` (truncates toward zero), or a numeric string. Strings outside that shape raise `ValueError` ("int(): invalid literal"). Integers up to ±2¹²⁷ are supported (inline 47-bit + `LongInt` i128); values beyond that raise `OverflowError`. **There is no `int(x, base)` form** — parse hex/oct/bin strings yourself or use the `0x`/`0o`/`0b` literal syntax.
 
 ```python
 print(int(3.9))
@@ -479,7 +479,7 @@ Edge Python exposes these as **free functions** rather than int/bytes methods. T
 
 - `bytes_fromhex(s)` — parse a hex string into bytes. Whitespace inside is ignored; non-hex characters raise `ValueError`.
 - `int_from_bytes(b, order)` — `order` is `"big"` or `"little"`. Unsigned only — the high bit is **never** treated as a sign bit.
-- `int_to_bytes(n, length, order)` — `n` must be non-negative, `length` ≤ 8 (47-bit `Val` cap means anything wider would lose precision anyway). Raises `OverflowError` if `n` doesn't fit.
+- `int_to_bytes(n, length, order)` — `n` must be non-negative, `length` ≤ 8. Accepts inline ints or `LongInt`-promoted values; raises `OverflowError` if `n` doesn't fit in `length` bytes.
 
 ```python
 print(bytes_fromhex("48656c6c6f"))
@@ -830,7 +830,7 @@ timed out
 | `bin`             | 1          | `0b...` prefix                             |
 | `oct`             | 1          | `0o...` prefix                             |
 | `hex`             | 1          | `0x...` prefix                             |
-| `int`             | 1          | 1-arg only; no base form; 47-bit cap       |
+| `int`             | 1          | 1-arg only; no base form; 128-bit cap      |
 | `float`           | 1          | parse / cast; recognises `inf`/`nan`       |
 | `str`             | 0 or 1     | display form                               |
 | `bool`            | 0 or 1     | truthiness                                 |

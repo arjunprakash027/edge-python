@@ -90,17 +90,32 @@ fn parse_spec(spec: &str) -> Result<Spec, &'static str> {
 }
 
 fn apply(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static str> {
+    let is_long = v.is_heap() && matches!(heap.get(v), HeapObj::LongInt(_));
+    let is_int_like = v.is_int() || v.is_bool() || is_long;
     // Dispatch by type char: int types -> int formatter, float types coerce ints up, `s` only strings.
     match s.ty {
         0 | b's' => {
-            if v.is_int() || v.is_float() || v.is_bool() || v.is_none() {
+            if is_int_like || v.is_float() || v.is_none() {
                 if s.ty == b's' { return Err("'s' format spec requires a string"); }
-                // No type char + numeric: default render, unless precision/thousands forces float-fixed.
-                if s.precision.is_some() || s.thousands {
+                // Precision on int → float-fixed; thousands stays in int path to keep LongInt precision.
+                if s.precision.is_some() && !is_int_like {
+                    return format_float(v, s, b'f', heap);
+                }
+                if s.thousands && is_int_like {
+                    let mut s2 = s.clone();
+                    s2.ty = b'd';
+                    return format_int(v, &s2, heap);
+                }
+                if s.precision.is_some() {
                     return format_float(v, s, b'f', heap);
                 }
                 if v.is_int() {
                     return Ok(pad_numeric(s, &itoa_str(v.as_int())));
+                }
+                if is_long
+                    && let HeapObj::LongInt(i) = heap.get(v) {
+                    let mut buf = itoa::Buffer::new();
+                    return Ok(pad_numeric(s, buf.format(*i)));
                 }
                 if v.is_float() {
                     return format_float(v, s, b'f', heap);
@@ -131,8 +146,8 @@ fn format_percent(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static 
     let f = require_float(v, heap)? * 100.0;
     let prec = s.precision.unwrap_or(6);
     let body = if f.is_nan() { "nan".to_string() }
-               else if f.is_infinite() { if f.is_sign_negative() { "-inf".into() } else { "inf".into() } }
-               else { fixed(f.abs(), prec) };
+        else if f.is_infinite() { if f.is_sign_negative() { "-inf".into() } else { "inf".into() } }
+        else { fixed(f.abs(), prec) };
     let sign_ch = sign_char(f.is_sign_negative() && !f.is_nan(), s.sign);
     let mut left = String::new();
     if let Some(c) = sign_ch { left.push(c); }
@@ -230,35 +245,43 @@ fn format_with_e(mag: f64, prec: usize, upper: bool) -> String {
     out
 }
 
-fn require_float(v: Val, _heap: &HeapPool) -> Result<f64, &'static str> {
+fn require_float(v: Val, heap: &HeapPool) -> Result<f64, &'static str> {
     if v.is_float() { return Ok(v.as_float()); }
     if v.is_int() { return Ok(v.as_int() as f64); }
     if v.is_bool() { return Ok(v.as_bool() as i64 as f64); }
+    if v.is_heap() && let HeapObj::LongInt(i) = heap.get(v) { return Ok(*i as f64); }
     Err("format spec requires a number")
 }
 
-fn int_to_decimal_parts(v: Val, _heap: &HeapPool) -> Result<(bool, String), &'static str> {
+fn int_to_decimal_parts(v: Val, heap: &HeapPool) -> Result<(bool, String), &'static str> {
     if v.is_int() {
         let i = v.as_int();
         let neg = i < 0;
         let mut b = itoa::Buffer::new();
-        // `i.unsigned_abs()` is safe even at i64::MIN; Val ints are bounded to +/- 2^47 anyway.
         let mag = b.format(i.unsigned_abs()).to_string();
         return Ok((neg, mag));
     }
     if v.is_bool() { return Ok((false, itoa_str(v.as_bool() as i64))); }
+    if v.is_heap() && let HeapObj::LongInt(i) = heap.get(v) {
+        let neg = *i < 0;
+        let mut b = itoa::Buffer::new();
+        // unsigned_abs handles i128::MIN: returns 2^127 in u128.
+        let mag = b.format(i.unsigned_abs()).to_string();
+        return Ok((neg, mag));
+    }
     Err("format spec requires an integer")
 }
 
 fn decimal_to_radix(mag: &str, radix: u32) -> String {
-    // Non-neg decimal string -> `radix`. Fits in u64 since Val ints are bounded to +/- 2^47.
+    // Non-neg decimal string -> `radix`. Parses into u128 to cover LongInt
+    // magnitudes (up to 2^127). Bool/inline-int values still fit trivially.
     if mag == "0" { return String::from("0"); }
-    let mut n: u64 = mag.parse().unwrap_or(0);
+    let mut n: u128 = mag.parse().unwrap_or(0);
     let mut out = String::new();
     while n > 0 {
-        let d = (n % radix as u64) as u32;
+        let d = (n % radix as u128) as u32;
         out.push(core::char::from_digit(d, radix).unwrap());
-        n /= radix as u64;
+        n /= radix as u128;
     }
     out.chars().rev().collect()
 }
@@ -401,8 +424,16 @@ pub fn display_inline(v: Val, heap: &HeapPool) -> String {
     if v.is_bool() { return (if v.as_bool() { "True" } else { "False" }).to_string(); }
     if v.is_none() { return String::from("None"); }
     if v.is_float() { return crate::util::fstr::format_f64(v.as_float()); }
-    if v.is_heap()
-        && let HeapObj::Str(s) = heap.get(v) { return s.clone(); }
+    if v.is_heap() {
+        match heap.get(v) {
+            HeapObj::Str(s) => return s.clone(),
+            HeapObj::LongInt(i) => {
+                let mut b = itoa::Buffer::new();
+                return b.format(*i).to_string();
+            }
+            _ => {}
+        }
+    }
     /* Fall back to nothing — caller should use VM::display for full coverage. */
     String::new()
 }
