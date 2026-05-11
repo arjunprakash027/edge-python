@@ -26,9 +26,7 @@ mod test {
         for case in cases {
             let (tokens, lex_errs) = lex(&case.src);
             let mut parser = Parser::new(&case.src, tokens.into_iter());
-            for e in lex_errs {
-                parser.errors.push(Diagnostic { start: e.start, end: e.end, msg: e.msg.into() });
-            }
+            for e in lex_errs { parser.errors.push(Diagnostic { start: e.start, end: e.end, msg: e.msg.into() }); }
             let (chunk, diagnostics) = parser.parse();
 
             let constants: Vec<String> = chunk
@@ -37,7 +35,7 @@ mod test {
                 .map(|v| match v {
                     Value::Str(s) => s.clone(),
                     Value::Bytes(b) => format!("b{:?}",
-                        String::from_utf8_lossy(b).to_string()),
+                    String::from_utf8_lossy(b).to_string()),
                     Value::Int(i) => i.to_string(),
                     Value::LongInt(i) => i.to_string(),
                     Value::Float(f) => f.to_string(),

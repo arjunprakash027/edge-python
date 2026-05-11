@@ -1,6 +1,5 @@
 [
   {
-    "_section": "Native imports — basic dispatch and chunk shape",
     "src": "from m import add\nprint(add(2, 3))",
     "output": ["5"],
     "modules": { "m": { "native": ["add"] } },
@@ -14,92 +13,72 @@
     "expect_externs": 2
   },
   {
-    "_comment": "alias rebinds the local name; extern_table still records the original",
     "src": "from m import add as plus\nprint(plus(10, 20))",
     "output": ["30"],
     "modules": { "m": { "native": ["add"] } },
     "expect_externs": 1
   },
   {
-    "_comment": "import the same module twice (different bindings) — both work",
     "src": "from m import f\nfrom m import f as g\nprint(f(1) + g(2))",
     "output": ["6"],
     "modules": { "m": { "code": "def f(x):\n    return x * 2" } }
   },
-
   {
-    "_section": "Native imports — error propagation",
     "src": "from m import boom\nprint(boom())",
     "modules": { "m": { "native": ["boom"] } },
     "error": "boom from extern"
   },
   {
-    "_comment": "type error from extern surfaces with its message intact",
     "src": "from m import add\nprint(add('x', 1))",
     "modules": { "m": { "native": ["add"] } },
     "error": "add: arg 0 not int"
   },
   {
-    "_comment": "impure native taints memoization but returns a fresh value each call",
     "src": "from m import counter\nprint(counter())\nprint(counter())\nprint(counter())",
     "output": ["0", "1", "2"],
     "modules": { "m": { "native": ["counter"] } }
   },
   {
-    "_comment": "heap-allocating native (returns Str) round-trips through the wire",
     "src": "from m import make_str\nprint(make_str(3))",
     "output": ["xxx"],
     "modules": { "m": { "native": ["make_str"] } }
   },
-
   {
-    "_section": "Code modules — module-as-singleton: imported fns live in the module's own chunk",
-    "_comment": "Post-architectural-fix: imports compile each module ONCE; importers reference its functions via LoadModule + LoadAttr instead of splicing them into the parent chunk.",
     "src": "from u import normalize\nprint(normalize('  hi  '))",
     "output": ["hi"],
     "modules": { "u": { "code": "def normalize(s):\n    return s.strip()" } }
   },
-
   {
-    "_section": "Code modules — transitive deps resolve through their own module chunks",
-    "_comment": "single-level: report calls label internally",
     "src": "from m import report\nprint(report(1))",
     "output": ["yes"],
     "modules": { "m": { "code": "def label(p):\n    return 'yes' if p == 1 else 'no'\n\ndef report(p):\n    return label(p)" } }
   },
   {
-    "_comment": "multi-level chain a -> b -> c -> d through the same module",
     "src": "from m import a\nprint(a())",
     "output": ["d"],
     "modules": { "m": { "code": "def d():\n    return 'd'\n\ndef c():\n    return d()\n\ndef b():\n    return c()\n\ndef a():\n    return b()" } }
   },
   {
-    "_comment": "shared helper called by both a and b — single Module Val, same fn identity",
     "src": "from m import a, b\nprint(a())\nprint(b())",
     "output": ["A: hi", "B: hi"],
     "modules": { "m": { "code": "def label():\n    return 'hi'\n\ndef a():\n    return 'A: ' + label()\n\ndef b():\n    return 'B: ' + label()" } }
   },
   {
-    "_comment": "alias stays on the user-imported name, transitive helper keeps its bare name",
     "src": "from m import report as r\nprint(r(1))",
     "output": ["yes"],
     "modules": { "m": { "code": "def label(p):\n    return 'yes' if p == 1 else 'no'\n\ndef report(p):\n    return label(p)" } }
   },
   {
-    "_comment": "external builtin names (print) inside body aren't mistaken for sibling defs",
     "src": "from m import greet\ngreet('world')",
     "output": ["hello world"],
     "modules": { "m": { "code": "def greet(name):\n    print('hello ' + name)" } }
   },
   {
-    "_comment": "local var inside body doesn't trigger spurious sibling-def inlining",
     "src": "from m import double\nprint(double(7))",
     "output": ["14"],
     "modules": { "m": { "code": "def double(x):\n    n = x * 2\n    return n" } }
   },
-
   {
-    "_section": "Mixed code + native + integration with other features",
     "src": "from m import add\nfrom u import shout\nprint(add(shout(2), shout(3)))",
     "output": ["50"],
     "modules": {
@@ -109,37 +88,31 @@
     "expect_externs": 1
   },
   {
-    "_comment": "native called from inside a user def — extern_table inherited to nested chunk",
     "src": "from m import add\ndef twice(n):\n    return add(n, n)\nprint(twice(7))",
     "output": ["14"],
     "modules": { "m": { "native": ["add"] } }
   },
   {
-    "_comment": "imported native used inside a class method passing self.attr",
     "src": "from m import factor\nclass C:\n    def __init__(self, n):\n        self.n = n\n    def compute(self):\n        return factor(self.n)\nprint(C(7).compute())",
     "output": ["14"],
     "modules": { "m": { "code": "def factor(n):\n    return n * 2" } }
   },
   {
-    "_comment": "imported function used inside a lambda",
     "src": "from m import double\nfn = lambda x: double(x) + 1\nprint(fn(5))",
     "output": ["11"],
     "modules": { "m": { "code": "def double(n):\n    return n * 2" } }
   },
   {
-    "_comment": "imported native inside a comprehension",
     "src": "from m import square\nprint([square(x) for x in range(4)])",
     "output": ["[0, 1, 4, 9]"],
     "modules": { "m": { "native": ["square"] } }
   },
   {
-    "_comment": "import + try/except still catches the right error",
     "src": "from m import safe_div\ntry:\n    print(safe_div(10, 2))\n    print(safe_div(10, 0))\nexcept ZeroDivisionError:\n    print('caught')",
     "output": ["5.0", "caught"],
     "modules": { "m": { "code": "def safe_div(a, b):\n    return a / b" } }
   },
   {
-    "_comment": "two modules, disjoint helper names — no collision",
     "src": "from a import f\nfrom b import g\nprint(f(2))\nprint(g(3))",
     "output": ["2-tagA", "3-tagB"],
     "modules": {
@@ -147,183 +120,142 @@
       "b": { "code": "def tag_b():\n    return 'tagB'\n\ndef g(n):\n    return str(n) + '-' + tag_b()" }
     }
   },
-
   {
-    "_section": "Resolver and parser-time errors (with span checks where useful)",
-    "_comment": "no manifest declares the bare name -> diagnostic mentions both the spec and the missing manifest, span covers the spec exactly",
     "src": "from missing import x\nprint(x)",
     "error": "no packages.json above '' declares 'missing'",
     "error_span_covers": "missing"
   },
   {
-    "_comment": "module exists but has no such export -> mentions both",
     "src": "from m import nope\nprint(nope())",
     "modules": { "m": { "native": ["add"] } },
     "error": "has no export 'nope'"
   },
   {
-    "_comment": "code module fails to parse -> host's import surfaces the inner error",
     "src": "from u import bad\nprint(bad())",
     "modules": { "u": { "code": "def x(:" } },
     "error": "module 'u' parse error"
   },
   {
-    "_comment": "code module exporting a top-level constant — splicer runs the whole module so K is in scope",
     "src": "from m import K\nprint(K)",
     "output": ["42"],
     "modules": { "m": { "code": "K = 42\ndef ignored():\n    pass" } }
   },
   {
-    "_comment": "module-level effect: pre-built dict bound by name",
     "src": "from m import TABLE\nprint(TABLE['two'])",
     "output": ["2"],
     "modules": { "m": { "code": "TABLE = {'one': 1, 'two': 2, 'three': 3}" } }
   },
   {
-    "_comment": "constant computed from earlier top-level: requires splicer to walk in order",
     "src": "from m import DOUBLED\nprint(DOUBLED)",
     "output": ["20"],
     "modules": { "m": { "code": "BASE = 10\nDOUBLED = BASE * 2" } }
   },
   {
-    "_comment": "def referencing a top-level constant works at call time",
     "src": "from m import area\nprint(area(3))",
     "output": ["28"],
     "modules": { "m": { "code": "PI = 3.14\ndef area(r):\n    return int(PI * r * r)" } }
   },
   {
-    "_comment": "missing export — same diagnostic shape as before",
     "src": "from m import nope\nprint(nope)",
     "modules": { "m": { "code": "K = 1" } },
     "error": "has no export 'nope'"
   },
   {
-    "_comment": "alias on an exported constant",
     "src": "from m import MAX as N\nprint(N)",
     "output": ["100"],
     "modules": { "m": { "code": "MAX = 100" } }
   },
   {
-    "_comment": "top-level if/else writing a constant — splicer remaps Phi sources",
     "src": "from m import LIM\nprint(LIM)",
     "output": ["10"],
     "modules": { "m": { "code": "x = 1\nif x > 0:\n    LIM = 10\nelse:\n    LIM = -1" } }
   },
-
   {
-    "_section": "Native typed marshalling — non-i64 wire types round-trip cleanly",
-    "_comment": "f64 -> f64 across the extern dispatch; no coercion to int",
     "src": "from m import double_f\nprint(double_f(2.5))",
     "output": ["5.0"],
     "modules": { "m": { "native": ["double_f"] } }
   },
   {
-    "_comment": "bool -> bool",
     "src": "from m import negate\nprint(negate(True))\nprint(negate(False))",
     "output": ["False", "True"],
     "modules": { "m": { "native": ["negate"] } }
   },
   {
-    "_comment": "mixed bool + int args",
     "src": "from m import pick\nprint(pick(True, 1, 2))\nprint(pick(False, 1, 2))",
     "output": ["2", "1"],
     "modules": { "m": { "native": ["pick"] } }
   },
   {
-    "_comment": "wrong-type arg surfaces the extern's own diagnostic",
     "src": "from m import double_f\nprint(double_f(2))",
     "modules": { "m": { "native": ["double_f"] } },
     "error": "double_f: expected one float arg"
   },
-
   {
-    "_section": "Namespace import — `import X` materialises a module value",
-    "_comment": "native module: m.add(...) dispatches via the module's attr table",
     "src": "import m\nprint(m.add(2, 3))",
     "output": ["5"],
     "modules": { "m": { "native": ["add"] } }
   },
   {
-    "_comment": "native module: bare attribute (no call) returns the extern callable",
     "src": "import m\nf = m.add\nprint(f(4, 5))",
     "output": ["9"],
     "modules": { "m": { "native": ["add"] } }
   },
   {
-    "_comment": "code module: m.k reaches a top-level constant",
     "src": "import m\nprint(m.k)",
     "output": ["7"],
     "modules": { "m": { "code": "k = 7" } }
   },
   {
-    "_comment": "code module: m.fn(...) calls a top-level def",
     "src": "import m\nprint(m.double(21))",
     "output": ["42"],
     "modules": { "m": { "code": "def double(x):\n    return x * 2" } }
   },
   {
-    "_comment": "import alias",
     "src": "import m as math\nprint(math.add(10, 20))",
     "output": ["30"],
     "modules": { "m": { "native": ["add"] } }
   },
   {
-    "_comment": "missing attr surfaces module name in the error",
     "src": "import m\nprint(m.nope)",
     "modules": { "m": { "native": ["add"] } },
     "error": "module 'm' has no attribute 'nope'"
   },
   {
-    "_comment": "type(m) is module",
     "src": "import m\nprint(type(m))",
     "output": ["<class 'module'>"],
     "modules": { "m": { "code": "x = 1" } }
   },
   {
-    "_section": "Star imports — `from X import *`",
-    "_comment": "every native binding becomes a flat name in scope",
     "src": "from m import *\nprint(add(1, 2))",
     "output": ["3"],
     "modules": { "m": { "native": ["add"] } }
   },
   {
-    "_comment": "code-module star: top-level constants and defs land in scope",
     "src": "from m import *\nprint(K)\nprint(double(5))",
     "output": ["7", "10"],
     "modules": { "m": { "code": "K = 7\ndef double(x):\n    return x * 2" } }
   },
-
   {
-    "_section": "Module identity — `__name__` rebinds across imports",
-    "_comment": "imported module's `if __name__ == '__main__':` guard skips, parent's __name__ is still '__main__' afterward",
     "src": "from m import label\nprint(__name__)\nprint(label(1))",
     "output": ["__main__", "yes"],
     "modules": { "m": { "code": "def label(p):\n    return 'yes' if p == 1 else 'no'\n\nif __name__ == '__main__':\n    print('ran as main')" } }
   },
   {
-    "_comment": "module body reads __name__ during splice — sees the spec, not '__main__'",
     "src": "from m import got_name\nprint(got_name)",
     "output": ["m"],
     "modules": { "m": { "code": "got_name = __name__" } }
   },
-
   {
-    "_section": "Mutual recursion across spliced top-level defs",
-    "_comment": "is_even references is_odd defined later in the same code module; splicer stores siblings under higher SSA versions but each body records the version current at body-compile time. Late-binding via base-name fallback + module-level globals registration bridges the gap.",
     "src": "from m import is_even\nprint(is_even(4))\nprint(is_even(7))",
     "output": ["True", "False"],
     "modules": { "m": { "code": "def is_even(n):\n    return True if n == 0 else is_odd(n - 1)\n\ndef is_odd(n):\n    return False if n == 0 else is_even(n - 1)" } }
   },
   {
-    "_comment": "calling the forward-defined sibling directly: same fix path",
     "src": "from m import is_odd\nprint(is_odd(3))",
     "output": ["True"],
     "modules": { "m": { "code": "def is_even(n):\n    return True if n == 0 else is_odd(n - 1)\n\ndef is_odd(n):\n    return False if n == 0 else is_even(n - 1)" } }
   },
-
   {
-    "_section": "Transitive imports — root-only packages.json",
-    "_comment": "main -> lib/a.py -> lib/b.py via an alias declared only in root aliases. Sub-resolver shares state, so b_alias resolves correctly when lib/a.py asks for it.",
     "src": "from a_mod import handler\nprint(handler(3))",
     "output": ["b:6"],
     "modules": {
@@ -333,7 +265,6 @@
     "aliases": { "a_mod": "a_mod", "b_alias": "b_mod" }
   },
   {
-    "_comment": "diamond import: main -> a -> c, main -> b -> c. c's source must parse only once (the cache dedups), so its top-level side effect runs once and both paths see identical bindings.",
     "src": "from a import f\nfrom b import g\nprint(f())\nprint(g())",
     "output": ["a:42", "b:42"],
     "modules": {
@@ -343,7 +274,6 @@
     }
   },
   {
-    "_comment": "cycle detection: a imports b, b imports a — surfaces a parse-time diagnostic instead of infinite recursion.",
     "src": "from a import x\nprint(x)",
     "modules": {
       "a": { "code": "from b import y\nx = y" },
@@ -351,10 +281,7 @@
     },
     "error": "circular import"
   },
-
   {
-    "_section": "Module-private name isolation — same-named helpers across modules",
-    "_comment": "two modules each define a private `helper` of the same name. Pre-fix, the second splice's bare `helper` overwrote the first in the parent chunk, so f(2) returned 202 instead of 102. Per-module mangling gives each helper a unique parent slot.",
     "src": "from a import f\nfrom b import g\nprint(f(2))\nprint(g(3))",
     "output": ["102", "203"],
     "modules": {
@@ -363,7 +290,6 @@
     }
   },
   {
-    "_comment": "transitive: a depends on b; both define a same-named constant K used inside their respective helpers. Each module's helper must see its own K, not the sibling's.",
     "src": "from a import describe\nfrom b import describe as describe_b\nprint(describe())\nprint(describe_b())",
     "output": ["a:1", "b:2"],
     "modules": {
@@ -372,7 +298,6 @@
     }
   },
   {
-    "_comment": "same-name helper lives inside a class method body — recursion through `chunk.classes[*].body.names` must rewrite the free-load too.",
     "src": "from a import Wrap\nfrom b import other\nprint(Wrap().run(5))\nprint(other(5))",
     "output": ["a:7", "b:25"],
     "modules": {
@@ -381,7 +306,6 @@
     }
   },
   {
-    "_comment": "import * from two modules that share a private helper name; the public exports rebind under bare names, helpers stay isolated.",
     "src": "from a import *\nfrom b import *\nprint(f(2))\nprint(g(3))",
     "output": ["102", "203"],
     "modules": {
@@ -390,7 +314,6 @@
     }
   },
   {
-    "_comment": "module-namespace import: `import a` builds a HeapObj::Module whose attrs use bare names (prefix is stripped at BuildModule time).",
     "src": "import a\nimport b\nprint(a.f(2))\nprint(b.g(3))",
     "output": ["102", "203"],
     "modules": {
@@ -398,79 +321,54 @@
       "b": { "code": "def helper(n):\n    return n + 200\n\ndef g(n):\n    return helper(n)" }
     }
   },
-
   {
-    "_section": "Lex errors from imported modules surface to the user",
-    "_comment": "Pre-fix, lex errors in imported source were silently dropped (`let (tokens, _lex_errs) = lex(src)`), so an unterminated string in a module produced confusing downstream parse errors instead of the actual diagnostic.",
     "src": "from m import f\nprint(f())",
     "modules": { "m": { "code": "def f():\n    return 'oops" } },
     "error": "unterminated string literal"
   },
-
   {
-    "_section": "Integrity verification — `#sha256-<hex>` URL fragments. The parser hashes the bytes the resolver returns from fetch_bytes() and refuses to compile on mismatch. The three NIST vectors below double as a correctness check for the in-tree SHA-256: if our hash agrees with FIPS 180-2's published digest, the case loads cleanly; otherwise integrity_check_failed.",
-    "_comment": "NIST vector 'abc' (FIPS 180-2 §A.1) — single-block input.",
     "src": "from \"m#sha256-ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\" import const_42\nprint(const_42())",
     "modules": { "m": { "native": ["const_42"], "bytes": "abc" } },
     "output": ["42"]
   },
   {
-    "_comment": "NIST vector empty string — exercises the padding-only path.",
     "src": "from \"m#sha256-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\" import const_42\nprint(const_42())",
     "modules": { "m": { "native": ["const_42"], "bytes": "" } },
     "output": ["42"]
   },
   {
-    "_comment": "NIST vector 56 bytes — padding spills into a second block (block-boundary case).",
     "src": "from \"m#sha256-248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1\" import const_42\nprint(const_42())",
     "modules": { "m": { "native": ["const_42"], "bytes": "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq" } },
     "output": ["42"]
   },
-
   {
-    "_section": "Integrity — mismatch refuses to compile",
-    "_comment": "Hash on the URL is well-formed but doesn't match SHA-256(bytes); the diagnostic surfaces both expected and actual digests so the user can see which side drifted.",
     "src": "from \"m#sha256-0000000000000000000000000000000000000000000000000000000000000000\" import const_42",
     "modules": { "m": { "native": ["const_42"], "bytes": "abc" } },
     "error": "integrity check failed"
   },
-
   {
-    "_section": "Integrity — malformed fragments rejected at parse time, before any fetch",
-    "_comment": "Non-hex chars in the digest.",
     "src": "from \"m#sha256-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\" import f",
     "error": "invalid hex"
   },
   {
-    "_comment": "Wrong digest length — 64 hex chars required.",
     "src": "from \"m#sha256-deadbeef\" import f",
     "error": "64 hex chars"
   },
   {
-    "_comment": "Unknown algorithm prefix. Only sha256 is honored today; other prefixes fail loud so future syntax extensions can't slip through silently unverified.",
     "src": "from \"m#md5-deadbeef\" import f",
     "error": "unrecognized integrity fragment"
   },
-
   {
-    "_section": "Integrity — host without fetch_bytes support fails clean",
-    "_comment": "Well-formed digest but resolver has no bytes seeded for the spec; default Resolver impl returns Err so the script fails loud instead of running unverified.",
     "src": "from \"m#sha256-0000000000000000000000000000000000000000000000000000000000000000\" import f",
     "modules": { "m": { "native": ["const_42"] } },
     "error": "integrity verification not supported"
   },
-
   {
-    "_section": "Integrity — imports without fragments are unaffected (backwards compat)",
-    "_comment": "Resolver has no bytes seeded; the parser never calls fetch_bytes because there's no fragment, so this still loads cleanly.",
     "src": "from m import const_42\nprint(const_42())",
     "modules": { "m": { "native": ["const_42"] } },
     "output": ["42"]
   },
-
   {
-    "_section": "Nested packages.json — walk-up resolves bare names against the nearest manifest",
-    "_comment": "Sub-module `lib/a.py` uses bare `helpers`; lib/packages.json declares it, so resolution stops there without consulting the root.",
     "src": "from \"./lib/a.py\" import run\nprint(run())",
     "output": ["nested:hi"],
     "modules": {
@@ -482,7 +380,6 @@
     }
   },
   {
-    "_comment": "Hermetic: lib/packages.json doesn't declare 'utils' and has no extends — bare 'utils' inside lib/a.py errors clearly even though the root manifest declares it.",
     "src": "from \"./lib/a.py\" import run\nprint(run())",
     "modules": {
       "./lib/a.py":  { "code": "from utils import slug\n\ndef run():\n    return slug('x')" },
@@ -495,7 +392,6 @@
     "error": "alias 'utils' not declared in './lib/packages.json'"
   },
   {
-    "_comment": "Extends: lib/packages.json says extends \"..\", so missing aliases fall through to the root manifest (Node-style fallback opt-in).",
     "src": "from \"./lib/a.py\" import run\nprint(run())",
     "output": ["root:hi"],
     "modules": {
@@ -508,7 +404,6 @@
     }
   },
   {
-    "_comment": "No manifest anywhere on the walk-up path -> error names the searched-from dir so the user knows where to drop a packages.json.",
     "src": "from \"./lib/a.py\" import run\nprint(run())",
     "modules": {
       "./lib/a.py": { "code": "from utils import slug\n\ndef run():\n    return slug('x')" }
@@ -516,7 +411,6 @@
     "error": "no packages.json above './lib/' declares 'utils'"
   },
   {
-    "_comment": "Two sub-packages with the same alias name (`db`) resolved to different targets — Cargo-like hermeticity, no leakage.",
     "src": "from \"./svc_a/main.py\" import handle as ha\nfrom \"./svc_b/main.py\" import handle as hb\nprint(ha())\nprint(hb())",
     "output": ["postgres", "mysql"],
     "modules": {
@@ -531,7 +425,6 @@
     }
   },
   {
-    "_comment": "Circular extends: lib points up at root, root points down at lib — resolver detects the cycle and errors instead of looping.",
     "src": "from \"./lib/a.py\" import run\nprint(run())",
     "modules": {
       "./lib/a.py": { "code": "from missing import x\n\ndef run():\n    return x" }
@@ -543,7 +436,6 @@
     "error": "circular extends chain"
   },
   {
-    "_comment": "Multi-level walk-up: bare name in lib/sub/x.py walks lib/sub/ -> lib/ -> \"\" before finding the declaring manifest at the root.",
     "src": "from \"./lib/sub/x.py\" import f\nprint(f())",
     "output": ["root-helper"],
     "modules": {
@@ -552,10 +444,7 @@
     },
     "aliases": { "helper": "./helper.py" }
   },
-
   {
-    "_section": "import_module — runtime dispatch over statically-imported modules",
-    "_comment": "import_module(name) returns the Module Val bound under that name; lets the script choose which pre-imported module to use at runtime without a manual dispatch dict.",
     "src": "import prod\nimport dev\nm = import_module('prod')\nprint(m.handler())",
     "output": ["prod-handle"],
     "modules": {
@@ -564,7 +453,6 @@
     }
   },
   {
-    "_comment": "Choosing at runtime — same module table covers both branches.",
     "src": "import prod\nimport dev\nfor env in ['prod', 'dev']:\n    print(import_module(env).handler())",
     "output": ["prod-handle", "dev-handle"],
     "modules": {
@@ -573,17 +461,14 @@
     }
   },
   {
-    "_comment": "Looking up a module that was never imported errors at runtime, not silently None.",
     "src": "try:\n    import_module('missing')\nexcept NameError:\n    print('caught')",
     "output": ["caught"]
   },
   {
-    "_comment": "Looking up a non-module global (a builtin function) errors as TypeError.",
     "src": "try:\n    import_module('len')\nexcept TypeError:\n    print('not a module')",
     "output": ["not a module"]
   },
   {
-    "_comment": "Argument must be a string.",
     "src": "try:\n    import_module(42)\nexcept TypeError:\n    print('arg type')",
     "output": ["arg type"]
   }

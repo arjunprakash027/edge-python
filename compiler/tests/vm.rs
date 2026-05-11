@@ -21,7 +21,7 @@ mod test {
 
         for case in cases {
             let (tokens, lex_errs) = lex(&case.src);
-            // If a case expects an error matching a lex diagnostic, it's handled here.
+            // Skip cases whose expected error is already raised by the lexer.
             if !lex_errs.is_empty()
                 && let Some(expected) = &case.error
                 && lex_errs.iter().any(|e| e.msg.contains(expected.as_str()))
@@ -34,32 +34,24 @@ mod test {
             let result = vm.run();
 
             match result {
-                Ok(_obj) => {
-                    assert_eq!(vm.output, case.output, "output mismatch on: {:?}", case.src);
-                }
+                Ok(_obj) => { assert_eq!(vm.output, case.output, "output mismatch on: {:?}", case.src); }
                 Err(e) => match &case.error {
-                    Some(expected) => assert!(
-                        e.to_string().contains(expected.as_str()),
-                        "wrong error on {:?}: got '{}', expected '{}'", case.src, e, expected
-                    ),
+                    Some(expected) => assert!(e.to_string().contains(expected.as_str()), "wrong error on {:?}: got '{}', expected '{}'", case.src, e, expected),
                     None => panic!("VM error on {:?}: {}", case.src, e),
                 }
             }
         }
     }
 
-    /* Re-runs every vm.json case under `vm.strict_input = true` — the mode
-       browser/WASI hosts use, where reading past the end of the host-supplied
-       input buffer is a hard `RuntimeError` instead of returning empty.
-       Lex/parse errors are also asserted (`test_cases` ignores them). */
+    /* Reruns every vm.json case in strict_input mode (host-supplied buffer; reading past = RuntimeError).
+       Lex/parse errors are also asserted here. */
     #[test]
     fn strict_cases() {
         let cases: Vec<Case> = serde_json::from_str(include_str!("cases/vm.json")).expect("invalid JSON");
 
         for case in cases {
             let (tokens, lex_errs) = lex(&case.src);
-            // Lex errors are surfaced as parse-time diagnostics; if a case expects
-            // an error matching one of them, treat it as handled and skip further work.
+            // Lex errors are surfaced as diagnostics; match against the expected error and move on.
             if !lex_errs.is_empty() {
                 if let Some(expected) = &case.error {
                     assert!(
@@ -98,17 +90,11 @@ mod test {
 
             match vm.run() {
                 Ok(_) => {
-                    assert!(
-                        !expects_input_error,
-                        "expected input() to error under strict mode for: {:?}", case.src
-                    );
+                    assert!(!expects_input_error, "expected input() to error under strict mode for: {:?}", case.src);
                     assert_eq!(vm.output, case.output, "output mismatch on: {:?}", case.src);
                 }
                 Err(e) => match &case.error {
-                    Some(expected) => assert!(
-                        e.to_string().contains(expected.as_str()),
-                        "wrong error on {:?}: got '{}', expected '{}'", case.src, e, expected
-                    ),
+                    Some(expected) => assert!(e.to_string().contains(expected.as_str()), "wrong error on {:?}: got '{}', expected '{}'", case.src, e, expected),
                     None if expects_input_error => assert!(
                         e.to_string().contains("input"),
                         "expected input RuntimeError under strict mode for: {:?}, got: {}",
