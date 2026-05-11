@@ -29,25 +29,31 @@ Then open http://localhost:8000 in your browser.
 ### Project Structure
 
 ```bash
-├── tailwind.config.js
-├── version.json
-├── index.html
-├── README.md
 ├── css
 │   └── style.css
+├── index.html
 ├── js
 │   ├── edge.js
 │   ├── main.js
+│   ├── worker
+│   │   ├── fetch.js
+│   │   ├── idb.js
+│   │   ├── native.js
+│   │   ├── prefetch.js
+│   │   └── specs.js
 │   └── worker.js
+├── README.md
 ├── runtime
 │   ├── lib
 │   │   └── format.py
 │   └── perceptron.py
-└── static
-    ├── album.svg
-    ├── favicon.svg
-    ├── github.svg
-    └── play.svg
+├── static
+│   ├── album.svg
+│   ├── favicon.svg
+│   ├── github.svg
+│   └── play.svg
+├── tailwind.config.js
+└── version.json
 ```
 
 ### License
