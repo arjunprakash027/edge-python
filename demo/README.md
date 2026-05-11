@@ -34,6 +34,9 @@ Then open http://localhost:8000 in your browser.
 ├── index.html
 ├── js
 │   ├── edge.js
+│   ├── main
+│   │   ├── editor.js
+│   │   └── highlighter.js
 │   ├── main.js
 │   ├── worker
 │   │   ├── fetch.js
