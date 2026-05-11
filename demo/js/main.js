@@ -103,11 +103,11 @@ const Highlighter = (() => {
 const PythonWorker = (() => {
     const worker = new Worker('./js/worker.js');
 
-    /* Single source of truth for "runtime busy". Gates BOTH the button click
-       and Ctrl+Enter; without it, holding Ctrl+Enter queues parallel runs
-       in the worker (handlers.run is async, onmessage doesn't await it) and
-       their `line` messages interleave on the terminal. */
+    /* Single source of truth for "runtime busy". Gates the button and Ctrl+Enter.
+       Runs requested while busy are queued and fire on `ready` so Ctrl+Enter
+       during WASM load doesn't get silently dropped. */
     let busy = true;
+    let pendingRun = null;
     const setBusy = (b) => { busy = b; el.btn.disabled = b; };
 
     const resolveUrl = async () => {
@@ -119,8 +119,19 @@ const PythonWorker = (() => {
         return new URL(path, location.href).toString();
     };
 
+    const doRun = (src) => {
+        setBusy(true);
+        ok('Running...');
+        el.term.textContent = '';
+        worker.postMessage({ type: 'run', src, baseUrl: location.href, entryDir: ENTRY_DIR });
+    };
+
     const onMsg = {
-        ready:  ({ ms }) => { setBusy(false); ok(`Ready${DEV ? ' - Dev' : ''} (Loaded in ${fmt(ms)})`); },
+        ready:  ({ ms }) => {
+            setBusy(false);
+            ok(`Ready${DEV ? ' - Dev' : ''} (Loaded in ${fmt(ms)})`);
+            if (pendingRun != null) { const src = pendingRun; pendingRun = null; doRun(src); }
+        },
         line:   ({ line }) => { el.term.textContent += (el.term.textContent ? '\n' : '') + line; },
         result: ({ out, ms }) => {
             if (out) {
@@ -146,11 +157,8 @@ const PythonWorker = (() => {
             });
         },
         run: (src) => {
-            if (busy) return;
-            setBusy(true);
-            ok('Running...');
-            el.term.textContent = '';
-            worker.postMessage({ type: 'run', src, baseUrl: location.href, entryDir: ENTRY_DIR });
+            if (busy) { pendingRun = src; ok('Queued — runtime not ready'); return; }
+            doRun(src);
         },
     };
 })();
@@ -205,6 +213,11 @@ const Editor = (() => {
     // VSCode prevIndentTabStop distance: chars to delete to reach previous stop.
     const prevTabDist = (col) => { const r = col % TAB_SIZE; return r === 0 ? TAB_SIZE : r; };
 
+    /* Caret position right after the last auto-inserted pair. Pair-deletion on
+       Backspace only fires when caret still matches; cleared on any other input
+       so manually-typed parens aren't both eaten by a single backspace. */
+    let autoPairCaret = -1;
+
     const transitions = {
         // Typed character: skip existing closer, or auto-close an opener.
         char: (text, caret, key) => {
@@ -225,16 +238,17 @@ const Editor = (() => {
                 return {
                     text: text.slice(0, caret) + key + PAIRS[key] + text.slice(caret),
                     caret: caret + 1,
+                    autoPair: caret + 1,
                 };
             }
             return null;
         },
 
-        // Backspace: delete empty auto-close pair, else VSCode `useTabStops`
-        // snap when the cursor is in the line's leading whitespace.
+        // Backspace: delete fresh auto-close pair (only when caret matches the
+        // last auto-pair marker), else VSCode `useTabStops` snap in leading WS.
         backspace: (text, caret) => {
             if (caret === 0) return null;
-            if (PAIRS[text[caret - 1]] === text[caret]) {
+            if (caret === autoPairCaret && PAIRS[text[caret - 1]] === text[caret]) {
                 return { text: text.slice(0, caret - 1) + text.slice(caret + 1), caret: caret - 1 };
             }
             if (!WS.test(text[caret - 1])) return null;
@@ -265,8 +279,9 @@ const Editor = (() => {
             };
         },
 
-        // Enter: copy previous line's indent, add one tab if the line ends
-        // with `:` `[` `(` `{` (Python block / open bracket). VSCode behavior.
+        // Enter: copy previous line's indent, add one tab if the line ends with
+        // `:` `[` `(` `{`. If we're between an opener and its matching closer,
+        // split the closer onto its own line (VSCode 3-line block).
         enter: (text, caret) => {
             const ln = lineAt(text, caret);
             const before = ln.body.slice(0, ln.col);
@@ -274,7 +289,54 @@ const Editor = (() => {
             const indent = indentMatch ? indentMatch[0] : '';
             const extra = /[:\[({][ \t]*$/.test(before) ? ' '.repeat(TAB_SIZE) : '';
             const pad = indent + extra;
+            const opener = before.replace(/[ \t]+$/, '').slice(-1);
+            const splitBracket = '[({'.includes(opener) && PAIRS[opener] === text[caret];
+            if (splitBracket) {
+                return {
+                    text: text.slice(0, caret) + '\n' + pad + '\n' + indent + text.slice(caret),
+                    caret: caret + 1 + pad.length,
+                };
+            }
             return { text: text.slice(0, caret) + '\n' + pad + text.slice(caret), caret: caret + 1 + pad.length };
+        },
+
+        // Tab on a multi-line selection: prepend TAB_SIZE spaces to every touched line.
+        tabSelection: (text, sel) => {
+            const startLine = text.lastIndexOf('\n', sel.start - 1) + 1;
+            const endAnchor = (sel.end > sel.start && text[sel.end - 1] === '\n') ? sel.end - 1 : sel.end;
+            let endNl = text.indexOf('\n', endAnchor);
+            if (endNl === -1) endNl = text.length;
+            const lines = text.slice(startLine, endNl).split('\n');
+            const pad = ' '.repeat(TAB_SIZE);
+            const segment = lines.map(l => pad + l).join('\n');
+            return {
+                text: text.slice(0, startLine) + segment + text.slice(endNl),
+                caretStart: sel.start + TAB_SIZE,
+                caretEnd: sel.end + lines.length * TAB_SIZE,
+            };
+        },
+
+        // Shift+Tab on selection: dedent each touched line by up to TAB_SIZE.
+        shiftTabSelection: (text, sel) => {
+            const startLine = text.lastIndexOf('\n', sel.start - 1) + 1;
+            const endAnchor = (sel.end > sel.start && text[sel.end - 1] === '\n') ? sel.end - 1 : sel.end;
+            let endNl = text.indexOf('\n', endAnchor);
+            if (endNl === -1) endNl = text.length;
+            const lines = text.slice(startLine, endNl).split('\n');
+            let firstRm = 0, totalRm = 0;
+            const dedented = lines.map((l, i) => {
+                const indent = firstNonWS(l);
+                const rm = Math.min(indent, TAB_SIZE);
+                totalRm += rm;
+                if (i === 0) firstRm = rm;
+                return l.slice(rm);
+            });
+            if (totalRm === 0) return null;
+            return {
+                text: text.slice(0, startLine) + dedented.join('\n') + text.slice(endNl),
+                caretStart: Math.max(startLine, sel.start - firstRm),
+                caretEnd: sel.end - totalRm,
+            };
         },
     };
 
@@ -288,7 +350,10 @@ const Editor = (() => {
     const apply = (result) => {
         if (!result) return false;
         jar.updateCode(result.text);
-        jar.restore({ start: result.caret, end: result.caret });
+        const start = result.caretStart ?? result.caret;
+        const end = result.caretEnd ?? result.caret;
+        jar.restore({ start, end });
+        autoPairCaret = result.autoPair ?? -1;
         return true;
     };
 
@@ -307,21 +372,61 @@ const Editor = (() => {
             e.preventDefault(); return;
         }
         const pos = jar.save();
-        if (pos.start !== pos.end) return;
-
         const text = jar.toString();
-        const result =
-            e.key === 'Backspace' ? transitions.backspace(text, pos.start) :
-            e.key === 'Enter'     ? transitions.enter(text, pos.start) :
-            e.key === 'Tab' && e.shiftKey ? transitions.shiftTab(text, pos.start) :
-            e.key === 'Tab'       ? transitions.tab(text, pos.start) :
-            (OPENERS.has(e.key) || CLOSERS.has(e.key)) ? transitions.char(text, pos.start, e.key) :
-            null;
+        let result;
+        if (pos.start !== pos.end) {
+            // Multi-line indent/dedent is the only selection-aware path we own.
+            if (e.key === 'Tab' && e.shiftKey)      result = transitions.shiftTabSelection(text, pos);
+            else if (e.key === 'Tab')               result = transitions.tabSelection(text, pos);
+            else return;
+        } else {
+            result =
+                e.key === 'Backspace' ? transitions.backspace(text, pos.start) :
+                e.key === 'Enter'     ? transitions.enter(text, pos.start) :
+                e.key === 'Tab' && e.shiftKey ? transitions.shiftTab(text, pos.start) :
+                e.key === 'Tab'       ? transitions.tab(text, pos.start) :
+                (OPENERS.has(e.key) || CLOSERS.has(e.key)) ? transitions.char(text, pos.start, e.key) :
+                null;
+        }
 
-        if (apply(result)) { e.preventDefault(); e.stopPropagation(); }
+        // stopImmediatePropagation also blocks CodeJar's own keydown listener on
+        // the same element; otherwise it can re-run indent logic and undo ours.
+        if (apply(result)) { e.preventDefault(); e.stopImmediatePropagation(); }
     }, true);
 
     el.ed.addEventListener('scroll', () => { el.ln.scrollTop = el.ed.scrollTop; });
+
+    // Any text mutation outside our `apply()` invalidates the auto-pair marker
+    // so a manually-typed pair never collapses on backspace.
+    el.ed.addEventListener('input', () => { autoPairCaret = -1; });
+
+    // Paste: normalise CRLF/CR + tabs, enforce MAX_LINES on the resulting text.
+    el.ed.addEventListener('paste', (e) => {
+        const raw = (e.clipboardData ?? window.clipboardData)?.getData('text');
+        if (raw == null) return;
+        e.preventDefault();
+        const normalized = raw.replace(/\r\n?/g, '\n').replace(/\t/g, ' '.repeat(TAB_SIZE));
+        const pos = jar.save();
+        const text = jar.toString();
+        let inserted = text.slice(0, pos.start) + normalized + text.slice(pos.end);
+        const allLines = inserted.split('\n');
+        if (allLines.length > MAX_LINES) inserted = allLines.slice(0, MAX_LINES).join('\n');
+        jar.updateCode(inserted);
+        const caret = Math.min(pos.start + normalized.length, inserted.length);
+        jar.restore({ start: caret, end: caret });
+        autoPairCaret = -1;
+    });
+
+    // Copy: wrap the selection in a ```python fence for markdown-friendly pasting.
+    el.ed.addEventListener('copy', (e) => {
+        const sel = window.getSelection();
+        const selected = sel?.toString() ?? '';
+        if (!selected) return;
+        e.preventDefault();
+        const trimmed = selected.replace(/\n+$/, '');
+        e.clipboardData.setData('text/plain', '```python\n' + trimmed + '\n```');
+    });
+
     jar.onUpdate(syncLines);
     jar.updateCode(DEFAULT_CODE);
 
