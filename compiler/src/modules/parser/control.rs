@@ -522,16 +522,18 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.commit_block();
     }
 
-    /* with / async with: SetupWith per CM, ExitWith 1:1 on unwind. */
+    /* with / async with: each CM gets its own implicit `SetupExcept` so the per-CM cleanup pad can run `__exit__(exc_type, exc, None)` and honour the suppression contract. Normal exit pops the except frame before running `__exit__(None, None, None)`. */
 
     pub(super) fn with_stmt_inner(&mut self, is_async: bool) {
         self.advance();
         let operand = is_async as u16;
-        let mut cm_count: u16 = 0;
+        let mut setup_except_idxs: Vec<usize> = Vec::new();
         loop {
             self.expr();
             self.chunk.emit(OpCode::SetupWith, operand);
-            cm_count += 1;
+            // Implicit `SetupExcept` per CM; handler IP patched once the cleanup pad is emitted.
+            setup_except_idxs.push(self.chunk.instructions.len());
+            self.chunk.emit(OpCode::SetupExcept, 0);
             if self.eat_if(TokenType::As) {
                 let name = self.advance_text();
                 self.store_name(name);
@@ -540,10 +542,33 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
         self.eat(TokenType::Colon);
         self.compile_block();
-        // Paired ExitWith for each SetupWith.
-        for _ in 0..cm_count {
+
+        // Normal exit: innermost first. PopExcept BEFORE ExitWith so a raising `__exit__(None,...)` propagates to the outer CM's cleanup, matching CPython.
+        let n = setup_except_idxs.len();
+        let normal_exit_start = self.chunk.instructions.len();
+        for _ in 0..n {
+            self.chunk.emit(OpCode::PopExcept, 0);
             self.chunk.emit(OpCode::ExitWith, operand);
         }
+        let skip_cleanup_jump = self.chunk.instructions.len();
+        self.chunk.emit(OpCode::Jump, 0);
+
+        // Cleanup pads: per-CM in source order (outermost first). Each runs `WithCleanup` then jumps into the normal-exit sequence at the point right after its own slot, so outer CMs get their `__exit__(None, None, None)` on a suppression path.
+        let mut cleanup_pad_positions: Vec<usize> = Vec::with_capacity(n);
+        for i in 0..n {
+            cleanup_pad_positions.push(self.chunk.instructions.len());
+            self.chunk.emit(OpCode::WithCleanup, 0);
+            // `normal_exit_start + 2*(n-i)` lands past the PopExcept+ExitWith pairs for CMs i..n-1 (innermost). i == 0 lands at the `Jump @end` which falls through to `end`.
+            let target = (normal_exit_start + 2 * (n - i)) as u16;
+            self.chunk.emit(OpCode::Jump, target);
+        }
+        let end_label = self.chunk.instructions.len();
+
+        // Patch SetupExcept handler IPs and the skip-cleanup jump.
+        for (i, &se_idx) in setup_except_idxs.iter().enumerate() {
+            self.chunk.instructions[se_idx].operand = cleanup_pad_positions[i] as u16;
+        }
+        self.chunk.instructions[skip_cleanup_jump].operand = end_label as u16;
     }
 
     /* Delegates to imports.rs; compile-time only — no import opcodes reach the VM. */

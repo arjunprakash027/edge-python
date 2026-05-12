@@ -100,9 +100,14 @@ impl<'a> VM<'a> {
         s.chars().map(|c| self.heap.alloc(HeapObj::Str(c.to_string()))).collect()
     }
 
-    pub(crate) fn make_iter_frame(&mut self, obj: Val) -> Result<IterFrame, VmErr> {
+    pub(crate) fn make_iter_frame(&mut self, obj: Val, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<IterFrame, VmErr> {
         if !obj.is_heap() {
             return Err(VmErr::TypeMsg(s!("'", str self.type_name(obj), "' object is not iterable")));
+        }
+        // F2.6: instance `__iter__` produces a user-defined iterator that drives `ForIter` via `__next__`.
+        if matches!(self.heap.get(obj), HeapObj::Instance(..))
+            && let Some(iter) = self.try_call_dunder(obj, "__iter__", &[], chunk, slots)? {
+            return Ok(IterFrame::UserDefined(iter));
         }
         Ok(match self.heap.get(obj) {
             HeapObj::Range(s, e, st) => IterFrame::Range { cur: *s, end: *e, step: *st },

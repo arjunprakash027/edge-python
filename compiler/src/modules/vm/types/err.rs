@@ -16,6 +16,22 @@ pub enum VmErr {
 }
 
 impl VmErr {
+    /* Class-name lookup used by the exception unwind path and the `with` cleanup opcode; native errors get their CPython-equivalent name, `Raised` keeps the user-supplied name. */
+    pub fn class_name(&self) -> alloc::string::String {
+        match self {
+            Self::ZeroDiv => "ZeroDivisionError".into(),
+            Self::Overflow => "OverflowError".into(),
+            Self::Type(_) | Self::TypeMsg(_) => "TypeError".into(),
+            Self::Value(_) => "ValueError".into(),
+            Self::Attribute(_) => "AttributeError".into(),
+            Self::Name(_) => "NameError".into(),
+            Self::CallDepth => "RecursionError".into(),
+            Self::Heap => "MemoryError".into(),
+            Self::Budget | Self::Runtime(_) => "RuntimeError".into(),
+            Self::Raised(s) => s.clone(),
+        }
+    }
+
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::CallDepth => "RecursionError: max depth",

@@ -10,18 +10,18 @@ impl<'a> VM<'a> {
         match op {
             OpCode::Call => self.exec_call(operand, chunk, slots),
             OpCode::MakeFunction | OpCode::MakeCoroutine => self.exec_make_function(op, operand, chunk, slots),
-            OpCode::CallLen => self.call_len(),
+            OpCode::CallLen => self.call_len(chunk, slots),
             OpCode::CallAbs => self.call_abs(),
-            OpCode::CallStr => self.call_str(),
+            OpCode::CallStr => self.call_str(chunk, slots),
             OpCode::CallInt => self.call_int(),
             OpCode::CallFloat => self.call_float(),
-            OpCode::CallBool => self.call_bool(),
+            OpCode::CallBool => self.call_bool(chunk, slots),
             OpCode::CallType => self.call_type(),
             OpCode::CallChr => self.call_chr(),
             OpCode::CallOrd => self.call_ord(),
             OpCode::CallSorted => self.call_sorted(),
-            OpCode::CallList => self.call_list(),
-            OpCode::CallTuple => self.call_tuple(),
+            OpCode::CallList => self.call_list(chunk, slots),
+            OpCode::CallTuple => self.call_tuple(chunk, slots),
             OpCode::CallEnumerate => self.call_enumerate(),
             OpCode::CallIsInstance => self.call_isinstance(),
             OpCode::CallRange => self.call_range(operand),
@@ -32,7 +32,7 @@ impl<'a> VM<'a> {
             OpCode::CallZip => self.call_zip(operand),
             OpCode::CallDict => self.call_dict(operand),
             OpCode::CallSet => self.call_set(operand),
-            OpCode::CallPrint => { self.mark_impure(); self.call_print(operand) }
+            OpCode::CallPrint => { self.mark_impure(); self.call_print(operand, chunk, slots) }
             OpCode::CallInput => { self.mark_impure(); self.call_input() }
             OpCode::CallAll => self.call_all(operand),
             OpCode::CallAny => self.call_any(operand),
@@ -41,11 +41,11 @@ impl<'a> VM<'a> {
             OpCode::CallHex => self.call_hex(),
             OpCode::CallDivmod => self.call_divmod(),
             OpCode::CallPow => self.call_pow(operand),
-            OpCode::CallRepr => self.call_repr(),
+            OpCode::CallRepr => self.call_repr(chunk, slots),
             OpCode::CallReversed => self.call_reversed(),
             OpCode::CallCallable => self.call_callable(),
             OpCode::CallId => self.call_id(),
-            OpCode::CallHash => self.call_hash(),
+            OpCode::CallHash => self.call_hash(chunk, slots),
             OpCode::CallExtern => self.call_extern(operand, chunk),
             _ => Err(cold_runtime("non-function opcode in handle_function")),
         }
@@ -265,6 +265,23 @@ impl<'a> VM<'a> {
             let argc = (positional.len() + 1) as u16;
             let encoded = ((num_kw as u16) << 8) | argc;
             self.exec_call(encoded, chunk, slots)?;
+            return Ok(true);
+        }
+
+        // F2.5: instance with `__call__` — bind and dispatch through `BoundUserMethod`-style flow.
+        if let HeapObj::Instance(..) = self.heap.get(callee)
+            && let Some((func, class)) = self.lookup_class_member(
+                match self.heap.get(callee) { HeapObj::Instance(c, _) => *c, _ => unreachable!() },
+                "__call__")
+        {
+            if !kw_flat.is_empty() { return Err(cold_type("__call__ does not accept keyword arguments")); }
+            if self.depth >= self.max_calls { return Err(cold_depth()); }
+            self.pending.method_binding = Some((class, callee));
+            self.push(func);
+            self.push(callee);
+            for a in positional { self.push(*a); }
+            let argc = (positional.len() + 1) as u16;
+            self.exec_call(argc, chunk, slots)?;
             return Ok(true);
         }
 
@@ -559,7 +576,7 @@ impl<'a> VM<'a> {
             // Variadic
             Print => {
                 // CallPrint is statement-shaped (no trailing Pop); when reached via Call the parser emits Pop, so push None to keep the stack balanced.
-                self.call_print(argc)?;
+                self.call_print(argc, chunk, slots)?;
                 self.push(Val::none());
                 Ok(())
             }
@@ -575,30 +592,30 @@ impl<'a> VM<'a> {
             All => self.call_all(argc),
             Any => self.call_any(argc),
             GetAttr => self.call_getattr(argc),
-            Format => self.call_format(argc),
+            Format => self.call_format(argc, chunk, slots),
             // 0/1/2-arg
             Input => self.call_input(),
-            Len => self.call_len(),
+            Len => self.call_len(chunk, slots),
             Abs => self.call_abs(),
-            Str => self.call_str(),
+            Str => self.call_str(chunk, slots),
             Int => self.call_int(),
             Float => self.call_float(),
-            Bool => self.call_bool(),
+            Bool => self.call_bool(chunk, slots),
             Type => self.call_type(),
             Chr => self.call_chr(),
             Ord => self.call_ord(),
             Sorted => self.call_sorted_with_key(sort_key, chunk, slots),
             Enumerate => self.call_enumerate(),
-            List => self.call_list(),
-            Tuple => self.call_tuple(),
+            List => self.call_list(chunk, slots),
+            Tuple => self.call_tuple(chunk, slots),
             Bin => self.call_bin(),
             Oct => self.call_oct(),
             Hex => self.call_hex(),
-            Repr => self.call_repr(),
+            Repr => self.call_repr(chunk, slots),
             Reversed => self.call_reversed(),
             Callable => self.call_callable(),
             Id => self.call_id(),
-            Hash => self.call_hash(),
+            Hash => self.call_hash(chunk, slots),
             Divmod => self.call_divmod(),
             IsInstance => self.call_isinstance(),
             HasAttr => self.call_hasattr(),

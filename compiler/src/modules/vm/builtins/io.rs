@@ -6,12 +6,13 @@ use super::super::types::*;
 impl<'a> VM<'a> {
 
     /* Pops N args, joins with single spaces. Calls `print_hook` if set (streaming), otherwise buffers into `output`. */
-    pub fn call_print(&mut self, op: u16) -> Result<(), VmErr> {
+    pub fn call_print(&mut self, op: u16, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let args = self.pop_n(op as usize)?;
         let mut out = String::new();
         for (i, v) in args.iter().enumerate() {
             if i > 0 { out.push(' '); }
-            out.push_str(&self.display(*v));
+            // F2.8: each arg goes through `display_op` so user `__str__` / `__repr__` are honoured.
+            out.push_str(&self.display_op(*v, chunk, slots)?);
         }
         match self.print_hook {
             Some(hook) => hook(&out),
@@ -42,7 +43,7 @@ impl<'a> VM<'a> {
     }
 
     // `format(value [, spec])`.
-    pub fn call_format(&mut self, op: u16) -> Result<(), VmErr> {
+    pub fn call_format(&mut self, op: u16, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         if op != 1 && op != 2 {
             return Err(cold_type("format() takes 1 or 2 arguments"));
         }
@@ -54,10 +55,9 @@ impl<'a> VM<'a> {
                     HeapObj::Str(s) => s.clone(),
                     _ => return Err(cold_type("format() spec must be a string")),
                 };
-                super::super::handlers::format::format_value(val, &spec, &self.heap)
-                    .map_err(cold_value)?
+                self.format_op(val, &spec, chunk, slots)?
             }
-            None => self.display(val),
+            None => self.display_op(val, chunk, slots)?,
         };
         self.alloc_and_push_str(result)
     }

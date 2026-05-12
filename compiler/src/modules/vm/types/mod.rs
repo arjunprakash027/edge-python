@@ -302,6 +302,7 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
             for fr in iters { match fr {
                 IterFrame::Seq { items, .. } => for &v in items { f(v); },
                 IterFrame::Coroutine(v) => f(*v),
+                IterFrame::UserDefined(v) => f(*v),
                 IterFrame::Range { .. } => {}
             }}
         }

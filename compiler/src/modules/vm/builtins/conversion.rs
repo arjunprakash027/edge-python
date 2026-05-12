@@ -5,13 +5,17 @@ use super::super::types::*;
 
 impl<'a> VM<'a> {
 
-    pub fn call_str(&mut self) -> Result<(), VmErr> {
+    pub fn call_str(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let o = self.pop()?;
-        self.alloc_and_push_str(self.display(o))
+        let s = self.display_op(o, chunk, slots)?;
+        self.alloc_and_push_str(s)
     }
 
-    pub fn call_bool(&mut self) -> Result<(), VmErr> {
-        let o = self.pop()?; self.push(Val::bool(self.truthy(o))); Ok(())
+    pub fn call_bool(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+        let o = self.pop()?;
+        let t = self.truthy_op(o, chunk, slots)?;
+        self.push(Val::bool(t));
+        Ok(())
     }
 
     pub fn call_type(&mut self) -> Result<(), VmErr> {

@@ -21,6 +21,7 @@ impl<'a> VM<'a> {
                     for &v in items { self.heap.mark(v); }
                 }
                 IterFrame::Coroutine(v) => self.heap.mark(*v),
+                IterFrame::UserDefined(v) => self.heap.mark(*v),
                 IterFrame::Range { .. } => {}
             }
         }

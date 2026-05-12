@@ -104,8 +104,6 @@ impl<'a> VM<'a> {
     }
 
     // `resolve_attr` that swallows `AttributeError` into `None`; other VmErrs still propagate — dunder probes need a miss to be silent.
-    // Allow: consumed by `try_call_dunder` and the per-operator handlers wired in the next phase.
-    #[allow(dead_code)]
     pub(crate) fn resolve_attr_silent(&self, obj: Val, name: &str) -> Result<Option<AttrLookup>, VmErr> {
         match self.resolve_attr(obj, name) {
             Ok(lookup) => Ok(Some(lookup)),
@@ -114,10 +112,29 @@ impl<'a> VM<'a> {
         }
     }
 
-    pub(crate) fn handle_load_attr(&mut self, name_idx: u16, chunk: &SSAChunk) -> Result<(), VmErr> {
+    /* F2.10: instance fallback via `__getattr__(name)`. Called by `LoadAttr` / `CallMethod` after the normal lookup raises `AttributeError`. */
+    pub(crate) fn try_getattr_fallback(&mut self, obj: Val, name: &str, chunk: &SSAChunk, slots: &mut [Val]) -> Result<Option<Val>, VmErr> {
+        if !obj.is_heap() || !matches!(self.heap.get(obj), HeapObj::Instance(..)) { return Ok(None); }
+        let bare = crate::modules::parser::ssa_strip(name);
+        let name_val = self.heap.alloc(HeapObj::Str(bare.to_string()))?;
+        self.try_call_dunder(obj, "__getattr__", &[name_val], chunk, slots)
+    }
+
+    pub(crate) fn handle_load_attr(&mut self, name_idx: u16, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let name = chunk.names.get(name_idx as usize).ok_or(VmErr::Runtime("LoadAttr: bad name index"))?.clone();
         let obj = self.pop()?;
-        match self.resolve_attr(obj, &name)? {
+        let lookup = match self.resolve_attr(obj, &name) {
+            Ok(l) => l,
+            Err(VmErr::Attribute(msg)) => {
+                if let Some(v) = self.try_getattr_fallback(obj, &name, chunk, slots)? {
+                    self.push(v);
+                    return Ok(());
+                }
+                return Err(VmErr::Attribute(msg));
+            }
+            Err(other) => return Err(other),
+        };
+        match lookup {
             AttrLookup::ModuleAttr(v)
             | AttrLookup::ClassMember(v)
             | AttrLookup::InstanceField(v) => {

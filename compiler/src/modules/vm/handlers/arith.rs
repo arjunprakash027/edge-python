@@ -5,13 +5,20 @@ use ops::cached_binop;
 
 impl<'a> VM<'a> {
 
-    /* Add/Sub/Mul/Div with IC; Mod/Pow/FloorDiv on i64 with overflow trap; Minus is unary. */
-    pub(crate) fn handle_arith(&mut self, op: OpCode, rip: usize, cache: &mut OpcodeCache) -> Result<(), VmErr> {
+    /* Add/Sub/Mul/Div with IC; Mod/Pow/FloorDiv on i128 with overflow trap; Minus is unary. */
+    pub(crate) fn handle_arith(&mut self, op: OpCode, rip: usize, cache: &mut OpcodeCache, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         if op == OpCode::Minus {
-            return self.exec_neg();
+            return self.exec_neg(chunk, slots);
         }
 
         let (a, b) = self.pop2()?;
+
+        // F2.1: instance dunder protocol — try user-defined operator before any builtin coercion.
+        if let Some(r) = self.try_binary_dunder(op, a, b, chunk, slots)? {
+            self.push(r);
+            return Ok(());
+        }
+
         // Register-based FastOps (Add/Sub/Mul/Mod/FloorDiv) are cached; Div/Pow are not.
         if matches!(op, OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Mod | OpCode::FloorDiv) {
             cached_binop!(self.heap, rip, &op, a, b, cache);
@@ -31,8 +38,13 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    fn exec_neg(&mut self) -> Result<(), VmErr> {
+    fn exec_neg(&mut self, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let v = self.pop()?;
+        // F2.1: instance `__neg__` takes precedence over numeric coercion.
+        if let Some(r) = self.try_call_dunder(v, "__neg__", &[], chunk, slots)? {
+            self.push(r);
+            return Ok(());
+        }
         let result = if v.is_float() {
             Val::float(-v.as_float())
         } else if let Some(i) = self.as_i128(v) {
@@ -130,10 +142,16 @@ impl<'a> VM<'a> {
         self.int_to_val(Some(ai >> shift.min(127)))
     }
 
-    pub(crate) fn handle_compare(&mut self, op: OpCode, rip: usize, cache: &mut OpcodeCache) -> Result<(), VmErr> {
+    pub(crate) fn handle_compare(&mut self, op: OpCode, rip: usize, cache: &mut OpcodeCache, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let (a, b) = self.pop2()?;
         // Record type-key for every compare op; `cache::specialize` picks the FastOp variant.
         cached_binop!(self.heap, rip, &op, a, b, cache);
+
+        // F2.2: try the user-defined comparison dunder before falling back to numeric/string compare.
+        if let Some(r) = self.try_compare_dunder(op, a, b, chunk, slots)? {
+            self.push(Val::bool(r));
+            return Ok(());
+        }
 
         // Set/Set uses subset/superset, NOT total order — the numeric `LtEq = !lt_vals(b, a)` identity is wrong here ({1,2} <= {2,3} would come back True), so we bypass `lt_vals`.
         if a.is_heap() && b.is_heap()
@@ -156,11 +174,12 @@ impl<'a> VM<'a> {
     }
 
     // Only plain `not`; And/Or are short-circuited by the parser via Jump-If-Or-Pop.
-    pub(crate) fn handle_logic(&mut self, op: OpCode) -> Result<(), VmErr> {
+    pub(crate) fn handle_logic(&mut self, op: OpCode, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         match op {
             OpCode::Not => {
                 let v = self.pop()?;
-                self.push(Val::bool(!self.truthy(v)));
+                let t = self.truthy_op(v, chunk, slots)?;
+                self.push(Val::bool(!t));
             }
             _ => return Err(cold_runtime("non-logic opcode in handle_logic")),
         }
@@ -168,11 +187,11 @@ impl<'a> VM<'a> {
     }
 
     /* `is` / `is not` compare tag bits inline; `in` / `not in` delegate to contains(). */
-    pub(crate) fn handle_identity(&mut self, op: OpCode) -> Result<(), VmErr> {
+    pub(crate) fn handle_identity(&mut self, op: OpCode, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let (a, b) = self.pop2()?;
         let result = match op {
-            OpCode::In => self.contains(b, a),
-            OpCode::NotIn => !self.contains(b, a),
+            OpCode::In => self.contains_op(b, a, chunk, slots)?,
+            OpCode::NotIn => !self.contains_op(b, a, chunk, slots)?,
             OpCode::Is => a.0 == b.0,
             OpCode::IsNot => a.0 != b.0,
             _ => return Err(cold_runtime("non-identity opcode in handle_identity")),

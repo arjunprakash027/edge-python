@@ -18,17 +18,24 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    pub fn call_repr(&mut self) -> Result<(), VmErr> {
+    pub fn call_repr(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let o = self.pop()?;
-        self.alloc_and_push_str(self.repr(o))
+        let s = self.repr_op(o, chunk, slots)?;
+        self.alloc_and_push_str(s)
     }
 
     pub fn call_callable(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         let result = if o.is_heap() {
-            matches!(self.heap.get(o),
+            match self.heap.get(o) {
                 HeapObj::Func(..) | HeapObj::BoundMethod(..)
-                | HeapObj::Type(_) | HeapObj::NativeFn(_))
+                | HeapObj::Type(_) | HeapObj::NativeFn(_)
+                | HeapObj::Class(..) | HeapObj::BoundUserMethod(..)
+                | HeapObj::Extern(_) => true,
+                // F2.5: instance is callable iff its class chain defines `__call__`.
+                HeapObj::Instance(cls, _) => self.lookup_class_member(*cls, "__call__").is_some(),
+                _ => false,
+            }
         } else { false };
         self.push(Val::bool(result));
         Ok(())
@@ -42,9 +49,30 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    pub fn call_hash(&mut self) -> Result<(), VmErr> {
+    pub fn call_hash(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         use core::hash::{Hash, Hasher};
         let o = self.pop()?;
+
+        // F2.7: instance dispatch — user `__hash__` wins; `__eq__` without `__hash__` makes the instance unhashable.
+        if o.is_heap() && let HeapObj::Instance(cls, _) = self.heap.get(o) {
+            let cls = *cls;
+            let has_hash = self.lookup_class_member(cls, "__hash__").is_some();
+            let has_eq = self.lookup_class_member(cls, "__eq__").is_some();
+            if has_hash {
+                let r = self.try_call_dunder(o, "__hash__", &[], chunk, slots)?
+                    .ok_or_else(|| cold_type("__hash__ returned NotImplemented"))?;
+                if !r.is_int() {
+                    return Err(cold_type("__hash__ must return int"));
+                }
+                self.push(Val::int(r.as_int() & Val::INT_MAX));
+                return Ok(());
+            }
+            if has_eq {
+                return Err(cold_type("unhashable type: instance defines __eq__ without __hash__"));
+            }
+            // Default fallback: pointer identity, mirroring Python's `object.__hash__`.
+        }
+
         let mut h = crate::util::fx::FxHasher::default();
         if o.is_int() { o.as_int().hash(&mut h); }
         else if o.is_float() { o.as_float().to_bits().hash(&mut h); }
