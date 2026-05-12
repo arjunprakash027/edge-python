@@ -242,6 +242,29 @@ impl<'a> VM<'a> {
                 let ty = self.type_name(obj);
                 Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")))
             }
+            handlers::methods::AttrLookup::PropertyGet { recv, getter } => {
+                // Materialise the value first, then call it with the user's args — `foo.prop(arg)` where `prop` returns a callable.
+                if self.depth >= self.max_calls { return Err(cold_depth()); }
+                self.push(getter);
+                self.push(recv);
+                self.exec_call(1, chunk, slots)?;
+                let result = self.pop()?;
+                self.push(result);
+                for a in &positional { self.push(*a); }
+                for a in &kw_flat { self.push(*a); }
+                let argc = positional.len() as u16;
+                let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
+                self.exec_call(encoded, chunk, slots)
+            }
+            handlers::methods::AttrLookup::PropertySetterRef(prop) => {
+                let v = self.heap.alloc(HeapObj::PropertySetter(prop))?;
+                self.push(v);
+                for a in &positional { self.push(*a); }
+                for a in &kw_flat { self.push(*a); }
+                let argc = positional.len() as u16;
+                let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
+                self.exec_call(encoded, chunk, slots)
+            }
         }
     }
 
@@ -460,7 +483,10 @@ impl<'a> VM<'a> {
                                 && matches!(self.heap.get(v), HeapObj::NativeFn(_))
                                 && self.globals.get(base).copied() == Some(v);
                             if is_builtin_shadow { continue; }
-                            if !methods.iter().any(|(n, _)| n == base) {
+                            // A later definition of the same name wins (e.g. `@property` + `@x.setter` rebinds `x` to the descriptor with both halves).
+                            if let Some(pos) = methods.iter().position(|(n, _)| n == base) {
+                                methods[pos].1 = v;
+                            } else {
                                 methods.push((base.to_string(), v));
                             }
                         }
@@ -476,6 +502,24 @@ impl<'a> VM<'a> {
                 if !obj.is_heap() { return Err(cold_type("cannot set attribute")); }
                 let name = chunk.names.get(op as usize)
                     .ok_or(cold_runtime("StoreAttr: bad name index"))?.clone();
+                // F3: a class-chain `Property` overrides plain dict insertion. Setter `none()` means read-only.
+                if let HeapObj::Instance(cls_val, _) = self.heap.get(obj) {
+                    let cls_val = *cls_val;
+                    if let Some((member, _)) = self.lookup_class_member(cls_val, ssa_strip(&name))
+                        && let HeapObj::Property(_, setter) = self.heap.get(member) {
+                        let setter = *setter;
+                        if setter.is_none() {
+                            return Err(VmErr::Attribute(s!("can't set attribute '", str ssa_strip(&name), "'")));
+                        }
+                        if self.depth >= self.max_calls { return Err(cold_depth()); }
+                        self.push(setter);
+                        self.push(obj);
+                        self.push(value);
+                        self.exec_call(2, chunk, slots)?;
+                        self.pop()?;
+                        return Ok(None);
+                    }
+                }
                 let key = self.heap.alloc(HeapObj::Str(name))?;
                 match self.heap.get_mut(obj) {
                     HeapObj::Instance(_, attrs) => {

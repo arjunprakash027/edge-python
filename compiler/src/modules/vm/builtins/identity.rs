@@ -6,6 +6,19 @@ use super::matches_exc_class;
 
 impl<'a> VM<'a> {
 
+    /* `property(fget)` / `property(fget, fset)` — captures the descriptor pair the class chain hands to `LoadAttr` / `StoreAttr`. The `@x.setter` decorator builds the second form via `PropertySetter`. */
+    pub fn call_property(&mut self, argc: u16) -> Result<(), VmErr> {
+        let args = self.pop_n(argc as usize)?;
+        let (getter, setter) = match args.as_slice() {
+            [g] => (*g, Val::none()),
+            [g, s] => (*g, *s),
+            _ => return Err(cold_type("property() takes 1 or 2 arguments")),
+        };
+        let prop = self.heap.alloc(HeapObj::Property(getter, setter))?;
+        self.push(prop);
+        Ok(())
+    }
+
     // `super()` zero-arg: reads the running method's `(class, self)` off the top frame and returns a Super proxy.
     pub fn call_super(&mut self) -> Result<(), VmErr> {
         let binding = self.call_stack.last()

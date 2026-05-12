@@ -268,6 +268,22 @@ impl<'a> VM<'a> {
             return Ok(true);
         }
 
+        // F3: `prop.setter(fn)` returns a new `Property` carrying the original getter plus the supplied setter.
+        if let HeapObj::PropertySetter(prop_val) = self.heap.get(callee) {
+            if positional.len() != 1 || !kw_flat.is_empty() {
+                return Err(cold_type("property.setter takes exactly 1 argument"));
+            }
+            let prop_val = *prop_val;
+            let getter = match self.heap.get(prop_val) {
+                HeapObj::Property(g, _) => *g,
+                _ => return Err(cold_runtime("PropertySetter wraps a non-Property value")),
+            };
+            let new_setter = positional[0];
+            let new_prop = self.heap.alloc(HeapObj::Property(getter, new_setter))?;
+            self.push(new_prop);
+            return Ok(true);
+        }
+
         // F2.5: instance with `__call__` — bind and dispatch through `BoundUserMethod`-style flow.
         if let HeapObj::Instance(..) = self.heap.get(callee)
             && let Some((func, class)) = self.lookup_class_member(
@@ -559,6 +575,7 @@ impl<'a> VM<'a> {
             IntFromBytes => Some(2),
             IntToBytes => Some(3),
             Globals | Locals | Super => Some(0),
+            Property => None, // 1 or 2 args, validated in `call_property`.
             Bytes => None, // 0/1/2-arg: bytes() | bytes(n|iter) | bytes(str, "utf-8")
             Slice => None, // 1/2/3-arg
             Gather => None, // variadic
@@ -642,6 +659,7 @@ impl<'a> VM<'a> {
             Globals => self.call_globals(chunk, slots),
             Locals => self.call_locals(chunk, slots),
             Super => self.call_super(),
+            Property => self.call_property(argc),
         }
     }
 }

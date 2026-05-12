@@ -158,6 +158,10 @@ pub enum HeapObj {
     BoundUserMethod(Val, Val, Val),
     // `super()` proxy: attribute access walks the bases of `cls` (skipping `cls` itself); methods bind to `recv`.
     Super(Val, Val),
+    // `(getter, setter)`; `setter == none()` for getter-only properties — written via `@property` / `@x.setter`.
+    Property(Val, Val),
+    // Intermediate produced by `prop.setter`: callable that takes a function and returns a new `Property` with the setter attached.
+    PropertySetter(Val),
     Coroutine(usize, Vec<Val>, Vec<Val>, usize, Vec<IterFrame>),
     /* Produced by `import m`; attr access via LoadAttr, calls fuse through CallMethod. */
     Module(String, Vec<(String, Val)>),
@@ -180,6 +184,7 @@ pub enum NativeFnId {
     BytesFromHex, IntFromBytes, IntToBytes, FrozenSet,
     Globals, Locals,
     Super,
+    Property,
 }
 
 impl NativeFnId {
@@ -198,6 +203,7 @@ impl NativeFnId {
             "bytes_fromhex", "int_from_bytes", "int_to_bytes", "frozenset",
             "globals", "locals",
             "super",
+            "property",
         ];
         NAMES[self as usize]
     }
@@ -292,6 +298,8 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
         }
         HeapObj::BoundUserMethod(r, fu, cls) => { f(*r); f(*fu); f(*cls); }
         HeapObj::Super(cls, recv) => { f(*cls); f(*recv); }
+        HeapObj::Property(g, s) => { f(*g); f(*s); }
+        HeapObj::PropertySetter(p) => f(*p),
         HeapObj::Instance(cls, attrs) => {
             f(*cls);
             for (k, v) in attrs.borrow().iter() { f(k); f(v); }
@@ -534,6 +542,8 @@ impl HeapPool {
                 Some(HeapObj::Ellipsis) => 26,
                 Some(HeapObj::NotImplemented) => 27,
                 Some(HeapObj::Super(..)) => 28,
+                Some(HeapObj::Property(..)) => 29,
+                Some(HeapObj::PropertySetter(..)) => 30,
                 None => 0,
             }
         } else { 0 }

@@ -17,11 +17,14 @@ pub(crate) enum AttrLookup {
     BuiltinMethod(BuiltinMethodId),
     // `e.args` on ExcInstance — caller picks: LoadAttr materialises the tuple, CallMethod errors.
     ExcArgs(Vec<Val>),
+    // Property descriptor on an instance — `LoadAttr` invokes `getter(recv)`.
+    PropertyGet { recv: Val, getter: Val },
+    // `prop.setter` access — `LoadAttr` materialises a `PropertySetter` value bound to the source property.
+    PropertySetterRef(Val),
 }
 
 impl<'a> VM<'a> {
-    // Direct-then-DFS member lookup; first hit wins. Cycles are impossible: bases are validated at `MakeClass` time and `HeapObj::Class` is immutable, so the class graph is a static DAG.
-    // Returns `(value, defining_class)` so callers building `BoundUserMethod` / `InstanceMethod` can record where the method came from for `super()`.
+    // Direct-then-DFS member lookup; first hit wins. Cycles are impossible: bases are validated at `MakeClass` time and `HeapObj::Class` is immutable, so the class graph is a static DAG. Returns `(value, defining_class)` so callers building `BoundUserMethod` / `InstanceMethod` can record where the method came from for `super()`.
     pub(crate) fn lookup_class_member(&self, cls: Val, name: &str) -> Option<(Val, Val)> {
         if !cls.is_heap() { return None; }
         let HeapObj::Class(_, bases, members) = self.heap.get(cls) else { return None; };
@@ -79,7 +82,11 @@ impl<'a> VM<'a> {
                     .find(|(k, _)| k.is_heap() && matches!(self.heap.get(*k), HeapObj::Str(s) if s == name))
                     .map(|(_, v)| *v);
                 if let Some(v) = found { return Ok(AttrLookup::InstanceField(v)); }
-                if let Some((mv, defining)) = self.lookup_class_member(cls_val, name) {
+                if let Some((mv, defining)) = self.lookup_class_member(cls_val, bare) {
+                    // F3: a Property member triggers getter invocation in `handle_load_attr`; plain methods stay bound to the receiver.
+                    if let HeapObj::Property(getter, _) = self.heap.get(mv) {
+                        return Ok(AttrLookup::PropertyGet { recv: obj, getter: *getter });
+                    }
                     return Ok(AttrLookup::InstanceMethod { recv: obj, func: mv, class: defining });
                 }
                 let ty = self.type_name(obj);
@@ -94,6 +101,13 @@ impl<'a> VM<'a> {
                     return Ok(AttrLookup::InstanceMethod { recv, func: mv, class: defining });
                 }
                 return Err(VmErr::Attribute(s!("'super' object has no attribute '", str name, "'")));
+            }
+
+        // `prop.setter` produces a callable that re-builds the property with a new setter (powers `@x.setter`).
+        if obj.is_heap()
+            && matches!(self.heap.get(obj), HeapObj::Property(..))
+            && bare == "setter" {
+                return Ok(AttrLookup::PropertySetterRef(obj));
             }
 
         // Builtin type method.
@@ -153,6 +167,18 @@ impl<'a> VM<'a> {
             }
             AttrLookup::ExcArgs(args) => {
                 let v = self.heap.alloc(HeapObj::Tuple(args))?;
+                self.push(v);
+                Ok(())
+            }
+            AttrLookup::PropertyGet { recv, getter } => {
+                // Inline getter call: matches `BoundUserMethod` dispatch (push func, push self, call).
+                if self.depth >= self.max_calls { return Err(cold_depth()); }
+                self.push(getter);
+                self.push(recv);
+                self.exec_call(1, chunk, slots)
+            }
+            AttrLookup::PropertySetterRef(prop) => {
+                let v = self.heap.alloc(HeapObj::PropertySetter(prop))?;
                 self.push(v);
                 Ok(())
             }
