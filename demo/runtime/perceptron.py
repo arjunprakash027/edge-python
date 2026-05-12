@@ -31,7 +31,7 @@ class SimplePerceptron:
                     update = learning_rate * (target - step_output) # Product of learning rate and the difference betwen target and model prediction.
 
                     # Update the model bias and weights using the rosenblatt learning rule.
-                    for i in range(len(self.weights)): self.weights[i] += update * inputs[i]
+                    self.weights = [w + update * x for w, x in zip(self.weights, inputs)]
                     self.bias += update
 
             print(f"For epoch {e}, the accuracy of the current model is {(len(labeled_data) - error_count) / len(labeled_data) * 100} percent.")
