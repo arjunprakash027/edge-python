@@ -42,10 +42,9 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Indexed access/store, unpacking, and `{value!s:spec}` formatting. */
+    /* Indexed access/store, unpacking, and `{value!s:spec}` formatting. `GetItem`/`StoreItem`/`DelItem` are dispatched directly from the hot loop; the arms below cover legacy callers that may route through here. */
     pub(crate) fn handle_container(&mut self, op: OpCode, operand: u16, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         match op {
-            OpCode::GetItem => { self.get_item(chunk, slots)?; }
             OpCode::StoreItem => {
                 self.mark_impure();
                 self.store_item(chunk, slots)?;

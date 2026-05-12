@@ -5,7 +5,7 @@ use crate::modules::parser::{OpCode, SSAChunk, Instruction, ssa_strip};
 
 use super::{ExceptionFrame, VM, handlers};
 use super::types::*;
-use super::cache::{OpcodeCache, FastOp};
+use super::cache::{OpcodeCache, FastOp, InstanceCache};
 
 /* Three-way result of a fast-path attempt; see exec_fast for semantics. */
 enum FastOutcome { Done, TypeMiss, Overflow }
@@ -80,6 +80,56 @@ impl<'a> VM<'a> {
         self.stack.truncate(len - 2);
         self.push(result);
         Ok(FastOutcome::Done)
+    }
+
+    /* F4: instance-dunder fast path. Guards the receiver's class identity, invokes the pre-resolved method bypassing `resolve_attr_silent`, and treats `NotImplemented` as a deopt so reflected dispatch can take over via the slow path. Restores the stack on miss so the slow handler reads its operands unchanged. */
+    #[inline]
+    fn exec_inst(&mut self, inst: InstanceCache, chunk: &SSAChunk, slots: &mut [Val]) -> Result<FastOutcome, VmErr> {
+        let arity = inst.arity as usize;
+        let len = self.stack.len();
+        if len < arity { return Ok(FastOutcome::TypeMiss); }
+
+        let recv_idx = len - arity;
+        let recv = self.stack[recv_idx];
+        if !recv.is_heap() { return Ok(FastOutcome::TypeMiss); }
+        let class_val = match self.heap.get(recv) {
+            HeapObj::Instance(c, _) => *c,
+            _ => return Ok(FastOutcome::TypeMiss),
+        };
+        if class_val.as_heap() != inst.class { return Ok(FastOutcome::TypeMiss); }
+
+        if self.depth >= self.max_calls { return Err(cold_depth()); }
+
+        // Snapshot the operand window before mutating; reused to roll back on deopt.
+        let mut operands: Vec<Val> = Vec::with_capacity(arity);
+        operands.extend_from_slice(&self.stack[recv_idx..len]);
+        self.stack.truncate(recv_idx);
+
+        // SAFETY: `method_bits` was recorded from a live `Val` and `Class` references are immutable, so the function still lives on the heap.
+        let method = unsafe { Val::from_raw(inst.method_bits) };
+        self.pending.method_binding = Some((class_val, recv));
+        self.push(method);
+        for &v in &operands { self.push(v); }
+        self.exec_call(arity as u16, chunk, slots)?;
+
+        let result = self.pop()?;
+        if self.heap.is_not_implemented(result) {
+            // Deopt: restore the original stack window so the slow handler sees its operands.
+            for &v in &operands { self.push(v); }
+            return Ok(FastOutcome::TypeMiss);
+        }
+        self.push(result);
+        Ok(FastOutcome::Done)
+    }
+
+    /* Post-success recording for the instance-dunder IC; ignored when the receiver isn't an instance or the method isn't on its class. */
+    #[inline]
+    pub(crate) fn record_dunder_hit(&self, ip: usize, cache: &mut OpcodeCache, recv: Val, name: &str, arity: u8) {
+        if !recv.is_heap() { return; }
+        let HeapObj::Instance(cls, _) = self.heap.get(recv) else { return; };
+        let cls = *cls;
+        let Some((method, _)) = self.lookup_class_member(cls, name) else { return; };
+        cache.record_inst(ip, cls.as_heap(), method, arity);
     }
 
     /* Main dispatch loop. Walks the fused instruction stream (LoadAttr+Call already collapsed to CallMethod+CallMethodArgs); checks the IC inline for hot arith/compare opcodes. */
@@ -333,6 +383,14 @@ impl<'a> VM<'a> {
                         FastOutcome::TypeMiss => cache.invalidate(rip),
                     }
                 }
+                // F4: instance-dunder fast path — orthogonal to scalar specialisation, only fires for monomorphic instance sites.
+                if let Some(inst) = cache.get_inst(rip) {
+                    match self.exec_inst(inst, chunk, slots)? {
+                        FastOutcome::Done => return Ok(None),
+                        FastOutcome::Overflow => {}
+                        FastOutcome::TypeMiss => cache.invalidate_inst(rip),
+                    }
+                }
                 if matches!(ins.opcode, OpCode::Eq | OpCode::Lt | OpCode::NotEq
                     | OpCode::Gt | OpCode::LtEq | OpCode::GtEq)
                 {
@@ -342,6 +400,14 @@ impl<'a> VM<'a> {
                 }
             }
             OpCode::Div | OpCode::Pow | OpCode::Minus => {
+                // F4: Div/Pow/Minus skip scalar IC (Float-only / overflow-prone) but still benefit from the instance-dunder fast path.
+                if let Some(inst) = cache.get_inst(rip) {
+                    match self.exec_inst(inst, chunk, slots)? {
+                        FastOutcome::Done => return Ok(None),
+                        FastOutcome::Overflow => {}
+                        FastOutcome::TypeMiss => cache.invalidate_inst(rip),
+                    }
+                }
                 self.handle_arith(ins.opcode, rip, cache, chunk, slots)?;
             }
 
@@ -405,7 +471,17 @@ impl<'a> VM<'a> {
             }
 
             // Warm opcodes.
-            OpCode::GetItem => { self.get_item(chunk, slots)?; }
+            OpCode::GetItem => {
+                // F4: `Series[i]`-style hot loop — bypass `resolve_attr_silent("__getitem__")` once the site is monomorphic.
+                if let Some(inst) = cache.get_inst(rip) {
+                    match self.exec_inst(inst, chunk, slots)? {
+                        FastOutcome::Done => return Ok(None),
+                        FastOutcome::Overflow => {}
+                        FastOutcome::TypeMiss => cache.invalidate_inst(rip),
+                    }
+                }
+                self.get_item(rip, chunk, slots, cache)?;
+            }
 
             OpCode::Call | OpCode::CallPrint | OpCode::CallLen | OpCode::CallAbs
             | OpCode::CallStr | OpCode::CallInt | OpCode::CallFloat | OpCode::CallBool

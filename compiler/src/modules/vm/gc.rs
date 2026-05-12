@@ -29,6 +29,8 @@ impl<'a> VM<'a> {
             if let Some(consts) = cache.const_vals_opt() {
                 for &v in consts { self.heap.mark(v); }
             }
+            // F4: keep the IC's cached class + method Vals alive so a promoted slot can't reference a swept-and-reused slot.
+            for v in cache.inst_roots() { self.heap.mark(v); }
         }
         // SAFETY: each ptr is live for its exec() frame and the Vec's alloc is move-stable.
         for i in 0..self.active_const_pools.len() {

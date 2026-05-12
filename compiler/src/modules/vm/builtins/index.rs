@@ -23,12 +23,14 @@ impl SliceSource {
 
 impl<'a> VM<'a> {
 
-    pub fn get_item(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<bool, VmErr> {
+    pub fn get_item(&mut self, ip: usize, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val], cache: &mut crate::modules::vm::cache::OpcodeCache) -> Result<bool, VmErr> {
         let idx = self.pop()?;
         let obj = self.pop()?;
 
         // F2.4: instance `__getitem__` runs before built-in indexing; slices pass through as a single Slice arg.
         if let Some(r) = self.try_call_dunder(obj, "__getitem__", &[idx], chunk, slots)? {
+            // F4: record monomorphic hit so the next iteration skips `resolve_attr_silent`.
+            self.record_dunder_hit(ip, cache, obj, "__getitem__", 2);
             self.push(r);
             return Ok(true);
         }
