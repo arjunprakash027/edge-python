@@ -5,7 +5,7 @@ description: "User-defined classes as state machines and library namespaces."
 
 Edge Python is **functional-first**: classes are state containers and library namespaces, not the primary abstraction. They cover two patterns: **state machines** (a small number of methods that mutate the receiver) and **namespaces** (a bundle of related functions and constants).
 
-By design, the class system omits inheritance chains, `super()`, MRO walking, descriptor protocols, properties, metaclasses, slots, and dunder dispatch. The only dunder the VM consults on user instances is `__init__`. This keeps the object model in ~300 LOC of VM code; programs that need a richer object system are a poor fit for the target.
+Classes support single-level inheritance with `super()`, `@property` / `@x.setter` for managed attributes, and the full dunder protocol for operators, indexing, iteration, context managers, and the rest (see [Dunder methods](/language/dunders) for the matrix). Multi-base inheritance with C3 MRO, descriptors, metaclasses, and `__slots__` remain out of scope.
 
 ## State-machine pattern
 
@@ -59,6 +59,38 @@ print(Math.cube(3))
 27
 ```
 
+## Inheritance and super()
+
+A class can declare a single base with `class Sub(Base):`. Methods not defined on the subclass are looked up on the base, and the lookup walks the chain linearly — there is no C3 MRO. `isinstance(x, Base)` walks the same chain, so an instance of `Sub` is also an instance of every ancestor.
+
+`super()` in zero-argument form delegates to the next class up the chain, bound to the current `self`. It is most commonly used in `__init__` to extend a base constructor.
+
+```python
+class Animal:
+    def __init__(self, name):
+        self.name = name
+    def describe(self):
+        return self.name
+
+class Dog(Animal):
+    def __init__(self, name, breed):
+        super().__init__(name)
+        self.breed = breed
+    def describe(self):
+        return super().describe() + " (" + self.breed + ")"
+
+d = Dog("Rex", "lab")
+print(d.describe())
+print(isinstance(d, Animal))
+```
+
+```text Output
+Rex (lab)
+True
+```
+
+A multi-base declaration `class C(A, B):` is parsed and both bases are stored, but resolution is a simple left-to-right depth-first walk, not Python's C3 MRO. Prefer single inheritance.
+
 ## Attribute access on classes vs instances
 
 | Access form         | Resolves to                              |
@@ -93,12 +125,58 @@ tagged
 7
 ```
 
+## Properties
+
+`@property` turns a method into a read-only attribute. `@x.setter` (built via the `property.setter` factory on the existing property) makes the same attribute writable. Properties are looked up on the class, so subclasses inherit them and may override either side.
+
+```python
+class Temp:
+    def __init__(self, c):
+        self._c = c
+    @property
+    def celsius(self):
+        return self._c
+    @celsius.setter
+    def celsius(self, value):
+        self._c = value
+    @property
+    def fahrenheit(self):
+        return self._c * 9 / 5 + 32
+
+t = Temp(20)
+print(t.celsius)
+print(t.fahrenheit)
+t.celsius = 100
+print(t.fahrenheit)
+```
+
+```text Output
+20
+68.0
+212.0
+```
+
+The two-argument form `property(fget, fset)` is also available for building properties without decorator syntax.
+
+## Operator overloading and protocols
+
+Operators, indexing, iteration, context managers, hashing, and `repr` / `str` / `format` all dispatch through dunder methods defined on the class. Define `__add__` for `+`, `__eq__` for `==`, `__getitem__` for `x[i]`, `__iter__` / `__next__` for `for`, `__enter__` / `__exit__` for `with`, and so on.
+
+```python
+class Vec:
+    def __init__(self, x, y):
+        self.x, self.y = x, y
+    def __add__(self, other):
+        return Vec(self.x + other.x, self.y + other.y)
+```
+
+See [Dunder methods](/language/dunders) for the full matrix.
+
 ## What is *not* supported
 
-- `class Sub(Super):` — parsed but the base list has no MRO; methods are not inherited from a base class. There is no `super()`, no method resolution order, and no inheritance chain. Reuse comes from composition (hold a field of another class) or free functions.
-- `__eq__`, `__hash__`, `__repr__`, `__add__`, `__getitem__`, `__iter__`, `__len__`, `__call__`, `__bool__`, ... — none of these dunders are dispatched. Operators and built-ins resolve on the type tag, not on user-class methods. `==` on instances compares by identity.
-- `__enter__` / `__exit__` and `__aenter__` / `__aexit__` — `with` and `async with` are stack-save scopes; the runtime does **not** invoke entry or exit hooks. Use `try` / `finally` for resource cleanup.
-- `@property`, `@staticmethod`, `@classmethod` — the namespace pattern above replaces `@staticmethod`. The other two have no equivalent.
-- Slots, descriptors, metaclasses, abstract base classes, `__slots__`, `__init_subclass__`.
+- Multi-base inheritance with proper C3 MRO. `class C(A, B):` is parsed and both bases are stored, but resolution is a linear depth-first walk, not Python's C3 algorithm. Prefer single inheritance.
+- Metaclasses, descriptors (`__get__` / `__set__`), `__slots__`, abstract base classes, `__init_subclass__`.
+- `@staticmethod` and `@classmethod`. Use the namespace pattern above or free functions instead.
+- Async dunders: `__aenter__` / `__aexit__` / `__aiter__` / `__anext__`. `async with` and `async for` do not dispatch these hooks.
 
-When you need behaviour reuse, write a free function that takes the value rather than a method on the class. That keeps dispatch fast (one ALU instruction per op rather than a dunder lookup) and aligns with the functional-first identity.
+Behaviour reuse via free functions and composition is still the preferred default — it keeps dispatch fast and aligns with the functional-first identity. Reach for operator overloading and inheritance when the abstraction genuinely calls for them.

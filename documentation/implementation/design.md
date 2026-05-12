@@ -9,7 +9,7 @@ Edge Python is a compact bytecode compiler and stack VM for a functional-first s
 
 There is no AST and no IR: bytecode is the only intermediate representation between source and execution. The whole compiler is roughly 13,800 lines of Rust; production dependencies are `hashbrown` and `itoa` (SHA-256 is implemented in-tree). The WASM build adds `lol_alloc` for a single-threaded leaking bump allocator.
 
-Classes are state containers, not the primary abstraction. Inheritance, descriptor protocols, `super()`, `__slots__`, and dunder dispatch (other than `__init__`) are intentionally omitted to keep the VM small and the dispatch loop fast.
+Classes support single-level inheritance, `super()`, full dunder dispatch, and `@property` / `@x.setter`. The paradigm remains functional-first: behaviour reuse via composition is still preferred, and the VM optimises the monomorphic case via inline caching on instance dunders.
 
 ## Concepts
 
@@ -73,7 +73,6 @@ The heap is a `Vec<HeapSlot>` arena with a free list (capped at 524,288 slots an
 - No IR — there is exactly one representation between source and dispatch.
 - No JIT. Edge Python stays single-tier and pure Rust. Method JITs need per-architecture stencils; trace JITs duplicate the execution model and complicate the GC contract.
 - No runtime module system. `import` and `from ... import` resolve at parse time through a host-injected `Resolver`; the VM never learns what a module is. See [Imports](/reference/imports).
-- No dunder dispatch (other than `__init__`). Operators dispatch on the value's type tag, not on user-class methods. `__add__`, `__eq__`, `__iter__`, `__enter__`, `__getitem__`, etc. on user classes are never consulted; behaviour reuse is via free functions, not method overriding. `super()` is not registered as a builtin and there is no MRO machinery.
 - No bigints, complex numbers, `bytearray`, `memoryview`, `Decimal`, or `Fraction`. No generator `send` / `throw` / `close`. No `asyncio` module — `run`, `sleep`, `gather`, `with_timeout`, `cancel`, `receive` are top-level builtins.
 
 ## Architecture
@@ -163,7 +162,7 @@ compiler/src/
 
 `async def` and `yield`-bearing `def` both produce a `HeapObj::Coroutine` (one variant covers both). `run()` drives the cooperative scheduler with `sleep()`, `gather()`, `with_timeout()`, `cancel()`, and `receive()` as top-level builtins. There is no `asyncio` module.
 
-`with` is a stack-save scope: `SetupWith` and `ExitWith` save and restore VM state, but they do **not** invoke `__enter__` or `__exit__` on the context-manager value (same for `async with`). For deterministic resource cleanup, use explicit `try` / `finally`.
+`with` invokes `__enter__` on entry and `__exit__(exc_type, exc_val, traceback)` on exit, supporting suppression via a truthy `__exit__` return. `async with` still uses the sync `__enter__` / `__exit__` (no `__aenter__` / `__aexit__` dispatch).
 
 ## References
 

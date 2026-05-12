@@ -19,7 +19,7 @@ p("aliased")
 aliased
 ```
 
-Edge Python is functional-first. Introspection helpers (`eval`, `exec`, `compile`, `dir`, `ascii`, `help`, `__import__`, `breakpoint`, `open`, `issubclass`) are intentionally absent — the static-import contract and the lack of a writable global module table make them either impossible to implement or inconsistent with the paradigm. Class-machinery builtins (`super`, `staticmethod`, `classmethod`, `property`) are also omitted; classes are flat state containers, behavior reuse is via free functions.
+Edge Python is functional-first. Introspection helpers (`eval`, `exec`, `compile`, `dir`, `ascii`, `help`, `__import__`, `breakpoint`, `open`, `issubclass`) are intentionally absent — the static-import contract and the lack of a writable global module table make them either impossible to implement or inconsistent with the paradigm. `staticmethod` and `classmethod` are omitted (use the namespace pattern or free functions); `super` and `property` are supported — see [`/language/classes`](/language/classes) and [`/language/dunders`](/language/dunders).
 
 ## Output
 
@@ -538,7 +538,7 @@ print(type(print))
 
 ### isinstance
 
-Type-name based check. The second argument must be a type object or a tuple of type objects — passing a string (`isinstance(x, "str")`) raises `TypeError`. `bool` is a subtype of `int`. For exception classes, the standard subclass hierarchy is consulted (e.g. `isinstance(e, Exception)` is true for any built-in exception); user classes do not participate.
+`isinstance(obj, X)` accepts built-in types, exception classes, user-defined `Class` objects, and tuples of any of those. The second argument must be one of those — passing a string (`isinstance(x, "str")`) raises `TypeError`. `bool` is a subtype of `int`. For exception classes, the standard subclass hierarchy is consulted (e.g. `isinstance(e, Exception)` is true for any built-in exception). For user classes, it walks the inheritance chain — `isinstance(sub_instance, Base)` is `True` when `Sub` derives from `Base`.
 
 ```python
 print(isinstance(42, int))
@@ -760,6 +760,52 @@ print(vars(p))
 {'x': 1, 'y': 2}
 ```
 
+## Classes
+
+### super
+
+`super()` — zero-arg form only. Returns a proxy that resolves attribute access against the bases of the currently-running method's class, starting one step up the MRO. Calling it outside a method raises `TypeError`.
+
+```python
+class A:
+    def m(self):
+        return "a"
+
+class B(A):
+    def m(self):
+        return super().m() + "b"
+
+print(B().m())
+```
+
+```text Output
+ab
+```
+
+### property
+
+`property(fget, fset=None)` — builds a descriptor for use as a class member. Usually applied via the `@property` decorator, with an optional `@<name>.setter` decorator to attach the setter.
+
+```python
+class C:
+    def __init__(self, x):
+        self._x = x
+    @property
+    def x(self):
+        return self._x
+    @x.setter
+    def x(self, v):
+        self._x = v
+
+c = C(1)
+c.x = 9
+print(c.x)
+```
+
+```text Output
+9
+```
+
 ## Async
 
 These primitives are top-level builtins, not under `asyncio` — there is no `asyncio` module to import.
@@ -854,7 +900,9 @@ timed out
 | `all`             | 1          | logical AND; `all([])` is `True`           |
 | `any`             | 1          | logical OR; `any([])` is `False`           |
 | `type`            | 1          | display string `<class 'name'>`            |
-| `isinstance`      | 2          | type or tuple of types                     |
+| `isinstance`      | 2          | type, user class, exception, or tuple      |
+| `super`           | 0          | proxy to current method's class bases      |
+| `property`        | 1 or 2     | descriptor; usually via `@property`        |
 | `callable`        | 1          | True for fn / lambda / type / built-in     |
 | `id`              | 1          | stable identifier                          |
 | `hash`            | 1          | hash for hashable values                   |

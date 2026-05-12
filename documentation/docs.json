@@ -36,6 +36,7 @@
           "language/control-flow",
           "language/functions",
           "language/classes",
+          "language/dunders",
           "language/async"
         ]
       },

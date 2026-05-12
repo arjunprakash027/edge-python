@@ -9,7 +9,7 @@ A compact, single-pass SSA-style bytecode compiler and stack VM for a functional
 
 ## 1. Paradigm
 
-Edge Python targets functional edge computing. The language treats functions as first-class values: lambdas, higher-order functions, closures, comprehensions, decorators (including class decorators), generators, async/await, pattern matching, and pure-function memoization. Classes exist as flat state containers with `__init__`, instance attributes, and methods — no inheritance walking, no MRO, no `super()`, no descriptor protocol, and no dunder-method dispatch (operators, `with`, iteration, `len`, equality, etc. all dispatch on type tag, not on user-class methods). `__init__` is the only honoured magic method.
+Edge Python targets functional edge computing. The language treats functions as first-class values: lambdas, higher-order functions, closures, comprehensions, decorators (including class decorators), generators, async/await, pattern matching, and pure-function memoization. Classes support single-level inheritance, `super()`, dunder protocol dispatch (operators, indexing, iteration, context managers, hashing, etc.), and `@property` / `@x.setter`.
 
 `import` and `from <spec> import names` resolve at compile time through a host-injected resolver (see `modules/packages/`, manifest = `packages.json`). Each module is compiled and initialised once: the parser registers it in the importing chunk's `imports` list, the VM runs every imported module's top level in dependency order, and importers reach the resulting `HeapObj::Module` value via `OpCode::LoadModule`. Native modules dispatch via `CallExtern` for fast call-site fusion. Quoted specs may carry a `#sha256-<hex>` integrity fragment.
 
@@ -25,7 +25,7 @@ What this leaves is a small, fast, deterministic core: 47-bit inline integers + 
 * **VM**: Stack-based interpreter over `Vec<Instruction>`, where each `Instruction` is `(opcode: OpCode, operand: u16)`. The hot loop lives in `modules/vm/dispatch.rs` as a flat `match` on the opcode (Rust lowers it to a jump table); the VM struct and constructor live in `modules/vm/mod.rs`, with `init.rs` / `helpers.rs` / `gc.rs` covering module init, stack/iter primitives, and the collector. The hot path is split across handler modules (`handlers/{arith,data,format,function,methods,methods_helpers,mod}.rs`). `LoadAttr + Call(0)` is fused into a `CallMethod` / `CallMethodArgs` super-instruction at first execution and cached per call site.
 * **Inline Caching**: Per-instruction type-recording cache (`modules/vm/cache.rs`) for arithmetic and comparisons. After 4 stable hits the IC promotes the slot to a typed `FastOp` (`AddInt`, `AddFloat`, `LtFloat`, `EqStr`, ...); the fast path keeps a type-tag guard so a miss falls back to the generic handler.
 * **Template Memoization**: Pure functions called with the same arguments return a cached result after 2 hits, bypassing full execution. Functions are tagged impure on first observed side effect (`StoreItem`, `StoreAttr`, `print`, `input`, `raise`, `yield`).
-* **Memory**: NaN-boxed 64-bit `Val` (47-bit signed inline int, IEEE-754 float, bool, None, 28-bit heap index). Heap is an arena of `HeapObj` slots managed by a mark-and-sweep GC. Strings and bytes ≤ 128 bytes are interned. **Integers are a hard 47 bits** (±140,737,488,355,327); overflow raises `OverflowError`. There is no bignum fallback — this is paradigm-level, not a TODO.
+* **Memory**: NaN-boxed 64-bit `Val` (47-bit signed inline int, IEEE-754 float, bool, None, 28-bit heap index). Heap is an arena of `HeapObj` slots managed by a mark-and-sweep GC. Strings and bytes ≤ 128 bytes are interned. **Integers are 47-bit inline with automatic i128 (`LongInt`) promotion on overflow**, hard-capped at ±2^127.
 
 ---
 
@@ -141,6 +141,7 @@ Mark-and-sweep with roots: operand stack, with-stack, pending yields, event queu
 │               ├── mod.rs
 │               ├── arith.rs
 │               ├── data.rs
+│               ├── dunder.rs
 │               ├── format.rs
 │               ├── function.rs
 │               ├── methods.rs

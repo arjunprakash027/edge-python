@@ -81,7 +81,7 @@ There is no built-in CLI binary. If you need one for local development, embed `c
 
 ## What it is
 
-Edge Python targets functional edge computing: first-class functions, lambdas, closures, decorators (including class decorators), generators, async/await with a built-in cooperative scheduler, comprehensions, structural pattern matching, and pure-function memoization. Classes exist as flat state containers with `__init__`, attributes, and methods — no inheritance, no `super()`, no descriptor protocol, and no dunder-method dispatch (operators and protocols dispatch on type tag, not user-class methods). Integers are 47-bit inline (overflow raises `OverflowError`); there is no bignum.
+Edge Python targets functional edge computing: first-class functions, lambdas, closures, decorators (including class decorators), generators, async/await with a built-in cooperative scheduler, comprehensions, structural pattern matching, and pure-function memoization. Classes support single-level inheritance, `super()`, dunder-method dispatch (operators, indexing, iteration, context managers, etc.), and `@property` / `@x.setter`. Integers are 47-bit inline with automatic promotion to i128 LongInt on overflow; the hard cap is ±2^127.
 
 Imports resolve at compile time through a host-injected resolver. Bare names walk up `packages.json` manifests; quoted specs (`"./util.py"`, `"https://..."`) are loaded verbatim and may carry a `#sha256-<hex>` integrity fragment. `.py` modules are compiled and run once; native modules dispatch via the `CallExtern` opcode (either a `.wasm` loaded by URL per the public ABI, or in-process Rust closures from the embedder). There is no bundled stdlib — modules are external artifacts.
 
