@@ -299,7 +299,7 @@ These are pre-bound type names you can match against, with their parent links sh
 
 ## with
 
-`with` is a stack-save scope: the expression value is bound to the `as` name and the body runs. The runtime does **not** call `__enter__` or `__exit__` — there is no protocol invocation. Use `try` / `finally` when you need real teardown semantics.
+`with` drives the context-manager protocol: the expression is evaluated, its `__enter__` is called, and the return value is bound to the `as` name before the body runs. On exit, `__exit__(exc_type, exc_value, traceback)` is invoked — with `(None, None, None)` on normal completion, or the live exception info if the body raised. A truthy return from `__exit__` suppresses the exception; otherwise it propagates. See [`/language/dunders`](/language/dunders) for the full protocol.
 
 ```python
 x = [1, 2]

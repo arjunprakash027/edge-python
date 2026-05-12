@@ -42,6 +42,8 @@ pub(crate) struct Pending {
     pub sleep_until_ns: Option<u64>,
     /* Lifted ExcInstance from `raise X(...)` so `except X as e` binds the real instance. */
     pub exc_val: Option<Val>,
+    /* `(class, self)` for the next user-function call when it's invoked as a method; populated by method-dispatch paths and consumed by `run_body_with_frame`. */
+    pub method_binding: Option<(Val, Val)>,
 }
 
 impl Pending {
@@ -52,6 +54,7 @@ impl Pending {
             call_byte_pos: None,
             sleep_until_ns: None,
             exc_val: None,
+            method_binding: None,
         }
     }
 }
@@ -283,6 +286,11 @@ impl<'a> VM<'a> {
             vm.globals.insert("__name__".to_string(), main_name);
             vm.globals.insert("__name___0".to_string(), main_name);
         }
+        // `NotImplemented` singleton; dunders return it to delegate to the reflected operator.
+        if let Ok(ni) = vm.heap.alloc(HeapObj::NotImplemented) {
+            vm.globals.insert("NotImplemented".to_string(), ni);
+            vm.globals.insert("NotImplemented_0".to_string(), ni);
+        }
         // Builtins as first-class NativeFn values so they can be rebound/passed around.
         let builtin_fns: &[NativeFnId] = &[
             NativeFnId::Print, NativeFnId::Len, NativeFnId::Abs, NativeFnId::Str,
@@ -304,6 +312,8 @@ impl<'a> VM<'a> {
             NativeFnId::BytesFromHex, NativeFnId::IntFromBytes,
             NativeFnId::IntToBytes, NativeFnId::FrozenSet,
             NativeFnId::Globals, NativeFnId::Locals,
+            NativeFnId::Super,
+            NativeFnId::Property,
         ];
         for &id in builtin_fns {
             if let Ok(v) = vm.heap.alloc(HeapObj::NativeFn(id)) {

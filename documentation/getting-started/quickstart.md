@@ -46,7 +46,7 @@ Hello, python!
 
 ## Language overview
 
-Edge Python is a functional subset of Python 3.13. Functions are first-class values; lambdas, currying, higher-order functions, and comprehensions are central. Classes exist as flat state containers — no inheritance, no `super()`, no dunder dispatch.
+Edge Python is a functional subset of Python 3.13. Functions are first-class values; lambdas, currying, higher-order functions, and comprehensions are central. Classes support single-level inheritance with `super()` and dunder dispatch for operators, indexing, iteration, and context managers.
 
 ```python
 # First-class functions

@@ -10,18 +10,18 @@ impl<'a> VM<'a> {
         match op {
             OpCode::Call => self.exec_call(operand, chunk, slots),
             OpCode::MakeFunction | OpCode::MakeCoroutine => self.exec_make_function(op, operand, chunk, slots),
-            OpCode::CallLen => self.call_len(),
+            OpCode::CallLen => self.call_len(chunk, slots),
             OpCode::CallAbs => self.call_abs(),
-            OpCode::CallStr => self.call_str(),
+            OpCode::CallStr => self.call_str(chunk, slots),
             OpCode::CallInt => self.call_int(),
             OpCode::CallFloat => self.call_float(),
-            OpCode::CallBool => self.call_bool(),
+            OpCode::CallBool => self.call_bool(chunk, slots),
             OpCode::CallType => self.call_type(),
             OpCode::CallChr => self.call_chr(),
             OpCode::CallOrd => self.call_ord(),
             OpCode::CallSorted => self.call_sorted(),
-            OpCode::CallList => self.call_list(),
-            OpCode::CallTuple => self.call_tuple(),
+            OpCode::CallList => self.call_list(chunk, slots),
+            OpCode::CallTuple => self.call_tuple(chunk, slots),
             OpCode::CallEnumerate => self.call_enumerate(),
             OpCode::CallIsInstance => self.call_isinstance(),
             OpCode::CallRange => self.call_range(operand),
@@ -32,7 +32,7 @@ impl<'a> VM<'a> {
             OpCode::CallZip => self.call_zip(operand),
             OpCode::CallDict => self.call_dict(operand),
             OpCode::CallSet => self.call_set(operand),
-            OpCode::CallPrint => { self.mark_impure(); self.call_print(operand) }
+            OpCode::CallPrint => { self.mark_impure(); self.call_print(operand, chunk, slots) }
             OpCode::CallInput => { self.mark_impure(); self.call_input() }
             OpCode::CallAll => self.call_all(operand),
             OpCode::CallAny => self.call_any(operand),
@@ -41,11 +41,11 @@ impl<'a> VM<'a> {
             OpCode::CallHex => self.call_hex(),
             OpCode::CallDivmod => self.call_divmod(),
             OpCode::CallPow => self.call_pow(operand),
-            OpCode::CallRepr => self.call_repr(),
+            OpCode::CallRepr => self.call_repr(chunk, slots),
             OpCode::CallReversed => self.call_reversed(),
             OpCode::CallCallable => self.call_callable(),
             OpCode::CallId => self.call_id(),
-            OpCode::CallHash => self.call_hash(),
+            OpCode::CallHash => self.call_hash(chunk, slots),
             OpCode::CallExtern => self.call_extern(operand, chunk),
             _ => Err(cold_runtime("non-function opcode in handle_function")),
         }
@@ -230,23 +230,21 @@ impl<'a> VM<'a> {
             return Ok(true);
         }
 
-        // Calling a class: create an instance and run __init__ if defined.
-        if let HeapObj::Class(_, methods) = self.heap.get(callee) {
+        // Calling a class: create an instance and run __init__ if defined (walks bases).
+        if let HeapObj::Class(..) = self.heap.get(callee) {
             // The recursive `exec_call` below only encodes positional count — kwargs would silently disappear before reaching `__init__`, so reject them here.
             if !kw_flat.is_empty() {
                 return Err(cold_type("class constructor takes no keyword arguments"));
             }
-            let methods = methods.clone();
             let instance = self.heap.alloc(HeapObj::Instance(callee, Rc::new(RefCell::new(DictMap::new()))))?;
-            if let Some((_, init_fn)) = methods.iter().find(|(n, _)| n == "__init__") {
+            if let Some((init_fn, defining)) = self.lookup_class_member(callee, "__init__") {
                 // Fail-fast before pushing — the inner check fires only after parse_call_args pops.
                 if self.depth >= self.max_calls { return Err(cold_depth()); }
-                let init_fn = *init_fn;
+                self.pending.method_binding = Some((defining, instance));
                 self.push(init_fn);
-                let mut args = vec![instance];
-                args.extend_from_slice(positional);
-                for a in &args { self.push(*a); }
-                let argc = args.len() as u16;
+                self.push(instance);
+                for a in positional { self.push(*a); }
+                let argc = (1 + positional.len()) as u16;
                 self.exec_call(argc, chunk, slots)?;
                 // Discard `__init__` return value.
                 self.pop()?;
@@ -256,16 +254,50 @@ impl<'a> VM<'a> {
         }
 
         // Bound user method: prepend `self` to the arg list and re-dispatch.
-        if let HeapObj::BoundUserMethod(recv, func) = self.heap.get(callee) {
+        if let HeapObj::BoundUserMethod(recv, func, class) = self.heap.get(callee) {
             // Same as Class branch: depth check before mutating the stack.
             if self.depth >= self.max_calls { return Err(cold_depth()); }
-            let (recv, func) = (*recv, *func);
+            let (recv, func, class) = (*recv, *func, *class);
+            self.pending.method_binding = Some((class, recv));
             self.push(func);
             self.push(recv);
             for a in positional { self.push(*a); }
             let argc = (positional.len() + 1) as u16;
             let encoded = ((num_kw as u16) << 8) | argc;
             self.exec_call(encoded, chunk, slots)?;
+            return Ok(true);
+        }
+
+        // F3: `prop.setter(fn)` returns a new `Property` carrying the original getter plus the supplied setter.
+        if let HeapObj::PropertySetter(prop_val) = self.heap.get(callee) {
+            if positional.len() != 1 || !kw_flat.is_empty() {
+                return Err(cold_type("property.setter takes exactly 1 argument"));
+            }
+            let prop_val = *prop_val;
+            let getter = match self.heap.get(prop_val) {
+                HeapObj::Property(g, _) => *g,
+                _ => return Err(cold_runtime("PropertySetter wraps a non-Property value")),
+            };
+            let new_setter = positional[0];
+            let new_prop = self.heap.alloc(HeapObj::Property(getter, new_setter))?;
+            self.push(new_prop);
+            return Ok(true);
+        }
+
+        // F2.5: instance with `__call__` — bind and dispatch through `BoundUserMethod`-style flow.
+        if let HeapObj::Instance(..) = self.heap.get(callee)
+            && let Some((func, class)) = self.lookup_class_member(
+                match self.heap.get(callee) { HeapObj::Instance(c, _) => *c, _ => unreachable!() },
+                "__call__")
+        {
+            if !kw_flat.is_empty() { return Err(cold_type("__call__ does not accept keyword arguments")); }
+            if self.depth >= self.max_calls { return Err(cold_depth()); }
+            self.pending.method_binding = Some((class, callee));
+            self.push(func);
+            self.push(callee);
+            for a in positional { self.push(*a); }
+            let argc = (positional.len() + 1) as u16;
+            self.exec_call(argc, chunk, slots)?;
             return Ok(true);
         }
 
@@ -431,11 +463,18 @@ impl<'a> VM<'a> {
 
         // Frame snapshots caller's source/path so render doesn't borrow live chunk pointers.
         let call_byte_pos = self.pending.call_byte_pos.take().unwrap_or(0);
+        // Method-call paths set `method_binding` immediately before invoking `exec_call`; plain function calls leave it `None`.
+        let (current_class, current_self) = match self.pending.method_binding.take() {
+            Some((c, s)) => (Some(c), Some(s)),
+            None => (None, None),
+        };
         self.call_stack.push(super::super::types::CallFrame {
             fi,
             call_byte_pos,
             caller_source: chunk.source.clone(),
             caller_path: chunk.path.clone(),
+            current_class,
+            current_self,
         });
 
         self.observed_impure.push(false);
@@ -535,7 +574,8 @@ impl<'a> VM<'a> {
             BytesFromHex => Some(1),
             IntFromBytes => Some(2),
             IntToBytes => Some(3),
-            Globals | Locals => Some(0),
+            Globals | Locals | Super => Some(0),
+            Property => None, // 1 or 2 args, validated in `call_property`.
             Bytes => None, // 0/1/2-arg: bytes() | bytes(n|iter) | bytes(str, "utf-8")
             Slice => None, // 1/2/3-arg
             Gather => None, // variadic
@@ -553,7 +593,7 @@ impl<'a> VM<'a> {
             // Variadic
             Print => {
                 // CallPrint is statement-shaped (no trailing Pop); when reached via Call the parser emits Pop, so push None to keep the stack balanced.
-                self.call_print(argc)?;
+                self.call_print(argc, chunk, slots)?;
                 self.push(Val::none());
                 Ok(())
             }
@@ -569,30 +609,30 @@ impl<'a> VM<'a> {
             All => self.call_all(argc),
             Any => self.call_any(argc),
             GetAttr => self.call_getattr(argc),
-            Format => self.call_format(argc),
+            Format => self.call_format(argc, chunk, slots),
             // 0/1/2-arg
             Input => self.call_input(),
-            Len => self.call_len(),
+            Len => self.call_len(chunk, slots),
             Abs => self.call_abs(),
-            Str => self.call_str(),
+            Str => self.call_str(chunk, slots),
             Int => self.call_int(),
             Float => self.call_float(),
-            Bool => self.call_bool(),
+            Bool => self.call_bool(chunk, slots),
             Type => self.call_type(),
             Chr => self.call_chr(),
             Ord => self.call_ord(),
             Sorted => self.call_sorted_with_key(sort_key, chunk, slots),
             Enumerate => self.call_enumerate(),
-            List => self.call_list(),
-            Tuple => self.call_tuple(),
+            List => self.call_list(chunk, slots),
+            Tuple => self.call_tuple(chunk, slots),
             Bin => self.call_bin(),
             Oct => self.call_oct(),
             Hex => self.call_hex(),
-            Repr => self.call_repr(),
+            Repr => self.call_repr(chunk, slots),
             Reversed => self.call_reversed(),
             Callable => self.call_callable(),
             Id => self.call_id(),
-            Hash => self.call_hash(),
+            Hash => self.call_hash(chunk, slots),
             Divmod => self.call_divmod(),
             IsInstance => self.call_isinstance(),
             HasAttr => self.call_hasattr(),
@@ -618,6 +658,8 @@ impl<'a> VM<'a> {
             FrozenSet => self.call_frozenset(argc),
             Globals => self.call_globals(chunk, slots),
             Locals => self.call_locals(chunk, slots),
+            Super => self.call_super(),
+            Property => self.call_property(argc),
         }
     }
 }

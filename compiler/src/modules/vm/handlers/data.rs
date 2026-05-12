@@ -42,17 +42,16 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Indexed access/store, unpacking, and `{value!s:spec}` formatting. */
-    pub(crate) fn handle_container(&mut self, op: OpCode, operand: u16) -> Result<(), VmErr> {
+    /* Indexed access/store, unpacking, and `{value!s:spec}` formatting. `GetItem`/`StoreItem`/`DelItem` are dispatched directly from the hot loop; the arms below cover legacy callers that may route through here. */
+    pub(crate) fn handle_container(&mut self, op: OpCode, operand: u16, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         match op {
-            OpCode::GetItem => { self.get_item()?; }
             OpCode::StoreItem => {
                 self.mark_impure();
-                self.store_item()?;
+                self.store_item(chunk, slots)?;
             }
             OpCode::DelItem => {
                 self.mark_impure();
-                self.del_item()?;
+                self.del_item(chunk, slots)?;
             }
             OpCode::UnpackSequence => self.exec_unpack_seq(operand as usize)?,
             OpCode::UnpackEx => self.unpack_ex(operand)?,
@@ -63,9 +62,10 @@ impl<'a> VM<'a> {
                 let spec_val = if has_spec { Some(self.pop()?) } else { None };
                 let v = self.pop()?;
 
+                // F2.8: conversion flags consult the dunder-aware helpers so `f"{x!s}"` honours `__str__`.
                 let converted = match conv {
-                    1 => self.heap.alloc(HeapObj::Str(self.repr(v)))?,
-                    2 => self.heap.alloc(HeapObj::Str(self.display(v)))?,
+                    1 => { let s = self.repr_op(v, chunk, slots)?; self.heap.alloc(HeapObj::Str(s))? }
+                    2 => { let s = self.display_op(v, chunk, slots)?; self.heap.alloc(HeapObj::Str(s))? }
                     3 => self.heap.alloc(HeapObj::Str(super::format::display_inline(v, &self.heap).escape_default().collect::<String>()))?,
                     _ => v,
                 };
@@ -76,14 +76,14 @@ impl<'a> VM<'a> {
                             HeapObj::Str(s) => s.clone(),
                             _ => return Err(cold_type("format spec must be a string")),
                         };
-                        super::format::format_value(converted, &spec, &self.heap)
-                            .map_err(cold_value)?
+                        // F2.11: instance `__format__(spec)` runs through `format_op`; built-ins fall through to the spec engine.
+                        self.format_op(converted, &spec, chunk, slots)?
                     }
                     None => {
                         if conv != 0 && let HeapObj::Str(s) = self.heap.get(converted) {
                             s.clone()
                         } else {
-                            self.display(converted)
+                            self.display_op(converted, chunk, slots)?
                         }
                     }
                 };
@@ -133,11 +133,11 @@ impl<'a> VM<'a> {
     }
 
     /* Side-effecting / impure ops: assert, del, global/nonlocal, import, type alias, raise, await. */
-    pub(crate) fn handle_side(&mut self, op: OpCode, operand: u16, slots: &mut [Val]) -> Result<(), VmErr> {
+    pub(crate) fn handle_side(&mut self, op: OpCode, operand: u16, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         match op {
             OpCode::Assert => {
                 let v = self.pop()?;
-                if !self.truthy(v) { return Err(VmErr::Runtime("AssertionError")); }
+                if !self.truthy_op(v, chunk, slots)? { return Err(VmErr::Runtime("AssertionError")); }
             }
             OpCode::Del => {
                 let slot = operand as usize;

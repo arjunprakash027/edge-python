@@ -6,17 +6,49 @@ use super::matches_exc_class;
 
 impl<'a> VM<'a> {
 
-    pub fn call_repr(&mut self) -> Result<(), VmErr> {
+    /* `property(fget)` / `property(fget, fset)` — captures the descriptor pair the class chain hands to `LoadAttr` / `StoreAttr`. The `@x.setter` decorator builds the second form via `PropertySetter`. */
+    pub fn call_property(&mut self, argc: u16) -> Result<(), VmErr> {
+        let args = self.pop_n(argc as usize)?;
+        let (getter, setter) = match args.as_slice() {
+            [g] => (*g, Val::none()),
+            [g, s] => (*g, *s),
+            _ => return Err(cold_type("property() takes 1 or 2 arguments")),
+        };
+        let prop = self.heap.alloc(HeapObj::Property(getter, setter))?;
+        self.push(prop);
+        Ok(())
+    }
+
+    // `super()` zero-arg: reads the running method's `(class, self)` off the top frame and returns a Super proxy.
+    pub fn call_super(&mut self) -> Result<(), VmErr> {
+        let binding = self.call_stack.last()
+            .and_then(|f| f.current_class.zip(f.current_self));
+        let Some((class, recv)) = binding else {
+            return Err(VmErr::Runtime("super() must be called inside a method"));
+        };
+        let proxy = self.heap.alloc(HeapObj::Super(class, recv))?;
+        self.push(proxy);
+        Ok(())
+    }
+
+    pub fn call_repr(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let o = self.pop()?;
-        self.alloc_and_push_str(self.repr(o))
+        let s = self.repr_op(o, chunk, slots)?;
+        self.alloc_and_push_str(s)
     }
 
     pub fn call_callable(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         let result = if o.is_heap() {
-            matches!(self.heap.get(o),
+            match self.heap.get(o) {
                 HeapObj::Func(..) | HeapObj::BoundMethod(..)
-                | HeapObj::Type(_) | HeapObj::NativeFn(_))
+                | HeapObj::Type(_) | HeapObj::NativeFn(_)
+                | HeapObj::Class(..) | HeapObj::BoundUserMethod(..)
+                | HeapObj::Extern(_) => true,
+                // F2.5: instance is callable iff its class chain defines `__call__`.
+                HeapObj::Instance(cls, _) => self.lookup_class_member(*cls, "__call__").is_some(),
+                _ => false,
+            }
         } else { false };
         self.push(Val::bool(result));
         Ok(())
@@ -30,9 +62,30 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    pub fn call_hash(&mut self) -> Result<(), VmErr> {
+    pub fn call_hash(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         use core::hash::{Hash, Hasher};
         let o = self.pop()?;
+
+        // F2.7: instance dispatch — user `__hash__` wins; `__eq__` without `__hash__` makes the instance unhashable.
+        if o.is_heap() && let HeapObj::Instance(cls, _) = self.heap.get(o) {
+            let cls = *cls;
+            let has_hash = self.lookup_class_member(cls, "__hash__").is_some();
+            let has_eq = self.lookup_class_member(cls, "__eq__").is_some();
+            if has_hash {
+                let r = self.try_call_dunder(o, "__hash__", &[], chunk, slots)?
+                    .ok_or_else(|| cold_type("__hash__ returned NotImplemented"))?;
+                if !r.is_int() {
+                    return Err(cold_type("__hash__ must return int"));
+                }
+                self.push(Val::int(r.as_int() & Val::INT_MAX));
+                return Ok(());
+            }
+            if has_eq {
+                return Err(cold_type("unhashable type: instance defines __eq__ without __hash__"));
+            }
+            // Default fallback: pointer identity, mirroring Python's `object.__hash__`.
+        }
+
         let mut h = crate::util::fx::FxHasher::default();
         if o.is_int() { o.as_int().hash(&mut h); }
         else if o.is_float() { o.as_float().to_bits().hash(&mut h); }
@@ -51,7 +104,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Type-name based isinstance check. Accepts Type or NativeFn (for the builtins-as-types case) on the right; allows int↔bool aliasing. */
+    /* Type-name based isinstance check. Accepts Type / NativeFn (builtin types) / user Class on the right; allows int↔bool aliasing and walks user inheritance via `is_subclass`. */
     pub fn call_isinstance(&mut self) -> Result<(), VmErr> {
         let (arg2, obj) = (self.pop()?, self.pop()?);
         let obj_ty = self.type_name(obj);
@@ -63,6 +116,11 @@ impl<'a> VM<'a> {
                 HeapObj::ExcInstance(n, _) => Some(n.clone()),
                 _ => None,
             }
+        } else { None };
+
+        // User-class membership uses heap identity, not type names, so capture the instance's class up-front.
+        let obj_class: Option<Val> = if obj.is_heap() {
+            if let HeapObj::Instance(cls, _) = self.heap.get(obj) { Some(*cls) } else { None }
         } else { None };
 
         let check_one = |t: Val, heap: &HeapPool| -> Result<bool, VmErr> {
@@ -90,6 +148,7 @@ impl<'a> VM<'a> {
                         || (obj_ty == "bool" && name == "int")
                         )
                 }
+                HeapObj::Class(..) => Ok(obj_class.is_some_and(|c| heap.is_subclass(c, t))),
                 _ => Err(VmErr::Type("isinstance() arg 2 must be a type or tuple of types")),
             }
         };
@@ -99,7 +158,7 @@ impl<'a> VM<'a> {
         }
 
         let result = match self.heap.get(arg2) {
-            HeapObj::Type(_) | HeapObj::NativeFn(_) => check_one(arg2, &self.heap)?,
+            HeapObj::Type(_) | HeapObj::NativeFn(_) | HeapObj::Class(..) => check_one(arg2, &self.heap)?,
             HeapObj::Tuple(items) => {
                 let items: Vec<Val> = items.clone();
                 items.iter().any(|&t| check_one(t, &self.heap).unwrap_or(false))

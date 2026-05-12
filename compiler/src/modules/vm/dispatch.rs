@@ -5,7 +5,7 @@ use crate::modules::parser::{OpCode, SSAChunk, Instruction, ssa_strip};
 
 use super::{ExceptionFrame, VM, handlers};
 use super::types::*;
-use super::cache::{OpcodeCache, FastOp};
+use super::cache::{OpcodeCache, FastOp, InstanceCache};
 
 /* Three-way result of a fast-path attempt; see exec_fast for semantics. */
 enum FastOutcome { Done, TypeMiss, Overflow }
@@ -82,6 +82,56 @@ impl<'a> VM<'a> {
         Ok(FastOutcome::Done)
     }
 
+    /* F4: instance-dunder fast path. Guards the receiver's class identity, invokes the pre-resolved method bypassing `resolve_attr_silent`, and treats `NotImplemented` as a deopt so reflected dispatch can take over via the slow path. Restores the stack on miss so the slow handler reads its operands unchanged. */
+    #[inline]
+    fn exec_inst(&mut self, inst: InstanceCache, chunk: &SSAChunk, slots: &mut [Val]) -> Result<FastOutcome, VmErr> {
+        let arity = inst.arity as usize;
+        let len = self.stack.len();
+        if len < arity { return Ok(FastOutcome::TypeMiss); }
+
+        let recv_idx = len - arity;
+        let recv = self.stack[recv_idx];
+        if !recv.is_heap() { return Ok(FastOutcome::TypeMiss); }
+        let class_val = match self.heap.get(recv) {
+            HeapObj::Instance(c, _) => *c,
+            _ => return Ok(FastOutcome::TypeMiss),
+        };
+        if class_val.as_heap() != inst.class { return Ok(FastOutcome::TypeMiss); }
+
+        if self.depth >= self.max_calls { return Err(cold_depth()); }
+
+        // Snapshot the operand window before mutating; reused to roll back on deopt.
+        let mut operands: Vec<Val> = Vec::with_capacity(arity);
+        operands.extend_from_slice(&self.stack[recv_idx..len]);
+        self.stack.truncate(recv_idx);
+
+        // SAFETY: `method_bits` was recorded from a live `Val` and `Class` references are immutable, so the function still lives on the heap.
+        let method = unsafe { Val::from_raw(inst.method_bits) };
+        self.pending.method_binding = Some((class_val, recv));
+        self.push(method);
+        for &v in &operands { self.push(v); }
+        self.exec_call(arity as u16, chunk, slots)?;
+
+        let result = self.pop()?;
+        if self.heap.is_not_implemented(result) {
+            // Deopt: restore the original stack window so the slow handler sees its operands.
+            for &v in &operands { self.push(v); }
+            return Ok(FastOutcome::TypeMiss);
+        }
+        self.push(result);
+        Ok(FastOutcome::Done)
+    }
+
+    /* Post-success recording for the instance-dunder IC; ignored when the receiver isn't an instance or the method isn't on its class. */
+    #[inline]
+    pub(crate) fn record_dunder_hit(&self, ip: usize, cache: &mut OpcodeCache, recv: Val, name: &str, arity: u8) {
+        if !recv.is_heap() { return; }
+        let HeapObj::Instance(cls, _) = self.heap.get(recv) else { return; };
+        let cls = *cls;
+        let Some((method, _)) = self.lookup_class_member(cls, name) else { return; };
+        cache.record_inst(ip, cls.as_heap(), method, arity);
+    }
+
     /* Main dispatch loop. Walks the fused instruction stream (LoadAttr+Call already collapsed to CallMethod+CallMethodArgs); checks the IC inline for hot arith/compare opcodes. */
     pub(crate) fn exec(&mut self, chunk: &SSAChunk, slots: &mut [Val]) -> Result<Val, VmErr> {
 
@@ -148,21 +198,7 @@ impl<'a> VM<'a> {
                             self.error_byte_pos = None;
                             // Drop partial traceback so a later error doesn't inherit stale frames.
                             self.call_stack.clear();
-                            // Class-name lookup key; `Raised` carries the user-supplied name.
-                            let msg: String = match &e {
-                                VmErr::ZeroDiv => "ZeroDivisionError".into(),
-                                VmErr::Overflow => "OverflowError".into(),
-                                VmErr::Type(_) => "TypeError".into(),
-                                VmErr::TypeMsg(_) => "TypeError".into(),
-                                VmErr::Value(_) => "ValueError".into(),
-                                VmErr::Attribute(_)=> "AttributeError".into(),
-                                VmErr::Name(_) => "NameError".into(),
-                                VmErr::CallDepth => "RecursionError".into(),
-                                VmErr::Heap => "MemoryError".into(),
-                                VmErr::Budget => "RuntimeError".into(),
-                                VmErr::Runtime(_) => "RuntimeError".into(),
-                                VmErr::Raised(s) => s.clone(),
-                            };
+                            let msg = e.class_name();
                             // Prefer the user-raised instance; synthesize one for native errors (CPython parity).
                             let exc = if let Some(v) = self.pending.exc_val.take() {
                                 v
@@ -206,7 +242,23 @@ impl<'a> VM<'a> {
         let obj = self.pop()?;
         let name = chunk.names.get(attr_idx as usize).ok_or(VmErr::Runtime("CallMethod: bad name index"))?.clone();
 
-        match self.resolve_attr(obj, &name)? {
+        let lookup = match self.resolve_attr(obj, &name) {
+            Ok(l) => l,
+            Err(VmErr::Attribute(msg)) => {
+                // F2.10: if `__getattr__` resolves the name to a callable, invoke it with the positional args.
+                if let Some(v) = self.try_getattr_fallback(obj, &name, chunk, slots)? {
+                    self.push(v);
+                    for a in &positional { self.push(*a); }
+                    for a in &kw_flat { self.push(*a); }
+                    let argc = positional.len() as u16;
+                    let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
+                    return self.exec_call(encoded, chunk, slots);
+                }
+                return Err(VmErr::Attribute(msg));
+            }
+            Err(other) => return Err(other),
+        };
+        match lookup {
             handlers::methods::AttrLookup::ModuleAttr(callee)
             | handlers::methods::AttrLookup::ClassMember(callee) => {
                 // Direct call on the resolved value, no `self` prepended.
@@ -217,8 +269,9 @@ impl<'a> VM<'a> {
                 let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
                 self.exec_call(encoded, chunk, slots)
             }
-            handlers::methods::AttrLookup::InstanceMethod { recv, func } => {
-                // Prepend `self`; kwargs aren't forwarded (preserved behaviour).
+            handlers::methods::AttrLookup::InstanceMethod { recv, func, class } => {
+                // Prepend `self`; kwargs aren't forwarded (preserved behaviour). `super()` reads the binding off `pending`.
+                self.pending.method_binding = Some((class, recv));
                 self.push(func);
                 self.push(recv);
                 for a in &positional { self.push(*a); }
@@ -239,6 +292,29 @@ impl<'a> VM<'a> {
                 let ty = self.type_name(obj);
                 Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")))
             }
+            handlers::methods::AttrLookup::PropertyGet { recv, getter } => {
+                // Materialise the value first, then call it with the user's args — `foo.prop(arg)` where `prop` returns a callable.
+                if self.depth >= self.max_calls { return Err(cold_depth()); }
+                self.push(getter);
+                self.push(recv);
+                self.exec_call(1, chunk, slots)?;
+                let result = self.pop()?;
+                self.push(result);
+                for a in &positional { self.push(*a); }
+                for a in &kw_flat { self.push(*a); }
+                let argc = positional.len() as u16;
+                let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
+                self.exec_call(encoded, chunk, slots)
+            }
+            handlers::methods::AttrLookup::PropertySetterRef(prop) => {
+                let v = self.heap.alloc(HeapObj::PropertySetter(prop))?;
+                self.push(v);
+                for a in &positional { self.push(*a); }
+                for a in &kw_flat { self.push(*a); }
+                let argc = positional.len() as u16;
+                let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
+                self.exec_call(encoded, chunk, slots)
+            }
         }
     }
 
@@ -252,15 +328,15 @@ impl<'a> VM<'a> {
         *ip += 1;
 
         match ins.opcode {
-            // Short-circuit jumps.
+            // Short-circuit jumps; instance `__bool__` / `__len__` may run via `truthy_op`.
             OpCode::JumpIfFalseOrPop => {
                 let v = *self.stack.last().ok_or(cold_runtime("stack underflow"))?;
-                if !self.truthy(v) { *ip = op as usize; }
+                if !self.truthy_op(v, chunk, slots)? { *ip = op as usize; }
                 else { self.pop()?; }
             }
             OpCode::JumpIfTrueOrPop => {
                 let v = *self.stack.last().ok_or(cold_runtime("stack underflow"))?;
-                if self.truthy(v) { *ip = op as usize; }
+                if self.truthy_op(v, chunk, slots)? { *ip = op as usize; }
                 else { self.pop()?; }
             }
 
@@ -307,22 +383,38 @@ impl<'a> VM<'a> {
                         FastOutcome::TypeMiss => cache.invalidate(rip),
                     }
                 }
+                // F4: instance-dunder fast path — orthogonal to scalar specialisation, only fires for monomorphic instance sites.
+                if let Some(inst) = cache.get_inst(rip) {
+                    match self.exec_inst(inst, chunk, slots)? {
+                        FastOutcome::Done => return Ok(None),
+                        FastOutcome::Overflow => {}
+                        FastOutcome::TypeMiss => cache.invalidate_inst(rip),
+                    }
+                }
                 if matches!(ins.opcode, OpCode::Eq | OpCode::Lt | OpCode::NotEq
                     | OpCode::Gt | OpCode::LtEq | OpCode::GtEq)
                 {
-                    self.handle_compare(ins.opcode, rip, cache)?;
+                    self.handle_compare(ins.opcode, rip, cache, chunk, slots)?;
                 } else {
-                    self.handle_arith(ins.opcode, rip, cache)?;
+                    self.handle_arith(ins.opcode, rip, cache, chunk, slots)?;
                 }
             }
             OpCode::Div | OpCode::Pow | OpCode::Minus => {
-                self.handle_arith(ins.opcode, rip, cache)?;
+                // F4: Div/Pow/Minus skip scalar IC (Float-only / overflow-prone) but still benefit from the instance-dunder fast path.
+                if let Some(inst) = cache.get_inst(rip) {
+                    match self.exec_inst(inst, chunk, slots)? {
+                        FastOutcome::Done => return Ok(None),
+                        FastOutcome::Overflow => {}
+                        FastOutcome::TypeMiss => cache.invalidate_inst(rip),
+                    }
+                }
+                self.handle_arith(ins.opcode, rip, cache, chunk, slots)?;
             }
 
             OpCode::Jump => { *ip = self.checked_jump(op as usize, n)?; }
             OpCode::JumpIfFalse => {
                 let v = self.pop()?;
-                if !self.truthy(v) { *ip = self.checked_jump(op as usize, n)?; }
+                if !self.truthy_op(v, chunk, slots)? { *ip = self.checked_jump(op as usize, n)?; }
             }
             OpCode::ForIter => {
                 if !self.sandbox_off {
@@ -344,6 +436,25 @@ impl<'a> VM<'a> {
                     }
                     return Ok(None);
                 }
+                // F2.6: user-defined iterator calls `__next__`; `StopIteration` ends the loop without propagating, other exceptions surface.
+                if let Some(IterFrame::UserDefined(iter_val)) = self.iter_stack.last() {
+                    let iter = *iter_val;
+                    match self.try_call_dunder(iter, "__next__", &[], chunk, slots) {
+                        Ok(Some(item)) => { self.push(item); }
+                        Ok(None) => {
+                            self.iter_stack.pop();
+                            if op as usize > n { return Err(cold_runtime("jump target out of bounds")); }
+                            *ip = op as usize;
+                        }
+                        Err(VmErr::Raised(m)) if m == "StopIteration" => {
+                            self.iter_stack.pop();
+                            if op as usize > n { return Err(cold_runtime("jump target out of bounds")); }
+                            *ip = op as usize;
+                        }
+                        Err(e) => return Err(e),
+                    }
+                    return Ok(None);
+                }
                 match self.iter_stack.last_mut().and_then(|f| f.next_item()) {
                     Some(item) => self.push(item),
                     None => {
@@ -360,7 +471,17 @@ impl<'a> VM<'a> {
             }
 
             // Warm opcodes.
-            OpCode::GetItem => { self.get_item()?; }
+            OpCode::GetItem => {
+                // F4: `Series[i]`-style hot loop — bypass `resolve_attr_silent("__getitem__")` once the site is monomorphic.
+                if let Some(inst) = cache.get_inst(rip) {
+                    match self.exec_inst(inst, chunk, slots)? {
+                        FastOutcome::Done => return Ok(None),
+                        FastOutcome::Overflow => {}
+                        FastOutcome::TypeMiss => cache.invalidate_inst(rip),
+                    }
+                }
+                self.get_item(rip, chunk, slots, cache)?;
+            }
 
             OpCode::Call | OpCode::CallPrint | OpCode::CallLen | OpCode::CallAbs
             | OpCode::CallStr | OpCode::CallInt | OpCode::CallFloat | OpCode::CallBool
@@ -380,19 +501,19 @@ impl<'a> VM<'a> {
 
             OpCode::GetIter => {
                 let obj = self.pop()?;
-                let frame = self.make_iter_frame(obj)?;
+                let frame = self.make_iter_frame(obj, chunk, slots)?;
                 self.iter_stack.push(frame);
             }
             OpCode::LoadTrue => self.push(Val::bool(true)),
             OpCode::LoadFalse => self.push(Val::bool(false)),
             OpCode::LoadNone => self.push(Val::none()),
-            OpCode::Not => self.handle_logic(OpCode::Not)?,
+            OpCode::Not => self.handle_logic(OpCode::Not, chunk, slots)?,
 
             OpCode::Phi => {
                 Self::exec_phi(op, rip, &chunk.phi_map, slots, &chunk.phi_sources);
             }
 
-            OpCode::LoadAttr => { self.handle_load_attr(op, chunk)?; }
+            OpCode::LoadAttr => { self.handle_load_attr(op, chunk, slots)?; }
 
             // Fused method call.
             OpCode::CallMethod => {
@@ -413,8 +534,18 @@ impl<'a> VM<'a> {
             }
 
             OpCode::MakeClass => {
-                let ci = op as usize;
-                let body = &chunk.classes[ci];
+                // Operand layout mirrors `class_def_with`: low byte = class chunk index, high byte = base count.
+                let class_idx = (op & 0xFF) as usize;
+                let num_bases = (op >> 8) as usize;
+                // Pop bases first so a misencoded operand fails before we touch the body.
+                let bases = self.pop_n(num_bases)?;
+                // Reject non-class bases up-front; otherwise inherited lookups silently miss.
+                for &b in &bases {
+                    if !b.is_heap() || !matches!(self.heap.get(b), HeapObj::Class(..)) {
+                        return Err(cold_type("base class must be a class object"));
+                    }
+                }
+                let body = &chunk.classes[class_idx];
                 let mut class_slots = self.fill_builtins(&body.names);
                 self.exec(body, &mut class_slots)?;
                 // Every defined slot becomes a class member (methods + class-level constants).
@@ -428,14 +559,17 @@ impl<'a> VM<'a> {
                                 && matches!(self.heap.get(v), HeapObj::NativeFn(_))
                                 && self.globals.get(base).copied() == Some(v);
                             if is_builtin_shadow { continue; }
-                            if !methods.iter().any(|(n, _)| n == base) {
+                            // A later definition of the same name wins (e.g. `@property` + `@x.setter` rebinds `x` to the descriptor with both halves).
+                            if let Some(pos) = methods.iter().position(|(n, _)| n == base) {
+                                methods[pos].1 = v;
+                            } else {
                                 methods.push((base.to_string(), v));
                             }
                         }
                 }
                 let next_op = cache.fused_ref().get(*ip).map(|i| i.operand).unwrap_or(0);
                 let name_str = chunk.names.get(next_op as usize).map(|n| ssa_strip(n)).unwrap_or("?").to_string();
-                let cls = self.heap.alloc(HeapObj::Class(name_str, methods))?;
+                let cls = self.heap.alloc(HeapObj::Class(name_str, bases, methods))?;
                 self.push(cls);
             }
             OpCode::StoreAttr => {
@@ -444,6 +578,24 @@ impl<'a> VM<'a> {
                 if !obj.is_heap() { return Err(cold_type("cannot set attribute")); }
                 let name = chunk.names.get(op as usize)
                     .ok_or(cold_runtime("StoreAttr: bad name index"))?.clone();
+                // F3: a class-chain `Property` overrides plain dict insertion. Setter `none()` means read-only.
+                if let HeapObj::Instance(cls_val, _) = self.heap.get(obj) {
+                    let cls_val = *cls_val;
+                    if let Some((member, _)) = self.lookup_class_member(cls_val, ssa_strip(&name))
+                        && let HeapObj::Property(_, setter) = self.heap.get(member) {
+                        let setter = *setter;
+                        if setter.is_none() {
+                            return Err(VmErr::Attribute(s!("can't set attribute '", str ssa_strip(&name), "'")));
+                        }
+                        if self.depth >= self.max_calls { return Err(cold_depth()); }
+                        self.push(setter);
+                        self.push(obj);
+                        self.push(value);
+                        self.exec_call(2, chunk, slots)?;
+                        self.pop()?;
+                        return Ok(None);
+                    }
+                }
                 let key = self.heap.alloc(HeapObj::Str(name))?;
                 match self.heap.get_mut(obj) {
                     HeapObj::Instance(_, attrs) => {
@@ -488,23 +640,23 @@ impl<'a> VM<'a> {
                 self.push(m);
             }
 
-            other => self.dispatch_generic(other, op, slots)?,
+            other => self.dispatch_generic(other, op, chunk, slots)?,
         }
         Ok(None)
     }
 
-    fn dispatch_generic(&mut self, opcode: OpCode, operand: u16, slots: &mut [Val]) -> Result<(), VmErr> {
+    fn dispatch_generic(&mut self, opcode: OpCode, operand: u16, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         match opcode {
             OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor
             | OpCode::BitNot | OpCode::Shl | OpCode::Shr => self.handle_bitwise(opcode)?,
-            OpCode::In | OpCode::NotIn | OpCode::Is | OpCode::IsNot => self.handle_identity(opcode)?,
+            OpCode::In | OpCode::NotIn | OpCode::Is | OpCode::IsNot => self.handle_identity(opcode, chunk, slots)?,
 
             OpCode::BuildList | OpCode::BuildTuple | OpCode::BuildDict
             | OpCode::BuildString | OpCode::BuildSet | OpCode::BuildSlice => self.handle_build(opcode, operand)?,
 
-            OpCode::StoreItem => { self.mark_impure(); self.store_item()?; }
-            OpCode::DelItem => { self.mark_impure(); self.del_item()?; }
-            OpCode::UnpackSequence | OpCode::UnpackEx | OpCode::FormatValue => self.handle_container(opcode, operand)?,
+            OpCode::StoreItem => { self.mark_impure(); self.store_item(chunk, slots)?; }
+            OpCode::DelItem => { self.mark_impure(); self.del_item(chunk, slots)?; }
+            OpCode::UnpackSequence | OpCode::UnpackEx | OpCode::FormatValue => self.handle_container(opcode, operand, chunk, slots)?,
 
             OpCode::ListAppend | OpCode::SetAdd | OpCode::MapAdd => self.handle_comprehension(opcode)?,
 
@@ -523,7 +675,7 @@ impl<'a> VM<'a> {
             }
             OpCode::Assert | OpCode::Del | OpCode::Global | OpCode::Nonlocal
             | OpCode::Raise | OpCode::RaiseFrom | OpCode::Await => {
-                self.handle_side(opcode, operand, slots)?;
+                self.handle_side(opcode, operand, chunk, slots)?;
             }
             OpCode::SetupExcept => {
                 self.exception_stack.push(ExceptionFrame {
@@ -536,8 +688,10 @@ impl<'a> VM<'a> {
             OpCode::SetupWith => {
                 let _ = operand;
                 let cm = self.pop()?;
+                // F2.9: instance `__enter__` runs at setup; its return value feeds the `as` target.
+                let bound = if let Some(r) = self.try_call_dunder(cm, "__enter__", &[], chunk, slots)? { r } else { cm };
                 self.with_stack.push(cm);
-                self.push(cm);
+                self.push(bound);
             }
             OpCode::ExitWith => {
                 let _ = operand;
@@ -545,6 +699,45 @@ impl<'a> VM<'a> {
                     .ok_or(cold_runtime("ExitWith without matching SetupWith"))?;
                 if let Some(&top) = self.stack.last()
                     && top.0 == cm.0 { self.pop()?; }
+                // F2.9: normal-flow cleanup passes `(None, None, None)` to signal "no exception".
+                if cm.is_heap() && matches!(self.heap.get(cm), HeapObj::Instance(..)) {
+                    let n = Val::none();
+                    let _ = self.try_call_dunder(cm, "__exit__", &[n, n, n], chunk, slots)?;
+                }
+            }
+            OpCode::WithCleanup => {
+                let _ = operand;
+                // Reached when a `with` body raised: the SetupExcept unwind has pushed the synthesised exception. We consume it + the matching CM and dispatch `__exit__(type, exc, None)`; truthy return suppresses, falsy or absent re-raises with identity preserved via `pending.exc_val`.
+                let exc = self.pop()?;
+                let cm = self.with_stack.pop().ok_or(cold_runtime("WithCleanup without matching SetupWith"))?;
+                let exc_name: String = if exc.is_heap() {
+                    match self.heap.get(exc) {
+                        HeapObj::ExcInstance(n, _) => n.clone(),
+                        HeapObj::Instance(cls, _) => {
+                            if cls.is_heap() && let HeapObj::Class(name, _, _) = self.heap.get(*cls) { name.clone() } else { "Exception".into() }
+                        }
+                        _ => "Exception".into(),
+                    }
+                } else { "Exception".into() };
+                if cm.is_heap() && matches!(self.heap.get(cm), HeapObj::Instance(..)) {
+                    let exc_type = self.heap.alloc(HeapObj::Type(exc_name.clone()))?;
+                    let n = Val::none();
+                    match self.try_call_dunder(cm, "__exit__", &[exc_type, exc, n], chunk, slots)? {
+                        Some(r) if self.truthy(r) => {
+                            // Suppressed: drop the pending exc identity so a later `raise` doesn't reuse it.
+                            self.pending.exc_val = None;
+                        }
+                        _ => {
+                            // Re-raise: preserve identity via `pending.exc_val` so an outer handler sees the same instance.
+                            self.pending.exc_val = Some(exc);
+                            return Err(VmErr::Raised(exc_name));
+                        }
+                    }
+                } else {
+                    // No `__exit__` (or non-instance CM): re-raise unconditionally.
+                    self.pending.exc_val = Some(exc);
+                    return Err(VmErr::Raised(exc_name));
+                }
             }
             OpCode::UnpackArgs => {
                 let val = self.pop()?;

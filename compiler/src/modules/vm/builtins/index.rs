@@ -23,9 +23,17 @@ impl SliceSource {
 
 impl<'a> VM<'a> {
 
-    pub fn get_item(&mut self) -> Result<bool, VmErr> {
+    pub fn get_item(&mut self, ip: usize, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val], cache: &mut crate::modules::vm::cache::OpcodeCache) -> Result<bool, VmErr> {
         let idx = self.pop()?;
         let obj = self.pop()?;
+
+        // F2.4: instance `__getitem__` runs before built-in indexing; slices pass through as a single Slice arg.
+        if let Some(r) = self.try_call_dunder(obj, "__getitem__", &[idx], chunk, slots)? {
+            // F4: record monomorphic hit so the next iteration skips `resolve_attr_silent`.
+            self.record_dunder_hit(ip, cache, obj, "__getitem__", 2);
+            self.push(r);
+            return Ok(true);
+        }
 
         if idx.is_heap()
             && let HeapObj::Slice(start, stop, step) = self.heap.get(idx).clone() {
@@ -134,24 +142,36 @@ impl<'a> VM<'a> {
         }
     }
 
-    /* Reject mutable types (list/dict/set) used as dict/set keys. Called wherever a Val crosses into a hash-keyed container. */
+    /* Reject mutable types (list/dict/set) used as dict/set keys, plus instances that override `__eq__` without `__hash__`. */
     pub(in crate::modules::vm) fn require_hashable(&self, v: Val) -> Result<(), VmErr> {
         if v.is_heap() {
             match self.heap.get(v) {
                 HeapObj::List(_) => return Err(cold_type("unhashable type: 'list'")),
                 HeapObj::Dict(_) => return Err(cold_type("unhashable type: 'dict'")),
                 HeapObj::Set(_) => return Err(cold_type("unhashable type: 'set'")),
+                HeapObj::Instance(cls, _) => {
+                    // Same eq-hash invariant as `call_hash`; defining one without the other voids hashability.
+                    let cls = *cls;
+                    if self.lookup_class_member(cls, "__eq__").is_some()
+                        && self.lookup_class_member(cls, "__hash__").is_none() {
+                        return Err(cold_type("unhashable type: instance defines __eq__ without __hash__"));
+                    }
+                }
                 _ => {}
             }
         }
         Ok(())
     }
 
-    pub fn store_item(&mut self) -> Result<(), VmErr> {
+    pub fn store_item(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let value = self.pop()?;
         let idx_val = self.pop()?;
         let cont = self.pop()?;
         if !cont.is_heap() { return Err(cold_type("object does not support item assignment")); }
+        // F2.4: instance `__setitem__(idx, value)` short-circuits the built-in dispatch.
+        if self.try_call_dunder(cont, "__setitem__", &[idx_val, value], chunk, slots)?.is_some() {
+            return Ok(());
+        }
         // Slice assignment: `xs[a:b] = iterable` (step must be 1 for resize). Resolves the target range, materialises RHS, and splices in place.
         if idx_val.is_heap()
             && let HeapObj::Slice(start, stop, step) = self.heap.get(idx_val).clone()
@@ -179,10 +199,14 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    pub fn del_item(&mut self) -> Result<(), VmErr> {
+    pub fn del_item(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let idx_val = self.pop()?;
         let cont = self.pop()?;
         if !cont.is_heap() { return Err(cold_type("object does not support item deletion")); }
+        // F2.4: instance `__delitem__(idx)` short-circuits the built-in dispatch.
+        if self.try_call_dunder(cont, "__delitem__", &[idx_val], chunk, slots)?.is_some() {
+            return Ok(());
+        }
         // Slice deletion: `del xs[a:b]` — same step=1 restriction as `store_slice`. Reuses `store_slice` with an empty replacement vec.
         if idx_val.is_heap()
             && let HeapObj::Slice(start, stop, step) = self.heap.get(idx_val).clone()

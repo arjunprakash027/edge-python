@@ -155,7 +155,7 @@ caught via parent: oops
 caught IndexError as Exception
 ```
 
-User-defined classes do not participate in the hierarchy — they're flat state containers, caught only by their own name or by a bare `except`. `raise X from Y` raises `X`; the cause is currently discarded (no `__cause__` / `__context__` chaining).
+User-defined classes do not auto-extend the built-in `BaseException` / `Exception` tree, but they support single-level inheritance among themselves — so `except UserBase` catches a raised `UserSub` instance when `UserSub` inherits from `UserBase`, alongside catches by exact name or a bare `except`. `raise X from Y` raises `X`; the cause is currently discarded (no `__cause__` / `__context__` chaining).
 
 ### Exception arguments
 

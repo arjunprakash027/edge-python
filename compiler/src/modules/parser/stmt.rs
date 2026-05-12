@@ -526,7 +526,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     true
                 }
             }
-            Some(TokenType::Lpar) => self.call(name),
+            Some(TokenType::Lpar) => {
+                // `name(...)` at statement level: allow postfix chains like `super().__init__(x)`.
+                let leaves = self.call(name);
+                if leaves { self.expr_tails(); }
+                leaves
+            }
             _ => {
                 self.emit_load_ssa(name);
                 self.expr_tails();

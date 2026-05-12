@@ -19,11 +19,23 @@ pub enum FastOp {
 /* Promote to `fast` after this many hits with a stable type key. */
 const QUICK_THRESH: u8 = 4;
 
+/* F4: per-site monomorphic instance-dunder cache. Records the receiver's class heap idx and the pre-resolved method Val; once `hits >= QUICK_THRESH` the slot promotes and the hot dispatch skips `resolve_attr_silent` entirely. `arity` is the total operand count consumed from the stack (1 for unary, 2 for binary like `__add__`/`__getitem__`). */
+#[derive(Clone, Copy)]
+pub struct InstanceCache {
+    pub class: u32,
+    pub method_bits: u64,
+    pub arity: u8,
+    hits: u8,
+    promoted: bool,
+}
+
 #[derive(Clone, Default)]
 struct CacheSlot {
     type_key: u8,
     hits: u8,
     fast: Option<FastOp>,
+    // F4: instance-dunder cache; orthogonal to `fast`, dispatch checks it after scalar specialisation misses.
+    inst: Option<InstanceCache>,
 }
 
 pub struct OpcodeCache {
@@ -107,7 +119,10 @@ impl OpcodeCache {
                 s.fast = Self::specialize(opcode, ta, tb);
             }
         } else {
-            *s = CacheSlot { type_key: key, hits: 1, fast: None };
+            // Preserve `inst` — its lifecycle is independent of scalar specialisation.
+            s.type_key = key;
+            s.hits = 1;
+            s.fast = None;
         }
     }
 
@@ -117,7 +132,51 @@ impl OpcodeCache {
     }
 
     pub fn invalidate(&mut self, ip: usize) {
-        if let Some(s) = self.slots.get_mut(ip) { *s = CacheSlot::default(); }
+        // Preserve `inst` so the instance-dunder cache survives a scalar specialisation miss at the same site.
+        if let Some(s) = self.slots.get_mut(ip) {
+            s.type_key = 0;
+            s.hits = 0;
+            s.fast = None;
+        }
+    }
+
+    /* F4: monomorphic instance-dunder hit counter — promotes after `QUICK_THRESH` consecutive hits with the same class + method pair. Polymorphic sites churn (`record_inst` overwrites on mismatch) but never wedge. */
+    pub fn record_inst(&mut self, ip: usize, class: u32, method: Val, arity: u8) {
+        let Some(s) = self.slots.get_mut(ip) else { return };
+        match s.inst.as_mut() {
+            Some(c) if c.class == class && c.method_bits == method.0 && c.arity == arity => {
+                c.hits = c.hits.saturating_add(1);
+                if c.hits >= QUICK_THRESH { c.promoted = true; }
+            }
+            _ => {
+                s.inst = Some(InstanceCache {
+                    class,
+                    method_bits: method.0,
+                    arity,
+                    hits: 1,
+                    promoted: false,
+                });
+            }
+        }
+    }
+
+    #[inline]
+    pub fn get_inst(&self, ip: usize) -> Option<InstanceCache> {
+        self.slots.get(ip).and_then(|s| s.inst).filter(|c| c.promoted)
+    }
+
+    pub fn invalidate_inst(&mut self, ip: usize) {
+        if let Some(s) = self.slots.get_mut(ip) { s.inst = None; }
+    }
+
+    /* GC root iterator for `InstanceCache` entries: yields the cached method Val and class Val so the collector keeps both alive while the cache holds them. */
+    pub fn inst_roots(&self) -> impl Iterator<Item = Val> + '_ {
+        self.slots.iter().filter_map(|s| s.inst).flat_map(|c| {
+            // SAFETY: `method_bits` was recorded from a live `Val`; class Val is reconstructed from the stored heap idx.
+            let method = unsafe { Val::from_raw(c.method_bits) };
+            let class = Val::heap(c.class);
+            [method, class].into_iter()
+        })
     }
 
     fn specialize(opcode: &OpCode, ta: u8, tb: u8) -> Option<FastOp> {

@@ -143,15 +143,25 @@ pub enum HeapObj {
     // True `...` singleton, distinct from any string.
     Ellipsis,
     Type(String),
+    // `NotImplemented` singleton; dunder return sentinel that triggers the reflected operator fallback.
+    NotImplemented,
     /* Wide-int slow path (i128); `int_to_val` canonicalises so 47-bit values stay inline. */
     LongInt(i128),
     /* Exception instance: type name + ctor args (exposed via `.args`). */
     ExcInstance(String, Vec<Val>),
     BoundMethod(Val, BuiltinMethodId),
     NativeFn(NativeFnId),
-    Class(String, Vec<(String, Val)>),
+    // `bases` lists direct parents in declared order; `resolve_attr` DFS-walks them on miss.
+    Class(String, Vec<Val>, Vec<(String, Val)>),
     Instance(Val, Rc<RefCell<DictMap>>),
-    BoundUserMethod(Val, Val),
+    // `(recv, func, class)`; `class` is where `func` was found so the called frame knows what `super()` should skip past.
+    BoundUserMethod(Val, Val, Val),
+    // `super()` proxy: attribute access walks the bases of `cls` (skipping `cls` itself); methods bind to `recv`.
+    Super(Val, Val),
+    // `(getter, setter)`; `setter == none()` for getter-only properties — written via `@property` / `@x.setter`.
+    Property(Val, Val),
+    // Intermediate produced by `prop.setter`: callable that takes a function and returns a new `Property` with the setter attached.
+    PropertySetter(Val),
     Coroutine(usize, Vec<Val>, Vec<Val>, usize, Vec<IterFrame>),
     /* Produced by `import m`; attr access via LoadAttr, calls fuse through CallMethod. */
     Module(String, Vec<(String, Val)>),
@@ -173,6 +183,8 @@ pub enum NativeFnId {
     Gather, WithTimeout, Cancel,
     BytesFromHex, IntFromBytes, IntToBytes, FrozenSet,
     Globals, Locals,
+    Super,
+    Property,
 }
 
 impl NativeFnId {
@@ -190,6 +202,8 @@ impl NativeFnId {
             "gather", "with_timeout", "cancel",
             "bytes_fromhex", "int_from_bytes", "int_to_bytes", "frozenset",
             "globals", "locals",
+            "super",
+            "property",
         ];
         NAMES[self as usize]
     }
@@ -278,8 +292,14 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
         HeapObj::Set(rc) => for &v in rc.borrow().iter() { f(v); },
         HeapObj::FrozenSet(rc) => for &v in rc.iter() { f(v); },
         HeapObj::BoundMethod(recv, _) => f(*recv),
-        HeapObj::Class(_, methods) => for (_, v) in methods { f(*v); },
-        HeapObj::BoundUserMethod(r, fu) => { f(*r); f(*fu); }
+        HeapObj::Class(_, bases, methods) => {
+            for &v in bases { f(v); }
+            for (_, v) in methods { f(*v); }
+        }
+        HeapObj::BoundUserMethod(r, fu, cls) => { f(*r); f(*fu); f(*cls); }
+        HeapObj::Super(cls, recv) => { f(*cls); f(*recv); }
+        HeapObj::Property(g, s) => { f(*g); f(*s); }
+        HeapObj::PropertySetter(p) => f(*p),
         HeapObj::Instance(cls, attrs) => {
             f(*cls);
             for (k, v) in attrs.borrow().iter() { f(k); f(v); }
@@ -290,6 +310,7 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
             for fr in iters { match fr {
                 IterFrame::Seq { items, .. } => for &v in items { f(v); },
                 IterFrame::Coroutine(v) => f(*v),
+                IterFrame::UserDefined(v) => f(*v),
                 IterFrame::Range { .. } => {}
             }}
         }
@@ -302,7 +323,7 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
         // Variants without Val payloads — terminal, nothing to trace.
         HeapObj::Str(_) | HeapObj::Bytes(_) | HeapObj::LongInt(_)
         | HeapObj::Type(_) | HeapObj::NativeFn(_) | HeapObj::Range(..)
-        | HeapObj::Extern(_) | HeapObj::Ellipsis => {}
+        | HeapObj::Extern(_) | HeapObj::Ellipsis | HeapObj::NotImplemented => {}
     }
 }
 
@@ -326,6 +347,8 @@ pub struct HeapPool {
     longints: HashMap<i128, u32>,
     // Cached Ellipsis slot index so `... is ...` is True (singleton parity).
     ellipsis_idx: Option<u32>,
+    // Same singleton invariant as `ellipsis_idx`, but for `NotImplemented`.
+    notimpl_idx: Option<u32>,
     /* Reused across mark() calls; cleared not freed, so GC never re-allocates under pressure. */
     mark_worklist: Vec<u32>,
 }
@@ -343,6 +366,7 @@ impl HeapPool {
             bytes_intern: HashMap::default(),
             longints: HashMap::default(),
             ellipsis_idx: None,
+            notimpl_idx: None,
             mark_worklist: Vec::with_capacity(64),
         }
     }
@@ -367,6 +391,11 @@ impl HeapPool {
             && let Some(idx) = self.ellipsis_idx {
                 return Ok(Val::heap(idx));
         }
+        // `NotImplemented` follows the same singleton rule so `is` and dunder checks agree.
+        if matches!(obj, HeapObj::NotImplemented)
+            && let Some(idx) = self.notimpl_idx {
+                return Ok(Val::heap(idx));
+        }
         if self.live >= self.limit { return Err(cold_heap()); }
         if self.slots.len() >= (1 << 28) { return Err(VmErr::Heap); }
 
@@ -384,6 +413,7 @@ impl HeapPool {
             HeapObj::Bytes(b) if b.len() <= 128 => { self.bytes_intern.insert(b.clone(), idx); }
             HeapObj::LongInt(i) => { self.longints.insert(*i, idx); }
             HeapObj::Ellipsis => { self.ellipsis_idx = Some(idx); }
+            HeapObj::NotImplemented => { self.notimpl_idx = Some(idx); }
             _ => {}
         }
 
@@ -434,6 +464,13 @@ impl HeapPool {
                 Some(HeapObj::Ellipsis) => {
                     // Cached singleton index becomes stale when its slot is freed.
                     if self.ellipsis_idx == Some(idx as u32) { self.ellipsis_idx = None; }
+                    slot.obj = None;
+                    self.free_list.push(idx as u32);
+                    self.live -= 1;
+                }
+                Some(HeapObj::NotImplemented) => {
+                    // Singleton index becomes stale when its slot is freed.
+                    if self.notimpl_idx == Some(idx as u32) { self.notimpl_idx = None; }
                     slot.obj = None;
                     self.free_list.push(idx as u32);
                     self.live -= 1;
@@ -503,9 +540,28 @@ impl HeapPool {
                 Some(HeapObj::Bytes(_)) => 22,
                 Some(HeapObj::ExcInstance(..)) => 24,
                 Some(HeapObj::Ellipsis) => 26,
+                Some(HeapObj::NotImplemented) => 27,
+                Some(HeapObj::Super(..)) => 28,
+                Some(HeapObj::Property(..)) => 29,
+                Some(HeapObj::PropertySetter(..)) => 30,
                 None => 0,
             }
         } else { 0 }
+    }
+
+    /* Identity probe for the `NotImplemented` singleton; consumed by the dunder dispatch protocol. */
+    #[inline(always)]
+    pub fn is_not_implemented(&self, v: Val) -> bool {
+        v.is_heap()
+            && matches!(self.slots[v.as_heap() as usize].obj.as_ref(), Some(HeapObj::NotImplemented))
+    }
+
+    /* `child` is `ancestor` or has it in its transitive bases. Identity on heap idx — classes are interned per-MakeClass and never mutated, so direct equality suffices. */
+    pub fn is_subclass(&self, child: Val, ancestor: Val) -> bool {
+        if child.0 == ancestor.0 { return true; }
+        if !child.is_heap() { return false; }
+        let HeapObj::Class(_, bases, _) = self.get(child) else { return false; };
+        bases.iter().any(|&b| self.is_subclass(b, ancestor))
     }
 }
 

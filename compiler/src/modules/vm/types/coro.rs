@@ -34,6 +34,9 @@ pub struct CallFrame {
     pub call_byte_pos: u32,
     pub caller_source: alloc::sync::Arc<alloc::string::String>,
     pub caller_path: alloc::sync::Arc<alloc::string::String>,
+    // Class where the running method was found and its implicit `self`; consumed by `super()` to walk one level up. `None` for plain function calls.
+    pub current_class: Option<Val>,
+    pub current_self: Option<Val>,
 }
 
 /* ForIter state, consumed one item per `next_item`. */
@@ -42,12 +45,15 @@ pub enum IterFrame {
     Seq { items: Vec<Val>, idx: usize },
     Range { cur: i64, end: i64, step: i64 },
     Coroutine(Val),
+    // User-defined iterator: holds the value returned by `__iter__`; each step calls its `__next__`.
+    UserDefined(Val),
 }
 
 impl IterFrame {
+    /* Stateless steps only — built-in Seq/Range. User-defined iterators step in `dispatch.rs` because they need the VM to invoke `__next__`. */
     pub fn next_item(&mut self) -> Option<Val> {
         match self {
-            Self::Coroutine(_) => None,
+            Self::Coroutine(_) | Self::UserDefined(_) => None,
             Self::Seq { items, idx } => {
                 if *idx < items.len() { let v = items[*idx]; *idx += 1; Some(v) } else { None }
             }
