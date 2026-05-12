@@ -17,7 +17,7 @@ The language reads like Python because it parses Python's syntax. It runs differ
 - **Comprehensions**: list, dict, and set, with multiple `for` clauses and `if` guards.
 - **Pattern matching**: `match` / `case` with literals, captures, OR-patterns, guards, and sequence patterns (one star permitted).
 - **Exceptions**: `try` / `except` / `else` / `finally`, named handlers, `raise X from Y` (chain info discarded but `X` is what propagates), and subclass-aware matching (`except Exception` catches `RuntimeError`).
-- **Context managers**: `with` and `async with` invoke `__enter__` / `__exit__` on the context-manager value; a truthy return from `__exit__` suppresses the raised exception, matching CPython.
+- **Context managers**: `with` and `async with` invoke `__enter__` / `__exit__` on the context-manager value; a truthy return from `__exit__` suppresses the raised exception.
 - **Protocol dunders**: operator overloading, indexing, iteration, hashing, and `repr` / `str` / `format` dispatch through user-defined dunders — see [Dunders](/language/dunders) for the full matrix.
 - **Numbers**: 47-bit signed integers inline (NaN-boxed, no allocation) with automatic promotion to a 128-bit `LongInt` heap slot when arithmetic overflows. Range up to `±2^127`; beyond that raises `OverflowError`. Full IEEE-754 floats. No `complex`, `Decimal`, `Fraction`, or arbitrary precision beyond 128 bits.
 - **Sequences**: lists, tuples, dicts (insertion-ordered), sets, frozensets, ranges, strings (UTF-8, codepoint-indexed), and bytes.

@@ -541,7 +541,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.eat(TokenType::Colon);
         self.compile_block();
 
-        // Normal exit: innermost first. PopExcept BEFORE ExitWith so a raising `__exit__(None,...)` propagates to the outer CM's cleanup, matching CPython.
+        // Normal exit: innermost first. PopExcept BEFORE ExitWith so a raising `__exit__(None,...)` propagates to the outer CM's cleanup.
         let n = setup_except_idxs.len();
         let normal_exit_start = self.chunk.instructions.len();
         for _ in 0..n {

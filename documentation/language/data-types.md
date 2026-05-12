@@ -43,7 +43,7 @@ True
 
 ## Integer
 
-Two-tier representation. **Inline** (fast path) is 47-bit signed packed in a NaN-boxed `Val` — one ALU instruction per arithmetic op, zero allocation. **LongInt** (slow path) is i128 in a heap slot, used automatically when a literal or arithmetic result exceeds 47-bit. The boundary is invisible: same `int` type, same operators. The hard cap is `±2¹²⁷`; anything wider raises `OverflowError`. Edge Python does **not** offer CPython-style unbounded ints, and complex literals (`1j`, `2+3j`) are unsupported.
+Two-tier representation. **Inline** (fast path) is 47-bit signed packed in a NaN-boxed `Val` — one ALU instruction per arithmetic op, zero allocation. **LongInt** (slow path) is i128 in a heap slot, used automatically when a literal or arithmetic result exceeds 47-bit. The boundary is invisible: same `int` type, same operators. The hard cap is `±2¹²⁷`; anything wider raises `OverflowError`. Edge Python does **not** offer CPython unbounded ints, and complex literals (`1j`, `2+3j`) are unsupported.
 
 ```python
 # Inline range

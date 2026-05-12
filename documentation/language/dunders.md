@@ -40,7 +40,7 @@ Dunders are looked up on the class chain (instance dict is skipped). A subclass 
 
 Returning `NotImplemented` from the forward op tells the VM to try the reflected op on the other operand. If both return `NotImplemented` (or neither is defined), the VM raises `TypeError`.
 
-Subclass-first ordering: when `type(b)` is a strict subclass of `type(a)`, `b.__radd__` runs **before** `a.__add__`. This is the standard CPython rule and lets a subclass override an inherited reflected op without touching the base.
+Subclass-first ordering: when `type(b)` is a strict subclass of `type(a)`, `b.__radd__` runs **before** `a.__add__`. This is the standard and lets a subclass override an inherited reflected op without touching the base.
 
 ```python
 class Money:
@@ -168,7 +168,7 @@ True
 
 `hash(x)` calls `__hash__`. The result must be an `int`; the VM masks it to fit `INT_MAX`.
 
-Eq/hash invariant: a class that defines `__eq__` **without** `__hash__` is unhashable — `hash(x)` and `{x: 1}` raise `TypeError`. This matches CPython and prevents inconsistent dict keys.
+Eq/hash invariant: a class that defines `__eq__` **without** `__hash__` is unhashable — `hash(x)` and `{x: 1}` raise `TypeError`. This prevents inconsistent dict keys.
 
 ```python
 class K:
@@ -244,7 +244,7 @@ after
 
 Multiple managers in one `with` (`with a(), b() as x:`) nest LIFO: `b` enters last and exits first. Each manager has its own implicit exception handler, so an inner suppression still lets outer managers run their normal `__exit__(None, None, None)`.
 
-If `__exit__` itself raises a new exception, the new exception replaces the original — matching CPython.
+If `__exit__` itself raises a new exception, the new exception replaces the original.
 
 ## What's not dispatched
 

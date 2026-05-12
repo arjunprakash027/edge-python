@@ -1,6 +1,6 @@
 /* f64 -> string: nan/±inf/±0.0/whole->".0" suffix/else default. */
 pub fn format_f64(f: f64) -> alloc::string::String {
-    // Lowercase tokens to match CPython.
+    // Lowercase tokens.
     if f.is_nan() { return alloc::string::String::from("nan"); }
     if f == f64::INFINITY { return alloc::string::String::from("inf"); }
     if f == f64::NEG_INFINITY { return alloc::string::String::from("-inf"); }

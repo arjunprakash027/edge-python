@@ -6,7 +6,7 @@ use crate::modules::parser::types::OpCode;
 use alloc::{string::{String, ToString}, vec::Vec, rc::Rc};
 use core::cell::RefCell;
 
-/* Render `bytes` as `b'...'` matching CPython's repr (printable ASCII verbatim, rest escaped). */
+/* Render `bytes` as `b'...'` (printable ASCII verbatim, rest escaped). */
 fn format_bytes(buf: &[u8]) -> String {
     let mut out = String::with_capacity(buf.len() + 3);
     out.push_str("b'");

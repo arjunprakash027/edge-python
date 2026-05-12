@@ -225,7 +225,7 @@ impl<'a> VM<'a> {
         super::format::format_value(v, spec, &self.heap).map_err(cold_value)
     }
 
-    /* Coerce a `__len__` / `__length_hint__` return value to bool semantics; rejects negatives like CPython. */
+    /* Coerce a `__len__` / `__length_hint__` return value to bool semantics; rejects negatives. */
     fn len_to_bool(&self, v: Val) -> Result<bool, VmErr> {
         let n = if v.is_int() { v.as_int() as i128 }
         else if let Some(i) = crate::modules::vm::types::as_i128(v, &self.heap) { i }

@@ -198,7 +198,7 @@ impl<'a> VM<'a> {
                             // Drop partial traceback so a later error doesn't inherit stale frames.
                             self.call_stack.clear();
                             let msg = e.class_name();
-                            // Prefer the user-raised instance; synthesize one for native errors (CPython parity).
+                            // Prefer the user-raised instance; synthesize one for native errors.
                             let exc = if let Some(v) = self.pending.exc_val.take() {
                                 v
                             } else {
