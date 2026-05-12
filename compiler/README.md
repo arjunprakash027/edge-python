@@ -1,6 +1,6 @@
 # Edge Python
 
-A compact, single-pass SSA-style bytecode compiler and stack VM for a functional subset of Python 3.13 syntax. Hand-written lexer, Pratt-precedence parser that emits bytecode directly (no AST), and a threaded-code interpreter with per-instruction inline caching, super-instruction fusion, and pure-function template memoization. Built for deterministic execution in sandboxed and embedded environments (≈ 153 KB WASM release).
+A compact, single-pass SSA-style bytecode compiler and stack VM for a sandboxed Python subset. Hand-written lexer, Pratt-precedence parser that emits bytecode directly (no AST), and a threaded-code interpreter with dual inline caching (scalar + instance-dunder), super-instruction fusion, and pure-function template memoization. Built for deterministic execution in sandboxed and embedded environments (≈ 170 KB WASM release).
 
 * **Demo:** [demo.edgepython.com](https://demo.edgepython.com/)
 * **Docs:** [edgepython.com](https://edgepython.com/)
@@ -9,7 +9,7 @@ A compact, single-pass SSA-style bytecode compiler and stack VM for a functional
 
 ## 1. Paradigm
 
-Edge Python targets functional edge computing. The language treats functions as first-class values: lambdas, higher-order functions, closures, comprehensions, decorators (including class decorators), generators, async/await, pattern matching, and pure-function memoization. Classes support single-level inheritance, `super()`, dunder protocol dispatch (operators, indexing, iteration, context managers, hashing, etc.), and `@property` / `@x.setter`.
+Edge Python targets sandboxed edge computing. The language is dynamic and multi-paradigm: first-class functions, lambdas, closures, comprehensions, decorators (including class decorators), generators, async/await, structural pattern matching, and pure-function memoization. Classes support single-level inheritance, `super()`, dunder protocol dispatch (operators, indexing, iteration, context managers, hashing, etc.), and `@property` / `@x.setter`.
 
 `import` and `from <spec> import names` resolve at compile time through a host-injected resolver (see `modules/packages/`, manifest = `packages.json`). Each module is compiled and initialised once: the parser registers it in the importing chunk's `imports` list, the VM runs every imported module's top level in dependency order, and importers reach the resulting `HeapObj::Module` value via `OpCode::LoadModule`. Native modules dispatch via `CallExtern` for fast call-site fusion. Quoted specs may carry a `#sha256-<hex>` integrity fragment.
 
@@ -19,11 +19,11 @@ What this leaves is a small, fast, deterministic core: 47-bit inline integers + 
 
 ## 2. Architecture
 
-* **Lexer**: Hand-written, LUT-driven scanner (`modules/lexer/{mod,scan,tables}.rs`) over Python 3.13 token kinds. Tokens are `(start, end, kind)` offsets into the source buffer; no string copies during lexing. Indentation tracked as INDENT/DEDENT pairs against an explicit stack; UTF-8 BOM stripped.
+* **Lexer**: Hand-written, LUT-driven scanner (`modules/lexer/{mod,scan,tables}.rs`) over the language's token kinds. Tokens are `(start, end, kind)` offsets into the source buffer; no string copies during lexing. Indentation tracked as INDENT/DEDENT pairs against an explicit stack; UTF-8 BOM stripped.
 * **Parser**: Single-pass, Pratt precedence climbing (`modules/parser/`). Emits SSA-versioned bytecode directly (`x` -> `x_1`, `x_2`, ...) with explicit `Phi` opcodes at control-flow joins. No intermediate AST.
 * **Optimizer**: One peephole pass (`modules/vm/optimizer.rs`): constant folding over adjacent literal arithmetic / comparison / unary operands, Phi-noop elimination, and dead-instruction compaction with jump-operand remapping. Deliberately leaves `LoadName` alone to preserve the inline-cache slot.
 * **VM**: Stack-based interpreter over `Vec<Instruction>`, where each `Instruction` is `(opcode: OpCode, operand: u16)`. The hot loop lives in `modules/vm/dispatch.rs` as a flat `match` on the opcode (Rust lowers it to a jump table); the VM struct and constructor live in `modules/vm/mod.rs`, with `init.rs` / `helpers.rs` / `gc.rs` covering module init, stack/iter primitives, and the collector. The hot path is split across handler modules (`handlers/{arith,data,format,function,methods,methods_helpers,mod}.rs`). `LoadAttr + Call(0)` is fused into a `CallMethod` / `CallMethodArgs` super-instruction at first execution and cached per call site.
-* **Inline Caching**: Per-instruction type-recording cache (`modules/vm/cache.rs`) for arithmetic and comparisons. After 4 stable hits the IC promotes the slot to a typed `FastOp` (`AddInt`, `AddFloat`, `LtFloat`, `EqStr`, ...); the fast path keeps a type-tag guard so a miss falls back to the generic handler.
+* **Inline Caching**: Two orthogonal per-instruction caches (`modules/vm/cache.rs`). The **scalar IC** records operand type tags for arithmetic and comparison sites; after 4 stable hits it promotes the slot to a typed `FastOp` (`AddInt`, `AddFloat`, `LtFloat`, `EqStr`, ...) with a type-tag guard so a miss falls back to the generic handler. The **instance-dunder IC** caches `(class_idx, method)` for monomorphic instance binop, comparison, and `__getitem__` sites and bypasses `resolve_attr_silent` once promoted; a class-identity miss invalidates without disturbing the scalar slot.
 * **Template Memoization**: Pure functions called with the same arguments return a cached result after 2 hits, bypassing full execution. Functions are tagged impure on first observed side effect (`StoreItem`, `StoreAttr`, `print`, `input`, `raise`, `yield`).
 * **Memory**: NaN-boxed 64-bit `Val` (47-bit signed inline int, IEEE-754 float, bool, None, 28-bit heap index). Heap is an arena of `HeapObj` slots managed by a mark-and-sweep GC. Strings and bytes ≤ 128 bytes are interned. **Integers are 47-bit inline with automatic i128 (`LongInt`) promotion on overflow**, hard-capped at ±2^127.
 
@@ -128,8 +128,8 @@ Mark-and-sweep with roots: operand stack, with-stack, pending yields, event queu
 │   │       │   ├── dunder.rs
 │   │       │   ├── format.rs
 │   │       │   ├── function.rs
-│   │       │   ├── methods_helpers.rs
 │   │       │   ├── methods.rs
+│   │       │   ├── methods_helpers.rs
 │   │       │   └── mod.rs
 │   │       ├── helpers.rs
 │   │       ├── init.rs
