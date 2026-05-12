@@ -58,12 +58,9 @@ pub fn parse_integrity(spec: &str) -> Result<(&str, Option<[u8; 32]>), String> {
     let Some(hex) = frag.strip_prefix("sha256-") else {
         return Err(s!("unrecognized integrity fragment in '", str spec, "'; expected '#sha256-<64 hex chars>'"));};
     if hex.len() != 64 {
-        return Err(s!(
-            "sha256 fragment must be 64 hex chars in '", str spec,
-            "'; got ", int hex.len() as i64));
+        return Err(s!("sha256 fragment must be 64 hex chars in '", str spec, "'; got ", int hex.len() as i64));
     }
-    let hash = crate::util::sha256::hex_decode_32(hex).ok_or_else(|| s!(
-        "invalid hex in sha256 fragment of '", str spec, "'"))?;
+    let hash = crate::util::sha256::hex_decode_32(hex).ok_or_else(|| s!("invalid hex in sha256 fragment of '", str spec, "'"))?;
     Ok((url, Some(hash)))
 }
 

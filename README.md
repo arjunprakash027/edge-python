@@ -12,24 +12,22 @@ Edge Python is distributed as a WebAssembly module — `compiler.wasm`, ~153 KB.
 This is a Cargo workspace. The root `Cargo.toml` declares one crate and shares profile settings; `cargo` commands work from any directory.
 
 ```text
-Cargo.toml                  Workspace manifest (members + shared profile)
-.cargo/config.toml          Workspace-wide aliases (`cargo wasm`)
+Cargo.toml   Workspace manifest (members + shared profile)
+.cargo/config.toml   Workspace-wide aliases (`cargo wasm`)
 
-compiler/                   Rust crate `edge-python`: lexer, parser, optimizer,
-                            VM, packages module. Compiles to compiler_lib.wasm
-                            (the only artifact the project distributes).
+compiler/   Rust crate `edge-python`: lexer, parser, optimizer, VM, packages module. Compiles to compiler_lib.wasm (the only artifact the project distributes).
 
-demo/                       Browser playground (HTML + WASM + Web Worker)
-documentation/              Mintlify documentation source
-.github/                    CI/CD pipelines (lint, WASM build, demo deploy)
+demo/   Browser playground (HTML + WASM + Web Worker)
+documentation/   Mintlify documentation source
+.github/   CI/CD pipelines (lint, WASM build, demo deploy)
 ```
 
 Common commands (from anywhere in the repo):
 
 ```bash
-cargo wasm                  # release WebAssembly artifact (the distributed product)
-cargo build --release       # host artifacts (.rlib + cdylib) for Rust embedders
-cargo test --release        # full test suite
+cargo wasm   # release WebAssembly artifact (the distributed product)
+cargo build --release   # host artifacts (.rlib + cdylib) for Rust embedders
+cargo test --release   # full test suite
 ```
 
 Native modules come in two flavors: `.wasm` binaries any host can load by URL (per the [WASM ABI](documentation/reference/wasm-abi.md)) and in-process Rust bindings for embedders linking `compiler_lib` (full type coverage). See [Writing modules](documentation/reference/writing-modules.md).
@@ -64,8 +62,7 @@ The shim handles the WASM ↔ JS plumbing: pre-fetching imports, registering mod
 Build the WASM yourself:
 
 ```bash
-cargo wasm
-# -> target/wasm32-unknown-unknown/release/compiler_lib.wasm  (~390 KB unstripped)
+cargo wasm # -> target/wasm32-unknown-unknown/release/compiler_lib.wasm  (~390 KB unstripped)
 
 # Optional: optimize with wasm-opt
 wasm-opt -Oz target/.../compiler_lib.wasm -o compiler_lib.opt.wasm

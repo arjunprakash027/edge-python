@@ -146,8 +146,8 @@ fn format_percent(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static 
     let f = require_float(v, heap)? * 100.0;
     let prec = s.precision.unwrap_or(6);
     let body = if f.is_nan() { "nan".to_string() }
-        else if f.is_infinite() { if f.is_sign_negative() { "-inf".into() } else { "inf".into() } }
-        else { fixed(f.abs(), prec) };
+    else if f.is_infinite() { if f.is_sign_negative() { "-inf".into() } else { "inf".into() } }
+    else { fixed(f.abs(), prec) };
     let sign_ch = sign_char(f.is_sign_negative() && !f.is_nan(), s.sign);
     let mut left = String::new();
     if let Some(c) = sign_ch { left.push(c); }
@@ -235,7 +235,7 @@ fn format_with_e(mag: f64, prec: usize, upper: bool) -> String {
     let raw = alloc::format!("{:.*e}", prec, mag);
     let (mant, exp_str) = raw.split_once('e').unwrap_or((raw.as_str(), "0"));
     let (esign, edigs) = if let Some(rest) = exp_str.strip_prefix('-') { ('-', rest) }
-        else { ('+', exp_str) };
+    else { ('+', exp_str) };
     let mut out = String::new();
     out.push_str(mant);
     out.push(if upper { 'E' } else { 'e' });

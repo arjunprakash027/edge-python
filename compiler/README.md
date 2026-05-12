@@ -85,79 +85,79 @@ Mark-and-sweep with roots: operand stack, with-stack, pending yields, event queu
 │   ├── abi.rs
 │   ├── lib.rs
 │   ├── main
-│   │   ├── mod.rs
-│   │   ├── exports.rs
 │   │   ├── abi_bridge.rs
-│   │   ├── resolver.rs
-│   │   └── errors.rs
-│   ├── util
-│   │   ├── fstr.rs
-│   │   ├── fx.rs
-│   │   └── sha256.rs
-│   └── modules
-│       ├── lexer
-│       │   ├── mod.rs
-│       │   ├── scan.rs
-│       │   └── tables.rs
-│       ├── packages
-│       │   ├── mod.rs
-│       │   └── manifest.rs
-│       ├── parser
-│       │   ├── mod.rs
-│       │   ├── stmt.rs
-│       │   ├── expr.rs
-│       │   ├── control.rs
-│       │   ├── literals.rs
-│       │   ├── imports.rs
-│       │   └── types.rs
-│       └── vm
-│           ├── mod.rs
-│           ├── dispatch.rs
-│           ├── init.rs
-│           ├── helpers.rs
-│           ├── gc.rs
-│           ├── ops.rs
-│           ├── optimizer.rs
-│           ├── cache.rs
-│           ├── types
-│           │   ├── mod.rs
-│           │   ├── err.rs
-│           │   ├── coro.rs
-│           │   ├── math.rs
-│           │   └── eq.rs
-│           ├── builtins
-│           │   ├── mod.rs
-│           │   ├── numeric.rs
-│           │   ├── sequence.rs
-│           │   ├── container.rs
-│           │   ├── conversion.rs
-│           │   ├── io.rs
-│           │   ├── attr.rs
-│           │   ├── identity.rs
-│           │   ├── index.rs
-│           │   ├── bytes_helpers.rs
-│           │   └── async_ops.rs
-│           └── handlers
-│               ├── mod.rs
-│               ├── arith.rs
-│               ├── data.rs
-│               ├── dunder.rs
-│               ├── format.rs
-│               ├── function.rs
-│               ├── methods.rs
-│               └── methods_helpers.rs
+│   │   ├── errors.rs
+│   │   ├── exports.rs
+│   │   ├── mod.rs
+│   │   └── resolver.rs
+│   ├── modules
+│   │   ├── lexer
+│   │   │   ├── mod.rs
+│   │   │   ├── scan.rs
+│   │   │   └── tables.rs
+│   │   ├── packages
+│   │   │   ├── manifest.rs
+│   │   │   └── mod.rs
+│   │   ├── parser
+│   │   │   ├── control.rs
+│   │   │   ├── expr.rs
+│   │   │   ├── imports.rs
+│   │   │   ├── literals.rs
+│   │   │   ├── mod.rs
+│   │   │   ├── stmt.rs
+│   │   │   └── types.rs
+│   │   └── vm
+│   │       ├── builtins
+│   │       │   ├── async_ops.rs
+│   │       │   ├── attr.rs
+│   │       │   ├── bytes_helpers.rs
+│   │       │   ├── container.rs
+│   │       │   ├── conversion.rs
+│   │       │   ├── identity.rs
+│   │       │   ├── index.rs
+│   │       │   ├── io.rs
+│   │       │   ├── mod.rs
+│   │       │   ├── numeric.rs
+│   │       │   └── sequence.rs
+│   │       ├── cache.rs
+│   │       ├── dispatch.rs
+│   │       ├── gc.rs
+│   │       ├── handlers
+│   │       │   ├── arith.rs
+│   │       │   ├── data.rs
+│   │       │   ├── dunder.rs
+│   │       │   ├── format.rs
+│   │       │   ├── function.rs
+│   │       │   ├── methods_helpers.rs
+│   │       │   ├── methods.rs
+│   │       │   └── mod.rs
+│   │       ├── helpers.rs
+│   │       ├── init.rs
+│   │       ├── mod.rs
+│   │       ├── ops.rs
+│   │       ├── optimizer.rs
+│   │       └── types
+│   │           ├── coro.rs
+│   │           ├── eq.rs
+│   │           ├── err.rs
+│   │           ├── math.rs
+│   │           └── mod.rs
+│   └── util
+│       ├── fstr.rs
+│       ├── fx.rs
+│       └── sha256.rs
 └── tests
     ├── cases
     │   ├── lexer.json
+    │   ├── packages.json
     │   ├── parser.json
-    │   ├── vm.json
-    │   └── packages.json
+    │   └── vm.json
     ├── common.rs
     ├── lexer.rs
-    ├── parser.rs
-    ├── vm.rs
+    ├── main.rs
     ├── packages.rs
-    └── main.rs
+    ├── parser.rs
+    └── vm.rs
 ```
 
 ---

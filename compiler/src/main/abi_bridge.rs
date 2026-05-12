@@ -51,19 +51,16 @@ fn dispatch_call(recv_h: u32, name: &str, args: &[Val]) -> Result<Val, VmErr> {
 fn dispatch_get_attr(recv_h: u32, name: &str) -> Result<Val, VmErr> {
     with_recv("edge_op get_attr: invalid receiver handle", recv_h, |vm, recv| {
         // Module attribute.
-        if recv.is_heap()
-            && let HeapObj::Module(_, attrs) = vm.heap.get(recv)
+        if recv.is_heap() && let HeapObj::Module(_, attrs) = vm.heap.get(recv)
         {
             let bare = name;
             if let Some((_, v)) = attrs.iter().find(|(n, _)| n == bare) {
                 return Ok(*v);
             }
-            return Err(VmErr::Attribute(s!(
-                "module has no attribute '", str name, "'")));
+            return Err(VmErr::Attribute(s!("module has no attribute '", str name, "'")));
         }
         // Instance attribute.
-        if recv.is_heap()
-            && let HeapObj::Instance(_cls, attrs) = vm.heap.get(recv)
+        if recv.is_heap() && let HeapObj::Instance(_cls, attrs) = vm.heap.get(recv)
         {
             let entries = attrs.borrow().entries.clone();
             for (k, v) in &entries {
@@ -74,8 +71,7 @@ fn dispatch_get_attr(recv_h: u32, name: &str) -> Result<Val, VmErr> {
                     return Ok(*v);
                 }
             }
-            return Err(VmErr::Attribute(s!(
-                "instance has no attribute '", str name, "'")));
+            return Err(VmErr::Attribute(s!("instance has no attribute '", str name, "'")));
         }
         // Builtin method -> BoundMethod.
         let ty = vm.type_name(recv);

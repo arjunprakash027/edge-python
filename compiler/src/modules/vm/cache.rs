@@ -68,9 +68,7 @@ impl OpcodeCache {
     }
 
     /* Build the const pool: scalars inline, Str/LongInt heap-allocated once and shared. */
-    pub fn ensure_const_vals(&mut self, chunk: &SSAChunk, heap: &mut HeapPool)
-        -> Result<&[Val], VmErr>
-    {
+    pub fn ensure_const_vals(&mut self, chunk: &SSAChunk, heap: &mut HeapPool) -> Result<&[Val], VmErr> {
         if self.const_vals.is_none() {
             let mut out = Vec::with_capacity(chunk.constants.len());
             for c in &chunk.constants {

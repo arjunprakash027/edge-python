@@ -16,8 +16,7 @@ fn collect_module_attrs(chunk: &SSAChunk, slots: &[Val]) -> Vec<(String, Val)> {
         // Skip `_`-prefixed names, mirroring `from m import *` semantics.
         if bare.starts_with('_') { continue; }
         if !seen.insert(bare.clone()) { continue; }
-        if let Some(&v) = slots.get(ins.operand as usize)
-            && !v.is_undef()
+        if let Some(&v) = slots.get(ins.operand as usize) && !v.is_undef()
         {
             attrs.push((bare, v));
         }

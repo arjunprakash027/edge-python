@@ -198,8 +198,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.eat(TokenType::Rsqb);
 
         if star_count > 1 {
-            self.error_at(buffered[0].start, buffered.last().unwrap().end,
-                "multiple stars in sequence pattern");
+            self.error_at(buffered[0].start, buffered.last().unwrap().end, "multiple stars in sequence pattern");
         }
 
         // Length check: exact without star, >= (count-1) with star.
@@ -329,8 +328,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                         self.chunk.emit(OpCode::JumpIfFalse, 0);
                         fail_jumps.push(self.chunk.instructions.len() - 1);
                     } else {
-                        self.error_at(toks[0].start, toks.last().unwrap().end,
-                            "unsupported sub-pattern in sequence (use literals, names, or _)");
+                        self.error_at(toks[0].start, toks.last().unwrap().end, "unsupported sub-pattern in sequence (use literals, names, or _)");
                     }
                 }
             }

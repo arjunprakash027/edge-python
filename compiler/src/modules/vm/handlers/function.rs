@@ -177,12 +177,12 @@ impl<'a> VM<'a> {
     fn parse_call_args(&mut self, operand: u16) -> Result<(Vec<Val>, Vec<Val>, usize, usize), VmErr> {
         let raw = operand as usize;
 
-        let base_pos = (raw & 0xFF)        as i32;
-        let base_kw  = ((raw >> 8) & 0xFF) as i32;
+        let base_pos = (raw & 0xFF) as i32;
+        let base_kw = ((raw >> 8) & 0xFF) as i32;
         let num_pos = (base_pos + self.pending.pos_delta).max(0) as usize;
-        let num_kw  = (base_kw  + self.pending.kw_delta ).max(0) as usize;
+        let num_kw = (base_kw + self.pending.kw_delta ).max(0) as usize;
         self.pending.pos_delta = 0;
-        self.pending.kw_delta  = 0;
+        self.pending.kw_delta = 0;
 
         let total_items = num_pos + 2 * num_kw;
         let mut stack_items: Vec<Val> = (0..total_items).map(|_| self.pop()).collect::<Result<_, _>>()?;
@@ -230,7 +230,7 @@ impl<'a> VM<'a> {
             return Ok(true);
         }
 
-        // Calling a class: create an instance and run __init__ if defined (walks bases).
+        // Calling a class: create an instance and run `__init__` if defined (walks bases).
         if let HeapObj::Class(..) = self.heap.get(callee) {
             // The recursive `exec_call` below only encodes positional count — kwargs would silently disappear before reaching `__init__`, so reject them here.
             if !kw_flat.is_empty() {
@@ -497,8 +497,7 @@ impl<'a> VM<'a> {
             if let Some(&val) = fn_slots.get(canon_body) {
                 if val.is_undef() { continue; }
                 for base in &body.nonlocals {
-                    if let Some(idx) = name_index
-                        && let Some(versions) = idx.get(base.as_str())
+                    if let Some(idx) = name_index && let Some(versions) = idx.get(base.as_str())
                     {
                         for &(_, si) in versions {
                             if si < slots.len() { slots[si] = val; }
@@ -522,7 +521,7 @@ impl<'a> VM<'a> {
     pub(crate) fn call_extern(&mut self, operand: u16, chunk: &SSAChunk) -> Result<(), VmErr> {
         let extern_idx = (operand >> 8) as usize;
         let argc = (operand & 0xFF) as usize;
-        let extern_fn  = chunk.extern_table.get(extern_idx).ok_or(cold_runtime("CallExtern: extern index out of bounds"))?;
+        let extern_fn = chunk.extern_table.get(extern_idx).ok_or(cold_runtime("CallExtern: extern index out of bounds"))?;
         let func = extern_fn.func.clone(); // Arc clone — refcount bump only
         let pure = extern_fn.pure;
         let args = self.pop_n(argc)?;
@@ -542,8 +541,7 @@ impl<'a> VM<'a> {
             let mut leftover: Vec<Val> = Vec::new();
             for chunk_pair in kw.chunks(2) {
                 let (name_v, val_v) = (chunk_pair[0], chunk_pair[1]);
-                let is_key = name_v.is_heap()
-                    && matches!(self.heap.get(name_v), HeapObj::Str(s) if s == "key");
+                let is_key = name_v.is_heap() && matches!(self.heap.get(name_v), HeapObj::Str(s) if s == "key");
                 if is_key {
                     sort_key = Some(val_v);
                 } else {

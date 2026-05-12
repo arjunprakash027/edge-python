@@ -114,8 +114,7 @@ impl<'a> VM<'a> {
         let mut out: crate::util::fx::FxHashMap<String, Val> = crate::util::fx::FxHashMap::default();
         for (k, v) in self.globals.iter() {
             // Drop SSA-mirrors (`x_0`, `x_1`); keep canonical bare name.
-            if let Some((bare, suf)) = k.rsplit_once('_')
-                && suf.chars().all(|c| c.is_ascii_digit())
+            if let Some((bare, suf)) = k.rsplit_once('_') && suf.chars().all(|c| c.is_ascii_digit())
             {
                 out.entry(bare.to_string()).or_insert(*v);
                 continue;

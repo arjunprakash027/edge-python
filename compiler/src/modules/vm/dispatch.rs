@@ -139,8 +139,7 @@ impl<'a> VM<'a> {
         let exc_base = self.exception_stack.len();
         let key = chunk as *const _;
 
-        let mut cache = self.opcode_caches.remove(&key)
-            .unwrap_or_else(|| OpcodeCache::new(chunk));
+        let mut cache = self.opcode_caches.remove(&key).unwrap_or_else(|| OpcodeCache::new(chunk));
         cache.ensure_fused(chunk);
         // Pre-materialise the constant pool here (not in OpcodeCache::new) because Str allocates into the live HeapPool.
         if let Err(e) = cache.ensure_const_vals(chunk, &mut self.heap) {
@@ -245,7 +244,7 @@ impl<'a> VM<'a> {
         let lookup = match self.resolve_attr(obj, &name) {
             Ok(l) => l,
             Err(VmErr::Attribute(msg)) => {
-                // F2.10: if `__getattr__` resolves the name to a callable, invoke it with the positional args.
+                //  if `__getattr__` resolves the name to a callable, invoke it with the positional args.
                 if let Some(v) = self.try_getattr_fallback(obj, &name, chunk, slots)? {
                     self.push(v);
                     for a in &positional { self.push(*a); }
@@ -351,7 +350,7 @@ impl<'a> VM<'a> {
             }
             OpCode::StoreName => {
                 self.handle_store(op, slots)?;
-                // Mirror entry-chunk Module stores into `globals` so import_module() finds the alias.
+                // Mirror entry-chunk Module stores into `globals` so `import_module()` finds the alias.
                 if core::ptr::eq(chunk, self.chunk) {
                     let v = slots[op as usize];
                     if v.is_heap()
@@ -383,7 +382,7 @@ impl<'a> VM<'a> {
                         FastOutcome::TypeMiss => cache.invalidate(rip),
                     }
                 }
-                // F4: instance-dunder fast path — orthogonal to scalar specialisation, only fires for monomorphic instance sites.
+                // instance-dunder fast path — orthogonal to scalar specialisation, only fires for monomorphic instance sites.
                 if let Some(inst) = cache.get_inst(rip) {
                     match self.exec_inst(inst, chunk, slots)? {
                         FastOutcome::Done => return Ok(None),
@@ -400,7 +399,7 @@ impl<'a> VM<'a> {
                 }
             }
             OpCode::Div | OpCode::Pow | OpCode::Minus => {
-                // F4: Div/Pow/Minus skip scalar IC (Float-only / overflow-prone) but still benefit from the instance-dunder fast path.
+                // Div/Pow/Minus skip scalar IC (Float-only / overflow-prone) but still benefit from the instance-dunder fast path.
                 if let Some(inst) = cache.get_inst(rip) {
                     match self.exec_inst(inst, chunk, slots)? {
                         FastOutcome::Done => return Ok(None),
@@ -436,7 +435,7 @@ impl<'a> VM<'a> {
                     }
                     return Ok(None);
                 }
-                // F2.6: user-defined iterator calls `__next__`; `StopIteration` ends the loop without propagating, other exceptions surface.
+                // user-defined iterator calls `__next__`; `StopIteration` ends the loop without propagating, other exceptions surface.
                 if let Some(IterFrame::UserDefined(iter_val)) = self.iter_stack.last() {
                     let iter = *iter_val;
                     match self.try_call_dunder(iter, "__next__", &[], chunk, slots) {
@@ -472,7 +471,7 @@ impl<'a> VM<'a> {
 
             // Warm opcodes.
             OpCode::GetItem => {
-                // F4: `Series[i]`-style hot loop — bypass `resolve_attr_silent("__getitem__")` once the site is monomorphic.
+                // `Series[i]`-style hot loop — bypass `resolve_attr_silent("__getitem__")` once the site is monomorphic.
                 if let Some(inst) = cache.get_inst(rip) {
                     match self.exec_inst(inst, chunk, slots)? {
                         FastOutcome::Done => return Ok(None),
@@ -576,9 +575,8 @@ impl<'a> VM<'a> {
                 let value = self.pop()?;
                 let obj = self.pop()?;
                 if !obj.is_heap() { return Err(cold_type("cannot set attribute")); }
-                let name = chunk.names.get(op as usize)
-                    .ok_or(cold_runtime("StoreAttr: bad name index"))?.clone();
-                // F3: a class-chain `Property` overrides plain dict insertion. Setter `none()` means read-only.
+                let name = chunk.names.get(op as usize).ok_or(cold_runtime("StoreAttr: bad name index"))?.clone();
+                // a class-chain `Property` overrides plain dict insertion. Setter `none()` means read-only.
                 if let HeapObj::Instance(cls_val, _) = self.heap.get(obj) {
                     let cls_val = *cls_val;
                     if let Some((member, _)) = self.lookup_class_member(cls_val, ssa_strip(&name))
@@ -688,18 +686,16 @@ impl<'a> VM<'a> {
             OpCode::SetupWith => {
                 let _ = operand;
                 let cm = self.pop()?;
-                // F2.9: instance `__enter__` runs at setup; its return value feeds the `as` target.
+                // instance `__enter__` runs at setup; its return value feeds the `as` target.
                 let bound = if let Some(r) = self.try_call_dunder(cm, "__enter__", &[], chunk, slots)? { r } else { cm };
                 self.with_stack.push(cm);
                 self.push(bound);
             }
             OpCode::ExitWith => {
                 let _ = operand;
-                let cm = self.with_stack.pop()
-                    .ok_or(cold_runtime("ExitWith without matching SetupWith"))?;
-                if let Some(&top) = self.stack.last()
-                    && top.0 == cm.0 { self.pop()?; }
-                // F2.9: normal-flow cleanup passes `(None, None, None)` to signal "no exception".
+                let cm = self.with_stack.pop().ok_or(cold_runtime("ExitWith without matching SetupWith"))?;
+                if let Some(&top) = self.stack.last() && top.0 == cm.0 { self.pop()?; }
+                // normal-flow cleanup passes `(None, None, None)` to signal "no exception".
                 if cm.is_heap() && matches!(self.heap.get(cm), HeapObj::Instance(..)) {
                     let n = Val::none();
                     let _ = self.try_call_dunder(cm, "__exit__", &[n, n, n], chunk, slots)?;

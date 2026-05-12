@@ -228,8 +228,8 @@ impl<'a> VM<'a> {
     /* Coerce a `__len__` / `__length_hint__` return value to bool semantics; rejects negatives like CPython. */
     fn len_to_bool(&self, v: Val) -> Result<bool, VmErr> {
         let n = if v.is_int() { v.as_int() as i128 }
-            else if let Some(i) = crate::modules::vm::types::as_i128(v, &self.heap) { i }
-            else { return Err(cold_type("__len__ must return int")); };
+        else if let Some(i) = crate::modules::vm::types::as_i128(v, &self.heap) { i }
+        else { return Err(cold_type("__len__ must return int")); };
         if n < 0 { return Err(cold_value("__len__() should return >= 0")); }
         Ok(n != 0)
     }

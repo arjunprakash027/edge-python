@@ -6,7 +6,7 @@ use super::types::*;
 
 impl<'a> VM<'a> {
 
-    /* Byte offset of the last propagating error, or None on success / before run(). */
+    /* Byte offset of the last propagating error, or None on success / before `run()`. */
     pub fn error_pos(&self) -> Option<usize> { self.error_byte_pos.map(|p| p as usize) }
     pub fn call_stack_frames(&self) -> &[CallFrame] { &self.call_stack }
     pub fn function_names_ref(&self) -> &[String] { &self.function_names }
@@ -166,7 +166,7 @@ impl<'a> VM<'a> {
         let (ia, ib) = phi_sources[phi_map[rip]];
         let a = slots[ia as usize];
         let val = if !a.is_undef() { a }
-            else { let b = slots[ib as usize]; if !b.is_undef() { b } else { Val::none() } };
+        else { let b = slots[ib as usize]; if !b.is_undef() { b } else { Val::none() } };
         slots[op as usize] = val;
     }
 }

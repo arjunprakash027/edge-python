@@ -32,8 +32,8 @@ pub(super) fn stream_print(s: &str) {
 }
 
 /*
-Bump-pointer allocator. Default `LeakingPageAllocator` calls memory.grow(1) per alloc — ~0.2 ms on HVCI/VBS hosts (e.g., Snapdragon X on V8).
-A ~3,000-alloc perceptron run pays ~600 ms; bumping cuts it to ~50 grows.
+Bump-pointer allocator. Default `LeakingPageAllocator` calls memory.grow(1) per alloc — around 0.2 ms on HVCI/VBS hosts (e.g., Snapdragon X on V8).
+A 3,000-alloc perceptron run hit 600 ms; bumping cuts it to about 50 grows.
 */
 #[global_allocator]
 static A: AssumeSingleThreaded<LeakingAllocator> = unsafe { AssumeSingleThreaded::new(LeakingAllocator::new()) };

@@ -45,7 +45,7 @@ impl<'a> VM<'a> {
                 | HeapObj::Type(_) | HeapObj::NativeFn(_)
                 | HeapObj::Class(..) | HeapObj::BoundUserMethod(..)
                 | HeapObj::Extern(_) => true,
-                // F2.5: instance is callable iff its class chain defines `__call__`.
+                // instance is callable iff its class chain defines `__call__`.
                 HeapObj::Instance(cls, _) => self.lookup_class_member(*cls, "__call__").is_some(),
                 _ => false,
             }
@@ -66,7 +66,7 @@ impl<'a> VM<'a> {
         use core::hash::{Hash, Hasher};
         let o = self.pop()?;
 
-        // F2.7: instance dispatch — user `__hash__` wins; `__eq__` without `__hash__` makes the instance unhashable.
+        // instance dispatch — user `__hash__` wins; `__eq__` without `__hash__` makes the instance unhashable.
         if o.is_heap() && let HeapObj::Instance(cls, _) = self.heap.get(o) {
             let cls = *cls;
             let has_hash = self.lookup_class_member(cls, "__hash__").is_some();

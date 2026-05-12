@@ -27,7 +27,7 @@ impl<'a> VM<'a> {
         let idx = self.pop()?;
         let obj = self.pop()?;
 
-        // F2.4: instance `__getitem__` runs before built-in indexing; slices pass through as a single Slice arg.
+        // instance `__getitem__` runs before built-in indexing; slices pass through as a single Slice arg.
         if let Some(r) = self.try_call_dunder(obj, "__getitem__", &[idx], chunk, slots)? {
             // F4: record monomorphic hit so the next iteration skips `resolve_attr_silent`.
             self.record_dunder_hit(ip, cache, obj, "__getitem__", 2);
@@ -173,7 +173,7 @@ impl<'a> VM<'a> {
         let idx_val = self.pop()?;
         let cont = self.pop()?;
         if !cont.is_heap() { return Err(cold_type("object does not support item assignment")); }
-        // F2.4: instance `__setitem__(idx, value)` short-circuits the built-in dispatch.
+        // instance `__setitem__(idx, value)` short-circuits the built-in dispatch.
         if self.try_call_dunder(cont, "__setitem__", &[idx_val, value], chunk, slots)?.is_some() {
             return Ok(());
         }
@@ -214,7 +214,7 @@ impl<'a> VM<'a> {
         let idx_val = self.pop()?;
         let cont = self.pop()?;
         if !cont.is_heap() { return Err(cold_type("object does not support item deletion")); }
-        // F2.4: instance `__delitem__(idx)` short-circuits the built-in dispatch.
+        // instance `__delitem__(idx)` short-circuits the built-in dispatch.
         if self.try_call_dunder(cont, "__delitem__", &[idx_val], chunk, slots)?.is_some() {
             return Ok(());
         }
@@ -270,8 +270,7 @@ impl<'a> VM<'a> {
         }
 
         // Extended slice (step!=1): collect indices; RHS length must match exactly.
-        let (s, e) = if st > 0 { (clamp(start, 0), clamp(stop, len)) }
-            else { (clamp(start, len - 1), clamp(stop, -1)) };
+        let (s, e) = if st > 0 { (clamp(start, 0), clamp(stop, len)) } else { (clamp(start, len - 1), clamp(stop, -1)) };
         let mut indices: Vec<usize> = Vec::new();
         let mut cur = s;
         if st > 0 { while cur < e { indices.push(cur as usize); cur += st; } }

@@ -51,11 +51,11 @@ impl<'a> VM<'a> {
 
     pub fn call_len(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let o = self.pop()?;
-        // F2.3: instance `__len__` takes precedence over built-in length rules.
+        // instance `__len__` takes precedence over built-in length rules.
         if let Some(r) = self.try_call_dunder(o, "__len__", &[], chunk, slots)? {
             let n = if r.is_int() { r.as_int() as i128 }
-                else if let Some(i) = crate::modules::vm::types::as_i128(r, &self.heap) { i }
-                else { return Err(cold_type("__len__ must return int")); };
+            else if let Some(i) = crate::modules::vm::types::as_i128(r, &self.heap) { i }
+            else { return Err(cold_type("__len__ must return int")); };
             if n < 0 { return Err(cold_value("__len__() should return >= 0")); }
             let v = self.int_to_val(Some(n))?;
             self.push(v);
@@ -344,7 +344,7 @@ impl<'a> VM<'a> {
     // Materialise an iterable to a list — strings -> chars, ranges eager, coroutines drained.
     pub fn call_list(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let o = self.pop()?;
-        // F2.6: user-defined iterable wins over the built-in dispatch.
+        // user-defined iterable wins over the built-in dispatch.
         if let Some(items) = self.iter_to_vec_op(o, chunk, slots)? {
             return self.alloc_and_push_list(items);
         }

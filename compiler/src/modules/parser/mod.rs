@@ -338,8 +338,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         if matches!(kind, TokenType::Rpar | TokenType::Rsqb | TokenType::Rbrace) {
             let peeked = self.tokens.peek().map(|t| t.kind);
             // Wrong closer: bail silently; advance() will report the mismatch.
-            if matches!(peeked, Some(TokenType::Rpar | TokenType::Rsqb | TokenType::Rbrace))
-                && peeked != Some(kind)
+            if matches!(peeked, Some(TokenType::Rpar | TokenType::Rsqb | TokenType::Rbrace)) && peeked != Some(kind)
             {
                 return;
             }

@@ -39,9 +39,9 @@ impl<'a> VM<'a> {
 
         let (a, b) = self.pop2()?;
 
-        // F2.1: instance dunder protocol — try user-defined operator before any builtin coercion.
+        // instance dunder protocol — try user-defined operator before any builtin coercion.
         if let Some(r) = self.try_binary_dunder(op, a, b, chunk, slots)? {
-            // F4: record the resolved class+method so the IC can fire on subsequent iterations of a hot loop.
+            // record the resolved class+method so the IC can fire on subsequent iterations of a hot loop.
             if let Some(name) = binary_dunder_name(op) {
                 self.record_dunder_hit(rip, cache, a, name, 2);
             }
@@ -70,9 +70,9 @@ impl<'a> VM<'a> {
 
     fn exec_neg(&mut self, rip: usize, cache: &mut OpcodeCache, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let v = self.pop()?;
-        // F2.1: instance `__neg__` takes precedence over numeric coercion.
+        // instance `__neg__` takes precedence over numeric coercion.
         if let Some(r) = self.try_call_dunder(v, "__neg__", &[], chunk, slots)? {
-            // F4: monomorphic `-instance` sites promote like binary ops.
+            // monomorphic `-instance` sites promote like binary ops.
             self.record_dunder_hit(rip, cache, v, "__neg__", 1);
             self.push(r);
             return Ok(());
@@ -179,9 +179,9 @@ impl<'a> VM<'a> {
         // Record type-key for every compare op; `cache::specialize` picks the FastOp variant.
         cached_binop!(self.heap, rip, &op, a, b, cache);
 
-        // F2.2: try the user-defined comparison dunder before falling back to numeric/string compare.
+        // try the user-defined comparison dunder before falling back to numeric/string compare.
         if let Some(r) = self.try_compare_dunder(op, a, b, chunk, slots)? {
-            // F4: monomorphic comparison sites cache the resolved method like arithmetic ones.
+            // monomorphic comparison sites cache the resolved method like arithmetic ones.
             if let Some(name) = compare_dunder_name(op) {
                 self.record_dunder_hit(rip, cache, a, name, 2);
             }

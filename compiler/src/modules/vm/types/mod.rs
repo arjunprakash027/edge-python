@@ -85,7 +85,7 @@ impl Val {
     pub fn is_numeric(&self) -> bool {
         self.is_int() || self.is_float()
     }
-    pub const INT_MAX: i64 =  0x0000_7FFF_FFFF_FFFF;
+    pub const INT_MAX: i64 = 0x0000_7FFF_FFFF_FFFF;
     pub const INT_MIN: i64 = -0x0000_8000_0000_0000;
     #[inline(always)] pub fn int(i: i64) -> Self {
         Self(TAG_INT | (i as u64 & INT_PAYLOAD_MASK))
@@ -266,7 +266,7 @@ impl DictMap {
 
     pub fn remove(&mut self, key: &Val) -> Option<Val> {
         let &idx = self.index.get(key)?;
-        let val  = self.entries[idx].1;
+        let val = self.entries[idx].1;
 
         self.index.remove(key);
 

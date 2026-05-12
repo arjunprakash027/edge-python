@@ -35,7 +35,7 @@ impl<'a> VM<'a> {
                 let val = self.heap.alloc(HeapObj::Str(s))?;
                 self.push(val);
             }
-            OpCode::BuildSet   => self.build_set(operand)?,
+            OpCode::BuildSet => self.build_set(operand)?,
             OpCode::BuildSlice => self.build_slice(operand)?,
             _ => return Err(cold_runtime("non-build opcode in handle_build")),
         }
@@ -98,7 +98,7 @@ impl<'a> VM<'a> {
     /* Append/add to the comprehension accumulator at the top of the stack. */
     pub(crate) fn handle_comprehension(&mut self, op: OpCode) -> Result<(), VmErr> {
         let (kind, value, key) = match op {
-            OpCode::ListAppend => ("list",  self.pop()?, None),
+            OpCode::ListAppend => ("list", self.pop()?, None),
             OpCode::SetAdd => ("set", self.pop()?, None),
             OpCode::MapAdd => { let v = self.pop()?; let k = self.pop()?; ("dict", v, Some(k)) }
             _ => return Err(cold_runtime("non-comprehension opcode in handle_comprehension")),
@@ -112,7 +112,7 @@ impl<'a> VM<'a> {
         if !acc.is_heap() { return Err(corrupt()); }
         match (kind, self.heap.get(acc)) {
             ("list", HeapObj::List(rc)) => { rc.borrow_mut().push(value); }
-            ("set",  HeapObj::Set(rc))  => {
+            ("set", HeapObj::Set(rc))  => {
                 let already = rc.borrow().iter().any(|&x| eq_vals_with_heap(x, value, &self.heap));
                 if !already && let HeapObj::Set(rc) = self.heap.get(acc) {
                     rc.borrow_mut().insert(value);

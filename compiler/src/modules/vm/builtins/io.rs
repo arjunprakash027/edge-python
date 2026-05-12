@@ -11,7 +11,7 @@ impl<'a> VM<'a> {
         let mut out = String::new();
         for (i, v) in args.iter().enumerate() {
             if i > 0 { out.push(' '); }
-            // F2.8: each arg goes through `display_op` so user `__str__` / `__repr__` are honoured.
+            // each arg goes through `display_op` so user `__str__` / `__repr__` are honoured.
             out.push_str(&self.display_op(*v, chunk, slots)?);
         }
         match self.print_hook {

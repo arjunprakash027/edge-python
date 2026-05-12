@@ -34,28 +34,17 @@ pub unsafe extern "C" fn wasm_free(ptr: *mut u8, size: u32) {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn register_code_module(
-    spec_ptr: *const u8, spec_len: u32,
-    src_ptr: *const u8, src_len: u32,
-) {
-    let spec = core::str::from_utf8(unsafe { safe_bytes(spec_ptr, spec_len) })
-        .unwrap_or("").to_string();
-    let src = core::str::from_utf8(unsafe { safe_bytes(src_ptr, src_len) })
-        .unwrap_or("").to_string();
+pub unsafe extern "C" fn register_code_module(spec_ptr: *const u8, spec_len: u32, src_ptr: *const u8, src_len: u32) {
+    let spec = core::str::from_utf8(unsafe { safe_bytes(spec_ptr, spec_len) }).unwrap_or("").to_string();
+    let src = core::str::from_utf8(unsafe { safe_bytes(src_ptr, src_len) }).unwrap_or("").to_string();
     with_runtime(|rt| rt.registry.push((spec, ModuleEntry::Code(src))));
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn register_native_module(
-    spec_ptr: *const u8, spec_len: u32,
-    names_ptr: *const u8, names_len: u32,
-    base_id: u32,
-) {
+pub unsafe extern "C" fn register_native_module(spec_ptr: *const u8, spec_len: u32, names_ptr: *const u8, names_len: u32, base_id: u32) {
     use alloc::vec::Vec;
-    let spec = core::str::from_utf8(unsafe { safe_bytes(spec_ptr, spec_len) })
-        .unwrap_or("").to_string();
-    let names_str = core::str::from_utf8(unsafe { safe_bytes(names_ptr, names_len) })
-        .unwrap_or("");
+    let spec = core::str::from_utf8(unsafe { safe_bytes(spec_ptr, spec_len) }).unwrap_or("").to_string();
+    let names_str = core::str::from_utf8(unsafe { safe_bytes(names_ptr, names_len) }).unwrap_or("");
     let funcs: Vec<(String, u32)> = names_str.split('\n')
         .filter(|n| !n.is_empty())
         .enumerate()

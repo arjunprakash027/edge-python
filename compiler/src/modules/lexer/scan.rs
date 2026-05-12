@@ -48,10 +48,10 @@ impl<'a> Scanner<'a> {
     pub fn skip_whitespace(&mut self) {
         self.scan_while(|b| BYTE_CLASS[b as usize] & SPACE != 0);
     }
-    fn scan_id_rest(&mut self)  {
+    fn scan_id_rest(&mut self) {
         self.scan_while(|b| BYTE_CLASS[b as usize] & ID_CONT != 0);
     }
-    fn scan_digits(&mut self)   {
+    fn scan_digits(&mut self) {
         self.scan_while(|b| BYTE_CLASS[b as usize] & DIGIT != 0 || b == b'_');
     }
 
@@ -458,7 +458,7 @@ impl<'a> Scanner<'a> {
                 b"//" => Some(TokenType::DoubleSlash), b"/=" => Some(TokenType::SlashEqual),
                 b":=" => Some(TokenType::ColonEqual), b"<<" => Some(TokenType::LeftShift),
                 b"<=" => Some(TokenType::LessEqual), b"==" => Some(TokenType::EqEqual),
-                b">=" => Some(TokenType::GreaterEqual),b">>" => Some(TokenType::RightShift),
+                b">=" => Some(TokenType::GreaterEqual), b">>" => Some(TokenType::RightShift),
                 b"@=" => Some(TokenType::AtEqual), b"^=" => Some(TokenType::CircumflexEqual),
                 b"|=" => Some(TokenType::VbarEqual),
                 _ => None,

@@ -284,10 +284,7 @@ impl<'a> VM<'a> {
             && let (HeapObj::Str(x), HeapObj::Str(y)) = (self.heap.get(a), self.heap.get(b)) {
                 return Ok(x < y);
         }
-        Err(VmErr::TypeMsg(s!(
-            "'<' not supported between instances of '",
-            str self.type_name(a), "' and '", str self.type_name(b), "'"
-        )))
+        Err(VmErr::TypeMsg(s!("'<' not supported between instances of '", str self.type_name(a), "' and '", str self.type_name(b), "'")))
     }
 
     /* Item presence in list/tuple/dict/set, or substring in string. */
@@ -338,10 +335,7 @@ impl<'a> VM<'a> {
                 _ => {}
             }
         }
-        Err(VmErr::TypeMsg(s!(
-            "unsupported operand type(s) for +: '",
-            str self.type_name(a), "' and '", str self.type_name(b), "'"
-        )))
+        Err(VmErr::TypeMsg(s!("unsupported operand type(s) for +: '", str self.type_name(a), "' and '", str self.type_name(b), "'")))
     }
 
     pub fn sub_vals(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
@@ -360,10 +354,7 @@ impl<'a> VM<'a> {
             let items: Vec<Val> = sa.borrow().difference(&sb.borrow()).copied().collect();
             return self.alloc_set_value(items);
         }
-        Err(VmErr::TypeMsg(s!(
-            "unsupported operand type(s) for -: '",
-            str self.type_name(a), "' and '", str self.type_name(b), "'"
-        )))
+        Err(VmErr::TypeMsg(s!("unsupported operand type(s) for -: '", str self.type_name(a), "' and '", str self.type_name(b), "'")))
     }
 
     /* Set counterpart of `alloc_list` for `sub_vals`'s set-difference path. */
@@ -390,10 +381,7 @@ impl<'a> VM<'a> {
         } else if a.is_int() && b.is_heap() && !matches!(self.heap.get(b), HeapObj::LongInt(_)) {
             (b, a.as_int())
         } else {
-            return Err(VmErr::TypeMsg(s!(
-                "unsupported operand type(s) for *: '",
-                str self.type_name(a), "' and '", str self.type_name(b), "'"
-            )));
+            return Err(VmErr::TypeMsg(s!("unsupported operand type(s) for *: '", str self.type_name(a), "' and '", str self.type_name(b), "'")));
         };
         let n = count.max(0) as usize;
         match self.heap.get(seq_val) {
@@ -415,10 +403,7 @@ impl<'a> VM<'a> {
             }
             _ => {}
         }
-        Err(VmErr::TypeMsg(s!(
-            "unsupported operand type(s) for *: '",
-            str self.type_name(a), "' and '", str self.type_name(b), "'"
-        )))
+        Err(VmErr::TypeMsg(s!("unsupported operand type(s) for *: '", str self.type_name(a), "' and '", str self.type_name(b), "'")))
     }
 
     pub fn div_vals(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {

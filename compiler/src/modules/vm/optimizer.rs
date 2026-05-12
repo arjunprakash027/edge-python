@@ -117,9 +117,7 @@ fn compact_with_jump_remap(chunk: &mut SSAChunk, dead: &[bool]) {
         if !is_jump_op(ins.opcode) { continue; }
         let target = ins.operand as usize;
         let new_target = if target > n { target } else { remap[target] };
-        if let Ok(v) = u16::try_from(new_target) {
-            ins.operand = v;
-        }
+        if let Ok(v) = u16::try_from(new_target) { ins.operand = v; }
     }
 
     // Remap stmt_pos ips through `remap[]` to follow compaction shifts.

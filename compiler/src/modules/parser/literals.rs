@@ -340,8 +340,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let mut kw = 0u16;
         while !matches!(self.peek(), Some(TokenType::Rpar) | None) {
             let unpack = if self.eat_if(TokenType::DoubleStar) { Some(2u16) }
-                         else if self.eat_if(TokenType::Star) { Some(1u16) }
-                         else { None };
+                else if self.eat_if(TokenType::Star) { Some(1u16) }
+                else { None };
             if let Some(kind) = unpack {
                 self.expr();
                 self.chunk.emit(OpCode::UnpackArgs, kind);

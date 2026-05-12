@@ -212,9 +212,8 @@ impl<'a> VM<'a> {
             }
             3 => {
                 // Modular exponentiation: (a ** b) % c on i128.
-                let (Some(base), Some(modulus)) =
-                    (self.as_i128(args[0]), self.as_i128(args[2]))
-                    else { return Err(cold_type("pow() with 3 args requires integers")); };
+                let (Some(base), Some(modulus)) = (self.as_i128(args[0]), self.as_i128(args[2]))
+                else { return Err(cold_type("pow() with 3 args requires integers")); };
                 let exp = self.as_i128(args[1]).ok_or(cold_type("pow() with 3 args requires integer exponent"))?;
                 if exp < 0 { return Err(cold_value("pow() exponent must be non-negative")); }
                 if modulus == 0 { return Err(VmErr::ZeroDiv); }

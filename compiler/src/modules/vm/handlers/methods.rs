@@ -126,7 +126,7 @@ impl<'a> VM<'a> {
         }
     }
 
-    /* F2.10: instance fallback via `__getattr__(name)`. Called by `LoadAttr` / `CallMethod` after the normal lookup raises `AttributeError`. */
+    /* instance fallback via `__getattr__(name)`. Called by `LoadAttr` / `CallMethod` after the normal lookup raises `AttributeError`. */
     pub(crate) fn try_getattr_fallback(&mut self, obj: Val, name: &str, chunk: &SSAChunk, slots: &mut [Val]) -> Result<Option<Val>, VmErr> {
         if !obj.is_heap() || !matches!(self.heap.get(obj), HeapObj::Instance(..)) { return Ok(None); }
         let bare = crate::modules::parser::ssa_strip(name);
@@ -536,8 +536,7 @@ define_methods! {
         check_arity(pos, 1, 1, "find takes 1 argument")?;
         let buf = recv_bytes(vm, recv)?;
         let sub = recv_bytes(vm, pos[0])?;
-        let idx = buf.windows(sub.len()).position(|w| w == sub.as_slice())
-            .map(|i| i as i64).unwrap_or(-1);
+        let idx = buf.windows(sub.len()).position(|w| w == sub.as_slice()).map(|i| i as i64).unwrap_or(-1);
         vm.push(Val::int(idx));
         Ok(())
     }),
@@ -851,7 +850,7 @@ define_methods! {
     (SetRemove, "remove", mutating, |vm, recv, pos| {
         check_arity(pos, 1, 1, "remove takes 1 argument")?;
         set_mut(vm, recv, "remove: receiver is not a set", |set| {
-            // CPython: KeyError, not ValueError.
+            // KeyError, not ValueError.
             if !set.remove(&pos[0]) { return Err(VmErr::Raised("KeyError".into())); }
             Ok(())
         })?;
@@ -867,9 +866,8 @@ define_methods! {
     (SetPop, "pop", mutating, |vm, recv, pos| {
         check_arity(pos, 0, 0, "pop takes no arguments")?;
         let popped = set_mut(vm, recv, "pop: receiver is not a set", |set| {
-            // HashSet has no pop() — grab via `iter()` and remove. Empty set raises.
-            let pick = set.iter().next().copied()
-                .ok_or(cold_value("pop from an empty set"))?;
+            // HashSet has no `pop()` — grab via `iter()` and remove. Empty set raises.
+            let pick = set.iter().next().copied().ok_or(cold_value("pop from an empty set"))?;
             set.remove(&pick);
             Ok(pick)
         })?;
