@@ -35,6 +35,11 @@ impl<'a> VM<'a> {
             return Ok(true);
         }
 
+        self.get_item_builtin(obj, idx)
+    }
+
+    /* No-dunder indexing path. Used by callers without a bytecode frame (FFI re-entry); also the post-dunder fallback inside `get_item`. */
+    pub fn get_item_builtin(&mut self, obj: Val, idx: Val) -> Result<bool, VmErr> {
         if idx.is_heap()
             && let HeapObj::Slice(start, stop, step) = self.heap.get(idx).clone() {
                 let v = self.slice_val(obj, start, stop, step)?;
@@ -172,6 +177,12 @@ impl<'a> VM<'a> {
         if self.try_call_dunder(cont, "__setitem__", &[idx_val, value], chunk, slots)?.is_some() {
             return Ok(());
         }
+        self.store_item_builtin(cont, idx_val, value)
+    }
+
+    /* No-dunder item-assignment path. Used by callers without a bytecode frame (FFI re-entry); also the post-dunder fallback inside `store_item`. */
+    pub fn store_item_builtin(&mut self, cont: Val, idx_val: Val, value: Val) -> Result<(), VmErr> {
+        if !cont.is_heap() { return Err(cold_type("object does not support item assignment")); }
         // Slice assignment: `xs[a:b] = iterable` (step must be 1 for resize). Resolves the target range, materialises RHS, and splices in place.
         if idx_val.is_heap()
             && let HeapObj::Slice(start, stop, step) = self.heap.get(idx_val).clone()

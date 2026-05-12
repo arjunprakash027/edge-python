@@ -4,6 +4,7 @@ Dunder dispatch protocol: probe an instance method, invoke with `self` prepended
 
 use super::*;
 use super::methods::AttrLookup;
+use crate::alloc::string::ToString;
 
 impl<'a> VM<'a> {
     /* `recv.<name>(*args)`: `Some(v)` on return, `None` on miss / `NotImplemented`, `Err` only on a raised dunder. */
@@ -117,7 +118,7 @@ impl<'a> VM<'a> {
             return Ok(r.as_bool());
         }
         if let Some(r) = self.try_call_dunder(v, "__len__", &[], chunk, slots)? {
-            return Ok(self.len_to_bool(r)?);
+            return self.len_to_bool(r);
         }
         Ok(true)
     }

@@ -106,7 +106,7 @@ fn dispatch_set_attr(recv_h: u32, name: &str, args: &[Val]) -> Result<Val, VmErr
     })
 }
 
-/* GetItem: routes through `vm.get_item` for script-identical semantics. */
+/* GetItem: built-in indexing only — FFI has no bytecode frame to drive instance `__getitem__` dispatch. */
 fn dispatch_get_item(recv_h: u32, args: &[Val]) -> Result<Val, VmErr> {
     if args.len() != 1 {
         return Err(VmErr::TypeMsg(s!("get_item expects 1 index, got ", int args.len() as i64)));
@@ -114,9 +114,7 @@ fn dispatch_get_item(recv_h: u32, args: &[Val]) -> Result<Val, VmErr> {
     let idx = args[0];
     with_recv("edge_op get_item: invalid receiver handle", recv_h, |vm, recv| {
         let stack_before = vm.stack.len();
-        vm.push(recv);
-        vm.push(idx);
-        let _ = vm.get_item()?; // Discard the bool (slice-path indicator).
+        let _ = vm.get_item_builtin(recv, idx)?; // Discard the bool (slice-path indicator).
         if vm.stack.len() != stack_before + 1 {
             return Err(VmErr::Runtime("edge_op get_item: get_item left no result"));
         }
@@ -124,7 +122,7 @@ fn dispatch_get_item(recv_h: u32, args: &[Val]) -> Result<Val, VmErr> {
     })
 }
 
-/* SetItem: routes through `vm.store_item`. */
+/* SetItem: built-in item-assignment only — same rationale as `dispatch_get_item`. */
 fn dispatch_set_item(recv_h: u32, args: &[Val]) -> Result<Val, VmErr> {
     if args.len() != 2 {
         return Err(VmErr::TypeMsg(s!("set_item expects (index, value), got ", int args.len() as i64, " args")));
@@ -132,11 +130,7 @@ fn dispatch_set_item(recv_h: u32, args: &[Val]) -> Result<Val, VmErr> {
     let idx = args[0];
     let value = args[1];
     with_recv("edge_op set_item: invalid receiver handle", recv_h, |vm, recv| {
-        // `store_item` pops value, idx, container — push in that order.
-        vm.push(recv);
-        vm.push(idx);
-        vm.push(value);
-        vm.store_item()?;
+        vm.store_item_builtin(recv, idx, value)?;
         Ok(Val::none())
     })
 }
