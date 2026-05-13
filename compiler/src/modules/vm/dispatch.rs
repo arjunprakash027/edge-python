@@ -369,7 +369,7 @@ impl<'a> VM<'a> {
                 self.push(v);
             }
 
-            // V3: extracted to exec_arith_or_compare so VM::dispatch doesn't fuse the IC/deopt cycle into its own symbol.
+            // Extracted to exec_arith_or_compare so VM::dispatch doesn't fuse the IC/deopt cycle into its own symbol.
             OpCode::Add | OpCode::Sub | OpCode::Mul
             | OpCode::Mod | OpCode::FloorDiv
             | OpCode::Eq | OpCode::Lt | OpCode::NotEq
@@ -594,7 +594,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* V3: heavy arms extracted out of `dispatch` so wasm-opt can dedup prologues and the dispatcher itself stays compact. */
+    /* Heavy arms extracted out of `dispatch` so wasm-opt can dedup prologues and the dispatcher itself stays compact. */
 
     #[inline(never)]
     fn exec_arith_or_compare(&mut self, opcode: OpCode, rip: usize, cache: &mut OpcodeCache, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {

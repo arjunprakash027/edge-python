@@ -138,10 +138,19 @@ compiler/src/
              ├── mod.rs
              ├── arith.rs
              ├── data.rs
+             ├── dunder.rs
              ├── format.rs
              ├── function.rs
-             ├── methods.rs
-             └── methods_helpers.rs
+             ├── methods.rs           # AttrLookup + resolve_attr (no method bodies)
+             ├── methods_helpers.rs   # recv_* / list_mut / dict_mut / iter_to_vec
+             └── builtin_methods/     # 68 builtin methods as plain pub fn,
+                 ├── mod.rs           # indexed by a static MethodDesc table
+                 ├── prelude.rs       # (name, fn, mutating, min_args, max_args).
+                 ├── string.rs        # Arity check + mark_impure live in the
+                 ├── bytes.rs         # dispatcher, not in each body.
+                 ├── list.rs
+                 ├── dict.rs
+                 └── set.rs
 ```
 
 ## Capabilities

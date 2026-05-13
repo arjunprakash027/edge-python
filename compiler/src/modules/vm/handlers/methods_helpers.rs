@@ -31,14 +31,6 @@ pub(super) fn val_to_str(vm: &VM, v: Val) -> Result<String, VmErr> {
 }
 
 #[inline]
-pub(super) fn check_arity(pos: &[Val], min: usize, max: usize, msg: &'static str) -> Result<(), VmErr> {
-    if pos.len() < min || pos.len() > max {
-        return Err(cold_type(msg));
-    }
-    Ok(())
-}
-
-#[inline]
 pub(super) fn list_clone(vm: &VM, recv: Val) -> Result<Vec<Val>, VmErr> {
     match vm.heap.get(recv) {
         HeapObj::List(rc) => Ok(rc.borrow().clone()),

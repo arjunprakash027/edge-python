@@ -1,4 +1,5 @@
 pub(crate) mod arith;
+pub(crate) mod builtin_methods;
 pub(crate) mod data;
 pub(crate) mod dunder;
 pub(crate) mod format;
