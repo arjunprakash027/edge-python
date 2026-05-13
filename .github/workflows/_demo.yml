@@ -32,7 +32,9 @@ jobs:
 
       - name: Write version manifest
         run: |
-          HASH=$(sha256sum demo/compiler_lib.wasm | cut -c1-12)
+          HASH=$( { sha256sum demo/compiler_lib.wasm; \
+                    find demo/runtime -type f | LC_ALL=C sort | xargs sha256sum; \
+                  } | sha256sum | cut -c1-12)
           printf '{"v":"%s"}\n' "$HASH" > demo/version.json
 
       - name: Build Tailwind CSS

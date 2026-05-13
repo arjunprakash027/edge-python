@@ -1,7 +1,7 @@
 /* 
 Web Worker entry. Wires `load`/`run`/`clearCache` to ./worker/*; actual logic lives there. */
 
-import { idbClear, idbCursor, idbPutAll } from './worker/idb.js';
+import { idbClear, idbCursor, idbGet, idbPut, idbPutAll } from './worker/idb.js';
 import { bfsPrefetch } from './worker/prefetch.js';
 import { nativeTable } from './worker/native.js';
 
@@ -30,8 +30,16 @@ const handlers = {
         await idbClear('lockfile');
     },
 
-    load: async ({ url, opts, baseUrl }) => {
+    load: async ({ url, opts, baseUrl, version }) => {
         if (baseUrl) ctx.baseUrl = baseUrl;
+        try {
+            const stored = await idbGet('lockfile', '\0v');
+            if (!version || stored !== version) {
+                await idbClear('cas');
+                await idbClear('lockfile');
+                if (version) await idbPut('lockfile', '\0v', version); // '\0' isolates sentinel — canonical specs never contain null bytes
+            }
+        } catch { /* IDB blocked: nothing to invalidate */ }
         try {
             const t0 = performance.now();
             // Compile without instantiating so each run can build a fresh instance.
@@ -54,7 +62,7 @@ const handlers = {
 
         // Hydrate lockfile from IDB into a session-local Map; BFS mutations persist only after a successful run.
         const lockfile = new Map();
-        try { await idbCursor('lockfile', (k, v) => lockfile.set(k, v)); }
+        try { await idbCursor('lockfile', (k, v) => { if (k !== '\0v') lockfile.set(k, v); }); }
         catch { /* private mode / IDB blocked: in-memory only */ }
 
         // host_print streams output as the VM executes; closures share `exports` to read the BFS-staged WASM memory.

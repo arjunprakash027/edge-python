@@ -18,7 +18,7 @@ const WASM_URL_PROMISE = (async () => {
     const base = DEV ? 'https://demo.edgepython.com/compiler_lib.wasm' : './compiler_lib.wasm';
     const url = new URL(base + bust, location.href).toString();
     if (!DEV) fetch(url);
-    return url;
+    return { url, version: ver.v };
 })();
 
 const DEFAULT_CODE = `"""\nFunctional pipeline using lambdas, closures and list comprehensions.\nReference: Backus, J. (1978).\n"""\n\ndouble = lambda n: n * 2\nsquare = lambda n: n * n\n\ndef compose(*fns):\n    def piped(x):\n        for f in fns:\n            x = f(x)\n        return x\n    return piped\n\npipeline = compose(double, square)\n\ndata = [1, 2, 3]\nresult = [pipeline(x) for x in data]\n\nprint(f"Input:  {data}")\nprint(f"Output: {result}")`;
@@ -91,7 +91,8 @@ const PythonWorker = (() => {
     return {
         load: async () => {
             ok('Loading WASM...');
-            worker.postMessage({ type: 'load', url: await WASM_URL_PROMISE, opts: FETCH_OPTS, baseUrl: location.href });
+            const { url, version } = await WASM_URL_PROMISE;
+            worker.postMessage({ type: 'load', url, opts: FETCH_OPTS, baseUrl: location.href, version });
         },
         run: (src) => {
             if (busy) { pendingRun = src; ok('Queued — runtime not ready'); return; }
