@@ -3,7 +3,7 @@ Recreation of the simple perceptron algorithm maintaining the exact application 
 Rosenblatt, F. (1958). The perceptron: A probabilistic model for information storage and organization in the brain. Psychological Review, 65(6), 386–408.
 """
 
-from "./lib/format.py" import report
+from "./lib/format.py" import Report, DictReport
 
 class SimplePerceptron:
     def __init__(self, seed: int = 42) -> None:
@@ -67,4 +67,5 @@ if __name__ == "__main__":
     inputs: tuple[int, int] = (0, 0)
     pred: int = model.inference(inputs)
 
-    print(report(inputs, pred))
+    print(Report(inputs, pred))
+    print(DictReport(inputs, pred).to_dict())
