@@ -30,20 +30,31 @@ const handlers = {
         await idbClear('lockfile');
     },
 
-    load: async ({ url, opts, baseUrl, version }) => {
+    load: async ({ body, baseUrl, version }) => {
         if (baseUrl) ctx.baseUrl = baseUrl;
-        try {
-            const stored = await idbGet('lockfile', '\0v');
-            if (!version || stored !== version) {
-                await idbClear('cas');
-                await idbClear('lockfile');
-                if (version) await idbPut('lockfile', '\0v', version); // '\0' isolates sentinel — canonical specs never contain null bytes
-            }
-        } catch { /* IDB blocked: nothing to invalidate */ }
+
+        // Run the IDB version-check alongside compile rather than gating it; compileStreaming dominates wall-time.
+        const idbWork = (async () => {
+            try {
+                const stored = await idbGet('lockfile', '\0v');
+                if (!version || stored !== version) {
+                    await idbClear('cas');
+                    await idbClear('lockfile');
+                    if (version) await idbPut('lockfile', '\0v', version); // '\0' isolates sentinel — canonical specs never contain null bytes
+                }
+            } catch { /* IDB blocked: nothing to invalidate */ }
+        })();
+
         try {
             const t0 = performance.now();
+            // Wrap the transferred stream so compileStreaming gets the required Content-Type without a second fetch.
+            const response = new Response(body, { headers: { 'Content-Type': 'application/wasm' } });
             // Compile without instantiating so each run can build a fresh instance.
-            wasmModule = await WebAssembly.compileStreaming(fetch(url, opts));
+            const [module] = await Promise.all([
+                WebAssembly.compileStreaming(response),
+                idbWork,
+            ]);
+            wasmModule = module;
             self.postMessage({ type: 'ready', ms: performance.now() - t0 });
         } catch (err) {
             self.postMessage({ type: 'error', message: err.message });

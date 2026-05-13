@@ -11,19 +11,20 @@ const ENTRY_DIR = ENTRY_PATH.slice(0, ENTRY_PATH.lastIndexOf('/') + 1);
 const DEV = !['demo.edgepython.com'].includes(location.hostname);
 const FETCH_OPTS = DEV ? { cache: 'no-store' } : {};
 
-/* Resolve versioned WASM URL in parallel with worker boot. PROD warms HTTP cache for `compileStreaming(fetch(url))`; DEV skips. */
-const WASM_URL_PROMISE = (async () => {
+/* Single fetch in parallel with worker boot; the body stream is transferred to the worker, so `compileStreaming` runs off-main-thread without a second hit. */
+const WASM_FETCH = (async () => {
     const ver = await fetch('./version.json', { cache: 'no-store' }).then(r => r.json()).catch(() => ({}));
     const bust = ver.v ? `?v=${ver.v}` : '';
     const base = DEV ? 'https://demo.edgepython.com/compiler_lib.wasm' : './compiler_lib.wasm';
     const url = new URL(base + bust, location.href).toString();
-    if (!DEV) fetch(url);
-    return { url, version: ver.v };
+    const response = await fetch(url, FETCH_OPTS);
+    if (!response.ok) throw new Error(`HTTP ${response.status} fetching compiler_lib.wasm`);
+    return { body: response.body, version: ver.v };
 })();
 
 const DEFAULT_CODE = `"""\nFunctional pipeline using lambdas, closures and list comprehensions.\nReference: Backus, J. (1978).\n"""\n\ndouble = lambda n: n * 2\nsquare = lambda n: n * n\n\ndef compose(*fns):\n    def piped(x):\n        for f in fns:\n            x = f(x)\n        return x\n    return piped\n\npipeline = compose(double, square)\n\ndata = [1, 2, 3]\nresult = [pipeline(x) for x in data]\n\nprint(f"Input:  {data}")\nprint(f"Output: {result}")`;
 
-// DOM & utils
+// DOM and utils
 
 const $ = (id) => document.getElementById(id);
 const el = { ed: $('ed'), ln: $('ln'), btn: $('run'), term: $('term'), status: $('status') };
@@ -91,8 +92,16 @@ const PythonWorker = (() => {
     return {
         load: async () => {
             ok('Loading WASM...');
-            const { url, version } = await WASM_URL_PROMISE;
-            worker.postMessage({ type: 'load', url, opts: FETCH_OPTS, baseUrl: location.href, version });
+            try {
+                const { body, version } = await WASM_FETCH;
+                worker.postMessage(
+                    { type: 'load', body, baseUrl: location.href, version },
+                    [body],
+                );
+            } catch (e) {
+                err('Load failed');
+                el.term.textContent = `Could not load WASM.\n\n${e.message}`;
+            }
         },
         run: (src) => {
             if (busy) { pendingRun = src; ok('Queued — runtime not ready'); return; }
