@@ -22,7 +22,7 @@ What this leaves is a small, fast, deterministic core: 47-bit inline integers + 
 * **Lexer**: Hand-written, LUT-driven scanner (`modules/lexer/{mod,scan,tables}.rs`) over the language's token kinds. Tokens are `(start, end, kind)` offsets into the source buffer; no string copies during lexing. Indentation tracked as INDENT/DEDENT pairs against an explicit stack; UTF-8 BOM stripped.
 * **Parser**: Single-pass, Pratt precedence climbing (`modules/parser/`). Emits SSA-versioned bytecode directly (`x` -> `x_1`, `x_2`, ...) with explicit `Phi` opcodes at control-flow joins. No intermediate AST.
 * **Optimizer**: One peephole pass (`modules/vm/optimizer.rs`): constant folding over adjacent literal arithmetic / comparison / unary operands, Phi-noop elimination, and dead-instruction compaction with jump-operand remapping. Deliberately leaves `LoadName` alone to preserve the inline-cache slot.
-* **VM**: Stack-based interpreter over `Vec<Instruction>`, where each `Instruction` is `(opcode: OpCode, operand: u16)`. The hot loop lives in `modules/vm/dispatch.rs` as a flat `match` on the opcode (Rust lowers it to a jump table); the VM struct and constructor live in `modules/vm/mod.rs`, with `init.rs` / `helpers.rs` / `gc.rs` covering module init, stack/iter primitives, and the collector. The hot path is split across handler modules (`handlers/{arith,data,format,function,methods,methods_helpers,mod}.rs`). `LoadAttr + Call(0)` is fused into a `CallMethod` / `CallMethodArgs` super-instruction at first execution and cached per call site.
+* **VM**: Stack-based interpreter over `Vec<Instruction>`, where each `Instruction` is `(opcode: OpCode, operand: u16)`. The hot loop lives in `modules/vm/dispatch.rs` as a flat `match` on the opcode (Rust lowers it to a jump table); the VM struct and constructor live in `modules/vm/mod.rs`, with `init.rs` / `helpers.rs` / `gc.rs` covering module init, stack/iter primitives, and the collector. The hot path is split across handler modules (`handlers/{arith,data,format,function,methods,methods_helpers,mod}.rs`) and a per-type method package (`handlers/builtin_methods/{mod,prelude,string,bytes,list,dict,set}.rs`) where each builtin method is a plain `pub fn` indexed by a static descriptor table. `LoadAttr + Call(0)` is fused into a `CallMethod` / `CallMethodArgs` super-instruction at first execution and cached per call site.
 * **Inline Caching**: Two orthogonal per-instruction caches (`modules/vm/cache.rs`). The **scalar IC** records operand type tags for arithmetic and comparison sites; after 4 stable hits it promotes the slot to a typed `FastOp` (`AddInt`, `AddFloat`, `LtFloat`, `EqStr`, ...) with a type-tag guard so a miss falls back to the generic handler. The **instance-dunder IC** caches `(class_idx, method)` for monomorphic instance binop, comparison, and `__getitem__` sites and bypasses `resolve_attr_silent` once promoted; a class-identity miss invalidates without disturbing the scalar slot.
 * **Template Memoization**: Pure functions called with the same arguments return a cached result after 2 hits, bypassing full execution. Functions are tagged impure on first observed side effect (`StoreItem`, `StoreAttr`, `print`, `input`, `raise`, `yield`).
 * **Memory**: NaN-boxed 64-bit `Val` (47-bit signed inline int, IEEE-754 float, bool, None, 28-bit heap index). Heap is an arena of `HeapObj` slots managed by a mark-and-sweep GC. Strings and bytes ≤ 128 bytes are interned. **Integers are 47-bit inline with automatic i128 (`LongInt`) promotion on overflow**, hard-capped at ±2^127.
@@ -124,6 +124,14 @@ Mark-and-sweep with roots: operand stack, with-stack, pending yields, event queu
 │   │       ├── gc.rs
 │   │       ├── handlers
 │   │       │   ├── arith.rs
+│   │       │   ├── builtin_methods
+│   │       │   │   ├── bytes.rs
+│   │       │   │   ├── dict.rs
+│   │       │   │   ├── list.rs
+│   │       │   │   ├── mod.rs
+│   │       │   │   ├── prelude.rs
+│   │       │   │   ├── set.rs
+│   │       │   │   └── string.rs
 │   │       │   ├── data.rs
 │   │       │   ├── dunder.rs
 │   │       │   ├── format.rs

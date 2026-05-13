@@ -1,0 +1,12 @@
+/*
+Internal prelude for `builtin_methods`. Each per-type file does `use super::prelude::*;` and gets the full surface — VM, Val, HeapObj, type helpers, and the receiver-unwrap primitives.
+*/
+
+pub(super) use super::super::{VM, Val, VmErr, HeapObj, DictMap};
+pub(super) use super::super::methods_helpers::{
+    recv_str, recv_bytes, val_to_str,
+    list_clone, list_mut, dict_entries, dict_mut, set_clone, set_mut,
+    iter_to_vec, capitalize_first, title_case,
+};
+pub(super) use crate::modules::vm::types::{cold_type, cold_value, eq_vals_with_heap};
+pub(super) use alloc::{string::{String, ToString}, vec, vec::Vec};
