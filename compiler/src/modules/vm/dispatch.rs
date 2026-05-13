@@ -369,45 +369,13 @@ impl<'a> VM<'a> {
                 self.push(v);
             }
 
-            // Arith/compare share the IC fast-path/deopt cycle; handler selected at the tail.
+            // V3: extracted to exec_arith_or_compare so VM::dispatch doesn't fuse the IC/deopt cycle into its own symbol.
             OpCode::Add | OpCode::Sub | OpCode::Mul
             | OpCode::Mod | OpCode::FloorDiv
             | OpCode::Eq | OpCode::Lt | OpCode::NotEq
-            | OpCode::Gt | OpCode::LtEq | OpCode::GtEq => {
-                if let Some(fast) = cache.get_fast(rip) {
-                    match self.exec_fast(fast)? {
-                        FastOutcome::Done => return Ok(None),
-                        /* Types matched; slow handler raises the exception. Keep the IC. */
-                        FastOutcome::Overflow => {}
-                        FastOutcome::TypeMiss => cache.invalidate(rip),
-                    }
-                }
-                // instance-dunder fast path — orthogonal to scalar specialisation, only fires for monomorphic instance sites.
-                if let Some(inst) = cache.get_inst(rip) {
-                    match self.exec_inst(inst, chunk, slots)? {
-                        FastOutcome::Done => return Ok(None),
-                        FastOutcome::Overflow => {}
-                        FastOutcome::TypeMiss => cache.invalidate_inst(rip),
-                    }
-                }
-                if matches!(ins.opcode, OpCode::Eq | OpCode::Lt | OpCode::NotEq
-                    | OpCode::Gt | OpCode::LtEq | OpCode::GtEq)
-                {
-                    self.handle_compare(ins.opcode, rip, cache, chunk, slots)?;
-                } else {
-                    self.handle_arith(ins.opcode, rip, cache, chunk, slots)?;
-                }
-            }
-            OpCode::Div | OpCode::Pow | OpCode::Minus => {
-                // Div/Pow/Minus skip scalar IC (Float-only / overflow-prone) but still benefit from the instance-dunder fast path.
-                if let Some(inst) = cache.get_inst(rip) {
-                    match self.exec_inst(inst, chunk, slots)? {
-                        FastOutcome::Done => return Ok(None),
-                        FastOutcome::Overflow => {}
-                        FastOutcome::TypeMiss => cache.invalidate_inst(rip),
-                    }
-                }
-                self.handle_arith(ins.opcode, rip, cache, chunk, slots)?;
+            | OpCode::Gt | OpCode::LtEq | OpCode::GtEq
+            | OpCode::Div | OpCode::Pow | OpCode::Minus => {
+                self.exec_arith_or_compare(ins.opcode, rip, cache, chunk, slots)?;
             }
 
             OpCode::Jump => { *ip = self.checked_jump(op as usize, n)?; }
@@ -415,54 +383,7 @@ impl<'a> VM<'a> {
                 let v = self.pop()?;
                 if !self.truthy_op(v, chunk, slots)? { *ip = self.checked_jump(op as usize, n)?; }
             }
-            OpCode::ForIter => {
-                if !self.sandbox_off {
-                    if self.budget == 0 { return Err(cold_budget()); }
-                    self.budget -= 1;
-                }
-                if self.heap.needs_gc() { self.collect(slots); }
-                // Coroutine iteration: resume via call instead of next_item().
-                if let Some(IterFrame::Coroutine(coro_val)) = self.iter_stack.last() {
-                    let cv = *coro_val;
-                    self.push(cv);
-                    self.exec_call(0, chunk, slots)?;
-                    let result = self.pop().unwrap_or(Val::none());
-                    if result.is_none() {
-                        self.iter_stack.pop();
-                        *ip = op as usize;
-                    } else {
-                        self.push(result);
-                    }
-                    return Ok(None);
-                }
-                // user-defined iterator calls `__next__`; `StopIteration` ends the loop without propagating, other exceptions surface.
-                if let Some(IterFrame::UserDefined(iter_val)) = self.iter_stack.last() {
-                    let iter = *iter_val;
-                    match self.try_call_dunder(iter, "__next__", &[], chunk, slots) {
-                        Ok(Some(item)) => { self.push(item); }
-                        Ok(None) => {
-                            self.iter_stack.pop();
-                            if op as usize > n { return Err(cold_runtime("jump target out of bounds")); }
-                            *ip = op as usize;
-                        }
-                        Err(VmErr::Raised(m)) if m == "StopIteration" => {
-                            self.iter_stack.pop();
-                            if op as usize > n { return Err(cold_runtime("jump target out of bounds")); }
-                            *ip = op as usize;
-                        }
-                        Err(e) => return Err(e),
-                    }
-                    return Ok(None);
-                }
-                match self.iter_stack.last_mut().and_then(|f| f.next_item()) {
-                    Some(item) => self.push(item),
-                    None => {
-                        self.iter_stack.pop();
-                        if op as usize > n { return Err(cold_runtime("jump target out of bounds")); }
-                        *ip = op as usize;
-                    }
-                }
-            }
+            OpCode::ForIter => self.exec_for_iter(op, ip, n, chunk, slots)?,
             OpCode::PopTop => { self.pop()?; }
             OpCode::ReturnValue => {
                 let result = if self.stack.is_empty() { Val::none() } else { self.pop()? };
@@ -532,76 +453,8 @@ impl<'a> VM<'a> {
                 return Err(cold_runtime("And/Or reached VM dispatch (should be short-circuited)"));
             }
 
-            OpCode::MakeClass => {
-                // Operand layout mirrors `class_def_with`: low byte = class chunk index, high byte = base count.
-                let class_idx = (op & 0xFF) as usize;
-                let num_bases = (op >> 8) as usize;
-                // Pop bases first so a misencoded operand fails before we touch the body.
-                let bases = self.pop_n(num_bases)?;
-                // Reject non-class bases up-front; otherwise inherited lookups silently miss.
-                for &b in &bases {
-                    if !b.is_heap() || !matches!(self.heap.get(b), HeapObj::Class(..)) {
-                        return Err(cold_type("base class must be a class object"));
-                    }
-                }
-                let body = &chunk.classes[class_idx];
-                let mut class_slots = self.fill_builtins(&body.names);
-                self.exec(body, &mut class_slots)?;
-                // Every defined slot becomes a class member (methods + class-level constants).
-                let mut methods: Vec<(String, Val)> = Vec::new();
-                for (i, name) in body.names.iter().enumerate() {
-                    if let Some(&v) = class_slots.get(i)
-                        && !v.is_undef() {
-                            let base = ssa_strip(name);
-                            // Skip builtin globals so `MyClass.print` doesn't shadow them.
-                            let is_builtin_shadow = v.is_heap()
-                                && matches!(self.heap.get(v), HeapObj::NativeFn(_))
-                                && self.globals.get(base).copied() == Some(v);
-                            if is_builtin_shadow { continue; }
-                            // A later definition of the same name wins (e.g. `@property` + `@x.setter` rebinds `x` to the descriptor with both halves).
-                            if let Some(pos) = methods.iter().position(|(n, _)| n == base) {
-                                methods[pos].1 = v;
-                            } else {
-                                methods.push((base.to_string(), v));
-                            }
-                        }
-                }
-                let next_op = cache.fused_ref().get(*ip).map(|i| i.operand).unwrap_or(0);
-                let name_str = chunk.names.get(next_op as usize).map(|n| ssa_strip(n)).unwrap_or("?").to_string();
-                let cls = self.heap.alloc(HeapObj::Class(name_str, bases, methods))?;
-                self.push(cls);
-            }
-            OpCode::StoreAttr => {
-                let value = self.pop()?;
-                let obj = self.pop()?;
-                if !obj.is_heap() { return Err(cold_type("cannot set attribute")); }
-                let name = chunk.names.get(op as usize).ok_or(cold_runtime("StoreAttr: bad name index"))?.clone();
-                // a class-chain `Property` overrides plain dict insertion. Setter `none()` means read-only.
-                if let HeapObj::Instance(cls_val, _) = self.heap.get(obj) {
-                    let cls_val = *cls_val;
-                    if let Some((member, _)) = self.lookup_class_member(cls_val, ssa_strip(&name))
-                        && let HeapObj::Property(_, setter) = self.heap.get(member) {
-                        let setter = *setter;
-                        if setter.is_none() {
-                            return Err(VmErr::Attribute(s!("can't set attribute '", str ssa_strip(&name), "'")));
-                        }
-                        if self.depth >= self.max_calls { return Err(cold_depth()); }
-                        self.push(setter);
-                        self.push(obj);
-                        self.push(value);
-                        self.exec_call(2, chunk, slots)?;
-                        self.pop()?;
-                        return Ok(None);
-                    }
-                }
-                let key = self.heap.alloc(HeapObj::Str(name))?;
-                match self.heap.get_mut(obj) {
-                    HeapObj::Instance(_, attrs) => {
-                        attrs.borrow_mut().insert(key, value);
-                    }
-                    _ => return Err(cold_type("cannot set attribute on this type")),
-                }
-            }
+            OpCode::MakeClass => self.exec_make_class(op, *ip, cache, chunk)?,
+            OpCode::StoreAttr => self.exec_store_attr(op, chunk, slots)?,
 
             OpCode::LoadExtern => {
                 let f = chunk.extern_table.get(op as usize).ok_or(cold_runtime("LoadExtern: extern index out of bounds"))?.clone();
@@ -615,28 +468,7 @@ impl<'a> VM<'a> {
                 self.push(v);
             }
 
-            OpCode::BuildModule => {
-                /* Stack (top->bottom): module-name, then `op` (name, value) pairs in decl order. */
-                let total = (op as usize) * 2 + 1;
-                let mut frame = self.pop_n(total)?;
-                let module_name_val = frame.pop().ok_or(cold_runtime("BuildModule: empty stack"))?;
-                let module_name = match self.heap.get(module_name_val) {
-                    HeapObj::Str(s) => s.clone(),
-                    _ => return Err(cold_runtime("BuildModule: module name not a string")),
-                };
-                let mut attrs: Vec<(String, Val)> = Vec::with_capacity(op as usize);
-                let mut it = frame.into_iter();
-                while let Some(name_v) = it.next() {
-                    let val = it.next().ok_or(cold_runtime("BuildModule: malformed attr stack"))?;
-                    let n = match self.heap.get(name_v) {
-                        HeapObj::Str(s) => s.clone(),
-                        _ => return Err(cold_runtime("BuildModule: attr name not a string")),
-                    };
-                    attrs.push((n, val));
-                }
-                let m = self.heap.alloc(HeapObj::Module(module_name, attrs))?;
-                self.push(m);
-            }
+            OpCode::BuildModule => self.exec_build_module(op)?,
 
             other => self.dispatch_generic(other, op, chunk, slots)?,
         }
@@ -759,6 +591,181 @@ impl<'a> VM<'a> {
             OpCode::PopIter => { self.iter_stack.pop(); }
             _ => return Err(cold_runtime("unexpected opcode in generic dispatch")),
         }
+        Ok(())
+    }
+
+    /* V3: heavy arms extracted out of `dispatch` so wasm-opt can dedup prologues and the dispatcher itself stays compact. */
+
+    #[inline(never)]
+    fn exec_arith_or_compare(&mut self, opcode: OpCode, rip: usize, cache: &mut OpcodeCache, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+        // Scalar IC fast-path (Div/Pow/Minus skip — Float-only / overflow-prone).
+        if !matches!(opcode, OpCode::Div | OpCode::Pow | OpCode::Minus)
+            && let Some(fast) = cache.get_fast(rip)
+        {
+            match self.exec_fast(fast)? {
+                FastOutcome::Done => return Ok(()),
+                FastOutcome::Overflow => {}
+                FastOutcome::TypeMiss => cache.invalidate(rip),
+            }
+        }
+        // instance-dunder fast path.
+        if let Some(inst) = cache.get_inst(rip) {
+            match self.exec_inst(inst, chunk, slots)? {
+                FastOutcome::Done => return Ok(()),
+                FastOutcome::Overflow => {}
+                FastOutcome::TypeMiss => cache.invalidate_inst(rip),
+            }
+        }
+        if matches!(opcode, OpCode::Eq | OpCode::Lt | OpCode::NotEq | OpCode::Gt | OpCode::LtEq | OpCode::GtEq) {
+            self.handle_compare(opcode, rip, cache, chunk, slots)
+        } else {
+            self.handle_arith(opcode, rip, cache, chunk, slots)
+        }
+    }
+
+    #[inline(never)]
+    fn exec_for_iter(&mut self, op: u16, ip: &mut usize, n: usize, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+        if !self.sandbox_off {
+            if self.budget == 0 { return Err(cold_budget()); }
+            self.budget -= 1;
+        }
+        if self.heap.needs_gc() { self.collect(slots); }
+        // Coroutine iteration: resume via call instead of next_item().
+        if let Some(IterFrame::Coroutine(coro_val)) = self.iter_stack.last() {
+            let cv = *coro_val;
+            self.push(cv);
+            self.exec_call(0, chunk, slots)?;
+            let result = self.pop().unwrap_or(Val::none());
+            if result.is_none() {
+                self.iter_stack.pop();
+                *ip = op as usize;
+            } else {
+                self.push(result);
+            }
+            return Ok(());
+        }
+        // user-defined iterator calls `__next__`; `StopIteration` ends the loop without propagating, other exceptions surface.
+        if let Some(IterFrame::UserDefined(iter_val)) = self.iter_stack.last() {
+            let iter = *iter_val;
+            match self.try_call_dunder(iter, "__next__", &[], chunk, slots) {
+                Ok(Some(item)) => { self.push(item); }
+                Ok(None) => {
+                    self.iter_stack.pop();
+                    if op as usize > n { return Err(cold_runtime("jump target out of bounds")); }
+                    *ip = op as usize;
+                }
+                Err(VmErr::Raised(m)) if m == "StopIteration" => {
+                    self.iter_stack.pop();
+                    if op as usize > n { return Err(cold_runtime("jump target out of bounds")); }
+                    *ip = op as usize;
+                }
+                Err(e) => return Err(e),
+            }
+            return Ok(());
+        }
+        match self.iter_stack.last_mut().and_then(|f| f.next_item()) {
+            Some(item) => self.push(item),
+            None => {
+                self.iter_stack.pop();
+                if op as usize > n { return Err(cold_runtime("jump target out of bounds")); }
+                *ip = op as usize;
+            }
+        }
+        Ok(())
+    }
+
+    #[inline(never)]
+    fn exec_make_class(&mut self, op: u16, ip: usize, cache: &OpcodeCache, chunk: &SSAChunk) -> Result<(), VmErr> {
+        // Operand layout mirrors `class_def_with`: low byte = class chunk index, high byte = base count.
+        let class_idx = (op & 0xFF) as usize;
+        let num_bases = (op >> 8) as usize;
+        // Pop bases first so a misencoded operand fails before we touch the body.
+        let bases = self.pop_n(num_bases)?;
+        for &b in &bases {
+            if !b.is_heap() || !matches!(self.heap.get(b), HeapObj::Class(..)) {
+                return Err(cold_type("base class must be a class object"));
+            }
+        }
+        let body = &chunk.classes[class_idx];
+        let mut class_slots = self.fill_builtins(&body.names);
+        self.exec(body, &mut class_slots)?;
+        let mut methods: Vec<(String, Val)> = Vec::new();
+        for (i, name) in body.names.iter().enumerate() {
+            if let Some(&v) = class_slots.get(i)
+                && !v.is_undef() {
+                    let base = ssa_strip(name);
+                    let is_builtin_shadow = v.is_heap()
+                        && matches!(self.heap.get(v), HeapObj::NativeFn(_))
+                        && self.globals.get(base).copied() == Some(v);
+                    if is_builtin_shadow { continue; }
+                    if let Some(pos) = methods.iter().position(|(n, _)| n == base) {
+                        methods[pos].1 = v;
+                    } else {
+                        methods.push((base.to_string(), v));
+                    }
+                }
+        }
+        let next_op = cache.fused_ref().get(ip).map(|i| i.operand).unwrap_or(0);
+        let name_str = chunk.names.get(next_op as usize).map(|n| ssa_strip(n)).unwrap_or("?").to_string();
+        let cls = self.heap.alloc(HeapObj::Class(name_str, bases, methods))?;
+        self.push(cls);
+        Ok(())
+    }
+
+    #[inline(never)]
+    fn exec_store_attr(&mut self, op: u16, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+        let value = self.pop()?;
+        let obj = self.pop()?;
+        if !obj.is_heap() { return Err(cold_type("cannot set attribute")); }
+        let name = chunk.names.get(op as usize).ok_or(cold_runtime("StoreAttr: bad name index"))?.clone();
+        if let HeapObj::Instance(cls_val, _) = self.heap.get(obj) {
+            let cls_val = *cls_val;
+            if let Some((member, _)) = self.lookup_class_member(cls_val, ssa_strip(&name))
+                && let HeapObj::Property(_, setter) = self.heap.get(member) {
+                let setter = *setter;
+                if setter.is_none() {
+                    return Err(VmErr::Attribute(s!("can't set attribute '", str ssa_strip(&name), "'")));
+                }
+                if self.depth >= self.max_calls { return Err(cold_depth()); }
+                self.push(setter);
+                self.push(obj);
+                self.push(value);
+                self.exec_call(2, chunk, slots)?;
+                self.pop()?;
+                return Ok(());
+            }
+        }
+        let key = self.heap.alloc(HeapObj::Str(name))?;
+        match self.heap.get_mut(obj) {
+            HeapObj::Instance(_, attrs) => {
+                attrs.borrow_mut().insert(key, value);
+            }
+            _ => return Err(cold_type("cannot set attribute on this type")),
+        }
+        Ok(())
+    }
+
+    #[inline(never)]
+    fn exec_build_module(&mut self, op: u16) -> Result<(), VmErr> {
+        let total = (op as usize) * 2 + 1;
+        let mut frame = self.pop_n(total)?;
+        let module_name_val = frame.pop().ok_or(cold_runtime("BuildModule: empty stack"))?;
+        let module_name = match self.heap.get(module_name_val) {
+            HeapObj::Str(s) => s.clone(),
+            _ => return Err(cold_runtime("BuildModule: module name not a string")),
+        };
+        let mut attrs: Vec<(String, Val)> = Vec::with_capacity(op as usize);
+        let mut it = frame.into_iter();
+        while let Some(name_v) = it.next() {
+            let val = it.next().ok_or(cold_runtime("BuildModule: malformed attr stack"))?;
+            let n = match self.heap.get(name_v) {
+                HeapObj::Str(s) => s.clone(),
+                _ => return Err(cold_runtime("BuildModule: attr name not a string")),
+            };
+            attrs.push((n, val));
+        }
+        let m = self.heap.alloc(HeapObj::Module(module_name, attrs))?;
+        self.push(m);
         Ok(())
     }
 }

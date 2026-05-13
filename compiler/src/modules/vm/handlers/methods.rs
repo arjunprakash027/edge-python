@@ -187,8 +187,20 @@ impl<'a> VM<'a> {
 }
 
 // Row: (Variant, "name", category, body). `mutating` auto-emits mark_impure; variant prefix picks the receiver.
+// V1 refactor: per-method free function + static fn-pointer table. Lets LLVM/wasm-opt dedup prologues and stops fusing 71 bodies into one symbol.
+type MethodFn = fn(&mut VM, Val, &[Val]) -> Result<(), VmErr>;
+
 macro_rules! define_methods {
     ( $( ($variant:ident, $name:literal, $cat:ident, |$vm:ident, $recv:ident, $pos:ident| $body:block) ),* $(,)? ) => {
+
+        $(
+            #[inline(never)]
+            #[allow(non_snake_case)]
+            fn $variant($vm: &mut VM, $recv: Val, $pos: &[Val]) -> Result<(), VmErr> {
+                let result: Result<(), VmErr> = (|| $body)();
+                define_methods!(@maybe_impure $cat, $vm, result)
+            }
+        )*
 
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         #[repr(u8)]
@@ -203,19 +215,13 @@ macro_rules! define_methods {
             }
         }
 
+        static METHOD_TABLE: &[MethodFn] = &[ $( $variant ),* ];
+
         pub(crate) fn dispatch_method(vm: &mut VM, id: BuiltinMethodId, recv: Val, pos: &[Val], kw: &[Val]) -> Result<(), VmErr> {
             if !kw.is_empty() {
                 return Err(cold_type("builtin method takes no keyword arguments"));
             }
-            match id {
-                $(
-                    BuiltinMethodId::$variant => {
-                        let $vm = vm; let $recv = recv; let $pos = pos;
-                        let result: Result<(), VmErr> = (|| $body)();
-                        define_methods!(@maybe_impure $cat, $vm, result)
-                    }
-                ),*
-            }
+            METHOD_TABLE[id as usize](vm, recv, pos)
         }
 
         // Off the hot path — CallMethod fusion bypasses LoadAttr+Call entirely.
