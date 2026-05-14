@@ -1,4 +1,7 @@
-/*  Native module ABI plumbing: `nativeTable` holds guest exports by u32 id; `host_call_native` dispatches via the universal handle ABI. */
+/*  
+Native module ABI plumbing: `nativeTable` holds guest exports by u32 id; `host_call_native` dispatches via the universal handle ABI. 
+*/
+
 export const nativeTable = [];
 
 /* Build the guest module's env imports: translate between guest linear memory and compiler memory + handle table. */

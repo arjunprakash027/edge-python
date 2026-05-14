@@ -5,7 +5,7 @@ Pure-text editor on CodeJar. We own keys, auto-pair, selection-wrap, paste/drop,
 import { CodeJar } from 'https://esm.sh/codejar@4';
 import { Highlighter } from './highlighter.js';
 
-const MAX_LINES = 99;
+const MAX_LINES = 999;
 const TAB_SIZE = 4;
 
 export function createEditor({ ed, ln, defaultCode, onRun }) {
@@ -17,7 +17,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
     const CLOSERS = new Set(Object.values(PAIRS));
     const STRING_START = /^([fFrRbBuU]{0,2})("""|'''|"|')/;
     const WS = /[ \t]/;
-    // `decreaseIndentPattern` (VSCode-compatible subset). Dedent on `:`.
+    // `decreaseIndentPattern`, dedent on `:`.
     const DEDENT_RE = /^\s*(?:elif|else|except|finally|case)\b[^:]*:$/;
     const HTML_ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
     const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => HTML_ESC[c]);
@@ -58,7 +58,8 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
         return { start, end, body: text.slice(start, end), col: caret - start };
     };
     const firstNonWS = (s) => { for (let i = 0; i < s.length; i++) if (!WS.test(s[i])) return i; return s.length; };
-    // VSCode `prevIndentTabStop`: distance to the previous tab stop from `col`.
+    
+    // `prevIndentTabStop`, distance to the previous tab stop from `col`.
     const prevTabDist = (col) => { const r = col % TAB_SIZE; return r === 0 ? TAB_SIZE : r; };
 
     // Full lines covered by `sel`; excludes the trailing line if `sel.end` sits exactly past a `\n`.
@@ -86,8 +87,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
     };
 
     // AltGr emits a printable char while flagging Ctrl+Alt; real Ctrl+Alt shortcuts produce a letter/digit `key`.
-    const isAltGrChar = (e) =>
-        e.ctrlKey && e.altKey && e.key.length === 1 && !/^[A-Za-z0-9]$/.test(e.key);
+    const isAltGrChar = (e) => e.ctrlKey && e.altKey && e.key.length === 1 && !/^[A-Za-z0-9]$/.test(e.key);
 
     // mutable state
 
@@ -122,14 +122,14 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
             };
         },
 
-        // Wrap a non-empty selection in opener/closer (VSCode `autoSurround`).
+        // Wrap a non-empty selection in opener/closer (`autoSurround`).
         wrapSelection: (text, sel, key) => ({
             text: text.slice(0, sel.start) + key + text.slice(sel.start, sel.end) + PAIRS[key] + text.slice(sel.end),
             caretStart: sel.start + 1,
             caretEnd: sel.end + 1,
         }),
 
-        // Backspace: collapse fresh auto-pair, else VSCode `useTabStops` snap when caret sits inside leading whitespace.
+        // Backspace: collapse fresh auto-pair, else `useTabStops` snap when caret sits inside leading whitespace.
         backspace: (text, caret) => {
             if (caret === 0) return null;
             if (caret === autoPairCaret && PAIRS[text[caret - 1]] === text[caret]) {
@@ -162,7 +162,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
             };
         },
 
-        // Enter: inherit indent, +1 level after `:`/openers. Between opener and matching closer, split closer (VSCode `IndentOutdent`).
+        // Enter: inherit indent, +1 level after `:`/openers. Between opener and matching closer, split closer (`IndentOutdent`).
         enter: (text, caret) => {
             const lnRow = lineAt(text, caret);
             const before = lnRow.body.slice(0, lnRow.col);
@@ -175,7 +175,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
             return { text: text.slice(0, caret) + tail + text.slice(caret), caret: caret + 1 + pad.length };
         },
 
-        // `:` after `else`/`elif`/`except`/`finally`/`case` head — insert the colon, then dedent the line by one tab stop.
+        // `:` after `else`/`elif`/`except`/`finally`/`case` head. Insert the colon, then dedent the line by one tab stop.
         colon: (text, caret) => {
             const inserted = text.slice(0, caret) + ':' + text.slice(caret);
             const lnRow = lineAt(inserted, caret + 1);
@@ -188,7 +188,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
             };
         },
 
-        // Tab on selection: prepend TAB_SIZE spaces to every line in the range.
+        // Tab on selection: prepend `TAB_SIZE` spaces to every line in the range.
         tabSelection: (text, sel) => {
             const { start, end } = lineRange(text, sel);
             const lines = text.slice(start, end).split('\n');
@@ -200,7 +200,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
             };
         },
 
-        // Shift+Tab on selection: dedent each line in the range by up to TAB_SIZE.
+        // Shift+Tab on selection: dedent each line in the range by up to `TAB_SIZE`.
         shiftTabSelection: (text, sel) => {
             const { start, end } = lineRange(text, sel);
             const lines = text.slice(start, end).split('\n');
@@ -241,6 +241,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
         return true;
     };
 
+    // Format side lines counter (e.g., 01 `print("Hello, World!")`).
     const syncLines = () => {
         const lines = jar.toString().replace(/\n$/, '').split('\n');
         const n = Math.max(1, Math.min(lines.length, MAX_LINES));
@@ -248,7 +249,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
         ln.scrollTop = ed.scrollTop;
     };
 
-    // Insert plain text at caret, replacing any selection; used by paste/drop after normalisation. Enforces MAX_LINES.
+    // Insert plain text at caret, replacing any selection; used by paste/drop after normalisation. Enforces `MAX_LINES`.
     const insertAtCaret = (str) => {
         const pos = jar.save();
         const text = jar.toString();
@@ -258,7 +259,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
         writeAndRestore(next, Math.min(pos.start + str.length, next.length));
     };
 
-    // Paste/drop pipeline: strip ```python fence, normalise CRLF+tabs, smart-dedent common indent, enforce MAX_LINES.
+    // Paste/drop pipeline: strip ```python fence, normalise CRLF+tabs, smart-dedent common indent, enforce `MAX_LINES`.
     const insertNormalized = (raw) => {
         const norm = unwrapFence(raw).replace(/\r\n?/g, '\n').replace(/\t/g, ' '.repeat(TAB_SIZE));
         insertAtCaret(dedentCommon(norm));
@@ -308,7 +309,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
                 null;
         }
 
-        // stopImmediatePropagation blocks CodeJar's bubble keydown on the same element; otherwise it re-runs indent and drifts the caret.
+        // stopImmediatePropagation blocks CodeJars bubble keydown on the same element; otherwise it re-runs indent and drifts the caret.
         if (apply(result)) { e.preventDefault(); e.stopImmediatePropagation(); }
     }, true);
 
@@ -346,7 +347,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
         if (raw) insertNormalized(raw);
     });
 
-    /* Clipboard payload for copy/cut: collapsed selection falls back to current line (VSCode parity); returns plain + html. */
+    /* Clipboard payload for copy/cut: collapsed selection falls back to current line; returns plain + html. */
     const copyPayload = () => {
         const sel = window.getSelection();
         let snippet = sel?.toString() ?? '';

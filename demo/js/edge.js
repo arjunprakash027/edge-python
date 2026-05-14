@@ -57,8 +57,7 @@ export class EdgePython {
         ])];
         await Promise.all(specs.map(spec => this._resolveAndRegister(spec)));
 
-        // wasm_alloc may have grown linear memory during registration,
-        // detaching the buffer view we wrote `srcBytes` into. Re-write.
+        // `wasm_alloc` may have grown linear memory during registration, detaching the buffer view we wrote `srcBytes` into. Re-write.
         this._writeSrc(srcBytes);
 
         const outLen = this.exports.run(srcBytes.length);
@@ -72,7 +71,7 @@ export class EdgePython {
 
     // Internal: WASM <-> JS plumbing
 
-    /* Fresh views per call — `wasm_alloc` may grow linear memory between round-trips, detaching any cached ArrayBuffer view. */
+    /* Fresh views per call, where `wasm_alloc` may grow linear memory between round-trips, detaching any cached ArrayBuffer view. */
     _readStr(ptr, len) { return TEXT_DECODER.decode(new Uint8Array(this.exports.memory.buffer, ptr, len)); }
     _setU32(ptr, v) { new DataView(this.exports.memory.buffer).setUint32(ptr, v, true); }
 

@@ -1,9 +1,10 @@
-import { idbGet, idbPut } from './idb.js';
-import { sha256Hex } from './specs.js';
-
 /* 
 CAS-backed fetch keyed by lockfile hash; else fetch+hash+store. Null on 404 (opportunistic ok), throws on drift. `ctx` carries baseUrl/entryDir/knownMissing instead of module-level state. 
 */
+
+import { idbGet, idbPut } from './idb.js';
+import { sha256Hex } from './specs.js';
+
 export async function fetchWithLockfile(spec, lockfile, ctx) {
     const { baseUrl, entryDir, knownMissing } = ctx;
     const expected = lockfile.get(spec);

@@ -1,5 +1,6 @@
 /* 
-Web Worker entry. Wires `load`/`run`/`clearCache` to ./worker/*; actual logic lives there. */
+Web Worker entry. Wires `load`/`run`/`clearCache` to ./worker/*; actual logic lives there. 
+*/
 
 import { idbClear, idbCursor, idbGet, idbPut, idbPutAll } from './worker/idb.js';
 import { bfsPrefetch } from './worker/prefetch.js';
@@ -76,7 +77,7 @@ const handlers = {
         try { await idbCursor('lockfile', (k, v) => { if (k !== '\0v') lockfile.set(k, v); }); }
         catch { /* private mode / IDB blocked: in-memory only */ }
 
-        // host_print streams output as the VM executes; closures share `exports` to read the BFS-staged WASM memory.
+        // `host_print` streams output as the VM executes; closures share `exports` to read the BFS-staged WASM memory.
         let exports;
         /* Fresh views per call — `wasm_alloc` may grow linear memory between round-trips, detaching any cached ArrayBuffer view. */
         const readStr = (ptr, len) => TD.decode(new Uint8Array(exports.memory.buffer, ptr, len));
