@@ -1,6 +1,6 @@
 # Edge Python
 
-A compact, single-pass SSA-style bytecode compiler and stack VM for a sandboxed Python subset. Hand-written lexer, Pratt-precedence parser that emits bytecode directly (no AST), and a threaded-code interpreter with dual inline caching (scalar + instance-dunder), super-instruction fusion, and pure-function template memoization. Built for deterministic execution in sandboxed and embedded environments (≈ 170 KB WASM release).
+A compact, single-pass SSA-style bytecode compiler and stack VM for a sandboxed Python subset. Hand-written lexer, Pratt-precedence parser that emits bytecode directly (no AST), and a threaded-code interpreter with dual inline caching (scalar + instance-dunder), super-instruction fusion, and pure-function template memoization. Built for deterministic execution in sandboxed and embedded environments (around 170 KB WASM release).
 
 * **Demo:** [demo.edgepython.com](https://demo.edgepython.com/)
 * **Docs:** [edgepython.com](https://edgepython.com/)
@@ -9,11 +9,11 @@ A compact, single-pass SSA-style bytecode compiler and stack VM for a sandboxed 
 
 ## 1. Paradigm
 
-Edge Python targets sandboxed edge computing. The language is dynamic and multi-paradigm: first-class functions, lambdas, closures, comprehensions, decorators (including class decorators), generators, async/await, structural pattern matching, and pure-function memoization. Classes support single-level inheritance, `super()`, dunder protocol dispatch (operators, indexing, iteration, context managers, hashing, etc.), and `@property` / `@x.setter`.
+Edge Python targets sandboxed edge computing. The language is [dynamic](https://edgepython.com/language/syntax) and multi-paradigm: first-class functions, lambdas, closures, comprehensions, decorators (including class decorators), generators, async/await, structural pattern matching, and pure-function memoization. Classes support single-level inheritance, `super()`, dunder protocol dispatch (operators, indexing, iteration, context managers, hashing, etc.), and `@property` / `@x.setter`.
 
 `import` and `from <spec> import names` resolve at compile time through a host-injected resolver (see `modules/packages/`, manifest = `packages.json`). Each module is compiled and initialised once: the parser registers it in the importing chunk's `imports` list, the VM runs every imported module's top level in dependency order, and importers reach the resulting `HeapObj::Module` value via `OpCode::LoadModule`. Native modules dispatch via `CallExtern` for fast call-site fusion. Quoted specs may carry a `#sha256-<hex>` integrity fragment.
 
-What this leaves is a small, fast, deterministic core: 47-bit inline integers + IEEE-754 floats, sequences (list, tuple, dict, set, frozenset, str, bytes, range), control flow, exceptions, generators and coroutines (with a top-level cooperative scheduler — `run` / `sleep` / `gather` / `with_timeout` / `cancel` — instead of an `asyncio` module), and a curated set of built-in functions exposed as first-class values.
+What this leaves is a small, fast, deterministic core: 47-bit inline integers + IEEE-754 floats, sequences (list, tuple, dict, set, frozenset, str, bytes, range), control flow, exceptions, generators and coroutines (with a top-level cooperative scheduler; `run` / `sleep` / `gather` / `with_timeout` / `cancel`, instead of an `asyncio` module), and a curated set of [built-in functions](https://edgepython.com/reference/builtins) exposed as first-class values.
 
 ---
 
@@ -25,7 +25,7 @@ What this leaves is a small, fast, deterministic core: 47-bit inline integers + 
 * **VM**: Stack-based interpreter over `Vec<Instruction>`, where each `Instruction` is `(opcode: OpCode, operand: u16)`. The hot loop lives in `modules/vm/dispatch.rs` as a flat `match` on the opcode (Rust lowers it to a jump table); the VM struct and constructor live in `modules/vm/mod.rs`, with `init.rs` / `helpers.rs` / `gc.rs` covering module init, stack/iter primitives, and the collector. The hot path is split across handler modules (`handlers/{arith,data,format,function,methods,methods_helpers,mod}.rs`) and a per-type method package (`handlers/builtin_methods/{mod,prelude,string,bytes,list,dict,set}.rs`) where each builtin method is a plain `pub fn` indexed by a static descriptor table. `LoadAttr + Call(0)` is fused into a `CallMethod` / `CallMethodArgs` super-instruction at first execution and cached per call site.
 * **Inline Caching**: Two orthogonal per-instruction caches (`modules/vm/cache.rs`). The **scalar IC** records operand type tags for arithmetic and comparison sites; after 4 stable hits it promotes the slot to a typed `FastOp` (`AddInt`, `AddFloat`, `LtFloat`, `EqStr`, ...) with a type-tag guard so a miss falls back to the generic handler. The **instance-dunder IC** caches `(class_idx, method)` for monomorphic instance binop, comparison, and `__getitem__` sites and bypasses `resolve_attr_silent` once promoted; a class-identity miss invalidates without disturbing the scalar slot.
 * **Template Memoization**: Pure functions called with the same arguments return a cached result after 2 hits, bypassing full execution. Functions are tagged impure on first observed side effect (`StoreItem`, `StoreAttr`, `print`, `input`, `raise`, `yield`).
-* **Memory**: NaN-boxed 64-bit `Val` (47-bit signed inline int, IEEE-754 float, bool, None, 28-bit heap index). Heap is an arena of `HeapObj` slots managed by a mark-and-sweep GC. Strings and bytes ≤ 128 bytes are interned. **Integers are 47-bit inline with automatic i128 (`LongInt`) promotion on overflow**, hard-capped at ±2^127.
+* **Memory**: NaN-boxed 64-bit `Val` (47-bit signed inline int, IEEE-754 float, bool, None, 28-bit heap index). Heap is an arena of `HeapObj` slots managed by a mark-and-sweep GC. Strings and bytes ≤ 128 bytes are interned. **Integers are 47-bit inline with automatic i128 (`LongInt`) promotion on overflow**, hard-capped at around 2^127.
 
 ---
 
@@ -41,7 +41,7 @@ What the compiler intentionally does *not* do:
 * No CSE, no GVN, no LICM, no inlining, no loop unrolling.
 * No dead-branch elimination beyond what falls out of folding.
 * No IR — bytecode is the only representation.
-* No bundled stdlib: `import`, `from ... import`, and `from ... import *` resolve at compile time through a host-injected resolver (`modules/packages/`, manifest is `packages.json` — never `edge.json`). Each module compiles to its own `SSAChunk` and runs once during `vm.init_modules` (invoked by the WASM `run` entry point before user code dispatches). The resulting `HeapObj::Module` value is registered in `vm.module_table` keyed by canonical spec; `OpCode::LoadModule` is an O(1) lookup so every importer sees the same module instance. Native imports register in `chunk.extern_table` for fast `CallExtern` dispatch.
+* No bundled stdlib: `import`, `from ... import`, and `from ... import *` resolve at compile time through a host-injected resolver (`modules/packages/`, manifest is `packages.json`, never `edge.json`). Each module compiles to its own `SSAChunk` and runs once during `vm.init_modules` (invoked by the WASM `run` entry point before user code dispatches). The resulting `HeapObj::Module` value is registered in `vm.module_table` keyed by canonical spec; `OpCode::LoadModule` is an O(1) lookup so every importer sees the same module instance. Native imports register in `chunk.extern_table` for fast `CallExtern` dispatch.
 
 ---
 
@@ -72,7 +72,7 @@ What the compiler intentionally does *not* do:
 
 ## 6. Garbage Collection
 
-Mark-and-sweep with roots: operand stack, with-stack, pending yields, event queue, current slot window, saved live-slot snapshots, globals, every iterator frame, opcode-cache constants, active const pools, and template memoization entries. The threshold starts at 512 live slots and is recomputed `(live * 2).max(512)` after each sweep, capped by `Limits.heap` (default 10M slots, sandbox profile 100K). The free list is capped at 524,288 entries and kept sorted to prefer low indices, which keeps recently-released slots hot in cache. Cycles are reclaimed natively — there is no refcount layer to leak through. `Limits` also caps call depth (1000 default / 256 sandbox) and call count.
+Mark-and-sweep with roots: operand stack, with-stack, pending yields, event queue, current slot window, saved live-slot snapshots, globals, every iterator frame, opcode-cache constants, active const pools, and template memoization entries. The threshold starts at 512 live slots and is recomputed `(live * 2).max(512)` after each sweep, capped by `Limits.heap` (default 10M slots, sandbox profile 100K). The free list is capped at 524,288 entries and kept sorted to prefer low indices, which keeps recently-released slots hot in cache. Cycles are reclaimed natively, there is no refcount layer to leak through. `Limits` also caps call depth (1000 default / 256 sandbox) and call count.
 
 ---
 
@@ -173,23 +173,17 @@ Mark-and-sweep with roots: operand stack, with-stack, pending yields, event queu
 ## 8. Quick Start
 
 ```bash
-# Build the release WebAssembly module — the only artifact this crate distributes.
-cargo wasm
-# -> target/wasm32-unknown-unknown/release/compiler_lib.wasm
+# Build the release WebAssembly module, the only artifact this crate distributes.
+cargo wasm # -> target/wasm32-unknown-unknown/release/compiler_lib.wasm
 
 # Run the host-side test suite (lexer, parser, VM, packages JSON cases).
 cargo test --release
 ```
 
-`cargo wasm` is a workspace alias (`.cargo/config.toml` at the repo root)
-for `cargo build --release --target wasm32-unknown-unknown -p edge-python`.
-Plain `cargo build --release` produces host-side library artifacts (`.rlib`
-+ host cdylib) for embedders linking `compiler_lib` directly. To extend
-Edge Python with native modules from your own Rust app, depend on
-`compiler_lib` and implement the `Resolver` trait — see
-[Writing modules](../documentation/reference/writing-modules.md).
+`cargo wasm` is a workspace alias (`.cargo/config.toml` at the repo root) for `cargo build --release --target wasm32-unknown-unknown -p edge-python`.Plain `cargo build --release` produces host-side library artifacts (`.rlib` + host cdylib) for embedders linking `compiler_lib` directly. To extend
+Edge Python with native modules from your own Rust app, depend on `compiler_lib` and implement the `Resolver` trait, see [Writing modules](https://edgepython.com/reference/writing-modules).
 
-Edge Python is loaded by a host runtime — browser via `demo/edge.js`, server / edge via wasmtime / wasmer / Cloudflare Workers / Fastly Compute / Spin. There is no native CLI binary; the host owns I/O, network, and module fetching.
+Edge Python is loaded by a host runtime, browser via `demo/edge.js`, server / edge via wasmtime / wasmer / Cloudflare Workers / Fastly Compute / Spin. There is no native CLI binary; the host owns I/O, network, and module fetching.
 
 ---
 
