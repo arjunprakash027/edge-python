@@ -88,7 +88,7 @@ print(connect("api"))
 print(connect("api", port=443, secure=True))
 
 try:
-    connect("api", 443)        # positional past `*` is rejected
+    connect("api", 443) # positional past `*` is rejected
 except TypeError:
     print("rejected")
 ```
@@ -154,7 +154,7 @@ print([f(-3) for f in ops])
 ```
 
 ```python
-# Functions as dict values — replaces switch/case
+# Functions as dict values; replaces switch/case
 handlers = {
     "add":  lambda a, b: a + b,
     "mul":  lambda a, b: a * b,
@@ -232,7 +232,7 @@ print(tick())
 ```
 
 ```python
-# Closures over loop variables — captured by reference
+# Closures over loop variables; captured by reference
 def make_adders(n):
     return [lambda x, i=i: x + i for i in range(n)]
 
@@ -293,7 +293,7 @@ def compose(*fns):
 # Reads left-to-right: double, then square
 pipeline = compose(lambda n: n * 2, lambda n: n * n)
 
-print(pipeline(3))     # (3 * 2) ** 2
+print(pipeline(3)) # (3 * 2) ** 2
 print([pipeline(x) for x in [1, 2, 3]])
 ```
 
@@ -333,9 +333,7 @@ True False
 ```
 
 <Note>
-Pure functions called repeatedly with the same arguments are automatically
-memoized after two hits. The VM detects purity (no I/O, no mutation, no
-raise, no yield) and caches results in a per-function template table.
+Pure functions called repeatedly with the same arguments are automatically memoized after two hits. The VM detects purity (no I/O, no mutation, no raise, no yield) and caches results in a per-function template table.
 Naive recursion runs at memoized cost without source-level changes.
 </Note>
 
@@ -392,12 +390,7 @@ print(list(nums()))
 ```
 
 <Note>
-Generators are one-way: producer to consumer. `gen.send(value)`,
-`gen.throw(exc)`, and `gen.close()` are not exposed — bidirectional
-communication is a procedural pattern inconsistent with the functional
-paradigm. For task coordination with bidirectional flow, use the
-cooperative scheduler (`run` / `sleep` / `gather`) and pass values
-through arguments and return values.
+Generators are one-way: producer to consumer. `gen.send(value)`, `gen.throw(exc)`, and `gen.close()` are not exposed; bidirectional communication is a procedural pattern inconsistent with the functional paradigm. For task coordination with bidirectional flow, use the cooperative scheduler (`run` / `sleep` / `gather`) and pass values through arguments and return values.
 </Note>
 
 ## Generator expressions
@@ -459,9 +452,7 @@ print(base(5))
 12
 ```
 
-Parameterized decorators are factories: a function that takes the
-decorator's arguments and returns the actual decorator. The wrapped
-function captures values from both the inner and outer scope.
+Parameterized decorators are factories: a function that takes the decorator's arguments and returns the actual decorator. The wrapped function captures values from both the inner and outer scope.
 
 ```python
 def repeat(n):

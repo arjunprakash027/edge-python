@@ -5,9 +5,9 @@ description: "Compiler architecture, dispatch model, and runtime layout."
 
 ## Overview
 
-Edge Python is a compact bytecode compiler and stack VM for a functional-first subset of Python 3.13. The release build is approximately 153 KB on `wasm32-unknown-unknown` with `panic=abort`, `opt-level=z`, `lto=true`, and `codegen-units=1`. The codebase is organised as a hand-written LUT-driven lexer, a single-pass Pratt parser that emits SSA-versioned bytecode directly, a peephole optimiser for constant folding, and a token-threaded interpreter with two layers of adaptive specialisation on top.
+The release build is approximately 170 KB on `wasm32-unknown-unknown` with `panic=abort`, `opt-level=z`, `lto=true`, and `codegen-units=1`. The codebase is organised as a hand-written LUT-driven lexer, a single-pass Pratt parser that emits SSA-versioned bytecode directly, a peephole optimiser for constant folding, and a token-threaded interpreter with two layers of adaptive specialisation on top.
 
-There is no AST and no IR: bytecode is the only intermediate representation between source and execution. The whole compiler is roughly 13,800 lines of Rust; production dependencies are `hashbrown` and `itoa` (SHA-256 is implemented in-tree). The WASM build adds `lol_alloc` for a single-threaded leaking bump allocator.
+There is no AST and no IR: bytecode is the only intermediate representation between source and execution. The whole compiler is roughly 13,000 lines of Rust; production dependencies are `hashbrown` and `itoa` (SHA-256 is implemented in-tree). The WASM build adds `lol_alloc` for a single-threaded leaking bump allocator.
 
 Classes support single-level inheritance, `super()`, full dunder dispatch, and `@property` / `@x.setter`. The paradigm remains functional-first: behaviour reuse via composition is still preferred, and the VM optimises the monomorphic case via inline caching on instance dunders.
 
@@ -26,18 +26,18 @@ Classes support single-level inheritance, `super()`, full dunder dispatch, and `
 Each `Instruction` is 4 bytes: a 1-byte `OpCode` discriminant (with `#[repr(u8)]` planned), a 2-byte operand, and 1 byte of padding. Opcodes fall into 17 categories — load, store, arith, bitwise, compare, logic, identity, control flow, iter, build, container, comprehension, function, ssa (Phi), yield, side effects, and unsupported (raises at runtime). Roughly 40 specialised `Call*` variants exist for hot builtins, and `LoadAttr + Call(0)` pairs are fused into `CallMethod + CallMethodArgs` after the chunk is first dispatched.
 
 ```text
-OpCode::LoadConst    operand = constant index
-OpCode::LoadName     operand = name slot
-OpCode::StoreName    operand = name slot
-OpCode::Add / Sub    operand = 0 (IC slot derived from ip)
-OpCode::Call         operand = (kw << 8) | pos
-OpCode::Phi          operand = target slot, sources in chunk.phi_sources
-OpCode::ForIter      operand = jump target on iterator exhaustion
+OpCode::LoadConst   operand = constant index
+OpCode::LoadName   operand = name slot
+OpCode::StoreName   operand = name slot
+OpCode::Add / Sub   operand = 0 (IC slot derived from ip)
+OpCode::Call   operand = (kw << 8) | pos
+OpCode::Phi   operand = target slot, sources in chunk.phi_sources
+OpCode::ForIter   operand = jump target on iterator exhaustion
 ```
 
 ## Dispatch shape
 
-The hot loop reads `cache.fused_ref()[ip]` — a snapshot of the instruction stream where adjacent `LoadAttr + Call(0)` pairs have been fused into the `CallMethod + CallMethodArgs` superinstruction. Fusion is performed once per chunk, cached, and reused across calls.
+The hot loop reads `cache.fused_ref()[ip]`; a snapshot of the instruction stream where adjacent `LoadAttr + Call(0)` pairs have been fused into the `CallMethod + CallMethodArgs` superinstruction. Fusion is performed once per chunk, cached, and reused across calls.
 
 For arithmetic and comparison opcodes, the loop first checks `cache.get_fast(ip)`. If a `FastOp` is present, the speculative path runs inline and pops two operands without a function call. On a type-guard miss the cache is invalidated and execution falls back to the generic handler. The IC is per-instruction, so monomorphic call sites stabilise independently.
 
@@ -61,7 +61,7 @@ For arithmetic and comparison opcodes, the loop first checks `cache.get_fast(ip)
 
 `PartialEq` and `Hash` for `Val` funnel value-equal numerics through `f64` bits so `1 == 1.0` and `hash(1) == hash(1.0)` hold — dicts and sets see them as a single key. The internal `FxBuildHasher` uses a fixed seed, so dict/set iteration order is reproducible across runs and process boundaries.
 
-The heap is a `Vec<HeapSlot>` arena with a free list (capped at 524,288 slots and sorted to prefer low indices). String, bytes (≤128 bytes), and LongInt values are interned in side hashes (`strings`, `bytes_intern`, `longints`) so equal values collapse to the same slot — short literal compares short-circuit through identity, and dict/set lookups stay consistent across heap allocations of the same i128 value. The hard cap on live heap objects comes from `Limits.heap` (default 10M; sandbox 100K). Integer arithmetic stays within ±2¹²⁷ (inline ±2⁴⁷ + LongInt ±2¹²⁷); anything beyond raises `OverflowError`. The collector is a single-colour mark-and-sweep that runs when `live >= gc_threshold` or `alloc_count >= max(live/4, 4096)`; cycles are reclaimed natively (there is no refcount).
+The heap is a `Vec<HeapSlot>` arena with a free list (capped at 524,288 slots and sorted to prefer low indices). String, bytes (≤128 bytes), and LongInt values are interned in side hashes (`strings`, `bytes_intern`, `longints`) so equal values collapse to the same slot — short literal compares short-circuit through identity, and dict/set lookups stay consistent across heap allocations of the same i128 value. The hard cap on live heap objects comes from `Limits.heap` (default 10M; sandbox 100K). Integer arithmetic stays within around $2^{127}$ (inline $2^{47}$ + LongInt $2^{127}$); anything beyond raises `OverflowError`. The collector is a single-colour mark-and-sweep that runs when `live >= gc_threshold` or `alloc_count >= max(live/4, 4096)`; cycles are reclaimed natively (there is no refcount).
 
 `HeapObj` variants: `Str`, `Bytes`, `List` (`Rc<RefCell<Vec<Val>>>`), `Dict` (insertion-ordered), `Set`, `FrozenSet`, `Tuple`, `Func(fn_idx, defaults, captures)`, `Range`, `Slice`, `Ellipsis` (true singleton, distinct from `'...'`), `Type`, `ExcInstance`, `BoundMethod`, `NativeFn`, `Class(name, members)`, `Instance(class, attrs)`, `BoundUserMethod(recv, fn)`, `Coroutine(ip, slots, stack, fi, iter_stack)` (shared by generators and `async def`), `Module(spec, attrs)`, `Extern(Arc<dyn Fn>)`.
 
@@ -78,79 +78,93 @@ The heap is a `Vec<HeapSlot>` arena with a free list (capped at 524,288 slots an
 ## Architecture
 
 ```text
-compiler/src/
- ├── lib.rs
- ├── abi.rs       # sealed WASM ABI v1: ops, tags, ErrorKind, HandleTable
- ├── main/        # WASM orchestration: parser/VM lifecycle + host imports (wasm32-only)
- │   ├── mod.rs
- │   ├── exports.rs      # WASM exports the host shim drives
- │   ├── abi_bridge.rs   # host_edge_op + dispatch_*
- │   ├── resolver.rs     # walk-up packages.json + native bridge closure
- │   └── errors.rs
- ├── util/         # Internal helpers shared across the compiler (not stdlib)
- │   ├── fstr.rs       # numeric formatter + s!/err! string macros
- │   ├── fx.rs         # FxHasher + fixed-seed FxBuildHasher (deterministic)
- │   └── sha256.rs     # in-tree FIPS 180-4 SHA-256 (used by integrity)
- └── modules/
-     ├── lexer/
-     │   ├── mod.rs
-     │   ├── scan.rs
-     │   └── tables.rs
-     ├── packages/
-     │   ├── mod.rs
-     │   └── manifest.rs  # in-tree JSON parser for packages.json
-     ├── parser/
-     │   ├── mod.rs
-     │   ├── stmt.rs
-     │   ├── expr.rs
-     │   ├── control.rs
-     │   ├── literals.rs
-     │   ├── imports.rs
-     │   └── types.rs
-     └── vm/
-         ├── mod.rs        # VM struct + with_limits constructor
-         ├── dispatch.rs   # hot loop + exec + exec_call_method
-         ├── init.rs       # build_function_table + run + init_modules
-         ├── helpers.rs    # stack ops, iter helpers, accessors
-         ├── gc.rs         # mark-and-sweep roots
-         ├── ops.rs
-         ├── optimizer.rs
-         ├── cache.rs
-         ├── types/
-         │   ├── mod.rs    # Val + HeapObj + HeapPool + DictMap + NativeFnId
-         │   ├── err.rs    # VmErr + render + cold_* error ctors
-         │   ├── coro.rs   # CoroState, CoroutineHandle, CallFrame, IterFrame
-         │   ├── math.rs   # pure-Rust f64 math (no_std-compatible)
-         │   └── eq.rs
-         ├── builtins/
-         │   ├── mod.rs
-         │   ├── numeric.rs
-         │   ├── sequence.rs
-         │   ├── container.rs
-         │   ├── conversion.rs
-         │   ├── io.rs
-         │   ├── attr.rs
-         │   ├── identity.rs
-         │   ├── index.rs
-         │   ├── bytes_helpers.rs
-         │   └── async_ops.rs
-         └── handlers/
-             ├── mod.rs
-             ├── arith.rs
-             ├── data.rs
-             ├── dunder.rs
-             ├── format.rs
-             ├── function.rs
-             ├── methods.rs           # AttrLookup + resolve_attr (no method bodies)
-             ├── methods_helpers.rs   # recv_* / list_mut / dict_mut / iter_to_vec
-             └── builtin_methods/     # 68 builtin methods as plain pub fn,
-                 ├── mod.rs           # indexed by a static MethodDesc table
-                 ├── prelude.rs       # (name, fn, mutating, min_args, max_args).
-                 ├── string.rs        # Arity check + mark_impure live in the
-                 ├── bytes.rs         # dispatcher, not in each body.
-                 ├── list.rs
-                 ├── dict.rs
-                 └── set.rs
+├── Cargo.toml
+├── README.md
+├── src
+│   ├── abi.rs
+│   ├── lib.rs
+│   ├── main
+│   │   ├── abi_bridge.rs
+│   │   ├── errors.rs
+│   │   ├── exports.rs
+│   │   ├── mod.rs
+│   │   └── resolver.rs
+│   ├── modules
+│   │   ├── lexer
+│   │   │   ├── mod.rs
+│   │   │   ├── scan.rs
+│   │   │   └── tables.rs
+│   │   ├── packages
+│   │   │   ├── manifest.rs
+│   │   │   └── mod.rs
+│   │   ├── parser
+│   │   │   ├── control.rs
+│   │   │   ├── expr.rs
+│   │   │   ├── imports.rs
+│   │   │   ├── literals.rs
+│   │   │   ├── mod.rs
+│   │   │   ├── stmt.rs
+│   │   │   └── types.rs
+│   │   └── vm
+│   │       ├── builtins
+│   │       │   ├── async_ops.rs
+│   │       │   ├── attr.rs
+│   │       │   ├── bytes_helpers.rs
+│   │       │   ├── container.rs
+│   │       │   ├── conversion.rs
+│   │       │   ├── identity.rs
+│   │       │   ├── index.rs
+│   │       │   ├── io.rs
+│   │       │   ├── mod.rs
+│   │       │   ├── numeric.rs
+│   │       │   └── sequence.rs
+│   │       ├── cache.rs
+│   │       ├── dispatch.rs
+│   │       ├── gc.rs
+│   │       ├── handlers
+│   │       │   ├── arith.rs
+│   │       │   ├── builtin_methods
+│   │       │   │   ├── bytes.rs
+│   │       │   │   ├── dict.rs
+│   │       │   │   ├── list.rs
+│   │       │   │   ├── mod.rs
+│   │       │   │   ├── prelude.rs
+│   │       │   │   ├── set.rs
+│   │       │   │   └── string.rs
+│   │       │   ├── data.rs
+│   │       │   ├── dunder.rs
+│   │       │   ├── format.rs
+│   │       │   ├── function.rs
+│   │       │   ├── methods_helpers.rs
+│   │       │   ├── methods.rs
+│   │       │   └── mod.rs
+│   │       ├── helpers.rs
+│   │       ├── init.rs
+│   │       ├── mod.rs
+│   │       ├── ops.rs
+│   │       ├── optimizer.rs
+│   │       └── types
+│   │           ├── coro.rs
+│   │           ├── eq.rs
+│   │           ├── err.rs
+│   │           ├── math.rs
+│   │           └── mod.rs
+│   └── util
+│       ├── fstr.rs
+│       ├── fx.rs
+│       └── sha256.rs
+└── tests
+    ├── cases
+    │   ├── lexer.json
+    │   ├── packages.json
+    │   ├── parser.json
+    │   └── vm.json
+    ├── common.rs
+    ├── lexer.rs
+    ├── main.rs
+    ├── packages.rs
+    ├── parser.rs
+    └── vm.rs
 ```
 
 ## Capabilities

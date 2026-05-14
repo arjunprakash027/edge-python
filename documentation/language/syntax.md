@@ -66,7 +66,7 @@ if (n := len(data)) > 0:
 
 ## Numbers
 
-Integers are 47-bit signed inline (range ±2⁴⁷) with automatic promotion to 128-bit when arithmetic overflows the inline range. Values up to ±2¹²⁷ work transparently; anything beyond raises `OverflowError`. Hex (`0x`), octal (`0o`), and binary (`0b`) prefixes are supported, with `_` digit separators between digits.
+Integers are 47-bit signed inline (range $2^{47}$) with automatic promotion to 128-bit when arithmetic overflows the inline range. Values up to $2^{127}$ work transparently; anything beyond raises `OverflowError`. Hex (`0x`), octal (`0o`), and binary (`0b`) prefixes are supported, with `_` digit separators between digits.
 
 ```python
 print(0xDEAD_BEEF)
@@ -112,8 +112,8 @@ print('single')
 print("double")
 print("""triple
 quoted""")
-print(r'raw\n')           # backslash not escaped
-print('hello' ' world')   # implicit concatenation
+print(r'raw\n') # backslash not escaped
+print('hello' ' world') # implicit concatenation
 ```
 
 ```text Output
@@ -134,7 +134,7 @@ print('\n line break')
 print('\t tab')
 print('\x41 hex')
 print('\u00e9 unicode')
-print('\101')             # octal escape \u2014 'A'
+print('\101') # octal escape \u2014 'A'
 ```
 
 ```text Output
@@ -154,10 +154,10 @@ n = 42
 pi = 3.14159
 print(f"hello {name}")
 print(f"answer is {n + 1}")
-print(f"{n:04d}")        # zero-padded width
-print(f"{pi:.3f}")       # float precision
-print(f"{255:#x}")       # hex with prefix
-print(f"{name!r}")       # !r conversion
+print(f"{n:04d}") # zero-padded width
+print(f"{pi:.3f}") # float precision
+print(f"{255:#x}") # hex with prefix
+print(f"{name!r}") # !r conversion
 print(f"{{literal braces}}")
 ```
 
@@ -206,7 +206,7 @@ print(-5, +5)
 ### Comparison and chaining
 
 ```python
-print(1 < 2 < 3)        # chained
+print(1 < 2 < 3) # chained
 print(0 < 5 < 10)
 print(1 == 1 == 1)
 ```
@@ -311,8 +311,8 @@ print(xs * 2)
 ```python
 t = (1, 2, 3)
 print(t[1])
-print((1,))      # singleton needs the comma
-print(())        # empty tuple
+print((1,)) # singleton needs the comma
+print(()) # empty tuple
 ```
 
 ```text Output
@@ -343,7 +343,7 @@ print(list(d.keys()))
 s = {1, 2, 2, 3}
 print(s)
 print(2 in s)
-print(set())     # empty set literal needs the function
+print(set()) # empty set literal needs the function
 ```
 
 ```text Output
@@ -356,11 +356,11 @@ set()
 
 ```python
 a = [1, 2, 3, 4, 5]
-print(a[1:4])      # [start:stop]
+print(a[1:4]) # [start:stop]
 print(a[:2])
 print(a[3:])
-print(a[::2])      # every 2nd
-print(a[::-1])     # reversed
+print(a[::2]) # every 2nd
+print(a[::-1]) # reversed
 ```
 
 ```text Output
@@ -413,7 +413,7 @@ def add(a: int, b: int) -> int:
     return a + b
 
 print(add(3, 4))
-print(add("a", "b"))   # annotations don't enforce — int+str logic decides
+print(add("a", "b")) # annotations don't enforce — int+str logic decides
 ```
 
 ```text Output

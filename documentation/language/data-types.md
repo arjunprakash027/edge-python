@@ -31,8 +31,8 @@ print(type(True))
 
 ```python
 print(isinstance(42, int))
-print(isinstance(True, int))         # bools are ints
-print(isinstance(42, (str, int)))    # tuple of types
+print(isinstance(True, int)) # bools are ints
+print(isinstance(42, (str, int))) # tuple of types
 ```
 
 ```text Output
@@ -86,7 +86,7 @@ IEEE-754 double precision. Mixed arithmetic with int coerces to float.
 print(0.1 + 0.2 == 0.3)
 print(-0.0 == 0.0)
 print(1 / 3)
-print(round(2.5))      # banker's rounding
+print(round(2.5)) # banker's rounding
 print(round(0.5))
 print(round(1.55, 1))
 ```
@@ -147,8 +147,8 @@ data = b"hello"
 print(data)
 print(type(data))
 print(len(data))
-print(data[0])           # int — the byte value
-print(data[1:4])         # bytes — slice
+print(data[0]) # int — the byte value
+print(data[1:4]) # bytes — slice
 ```
 
 ```text Output
@@ -185,10 +185,10 @@ for byte in b"abc":
 
 ```python
 # Constructors
-print(bytes())                  # empty
-print(bytes(3))                 # zero-filled, length 3
-print(bytes([65, 66, 67]))      # from int iterable
-print(bytes("hi", "utf-8"))     # encoded string
+print(bytes()) # empty
+print(bytes(3)) # zero-filled, length 3
+print(bytes([65, 66, 67])) # from int iterable
+print(bytes("hi", "utf-8")) # encoded string
 ```
 
 ```text Output
@@ -223,7 +223,7 @@ xs.append(4)
 print(xs)
 print(len(xs))
 
-# Aliasing — both names see mutation
+# Aliasing, both names see mutation
 ys = xs
 ys.append(5)
 print(xs)
@@ -275,8 +275,8 @@ Immutable sequence. The fastest container for fixed-size data and the only one u
 t = (1, 2, 3)
 print(t[0])
 print(t + (4, 5))
-print((1,))         # one-element needs trailing comma
-print(())           # empty
+print((1,)) # one-element needs trailing comma
+print(()) # empty
 ```
 
 ```text Output
@@ -331,12 +331,12 @@ print(len(s))
 
 # Empty set literal is set(), not {}
 print(set())
-print(type({}))     # this is a dict
+print(type({})) # this is a dict
 
 # Algebra
 print({1, 2, 3} | {3, 4})
 print({1, 2, 3} & {2, 3, 4})
-print({1, 2} <= {1, 2, 3})   # subset
+print({1, 2} <= {1, 2, 3}) # subset
 ```
 
 ```text Output
@@ -405,13 +405,13 @@ False
 
 ```python
 print(int("42"))
-print(int(3.7))         # truncates toward zero
+print(int(3.7)) # truncates toward zero
 print(int(True))
 print(float("3.14"))
 print(str(42))
 print(str([1, 2]))
-print(bool([]))         # empty is falsy
-print(bool([0]))        # non-empty is truthy
+print(bool([])) # empty is falsy
+print(bool([0])) # non-empty is truthy
 print(list("abc"))
 print(tuple([1, 2, 3]))
 print(set([1, 1, 2]))

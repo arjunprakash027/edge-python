@@ -5,10 +5,10 @@ description: "Cooperative coroutines, sleep, gather, with_timeout, cancel."
 
 Edge Python supports cooperative concurrency via `async def` coroutines and the `await` / `yield` keywords. There is **no preemption**: a coroutine runs until it explicitly yields, sleeps, awaits, or returns. The scheduler runs on a single OS thread; concurrency is by interleaving, not parallelism.
 
-There is **no `asyncio` module**. The async primitives — `run`, `sleep`, `gather`, `with_timeout`, `cancel`, `receive` — are top-level builtins. The scheduler is direct enough that wrapping it in a module-shaped namespace would add no semantic value.
+There is **no `asyncio` module**. The async primitives; `run`, `sleep`, `gather`, `with_timeout`, `cancel`, `receive`, are top-level builtins. The scheduler is direct enough that wrapping it in a module-shaped namespace would add no semantic value.
 
 ```python
-import asyncio       # ModuleNotFoundError — there is no asyncio
+import asyncio   # ModuleNotFoundError — there is no asyncio
 ```
 
 ```python
@@ -40,9 +40,9 @@ def routine():
 async def coro():
     return 1
 
-print(routine())     # 1
-print(coro())        # <coroutine>  (does not run yet)
-print(run(coro()))   # 1            (run drives it to completion)
+print(routine())   # 1
+print(coro())   # <coroutine>  (does not run yet)
+print(run(coro()))   # 1  (run drives it to completion)
 ```
 
 ## Driving coroutines
@@ -69,7 +69,7 @@ print(run(square(5)))
 ```python
 async def task(name):
     print(f"{name} step 1")
-    sleep(0)            # yield to the scheduler
+    sleep(0) # yield to the scheduler
     print(f"{name} step 2")
 
 run(task("a"), task("b"))
@@ -146,8 +146,8 @@ A coroutine in a tight synchronous loop without any `await`/`sleep` cannot be ca
 ```python
 async def loop_forever():
     for i in range(1_000_000):
-        pass             # no yield — not cancellable here
-    sleep(0)             # cancellable from this point on
+        pass # no yield — not cancellable here
+    sleep(0) # cancellable from this point on
 ```
 
 For deadline-driven cancellation use `with_timeout`. For peer-cancellation on error use `gather` (it cancels surviving peers automatically).
@@ -165,14 +165,14 @@ Both are in the built-in exception namespace and match `except` clauses normally
 
 ## Limitations
 
-- **No preemption.** A `while True: pass` inside a coroutine blocks the scheduler.
-- **Cancellation is silent.** `cancel(coro)` stops the coroutine; the body does not see `CancelledError`. Use `with_timeout` if you need deadline semantics that propagate as exceptions.
-- **No host event loop integration.** Edge Python's scheduler is in-process. Real I/O concurrency requires the host to expose async-shaped externs (e.g. `await fetch_json(url)` where `fetch_json` is a host function that queues a callback and yields).
-- **`async for`** works against any iterable accepted by `for`, *plus* coroutines and async generators (functions defined with both `async def` and `yield`). Each iteration resumes the coroutine to its next yield. There is no `__aiter__` / `__anext__` dispatch on user-defined classes — define an `async def` generator instead. Behavior over plain lists/tuples/dicts is identical to a regular `for`.
-- **`async with`** reuses the sync `with` dispatch path, invoking `__enter__` / `__exit__` on the context manager. `__aenter__` / `__aexit__` are not consulted (the async dunder forms are not dispatched). For async setup/teardown that needs `await`, use `try` / `finally` with explicit `await` calls.
-- **No async comprehensions.** `[x async for x in it]` is not supported.
-- **No `gen.send` / `.throw` / `.close`.** Generators and coroutines are one-way producers. For bidirectional flow, structure the work with `run` / `gather` and pass messages through call arguments.
-- **`receive()` is unbounded.** Without an external producer pushing into the event queue, `receive()` yields `None` forever. Pair with `with_timeout` if you need a deadline.
+* **No preemption.** A `while True: pass` inside a coroutine blocks the scheduler.
+* **Cancellation is silent.** `cancel(coro)` stops the coroutine; the body does not see `CancelledError`. Use `with_timeout` if you need deadline semantics that propagate as exceptions.
+* **No host event loop integration.** Edge Python's scheduler is in-process. Real I/O concurrency requires the host to expose async-shaped externs (e.g. `await fetch_json(url)` where `fetch_json` is a host function that queues a callback and yields).
+* **`async for`** works against any iterable accepted by `for`, *plus* coroutines and async generators (functions defined with both `async def` and `yield`). Each iteration resumes the coroutine to its next yield. There is no `__aiter__` / `__anext__` dispatch on user-defined classes — define an `async def` generator instead. Behavior over plain lists/tuples/dicts is identical to a regular `for`.
+* **`async with`** reuses the sync `with` dispatch path, invoking `__enter__` / `__exit__` on the context manager. `__aenter__` / `__aexit__` are not consulted (the async dunder forms are not dispatched). For async setup/teardown that needs `await`, use `try` / `finally` with explicit `await` calls.
+* **No async comprehensions.** `[x async for x in it]` is not supported.
+* **No `gen.send` / `.throw` / `.close`.** Generators and coroutines are one-way producers. For bidirectional flow, structure the work with `run` / `gather` and pass messages through call arguments.
+* **`receive()` is unbounded.** Without an external producer pushing into the event queue, `receive()` yields `None` forever. Pair with `with_timeout` if you need a deadline.
 
 ## Time capability
 

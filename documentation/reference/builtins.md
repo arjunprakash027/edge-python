@@ -19,7 +19,7 @@ p("aliased")
 aliased
 ```
 
-Edge Python is functional-first. Introspection helpers (`eval`, `exec`, `compile`, `dir`, `ascii`, `help`, `__import__`, `breakpoint`, `open`, `issubclass`) are intentionally absent — the static-import contract and the lack of a writable global module table make them either impossible to implement or inconsistent with the paradigm. `staticmethod` and `classmethod` are omitted (use the namespace pattern or free functions); `super` and `property` are supported — see [`/language/classes`](/language/classes) and [`/language/dunders`](/language/dunders).
+Edge Python is functional-first. Introspection helpers (`eval`, `exec`, `compile`, `dir`, `ascii`, `help`, `__import__`, `breakpoint`, `open`, `issubclass`) are intentionally absent, the static-import contract and the lack of a writable global module table make them either impossible to implement or inconsistent with the paradigm. `staticmethod` and `classmethod` are omitted (use the namespace pattern or free functions); `super` and `property` are supported; see [`/language/classes`](/language/classes) and [`/language/dunders`](/language/dunders).
 
 ## Output
 
@@ -111,7 +111,7 @@ print(sum(x * x for x in range(5)))
 
 ### pow
 
-`pow(base, exp)` or `pow(base, exp, mod)` for modular exponentiation. The 3-arg form requires int operands and a non-negative exponent (`pow(a, b, 0)` raises `ZeroDivisionError`; `pow(a, -1, m)` raises `ValueError`). The modulus must be `< 2⁶³` — larger moduli would overflow i128 during the internal `(result * base) % m` step and raise `ValueError("pow() modulus too large; must be < 2^63")`.
+`pow(base, exp)` or `pow(base, exp, mod)` for modular exponentiation. The 3-arg form requires int operands and a non-negative exponent (`pow(a, b, 0)` raises `ZeroDivisionError`; `pow(a, -1, m)` raises `ValueError`). The modulus must be `< 2^63` — larger moduli would overflow i128 during the internal `(result * base) % m` step and raise `ValueError("pow() modulus too large; must be < 2^63")`.
 
 ```python
 print(pow(2, 10))
@@ -228,7 +228,7 @@ False True
 ```python
 print(list("abc"))
 print(tuple(range(3)))
-print(set({"a": 1, "b": 2}))   # iterates dict keys
+print(set({"a": 1, "b": 2})) # iterates dict keys
 print(frozenset(b"\x01\x02\x03"))
 print(dict(a=1, b=2))
 ```
@@ -500,7 +500,7 @@ b'\x00\xff'
 ```python
 print(all([1, 2, 3]))
 print(all([1, 0, 3]))
-print(all([]))           # vacuous truth
+print(all([])) # vacuous truth
 
 print(any([0, 0, 1]))
 print(any([0, 0, 0]))
@@ -542,8 +542,8 @@ print(type(print))
 
 ```python
 print(isinstance(42, int))
-print(isinstance(True, int))           # bool is a subtype of int
-print(isinstance("x", (int, str)))     # tuple of types
+print(isinstance(True, int)) # bool is a subtype of int
+print(isinstance("x", (int, str))) # tuple of types
 ```
 
 ```text Output

@@ -31,13 +31,13 @@ print(c.value())
 
 ## Namespace pattern
 
-A class with no `__init__` and no per-instance state is a namespace of functions and constants. Methods called on the class object are unbound — no `self` is prepended.
+A class with no `__init__` and no per-instance state is a namespace of functions and constants. Methods called on the class object are unbound; no `self` is prepended.
 
 ```python
 class Status:
-    IDLE    = 0
+    IDLE = 0
     RUNNING = 1
-    DONE    = 2
+    DONE = 2
 
 class Math:
     PI = 3.14159
@@ -61,7 +61,7 @@ print(Math.cube(3))
 
 ## Inheritance and super()
 
-A class can declare a single base with `class Sub(Base):`. Methods not defined on the subclass are looked up on the base, and the lookup walks the chain linearly — there is no C3 MRO. `isinstance(x, Base)` walks the same chain, so an instance of `Sub` is also an instance of every ancestor.
+A class can declare a single base with `class Sub(Base):`. Methods not defined on the subclass are looked up on the base, and the lookup walks the chain linearly; there is no C3 MRO. `isinstance(x, Base)` walks the same chain, so an instance of `Sub` is also an instance of every ancestor.
 
 `super()` in zero-argument form delegates to the next class up the chain, bound to the current `self`. It is most commonly used in `__init__` to extend a base constructor.
 
@@ -93,12 +93,12 @@ A multi-base declaration `class C(A, B):` is parsed and both bases are stored, b
 
 ## Attribute access on classes vs instances
 
-| Access form         | Resolves to                              |
-|---------------------|------------------------------------------|
-| `MyClass.attr`      | class member, returned as-is (no binding)|
-| `MyClass.method()`  | method called directly, no `self`        |
-| `instance.attr`     | instance `__dict__` first, then class    |
-| `instance.method()` | bound method, `self` prepended           |
+| Access form         | Resolves to                               |
+|---------------------|-------------------------------------------|
+| `MyClass.attr`      | class member, returned as-is (no binding) |
+| `MyClass.method()`  | method called directly, no `self`         |
+| `instance.attr`     | instance `__dict__` first, then class     |
+| `instance.method()` | bound method, `self` prepended            |
 
 `setattr` / `delattr` work on instances. They do not modify the class object.
 
@@ -174,9 +174,9 @@ See [Dunder methods](/language/dunders) for the full matrix.
 
 ## What is *not* supported
 
-- Multi-base inheritance with proper C3 MRO. `class C(A, B):` is parsed and both bases are stored, but resolution is a linear depth-first walk, not Python's C3 algorithm. Prefer single inheritance.
-- Metaclasses, descriptors (`__get__` / `__set__`), `__slots__`, abstract base classes, `__init_subclass__`.
-- `@staticmethod` and `@classmethod`. Use the namespace pattern above or free functions instead.
-- Async dunders: `__aenter__` / `__aexit__` / `__aiter__` / `__anext__`. `async with` and `async for` do not dispatch these hooks.
+* Multi-base inheritance with proper C3 MRO. `class C(A, B):` is parsed and both bases are stored, but resolution is a linear depth-first walk, not Python's C3 algorithm. Prefer single inheritance.
+* Metaclasses, descriptors (`__get__` / `__set__`), `__slots__`, abstract base classes, `__init_subclass__`.
+* `@staticmethod` and `@classmethod`. Use the namespace pattern above or free functions instead.
+* Async dunders: `__aenter__` / `__aexit__` / `__aiter__` / `__anext__`. `async with` and `async for` do not dispatch these hooks.
 
 Behaviour reuse via free functions and composition is still the preferred default — it keeps dispatch fast and aligns with the functional-first identity. Reach for operator overloading and inheritance when the abstraction genuinely calls for them.

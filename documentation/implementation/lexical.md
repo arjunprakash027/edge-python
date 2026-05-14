@@ -29,8 +29,7 @@ The token set tracks Python 3.13.12 closely. Categories implemented:
 The lexer hot loop avoids per-byte branching through two compile-time tables in `lexer/tables.rs`:
 
 ```rust
-// Bit flags per byte: ID_START, ID_CONT, DIGIT, SPACE.
-// Indexed lookup replaces a chain of comparisons.
+// Bit flags per byte: ID_START, ID_CONT, DIGIT, SPACE. Indexed lookup replaces a chain of comparisons.
 pub static BYTE_CLASS: [u8; 256] = { /* ... */ };
 
 // Single-char operator dispatch: byte -> small index -> TokenType.
@@ -75,13 +74,13 @@ fr'raw fstring' # raw f-string
 """triple""" # triple-quoted, single or double
 ```
 
-A leading prefix is recognised before the opening quote by the identifier scanner and verified against `is_string_prefix`, `is_fstring_prefix`, or `is_bytes_prefix`. Triple-quoted strings span newlines and bump `line` for each `\n` inside. Backslash escapes are consumed at lex time but **decoded** by the parser, so escape semantics live alongside the literal type. Recognised escapes: `\n \t \r \a \b \f \v \\ \' \" \xHH \uHHHH \UHHHHHHHH` plus 1- to 3-digit octal escapes (`\012` -> `\n`, `\101` -> `A`). `\N{NAME}` Unicode-name escapes are not implemented and pass through as literal text — embedding the ~200 KB Unicode-name database is rejected as too costly for the WASM artifact.
+A leading prefix is recognised before the opening quote by the identifier scanner and verified against `is_string_prefix`, `is_fstring_prefix`, or `is_bytes_prefix`. Triple-quoted strings span newlines and bump `line` for each `\n` inside. Backslash escapes are consumed at lex time but **decoded** by the parser, so escape semantics live alongside the literal type. Recognised escapes: `\n \t \r \a \b \f \v \\ \' \" \xHH \uHHHH \UHHHHHHHH` plus 1- to 3-digit octal escapes (`\012` -> `\n`, `\101` -> `A`). `\N{NAME}` Unicode-name escapes are not implemented and pass through as literal text — embedding the 200 KB Unicode-name database is rejected as too costly for the WASM artifact.
 
 Lex-time errors anchor on the opening quote so the user's `^` marker points at the offender, not at end-of-line:
 
-- `unterminated string literal`
-- `unterminated triple-quoted string literal`
-- `unterminated f-string literal`
+* `unterminated string literal`
+* `unterminated triple-quoted string literal`
+* `unterminated f-string literal`
 
 ## F-strings
 
@@ -113,19 +112,19 @@ Triple-quoted f-strings (`f"""..."""`) follow the same structure with newlines e
 
 Edge Python uses an INDENT/DEDENT model. The scanner tracks a stack of column counts and emits structural tokens at line boundaries:
 
-| Situation                          | Tokens emitted                                    |
-|------------------------------------|---------------------------------------------------|
-| Blank line or comment-only line    | `Nl`                                              |
-| Inside `(...)`, `[...]`, `{...}`   | `Nl` (no `Indent` / `Dedent`)                     |
-| Indentation increased              | `Indent`, `Newline`                               |
-| Indentation decreased              | `Dedent` (× n levels), `Newline`                  |
-| Indentation unchanged              | `Newline`                                         |
+| Situation                           | Tokens emitted                                    |
+|-------------------------------------|---------------------------------------------------|
+| Blank line or comment-only line     | `Nl`                                              |
+| Inside `(...)`, `[...]`, `{...}`    | `Nl` (no `Indent` / `Dedent`)                     |
+| Indentation increased               | `Indent`, `Newline`                               |
+| Indentation decreased               | `Dedent` (× n levels), `Newline`                  |
+| Indentation unchanged               | `Newline`                                         |
 | Dedent doesn't match an outer level | diagnostic `unindent does not match any outer indentation level` |
-| Mixed tabs and spaces in indent    | `Endmarker` (lex halt) + diagnostic               |
+| Mixed tabs and spaces in indent     | `Endmarker` (lex halt) + diagnostic               |
 
-The `nesting` counter is bumped by `(`, `[`, `{` and decremented by `)`, `]`. While `nesting > 0`, line breaks emit `Nl` and the indent stack is frozen — this is what allows multi-line expressions inside brackets without spurious INDENT/DEDENT.
+The `nesting` counter is bumped by `(`, `[`, `{` and decremented by `)`, `]`. While `nesting > 0`, line breaks emit `Nl` and the indent stack is frozen; this is what allows multi-line expressions inside brackets without spurious INDENT/DEDENT.
 
-At end-of-file the lexer drains any remaining levels off `indent_stack` so every block closes cleanly, then emits a final `Endmarker`. Without this drain, callers would have to tolerate dangling open blocks. There is **no** support for backslash line continuation (`\` followed by `\n`) outside brackets — wrap multi-line expressions in parentheses instead. ASCII bytes that have no operator slot (`$`, `?`, `` ` ``, stray `\`) raise `unexpected character` and are skipped rather than truncating the token stream.
+At end-of-file the lexer drains any remaining levels off `indent_stack` so every block closes cleanly, then emits a final `Endmarker`. Without this drain, callers would have to tolerate dangling open blocks. There is **no** support for backslash line continuation (`\` followed by `\n`) outside brackets; wrap multi-line expressions in parentheses instead. ASCII bytes that have no operator slot (`$`, `?`, `` ` ``, stray `\`) raise `unexpected character` and are skipped rather than truncating the token stream.
 
 ## Soft-keyword disambiguation
 
@@ -172,7 +171,7 @@ pub struct Token {
 }
 ```
 
-The parser slices `&source[t.start..t.end]` lazily when it needs the lexeme — for identifier names, string content, or numeric literals. This means:
+The parser slices `&source[t.start..t.end]` lazily when it needs the lexeme; for identifier names, string content, or numeric literals. This means:
 
 - The lexer never allocates a `String` per identifier.
 - The parser's `lexeme(&t)` is a zero-copy `&str` that lives as long as the source buffer.

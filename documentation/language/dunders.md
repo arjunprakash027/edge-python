@@ -1,6 +1,6 @@
 ---
 title: "Dunder methods"
-description: "Protocol methods Edge Python invokes on user classes — operators, indexing, iteration, hashing, context managers, attribute fallback."
+description: "Protocol methods Edge Python invokes on user classes; operators, indexing, iteration, hashing, context managers, attribute fallback."
 ---
 
 Dunders ("double-underscore" methods like `__add__`, `__eq__`, `__getitem__`) are how a class plugs into the language's protocols. Define them on the class body and the VM calls them when the corresponding operator, builtin, or syntax form runs.
@@ -23,7 +23,7 @@ print(V(3) == V(3))
 True
 ```
 
-Dunders are looked up on the class chain (instance dict is skipped). A subclass inherits every dunder defined on its bases and can override any of them — operator overloading composes naturally with [single-level inheritance](/language/classes#inheritance-and-super). A monomorphic site — same class for both operands across iterations — promotes through the inline cache after four hits and bypasses the lookup entirely on subsequent calls.
+Dunders are looked up on the class chain (instance dict is skipped). A subclass inherits every dunder defined on its bases and can override any of them — operator overloading composes naturally with [single-level inheritance](/language/classes#inheritance-and-super). A monomorphic site — same class for both operands across iterations; promotes through the inline cache after four hits and bypasses the lookup entirely on subsequent calls.
 
 ## Arithmetic
 
@@ -70,14 +70,14 @@ print((3 + Money(7)).n)
 | `a > b`    | `__gt__`    | `__lt__`   |
 | `a >= b`   | `__ge__`    | `__le__`   |
 
-`!=` falls back to `not __eq__` when `__ne__` is absent. Comparison results are coerced to `bool` — returning `'A.lt'` from `__lt__` yields `True` in `a < b`, not the string.
+`!=` falls back to `not __eq__` when `__ne__` is absent. Comparison results are coerced to `bool`; returning `'A.lt'` from `__lt__` yields `True` in `a < b`, not the string.
 
 ## Truth and length
 
 `bool(x)` (and any boolean context like `if x:`) consults:
 
-1. `__bool__` if defined → cast to bool.
-2. `__len__` if defined → `False` when length is 0, `True` otherwise.
+1. `__bool__` if defined -> cast to bool.
+2. `__len__` if defined -> `False` when length is 0, `True` otherwise.
 3. Default `True`.
 
 `len(x)` calls `__len__` directly; the return must be a non-negative integer.
@@ -168,7 +168,7 @@ True
 
 `hash(x)` calls `__hash__`. The result must be an `int`; the VM masks it to fit `INT_MAX`.
 
-Eq/hash invariant: a class that defines `__eq__` **without** `__hash__` is unhashable — `hash(x)` and `{x: 1}` raise `TypeError`. This prevents inconsistent dict keys.
+Eq/hash invariant: a class that defines `__eq__` **without** `__hash__` is unhashable; `hash(x)` and `{x: 1}` raise `TypeError`. This prevents inconsistent dict keys.
 
 ```python
 class K:
@@ -220,7 +220,7 @@ computed:anything
 computed:foo
 ```
 
-Existing attributes bypass `__getattr__` — only misses trigger it.
+Existing attributes bypass `__getattr__`; only misses trigger it.
 
 ## Context managers
 
@@ -231,7 +231,7 @@ class Suppress:
     def __enter__(self):
         return self
     def __exit__(self, t, v, tb):
-        return True   # swallow whatever raised
+        return True # swallow whatever raised
 
 with Suppress():
     raise ValueError("boom")

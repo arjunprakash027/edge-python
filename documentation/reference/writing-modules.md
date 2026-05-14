@@ -76,8 +76,8 @@ pub extern "C" fn add(argv: *const u32, argc: u32, out: *mut u32) -> i32 {
         if r < 0 || tag != TAG_INT { return None; }
         Some(i64::from_le_bytes(buf))
     };
-    let a = match read_int(unsafe { *argv })             { Some(v) => v, None => return 1 };
-    let b = match read_int(unsafe { *argv.add(1) })      { Some(v) => v, None => return 1 };
+    let a = match read_int(unsafe { *argv }) { Some(v) => v, None => return 1 };
+    let b = match read_int(unsafe { *argv.add(1) }) { Some(v) => v, None => return 1 };
     let sum = (a + b).to_le_bytes();
     let h = unsafe { edge_encode(TAG_INT, sum.as_ptr(), 8) };
     unsafe { *out = h; }
@@ -155,7 +155,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 compiler-lib = { git = "https://github.com/dylan-sutton-chavez/edge-python", branch = "main" }
-text         = { path = "../text" }
+text = { path = "../text" }
 ```
 
 `embedder/src/lib.rs`:
@@ -187,7 +187,7 @@ cargo build --release --target wasm32-unknown-unknown -p embedder
 
 ```python
 from text import upper
-print(upper("hello"))   # -> HELLO
+print(upper("hello")) # -> HELLO
 ```
 
 ### Type cookbook (in-process only)
@@ -196,9 +196,9 @@ The closure signature is `Fn(&mut HeapPool, &[Val]) -> Result<Val, VmErr>`. Insi
 
 ```rust
 // Reading args
-let n: i64    = if args[0].is_int()   { args[0].as_int()   } else { return Err(VmErr::Type("expected int")); };
-let f: f64    = if args[0].is_float() { args[0].as_float() } else { return Err(VmErr::Type("expected float")); };
-let b: bool   = if args[0].is_bool()  { args[0].as_bool()  } else { return Err(VmErr::Type("expected bool")); };
+let n: i64 = if args[0].is_int() { args[0].as_int() } else { return Err(VmErr::Type("expected int")); };
+let f: f64 = if args[0].is_float() { args[0].as_float() } else { return Err(VmErr::Type("expected float")); };
+let b: bool = if args[0].is_bool() { args[0].as_bool() } else { return Err(VmErr::Type("expected bool")); };
 let s: String = match heap.get(args[0]) {
     HeapObj::Str(s) => s.clone(),
     _ => return Err(VmErr::Type("expected str")),
@@ -209,18 +209,18 @@ let items: Vec<Val> = match heap.get(args[0]) {
 };
 
 // Returning values
-Ok(Val::int(42))                                    // scalar — no allocation
+Ok(Val::int(42)) // scalar — no allocation
 Ok(Val::bool(true))
 Ok(Val::none())
-heap.alloc(HeapObj::Str("hi".into()))               // heap-allocated str
+heap.alloc(HeapObj::Str("hi".into())) // heap-allocated str
 heap.alloc(HeapObj::List(std::rc::Rc::new(std::cell::RefCell::new(vec![Val::int(1), Val::int(2)]))))
 heap.alloc(HeapObj::Tuple(vec![Val::int(1), Val::bool(true)]))
 
 // Errors -> surface in scripts as the corresponding Python exception class
-Err(VmErr::Type("expected str"))                    // -> TypeError
-Err(VmErr::Value("empty separator"))                // -> ValueError
-Err(VmErr::Runtime("network unavailable"))          // -> RuntimeError
-Err(VmErr::TypeMsg(format!("got {:?}", v)))         // dynamically formatted
+Err(VmErr::Type("expected str")) // -> TypeError
+Err(VmErr::Value("empty separator")) // -> ValueError
+Err(VmErr::Runtime("network unavailable")) // -> RuntimeError
+Err(VmErr::TypeMsg(format!("got {:?}", v))) // dynamically formatted
 ```
 
 ## Choosing between the two paths

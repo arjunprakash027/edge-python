@@ -22,20 +22,20 @@ pub struct Instruction {
 
 The operand is a 16-bit slot — its meaning depends on the opcode. Common shapes:
 
-| OpCode               | Operand interpretation                              |
-|----------------------|------------------------------------------------------|
-| `LoadConst`          | constant pool index                                  |
-| `LoadName` / `StoreName` | name slot index                                  |
-| `Add`, `Sub`, ...    | unused (IC keyed by ip)                              |
-| `Call`               | `(num_kw << 8) \| num_pos`                           |
-| `BuildList` / `BuildTuple` / `BuildSet` | element count                     |
-| `BuildDict`          | key-value pair count                                 |
-| `BuildSlice`         | parts count (2 or 3)                                 |
-| `Jump` / `JumpIfFalse` | target instruction index                           |
-| `ForIter`            | jump target on iterator exhaustion                   |
-| `Phi`                | target slot; sources stored in `chunk.phi_sources`   |
-| `UnpackEx`           | `(before << 8) \| after`                             |
-| `MakeFunction`       | function index in `chunk.functions`                  |
+| OpCode                    | Operand interpretation                               |
+|---------------------------|------------------------------------------------------|
+| `LoadConst`               | constant pool index                                  |
+| `LoadName` / `StoreName`  | name slot index                                      |
+| `Add`, `Sub`, ...         | unused (IC keyed by ip)                              |
+| `Call`                    | `(num_kw << 8) \| num_pos`                           |
+| `BuildList` / `BuildTuple` / `BuildSet` | element count                          |
+| `BuildDict`               | key-value pair count                                 |
+| `BuildSlice`              | parts count (2 or 3)                                 |
+| `Jump` / `JumpIfFalse`    | target instruction index                             |
+| `ForIter`                 | jump target on iterator exhaustion                   |
+| `Phi`                     | target slot; sources stored in `chunk.phi_sources`   |
+| `UnpackEx`                | `(before << 8) \| after`                             |
+| `MakeFunction`            | function index in `chunk.functions`                  |
 
 Operands are bounded to `u16::MAX` (65,535). The same cap applies to the size of the constant pool, name table, and instruction stream per chunk.
 
@@ -44,18 +44,18 @@ Operands are bounded to `u16::MAX` (65,535). The same cap applies to the size of
 `expr_bp(min_bp)` runs the Pratt loop. The atom dispatcher in `parse_atom` advances one token and routes by kind:
 
 ```text
-Name        -> name() (handles assignment, walrus, calls)
-String      -> emit Str constant; concatenate adjacent String tokens
-Int / Float -> emit numeric constant; literal beyond 2⁴⁷ is a parse error
-True/False/None/Ellipsis -> emit dedicated load opcode
-FstringStart -> fstring()
-Lbrace      -> brace_literal()  (dict, set, comprehension)
-Lsqb        -> list_literal()   (list, comprehension)
-Lpar        -> grouped expr, tuple, generator, or empty tuple
-Lambda      -> parse_lambda()
+Name   -> name() (handles assignment, walrus, calls)
+String   -> emit Str constant; concatenate adjacent String tokens
+Int / Float   -> emit numeric constant; literal beyond 2⁴⁷ is a parse error
+True/False/None/Ellipsisv-> emit dedicated load opcode
+FstringStart   -> fstring()
+Lbrace   -> brace_literal()  (dict, set, comprehension)
+Lsqb   -> list_literal()   (list, comprehension)
+Lpar   -> grouped expr, tuple, generator, or empty tuple
+Lambda   -> parse_lambda()
 ```
 
-After an atom, `postfix_tail()` handles trailers — subscript, attribute access, and call — which iterate until none apply. This is what lets expressions like `fns[0](-3)`, `obj.method()`, `(lambda x: x)(3)`, and `compose(f, g)(x)` parse uniformly.
+After an atom, `postfix_tail()` handles trailers — subscript, attribute access, and call; which iterate until none apply. This is what lets expressions like `fns[0](-3)`, `obj.method()`, `(lambda x: x)(3)`, and `compose(f, g)(x)` parse uniformly.
 
 `*args` / `**kwargs` are accepted in **call** position only; the parser does **not** support starred unpacking inside literals (`[*a, *b]`, `{**d1, **d2}`, `(1, *xs, 2)`).
 
@@ -82,7 +82,7 @@ Comparison chaining (`a < b < c`) is handled inline by `infix_bp`: when a compar
 
 ## Short-circuit lowering
 
-`and` and `or` lower to `JumpIfFalseOrPop` / `JumpIfTrueOrPop` — superinstructions that peek the stack top, pop only if execution continues, and otherwise jump while leaving the value on the stack:
+`and` and `or` lower to `JumpIfFalseOrPop` / `JumpIfTrueOrPop`; superinstructions that peek the stack top, pop only if execution continues, and otherwise jump while leaving the value on the stack:
 
 ```text
 a and b
@@ -108,15 +108,15 @@ y = x # y_1, references x_2
 ```text
 chunk.names = ["x_1", "x_2", "y_1"]
 chunk.instructions:
-   LoadConst 0    (1)
-   StoreName 0    (x_1)
-   LoadConst 1    (2)
-   StoreName 1    (x_2)
-   LoadName  1    (x_2)
-   StoreName 2    (y_1)
+   LoadConst 0   (1)
+   StoreName 0   (x_1)
+   LoadConst 1   (2)
+   StoreName 1   (x_2)
+   LoadName 1   (x_2)
+   StoreName 2   (y_1)
 ```
 
-Lookups on undefined names target version 0 (`x_0`), which is filled either by the host before execution (the VM seeds globals like `print_0`) or — if still unbound at load time — raises `NameError`.
+Lookups on undefined names target version 0 (`x_0`), which is filled either by the host before execution (the VM seeds globals like `print_0`) or — if still unbound at load time; raises `NameError`.
 
 ## Phi nodes at joins
 
@@ -160,31 +160,31 @@ The runtime resolves `Phi` by reading whichever of the two source slots is `Some
 `stmt()` peeks the leading token and routes:
 
 ```text
-if          -> if_stmt          (with elif chain, optional else)
-for         -> for_stmt_inner   (sync iter, optional else)
-while       -> while_stmt       (with break/continue patches)
-match       -> match_stmt
-def         -> func_def_inner
-class       -> class_def        (__init__, attributes, methods)
-with        -> with_stmt_inner  (multi-target, async variant)
-try         -> try_stmt         (except, else, finally, raise)
-import      -> import_stmt      (compile-time resolver lookup)
-from        -> parse_from_stmt  (named / star imports, same path)
-type        -> type-alias declaration
-yield       -> yield expr / yield from
-async       -> async def / for / with
-@           -> decorator stack + def or class (peeks `class` after the @-list)
-return      -> expr + ReturnValue
-raise       -> expr + Raise / RaiseFrom
-break       -> patched at loop end
-continue    -> jump to current loop_start
+if   -> if_stmt   (with elif chain, optional else)
+for   -> for_stmt_inner   (sync iter, optional else)
+while   -> while_stmt   (with break/continue patches)
+match   -> match_stmt
+def   -> func_def_inner
+class   -> class_def   (__init__, attributes, methods)
+with   -> with_stmt_inner   (multi-target, async variant)
+try   -> try_stmt   (except, else, finally, raise)
+import   -> import_stmt   (compile-time resolver lookup)
+from   -> parse_from_stmt   (named / star imports, same path)
+type -> type-alias declaration
+yield   -> yield expr / yield from
+async   -> async def / for / with
+@   -> decorator stack + def or class   (peeks `class` after the @-list)
+return   -> expr + ReturnValue
+raise   -> expr + Raise / RaiseFrom
+break   -> patched at loop end
+continue   -> jump to current loop_start
 del / global / nonlocal / assert / pass -> direct emit
-Name        -> name_stmt (assignment, augmented, indexed, attribute, call)
+Name   -> name_stmt   (assignment, augmented, indexed, attribute, call)
 ```
 
 Each statement returns a bool indicating whether it left a value on the stack. The driver loop emits `PopTop` after expression-shaped statements (`x.method()`, `1 + 2` at module level) but not after statement-shaped ones (assignment, control flow).
 
-Decorators apply to both `def` and `class` — the `@` arm peeks for `class` after collecting the decorator stack and routes accordingly. Each decorator wraps the produced value via a `Call,1` instruction emitted between `MakeFunction`/`MakeClass` and the final `StoreName`.
+Decorators apply to both `def` and `class`; the `@` arm peeks for `class` after collecting the decorator stack and routes accordingly. Each decorator wraps the produced value via a `Call,1` instruction emitted between `MakeFunction`/`MakeClass` and the final `StoreName`.
 
 `raise X from Y` lowers to `RaiseFrom`, which pops the cause first and then the exception so `X` is the value that surfaces. Bare `raise` re-raises the current exception. `__cause__` / `__context__` chaining is not exposed — only the final raised type and args are visible. `except` matching walks an `EXC_PARENTS` table so `except Exception` catches subclasses (`RuntimeError`, `ValueError`, ...) the same way `isinstance(e, Exception)` does.
 
@@ -196,12 +196,12 @@ Lambdas and `def` both compile their body into a *fresh* SSAChunk:
 self.with_fresh_chunk(|s| {
     s.ssa_versions = outer_versions.clone();
     for p in &params { s.ssa_versions.insert(p.clone(), 0); }
-    s.expr();                        // or compile_block_body for def
+    s.expr(); // or compile_block_body for def
     s.chunk.emit(OpCode::ReturnValue, 0);
 });
 ```
 
-Free variables in the body — names that aren't parameters and don't have a local binding — are looked up in the outer chunk's name table. The `MakeFunction` opcode at runtime captures matching slots from the enclosing scope into the function's `captures` list (snapshotted at `MakeFunction` time — there are no cell objects). Nested `def` and `lambda` push their own free names back into their parent's name table, so each enclosing function captures whatever its descendants need; the chain propagates through any depth (e.g. `def A -> def B -> def C` where `C` references a var in `A`).
+Free variables in the body, names that aren't parameters and don't have a local binding — are looked up in the outer chunk's name table. The `MakeFunction` opcode at runtime captures matching slots from the enclosing scope into the function's `captures` list (snapshotted at `MakeFunction` time; there are no cell objects). Nested `def` and `lambda` push their own free names back into their parent's name table, so each enclosing function captures whatever its descendants need; the chain propagates through any depth (e.g. `def A -> def B -> def C` where `C` references a var in `A`).
 
 Parameters classify into three slot kinds: `Normal`, `Star` (`*args`), `DoubleStar` (`**kwargs`). The keyword-only marker `*` (lone `*` separator) prefixes following parameter names so they are matched by keyword only and never receive positional arguments. Defaults are stored in `HeapObj::Func.defaults` and applied to the last-N positional slots. Parameter annotations (`x: T`) and return annotations (`-> T`) are parsed and drained without affecting runtime; they are recorded in `chunk.annotations` for tooling use only.
 
@@ -212,8 +212,8 @@ After body compilation, `compile_body` inspects the body's instruction stream fo
 Annotations are parsed for source compatibility but discarded at execution time:
 
 ```python
-counter: int = 0       # annotation 'int' parsed and stored, slot still gets 0
-def f(x: int) -> int:  # annotations on params and return parsed and skipped
+counter: int = 0   # annotation 'int' parsed and stored, slot still gets 0
+def f(x: int) -> int:   # annotations on params and return parsed and skipped
     return x
 ```
 
@@ -223,7 +223,7 @@ Annotations are recorded in `chunk.annotations: HashMap<String, String>` for dia
 
 List, set, and dict comprehensions are supported with multi-`for` and multi-`if` filters. They lower to `BuildList` / `BuildSet` / `BuildDict` plus an explicit loop scaffold that calls `ListAppend` / `SetAdd` / `MapAdd`.
 
-Generator expressions `(i*2 for i in xs)` are **eagerly lowered to `BuildList`** — the parenthesised form is operationally equivalent to `[i*2 for i in xs]`. This is a deliberate trade-off: the template-memoisation layer requires hashable, finite arguments, and lazy generators wouldn't memoise. For unbounded streams, write a `def` with `yield` (which produces a real `HeapObj::Coroutine`).
+Generator expressions `(i*2 for i in xs)` are **eagerly lowered to `BuildList`**, the parenthesised form is operationally equivalent to `[i*2 for i in xs]`. This is a deliberate trade-off: the template-memoisation layer requires hashable, finite arguments, and lazy generators wouldn't memoise. For unbounded streams, write a `def` with `yield` (which produces a real `HeapObj::Coroutine`).
 
 Async comprehensions (`[x async for x in y]`) and starred-unpack patterns inside comprehensions are not supported.
 
@@ -246,8 +246,8 @@ BuildString 5
 ```
 
 `FormatValue`'s 16-bit operand is a small flags field:
-- bit 0 — set when a format spec string is on the stack just below the value (collected as the raw text between `:` and `}` and emitted as a constant).
-- bits 1–2 — conversion: `0` none, `1` `!r`, `2` `!s`, `3` `!a`.
+* bit 0 — set when a format spec string is on the stack just below the value (collected as the raw text between `:` and `}` and emitted as a constant).
+* bits 1–2 — conversion: `0` none, `1` `!r`, `2` `!s`, `3` `!a`.
 
 The VM applies the conversion first (if any), then runs the format-spec mini-language `[[fill]align][sign][#][0][width][,][.precision][type]` with type chars `s d b o x X f F e E g G n % c`. `n` is aliased to `d` (no locale support). The `=` self-documenting form (`{expr=}`) is supported and emits a literal `expr=` prefix. Adjacent string literals (including bytes) concatenate at parse time. Spec parsing failures surface as a `ValueError` at runtime.
 

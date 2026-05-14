@@ -169,8 +169,8 @@ b'hi'
 ```python
 b = b"\x48\x65\x6c\x6c\x6f"
 
-print(b.decode())                     # default utf-8
-print(b.hex())                        # no separator argument
+print(b.decode()) # default utf-8
+print(b.hex()) # no separator argument
 print(b.startswith(b"He"))
 print(b.endswith(b"lo"))
 print(b.find(b"ll"))
@@ -223,7 +223,7 @@ xs = [1, 2, 3]
 xs.append(4)
 print(xs)
 
-xs.extend(range(5, 7))   # any iterable
+xs.extend(range(5, 7)) # any iterable
 print(xs)
 
 xs.insert(0, 99)
@@ -289,7 +289,7 @@ print(list(d.items()))
 # Snapshot is detached from the dict
 k = d.keys()
 d["d"] = 4
-print(k)            # ['a', 'b', 'c'] — pre-mutation
+print(k) # ['a', 'b', 'c'] — pre-mutation
 ```
 
 ```text Output
@@ -365,8 +365,8 @@ s = {1, 2, 3}
 s.add(4)
 print(s)
 
-s.remove(2)        # raises KeyError if absent
-s.discard(99)      # silently ignores absent values
+s.remove(2) # raises KeyError if absent
+s.discard(99) # silently ignores absent values
 print(s)
 
 popped = s.pop()
@@ -400,7 +400,7 @@ print(a & b)
 print(a - b)
 print(a ^ b)
 
-print(a.union([4, 5]))           # accepts any iterable
+print(a.union([4, 5])) # accepts any iterable
 print({1, 2}.issubset({1, 2, 3}))
 print({1, 2, 3}.issuperset({1}))
 print({1, 2}.isdisjoint({3, 4}))
@@ -420,10 +420,10 @@ True
 Comparison operators between sets follow subset / superset semantics, not total order:
 
 ```python
-print({1, 2} <  {1, 2, 3})   # proper subset
-print({1, 2} <= {1, 2})      # subset
-print({1, 2} >= {1})         # superset
-print({1, 2} <= {2, 3})      # disjoint sides -> False
+print({1, 2} <  {1, 2, 3}) # proper subset
+print({1, 2} <= {1, 2}) # subset
+print({1, 2} >= {1}) # superset
+print({1, 2} <= {2, 3}) # disjoint sides -> False
 ```
 
 ```text Output

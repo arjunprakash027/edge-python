@@ -3,7 +3,7 @@ title: "Imports"
 description: "Importing modules in Edge Python: syntax, resolution, and the two module flavors."
 ---
 
-Edge Python supports `import`, `from <spec> import <names>`, and `from <spec> import *`. **Module resolution happens at compile time, not at runtime**: the VM never learns what a module is — by the time bytecode runs, every import has been flattened into a sequence of bytecode that materialises the module's exports.
+Edge Python supports `import`, `from <spec> import <names>`, and `from <spec> import *`. **Module resolution happens at compile time, not at runtime**: the VM never learns what a module is; by the time bytecode runs, every import has been flattened into a sequence of bytecode that materialises the module's exports.
 
 ## The two flavors
 
@@ -43,8 +43,8 @@ print(slugify("Hello world"))
 
 1. The compiler scans your source for every `from <spec> ...` statement.
 2. For each spec, it asks the **host's `Resolver`** to materialise the module:
-   - `Resolved::Native { bindings, canonical }` — list of `(name, function pointer, pure flag)` tuples plus the resolver's authoritative spec.
-   - `Resolved::Code { src, canonical }` — raw `.py` source plus the canonical spec.
+   * `Resolved::Native { bindings, canonical }`, list of `(name, function pointer, pure flag)` tuples plus the resolver's authoritative spec.
+   * `Resolved::Code { src, canonical }`; raw `.py` source plus the canonical spec.
 3. For natives, the bindings are appended to the chunk's `extern_table`. Named imports register the alias so the call site can emit a direct `CallExtern idx, argc`. The module is also added to the chunk's `imports` list keyed by its canonical spec so first-class references and `import_module()` lookups resolve.
 4. For code modules, the source is parsed into a fresh `SSAChunk` and registered in the chunk's `imports` list. Each requested name becomes a `LoadModule + LoadAttr + StoreName` triple at the call site — no per-importer splicing, no name mangling.
 
@@ -56,7 +56,7 @@ The runtime never fetches anything. The host (browser JS, WASI runtime, embedded
 
 ## packages.json
 
-Bare-name imports resolve through an import map declared in your project's `packages.json` (sitting next to the entry script). The manifest is always called `packages.json` — there is no `edge.json` or other variant.
+Bare-name imports resolve through an import map declared in your project's `packages.json` (sitting next to the entry script). The manifest is always called `packages.json`; there is no `edge.json` or other variant.
 
 ```json
 {
@@ -75,7 +75,7 @@ The schema is small and strict:
 - `extends` (optional): string naming a directory whose `packages.json` is consulted when an alias isn't found locally.
 - Unknown top-level keys are silently ignored (forward-compatible).
 - Booleans, numbers, and arrays at any level are rejected.
-- String escapes accepted: `\"`, `\\`, `\/`, `\n`, `\t`, `\r`. **`\uXXXX` is not supported** — paste the character literally (the file must be UTF-8).
+- String escapes accepted: `\"`, `\\`, `\/`, `\n`, `\t`, `\r`. **`\uXXXX` is not supported**, paste the character literally (the file must be UTF-8).
 
 After this, `from utils import x` resolves to `./lib/utils.py` relative to the entry script's directory; `from math import add` loads the `.wasm` per the [wire format](/reference/wasm-abi).
 
@@ -87,11 +87,11 @@ Bare-name imports resolve against the **nearest `packages.json` walking up** fro
 
 ```
 my_app/
-├── packages.json          ← root manifest
-├── main.py                  bare imports here resolve via root manifest
+├── packages.json <- root manifest
+├── main.py   bare imports here resolve via root manifest
 ├── lib/
-│   ├── packages.json      ← sub-package manifest
-│   └── helper.py            bare imports here resolve via lib/ first
+│   ├── packages.json <- sub-package manifest
+│   └── helper.py   bare imports here resolve via lib/ first
 └── ...
 ```
 
@@ -186,9 +186,9 @@ The browser worker auto-generates a **lockfile** and a **content-addressed cache
 
 ### What runs do
 
-- **First run, cold**: every URL in the dependency graph is fetched, hashed, written to the CAS, and recorded in the lockfile.
-- **Subsequent runs**: each spec is looked up in the lockfile; if the hash is known and the corresponding blob is in the CAS, the bytes are served without touching the network. Identical content under different URLs deduplicates automatically (the hash is the key).
-- **`clearCache()`**: wipes the in-memory map, the CAS, and the lockfile. The next run treats everything as fresh.
+* **First run, cold**: every URL in the dependency graph is fetched, hashed, written to the CAS, and recorded in the lockfile.
+* **Subsequent runs**: each spec is looked up in the lockfile; if the hash is known and the corresponding blob is in the CAS, the bytes are served without touching the network. Identical content under different URLs deduplicates automatically (the hash is the key).
+* **`clearCache()`**: wipes the in-memory map, the CAS, and the lockfile. The next run treats everything as fresh.
 
 ### Drift detection
 

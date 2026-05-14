@@ -17,17 +17,17 @@ Edge Python supports two limit profiles. Pick one when constructing the VM via `
 
 Edge Python integers have a two-tier representation:
 
-- **Inline (fast path)**: 47-bit signed values stored directly in a NaN-boxed `Val`. Range `±140_737_488_355_327` (`±2^47`). One ALU op per arithmetic, no heap allocation.
-- **Wide (slow path)**: i128 values stored as `HeapObj::LongInt`. Range `±170_141_183_460_469_231_731_687_303_715_884_105_727` (`±2^127 - 1`). Used automatically when a literal exceeds 47-bit, or when arithmetic overflows the inline path.
+* **Inline (fast path)**: 47-bit signed values stored directly in a NaN-boxed `Val`. Range `±140_737_488_355_327` (`±2^47`). One ALU op per arithmetic, no heap allocation.
+* **Wide (slow path)**: i128 values stored as `HeapObj::LongInt`. Range `±170_141_183_460_469_231_731_687_303_715_884_105_727` (`±2^127 - 1`). Used automatically when a literal exceeds 47-bit, or when arithmetic overflows the inline path.
 
 Anything outside `±2^127` raises `OverflowError`. The promotion is automatic — user code doesn't see the boundary except for the error class.
 
 ```python
-print(140737488355327)              # inline, fast path
-print(2 ** 47)                      # 140737488355328 — auto-promotes to LongInt
-print(2 ** 100)                     # 1267650600228229401496703205376
+print(140737488355327) # inline, fast path
+print(2 ** 47) # 140737488355328 — auto-promotes to LongInt
+print(2 ** 100) # 1267650600228229401496703205376
 try:
-    print(2 ** 127)                 # past the i128 cap
+    print(2 ** 127) # past the i128 cap
 except OverflowError:
     print("overflow")
 ```

@@ -128,7 +128,7 @@ done
 
 Edge Python supports a useful subset of structural pattern matching: literal patterns, capture variables, the `_` wildcard, OR patterns (`|`), guards (`if`), and sequence patterns including the `*rest` star.
 
-Inside a sequence pattern each item must be a literal (`int` / `float` / `str` / `True` / `False` / `None`), a capture name, or `_`. Nested sequences (`case [[a, b], c]:`) are not parsed — flatten them or fall back to guards. Mapping patterns (`{"key": x}`), class patterns (`Point(x=0)`), and value-shape captures via `as` are also unsupported. For those, use chained `if` / `elif`.
+Inside a sequence pattern each item must be a literal (`int` / `float` / `str` / `True` / `False` / `None`), a capture name, or `_`. Nested sequences (`case [[a, b], c]:`) are not parsed, flatten them or fall back to guards. Mapping patterns (`{"key": x}`), class patterns (`Point(x=0)`), and value-shape captures via `as` are also unsupported. For those, use chained `if` / `elif`.
 
 ```python
 def classify(p):
@@ -246,7 +246,7 @@ except ValueError:
 rejected
 ```
 
-`raise X from Y` raises `X`. The `from` clause is parsed and the cause expression is evaluated, but `__cause__` / `__context__` chaining is not preserved on the propagated exception — only the primary `X` reaches the handler.
+`raise X from Y` raises `X`. The `from` clause is parsed and the cause expression is evaluated, but `__cause__` / `__context__` chaining is not preserved on the propagated exception; only the primary `X` reaches the handler.
 
 ```python
 try:

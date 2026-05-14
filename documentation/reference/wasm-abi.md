@@ -192,8 +192,7 @@ edge-pdk = { path = "../../edge-pdk" }   # or = "0.1" once published
 Build:
 
 ```bash
-cargo build --release --target wasm32-unknown-unknown -p slugify-mod
-# -> target/wasm32-unknown-unknown/release/slugify_mod.wasm   (~74 KB stripped)
+cargo build --release --target wasm32-unknown-unknown -p slugify-mod # -> target/wasm32-unknown-unknown/release/slugify_mod.wasm   (around 74 KB stripped)
 ```
 
 Use it from a script:
@@ -201,14 +200,14 @@ Use it from a script:
 ```python
 from "./slugify_mod.wasm" import slugify, repeat_n, sum_ints
 
-print(slugify("Hello World"))     # -> hello-world
-print(repeat_n("ha", 3))          # -> hahaha
-print(sum_ints([1, 2, 3, 4]))     # -> 10
+print(slugify("Hello World")) # -> hello-world
+print(repeat_n("ha", 3)) # -> hahaha
+print(sum_ints([1, 2, 3, 4])) # -> 10
 
 try:
     print(repeat_n("nope", -1))
 except ValueError as e:
-    print("caught:", e)           # -> caught: repeat count must be non-negative
+    print("caught:", e) # -> caught: repeat count must be non-negative
 ```
 
 ## Worked example — raw, no SDK
@@ -254,8 +253,7 @@ pub extern "C" fn slugify(argv: *const u32, argc: u32, out: *mut u32) -> i32 {
 
     // 1) input.lower()
     let mut lower: u32 = 0;
-    if unsafe { edge_op(OP_CALL, input, b"lower".as_ptr(), 5,
-                        core::ptr::null(), 0, &mut lower) } != 0 {
+    if unsafe { edge_op(OP_CALL, input, b"lower".as_ptr(), 5, core::ptr::null(), 0, &mut lower) } != 0 {
         return 1;
     }
 
@@ -263,8 +261,7 @@ pub extern "C" fn slugify(argv: *const u32, argc: u32, out: *mut u32) -> i32 {
     let space = unsafe { edge_encode(TAG_BYTES, b" ".as_ptr(), 1) };
     let dash  = unsafe { edge_encode(TAG_BYTES, b"-".as_ptr(), 1) };
     let argv2 = [space, dash];
-    let r = unsafe { edge_op(OP_CALL, lower, b"replace".as_ptr(), 7,
-                             argv2.as_ptr(), 2, out) };
+    let r = unsafe { edge_op(OP_CALL, lower, b"replace".as_ptr(), 7, argv2.as_ptr(), 2, out) };
 
     // 3) Cleanup intermediate handles. The result handle in *out
     //    transfers to the host.
@@ -296,7 +293,7 @@ strip = true
 
 ```bash
 cargo build --release --target wasm32-unknown-unknown
-# -> target/wasm32-unknown-unknown/release/slugify_mod.wasm   (~1-2 KB)
+# -> target/wasm32-unknown-unknown/release/slugify_mod.wasm   (around 1-2 KB)
 ```
 
 ### Use it from an Edge Python script
@@ -304,8 +301,8 @@ cargo build --release --target wasm32-unknown-unknown
 ```python
 from "https://example.com/slugify.wasm" import slugify
 
-print(slugify("Hello World"))    # -> hello-world
-print(slugify("ABC 123"))        # -> abc-123
+print(slugify("Hello World")) # -> hello-world
+print(slugify("ABC 123")) # -> abc-123
 ```
 
 Or via `packages.json`:
@@ -337,21 +334,21 @@ The reference browser shim is `demo/worker.js`. WASI hosts and Rust embedders mi
 
 ## Constraints and caveats
 
-- **Refcounted handles.** The guest must release every handle it creates via `edge_encode` or `edge_op` except the one it returns through `*out`. Argv handles are released by the host.
-- **`edge_decode` only handles primitives.** For `list`, `dict`, `set`, instances, etc., use `edge_op` (e.g. `Call recv "items"`, `GetItem recv idx`).
-- **Reentrance is supported.** A guest's `edge_op` runs while the Edge Python VM is paused on the script's `CallExtern`. Method dispatch routes through the same `vm/handlers/builtin_methods/` descriptor table the language uses internally — adding a method there makes it visible to existing modules without recompiling them.
-- **Error-as-status, not panic.** Returning `1` from a guest function does NOT abort the host. The host pulls the error and raises it as a typed Python exception in the script.
-- **Memory ownership.** The host doesn't read the guest's linear memory except to copy in/out at well-defined points. Anything the guest allocates internally (its own pools, caches, embedded blobs) is private; the host never touches it.
+* **Refcounted handles.** The guest must release every handle it creates via `edge_encode` or `edge_op` except the one it returns through `*out`. Argv handles are released by the host.
+* **`edge_decode` only handles primitives.** For `list`, `dict`, `set`, instances, etc., use `edge_op` (e.g. `Call recv "items"`, `GetItem recv idx`).
+* **Reentrance is supported.** A guest's `edge_op` runs while the Edge Python VM is paused on the script's `CallExtern`. Method dispatch routes through the same `vm/handlers/builtin_methods/` descriptor table the language uses internally — adding a method there makes it visible to existing modules without recompiling them.
+* **Error-as-status, not panic.** Returning `1` from a guest function does NOT abort the host. The host pulls the error and raises it as a typed Python exception in the script.
+* **Memory ownership.** The host doesn't read the guest's linear memory except to copy in/out at well-defined points. Anything the guest allocates internally (its own pools, caches, embedded blobs) is private; the host never touches it.
 
 ## Author conveniences (community-maintained)
 
 The Edge Python project distributes only this specification. The reference Rust author layer is the **`edge-pdk`** crate (Plugin Development Kit), bundled in this repo at `edge-pdk/` and intended to be published independently. It provides:
 
-- `#[plugin_fn]` proc macro that turns a typed Rust function into a wire-conformant export.
-- `module!()` macro that expands to the `#[global_allocator]` and `#[panic_handler]` every plugin needs.
-- `FromValue` / `IntoValue` traits with primitive impls (`i64`, `f64`, `bool`, `String`, `&str`, `Option<T>`, `Handle`).
-- `Handle` / `Value` / `Error` types wrapping handles with `Drop`-driven release.
-- The required `__edge_alloc` and `__edge_abi_version` exports emitted automatically.
+* `#[plugin_fn]` proc macro that turns a typed Rust function into a wire-conformant export.
+* `module!()` macro that expands to the `#[global_allocator]` and `#[panic_handler]` every plugin needs.
+* `FromValue` / `IntoValue` traits with primitive impls (`i64`, `f64`, `bool`, `String`, `&str`, `Option<T>`, `Handle`).
+* `Handle` / `Value` / `Error` types wrapping handles with `Drop`-driven release.
+* The required `__edge_alloc` and `__edge_abi_version` exports emitted automatically.
 
 A typical author-side function with the macro:
 
