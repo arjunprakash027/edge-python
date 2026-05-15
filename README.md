@@ -9,13 +9,16 @@ Edge Python is distributed as a WebAssembly module — `compiler.wasm`, ~170 KB.
 
 ## Repository layout
 
-This is a Cargo workspace. The root `Cargo.toml` declares one crate and shares profile settings; `cargo` commands work from any directory.
+This is a Cargo workspace. The root `Cargo.toml` declares the workspace members and shares profile settings; `cargo` commands work from any directory.
 
 ```text
 Cargo.toml   Workspace manifest (members + shared profile)
 .cargo/config.toml   Workspace-wide aliases (`cargo wasm`)
 
 compiler/   Rust crate `edge-python`: lexer, parser, optimizer, VM, packages module. Compiles to compiler_lib.wasm (the only artifact the project distributes).
+wasm-abi/   Wire-format constants shared by the compiler (host) and wasm-pdk (guest). no_std, zero deps.
+wasm-pdk/   Plugin Development Kit — author-side runtime for writing `.wasm` modules importable from Edge Python scripts (`#[plugin_fn]`, Handle/Value/Error). Published independently of compiler.wasm.
+examples/   Reference `.wasm` plugins built with wasm-pdk (e.g. `slugify-mod`).
 
 demo/   Browser playground (HTML + WASM + Web Worker)
 documentation/   Mintlify documentation source

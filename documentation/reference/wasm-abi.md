@@ -40,7 +40,7 @@ pub extern "C" fn __edge_abi_version() -> u32;
 
 `__edge_abi_version` returns the wire-format version this module targets (currently `1`). The host MUST read this symbol once at instantiation and refuse modules whose version it does not understand. Without the handshake, a host that has evolved beyond v1 would load a v1 module and decode garbage silently. (At v1 every loader targets version 1 so the bundled `compiler.wasm` shim does not yet read the symbol; the check becomes load-bearing only when a v2 ships.)
 
-The reference `edge-pdk` crate emits both symbols automatically. `EDGE_ABI_VERSION` itself lives in the shared `edge-abi` crate (no_std, zero deps) so the host and every PDK read the same value; `edge-pdk` re-exports it.
+The reference `wasm-pdk` crate emits both symbols automatically. `EDGE_ABI_VERSION` itself lives in the shared `wasm-abi` crate (no_std, zero deps) so the host and every PDK read the same value; `wasm-pdk` re-exports it.
 
 ## Host imports (6 functions)
 
@@ -136,9 +136,9 @@ Composite values (list, dict, set, instance, callable, iterator) are **not** enc
 | Key       | 5 | `KeyError` |
 | Custom    | 6 | the message carries the user-defined kind name |
 
-## Worked example — recommended Rust path with `edge-pdk`
+## Worked example — recommended Rust path with `wasm-pdk`
 
-The `edge-pdk` crate (in this repo at `edge-pdk/`) provides the
+The `wasm-pdk` crate (in this repo at `wasm-pdk/`) provides the
 `#[plugin_fn]` proc macro that expands to wire-conformant exports.
 Authors write normal Rust:
 
@@ -148,9 +148,9 @@ Authors write normal Rust:
 extern crate alloc;
 
 use alloc::string::String;
-use edge_pdk::*;
+use wasm_pdk::*;
 
-edge_pdk::module!();   // expands to #[global_allocator] + #[panic_handler]
+wasm_pdk::module!();   // expands to #[global_allocator] + #[panic_handler]
 
 #[plugin_fn]
 fn slugify(s: String) -> String {
@@ -186,7 +186,7 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-edge-pdk = { path = "../../edge-pdk" }   # or = "0.1" once published
+wasm-pdk = { path = "../../wasm-pdk" }   # or = "0.1" once published
 ```
 
 Build:
@@ -340,9 +340,9 @@ The reference browser shim is `demo/worker.js`. WASI hosts and Rust embedders mi
 * **Error-as-status, not panic.** Returning `1` from a guest function does NOT abort the host. The host pulls the error and raises it as a typed Python exception in the script.
 * **Memory ownership.** The host doesn't read the guest's linear memory except to copy in/out at well-defined points. Anything the guest allocates internally (its own pools, caches, embedded blobs) is private; the host never touches it.
 
-## Author conveniences (community-maintained)
+## Author conveniences
 
-The Edge Python project distributes only this specification. The reference Rust author layer is the **`edge-pdk`** crate (Plugin Development Kit), bundled in this repo at `edge-pdk/` and intended to be published independently. It provides:
+The reference Rust author layer is the **`wasm-pdk`** crate (Plugin Development Kit), bundled in this repo at `wasm-pdk/` and intended to be published independently of `compiler.wasm`. It provides:
 
 * `#[plugin_fn]` proc macro that turns a typed Rust function into a wire-conformant export.
 * `module!()` macro that expands to the `#[global_allocator]` and `#[panic_handler]` every plugin needs.
@@ -353,9 +353,9 @@ The Edge Python project distributes only this specification. The reference Rust 
 A typical author-side function with the macro:
 
 ```rust
-use edge_pdk::*;
+use wasm_pdk::*;
 
-edge_pdk::module!();
+wasm_pdk::module!();
 
 #[plugin_fn]
 fn slugify(s: String) -> String {
@@ -365,7 +365,7 @@ fn slugify(s: String) -> String {
 
 The macro emits the boilerplate seen in the worked example above. Authors who don't want a toolchain write the boilerplate manually (~25 lines for the first function, ~5 lines per additional).
 
-Per the project's policy, similar community PDKs exist for Zig (`edge-pdk-zig`), AssemblyScript (`edge-pdk-as`), and C (`edge-pdk.h`) without coordinated releases — each tracks the sealed wire spec on its own cadence.
+Per the project's policy, similar community PDKs exist for Zig (`wasm-pdk-zig`), AssemblyScript (`wasm-pdk-as`), and C (`wasm-pdk.h`) without coordinated releases — each tracks the sealed wire spec on its own cadence.
 
 ## See also
 

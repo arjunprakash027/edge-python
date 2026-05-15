@@ -21,7 +21,7 @@
 //! Author code:
 //!
 //! ```ignore
-//! use edge_pdk::*;
+//! use wasm_pdk::*;
 //!
 //! #[plugin_fn]
 //! fn slugify(s: String) -> String {
@@ -29,21 +29,21 @@
 //! }
 //! ```
 //!
-//! The `#[plugin_fn]` attribute lives in the internal `edge-pdk-macros`
+//! The `#[plugin_fn]` attribute lives in the internal `wasm-pdk-macros`
 //! sub-crate and is re-exported from here.
 
 #![cfg_attr(not(test), no_std)]
 
 extern crate alloc;
 
-pub use edge_pdk_macros::plugin_fn;
+pub use wasm_pdk_macros::plugin_fn;
 
 /* Curated public surface for plugin authors. Glob-importing the whole
    crate exposes #[doc(hidden)] symbols (`__edge_alloc`, `__internals`)
    which are part of the macro contract, not the user API. The prelude
    re-exports just what `#[plugin_fn]` expansion needs and what most
    plugins reach for: type wrappers, the attribute, the trait pair.
-   Recommended: `use edge_pdk::prelude::*;`. */
+   Recommended: `use wasm_pdk::prelude::*;`. */
 pub mod prelude {
     pub use crate::{plugin_fn, Handle, Value, Error, Result, FromValue, IntoValue};
 }
@@ -66,7 +66,7 @@ pub use lol_alloc as __lol_alloc;
    cannot inject from inside an item position.
 
    Usage:
-     edge_pdk::module!();
+     wasm_pdk::module!();
 
    On non-wasm targets (e.g. host-side unit tests for the plugin) the
    macro expands to nothing so cargo test still works. */
@@ -75,12 +75,12 @@ macro_rules! module {
     () => {
         #[cfg(target_arch = "wasm32")]
         #[global_allocator]
-        static __EDGE_PDK_ALLOC: $crate::__lol_alloc::LeakingPageAllocator
+        static __WASM_PDK_ALLOC: $crate::__lol_alloc::LeakingPageAllocator
             = $crate::__lol_alloc::LeakingPageAllocator;
 
         #[cfg(target_arch = "wasm32")]
         #[panic_handler]
-        fn __edge_pdk_panic(_: &core::panic::PanicInfo) -> ! {
+        fn __wasm_pdk_panic(_: &core::panic::PanicInfo) -> ! {
             core::arch::wasm32::unreachable()
         }
     };
@@ -119,28 +119,28 @@ unsafe extern "C" {
 
 /* ---------- ABI version handshake ------------------------------------ */
 
-/* Wire-format version this PDK targets. The constant lives in `edge-abi`
+/* Wire-format version this PDK targets. The constant lives in `wasm-abi`
    so the host and every plugin compile against the same value. Plugins
    export `__edge_abi_version` returning `EDGE_ABI_VERSION`; the host
    loader reads that symbol and refuses to instantiate a plugin whose
    version it does not understand — without the handshake an evolved
    host would load an old plugin and decode garbage silently. */
-pub use edge_abi::EDGE_ABI_VERSION;
+pub use wasm_abi::EDGE_ABI_VERSION;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn __edge_abi_version() -> u32 { EDGE_ABI_VERSION }
 
 /* ---------- Op codes & tags ------------------------------------------ */
 
-/* Re-exported from `edge-abi` so the host and the PDK observe the same
-   constants. `use edge_pdk::op;` keeps working for plugin authors. */
-pub use edge_abi::{op, tag};
+/* Re-exported from `wasm-abi` so the host and the PDK observe the same
+   constants. `use wasm_pdk::op;` keeps working for plugin authors. */
+pub use wasm_abi::{op, tag};
 
 /* ---------- Internals — macro contract surface, not user API --------- */
 
-/* Sub-module so `use edge_pdk::*;` cannot pull these into a plugin
+/* Sub-module so `use wasm_pdk::*;` cannot pull these into a plugin
    author's namespace. The `#[plugin_fn]` expansion qualifies the path
-   explicitly (`::edge_pdk::__internals::stash_error`), and `__edge_alloc`
+   explicitly (`::wasm_pdk::__internals::stash_error`), and `__edge_alloc`
    stays a no_mangle WASM export regardless of Rust module nesting. */
 #[doc(hidden)]
 pub mod __internals {

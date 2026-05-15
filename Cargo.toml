@@ -1,9 +1,7 @@
 [workspace]
-members = ["compiler", "edge-abi", "edge-pdk", "edge-pdk/macros", "examples/slugify-mod"]
-# Wasm-only example crates live in `members` (so they share the lockfile and
-# resolve path deps) but are excluded from default workspace commands. Run
-# them explicitly with `-p` against `wasm32-unknown-unknown`.
-default-members = ["compiler", "edge-abi", "edge-pdk", "edge-pdk/macros"]
+members = ["compiler", "wasm-abi", "wasm-pdk", "wasm-pdk/macros", "examples/slugify-mod"]
+# Wasm-only example crates live in `members` (so they share the lockfile and resolve path deps) but are excluded from default workspace commands. Run them explicitly with `-p` against `wasm32-unknown-unknown`.
+default-members = ["compiler", "wasm-abi", "wasm-pdk", "wasm-pdk/macros"]
 resolver = "2"
 
 [workspace.package]
@@ -11,11 +9,9 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/dylan-sutton-chavez/edge-python/"
 
-# Single source of truth for third-party versions. Members opt in with
-# `dep = { workspace = true }` so a bump touches one line workspace-wide
-# and the lockfile cannot grow accidental version splits.
+# Single source of truth for third-party versions. Members opt in with `dep = { workspace = true }` so a bump touches one line workspace-wide and the lockfile cannot grow accidental version splits.
 [workspace.dependencies]
-edge-abi = { path = "edge-abi", version = "0.1.0" }
+wasm-abi = { path = "wasm-abi", version = "0.1.0" }
 hashbrown = { version = "0.17", default-features = false }
 itoa = "1"
 lol_alloc = "0.4"

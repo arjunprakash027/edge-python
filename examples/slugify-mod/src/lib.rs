@@ -19,7 +19,7 @@
 extern crate alloc;
 
 use alloc::{string::{String, ToString}, vec::Vec};
-use edge_pdk::*;
+use wasm_pdk::*;
 
 #[global_allocator]
 static A: lol_alloc::LeakingPageAllocator = lol_alloc::LeakingPageAllocator;
@@ -67,4 +67,4 @@ fn sum_ints(items: Handle) -> Result<i64> {
     Ok(total)
 }
 
-// FromValue for i64 / Handle helpers come in via `use edge_pdk::*;`.
+// FromValue for i64 / Handle helpers come in via `use wasm_pdk::*;`.

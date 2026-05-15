@@ -1,98 +1,98 @@
 /* 
 Sealed module contract: op codes / tags / error kinds / HandleTable / ErrorStash / primitive codec.
-Wire-level constants live in `edge-abi`; the enums below mirror them byte-for-byte.
+Wire-level constants live in `wasm-abi`; the enums below mirror them byte-for-byte.
 Add capabilities via new Op values, never new imports or signature changes.
 See documentation/reference/wasm-abi.md for the spec. 
 */
 
 use alloc::{string::String, vec::Vec};
 
-pub use edge_abi::{nan_box, EDGE_ABI_VERSION, TAG_INVALID};
+pub use wasm_abi::{nan_box, EDGE_ABI_VERSION, TAG_INVALID};
 
-/* Op codes (sealed) — values mirror `edge_abi::op::*`. */
+/* Op codes (sealed) — values mirror `wasm_abi::op::*`. */
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum Op {
-    Call = edge_abi::op::CALL,
-    GetAttr = edge_abi::op::GET_ATTR,
-    SetAttr = edge_abi::op::SET_ATTR,
-    GetItem = edge_abi::op::GET_ITEM,
-    SetItem = edge_abi::op::SET_ITEM,
-    Len = edge_abi::op::LEN,
-    Iter = edge_abi::op::ITER,
-    IterNext = edge_abi::op::ITER_NEXT,
+    Call = wasm_abi::op::CALL,
+    GetAttr = wasm_abi::op::GET_ATTR,
+    SetAttr = wasm_abi::op::SET_ATTR,
+    GetItem = wasm_abi::op::GET_ITEM,
+    SetItem = wasm_abi::op::SET_ITEM,
+    Len = wasm_abi::op::LEN,
+    Iter = wasm_abi::op::ITER,
+    IterNext = wasm_abi::op::ITER_NEXT,
 }
 
 impl Op {
     pub fn from_u32(op: u32) -> Option<Self> {
         match op {
-            edge_abi::op::CALL => Some(Self::Call),
-            edge_abi::op::GET_ATTR => Some(Self::GetAttr),
-            edge_abi::op::SET_ATTR => Some(Self::SetAttr),
-            edge_abi::op::GET_ITEM => Some(Self::GetItem),
-            edge_abi::op::SET_ITEM => Some(Self::SetItem),
-            edge_abi::op::LEN => Some(Self::Len),
-            edge_abi::op::ITER => Some(Self::Iter),
-            edge_abi::op::ITER_NEXT => Some(Self::IterNext),
+            wasm_abi::op::CALL => Some(Self::Call),
+            wasm_abi::op::GET_ATTR => Some(Self::GetAttr),
+            wasm_abi::op::SET_ATTR => Some(Self::SetAttr),
+            wasm_abi::op::GET_ITEM => Some(Self::GetItem),
+            wasm_abi::op::SET_ITEM => Some(Self::SetItem),
+            wasm_abi::op::LEN => Some(Self::Len),
+            wasm_abi::op::ITER => Some(Self::Iter),
+            wasm_abi::op::ITER_NEXT => Some(Self::IterNext),
             _ => None,
         }
     }
 }
 
-/* Tags (sealed) — values mirror `edge_abi::tag::*`. */
+/* Tags (sealed) — values mirror `wasm_abi::tag::*`. */
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum Tag {
-    None = edge_abi::tag::NONE,
-    Bool = edge_abi::tag::BOOL,
-    Int = edge_abi::tag::INT,
-    Float = edge_abi::tag::FLOAT,
+    None = wasm_abi::tag::NONE,
+    Bool = wasm_abi::tag::BOOL,
+    Int = wasm_abi::tag::INT,
+    Float = wasm_abi::tag::FLOAT,
     // UTF-8 bytes: encoder builds a str, decoder returns its bytes.
-    Bytes = edge_abi::tag::BYTES,
+    Bytes = wasm_abi::tag::BYTES,
 }
 
 impl Tag {
     pub fn from_u32(t: u32) -> Option<Self> {
         match t {
-            edge_abi::tag::NONE => Some(Self::None),
-            edge_abi::tag::BOOL => Some(Self::Bool),
-            edge_abi::tag::INT => Some(Self::Int),
-            edge_abi::tag::FLOAT => Some(Self::Float),
-            edge_abi::tag::BYTES => Some(Self::Bytes),
+            wasm_abi::tag::NONE => Some(Self::None),
+            wasm_abi::tag::BOOL => Some(Self::Bool),
+            wasm_abi::tag::INT => Some(Self::Int),
+            wasm_abi::tag::FLOAT => Some(Self::Float),
+            wasm_abi::tag::BYTES => Some(Self::Bytes),
             _ => None,
         }
     }
 }
 
-/* Error kinds (sealed) — values mirror `edge_abi::error_kind::*`. */
+/* Error kinds (sealed) — values mirror `wasm_abi::error_kind::*`. */
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum ErrorKind {
-    Type = edge_abi::error_kind::TYPE,
-    Value = edge_abi::error_kind::VALUE,
-    Runtime = edge_abi::error_kind::RUNTIME,
-    Attribute = edge_abi::error_kind::ATTRIBUTE,
-    Index = edge_abi::error_kind::INDEX,
-    Key = edge_abi::error_kind::KEY,
-    Custom = edge_abi::error_kind::CUSTOM,
+    Type = wasm_abi::error_kind::TYPE,
+    Value = wasm_abi::error_kind::VALUE,
+    Runtime = wasm_abi::error_kind::RUNTIME,
+    Attribute = wasm_abi::error_kind::ATTRIBUTE,
+    Index = wasm_abi::error_kind::INDEX,
+    Key = wasm_abi::error_kind::KEY,
+    Custom = wasm_abi::error_kind::CUSTOM,
 }
 
 impl ErrorKind {
     pub fn from_u32(k: u32) -> Option<Self> {
         match k {
-            edge_abi::error_kind::TYPE => Some(Self::Type),
-            edge_abi::error_kind::VALUE => Some(Self::Value),
-            edge_abi::error_kind::RUNTIME => Some(Self::Runtime),
-            edge_abi::error_kind::ATTRIBUTE => Some(Self::Attribute),
-            edge_abi::error_kind::INDEX => Some(Self::Index),
-            edge_abi::error_kind::KEY => Some(Self::Key),
-            edge_abi::error_kind::CUSTOM => Some(Self::Custom),
+            wasm_abi::error_kind::TYPE => Some(Self::Type),
+            wasm_abi::error_kind::VALUE => Some(Self::Value),
+            wasm_abi::error_kind::RUNTIME => Some(Self::Runtime),
+            wasm_abi::error_kind::ATTRIBUTE => Some(Self::Attribute),
+            wasm_abi::error_kind::INDEX => Some(Self::Index),
+            wasm_abi::error_kind::KEY => Some(Self::Key),
+            wasm_abi::error_kind::CUSTOM => Some(Self::Custom),
             _ => None,
         }
     }

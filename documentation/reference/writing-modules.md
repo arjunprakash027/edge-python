@@ -7,14 +7,14 @@ Edge Python has no bundled stdlib. There are **two ways** to add native function
 
 | Path | Distribution | Type coverage | Maintenance |
 |---|---|---|---|
-| **`.wasm` module via URL** ([WASM ABI](/reference/wasm-abi)) | Publish a `.wasm` to a CDN; any host loads it dynamically | Primitives only (None, bool, i64 truncated to 47-bit, f64, bytes/str) | You own the wire-format boilerplate, or use a community SDK |
+| **`.wasm` module via URL** ([WASM ABI](/reference/wasm-abi)) | Publish a `.wasm` to a CDN; any host loads it dynamically | Primitives only (None, bool, i64 truncated to 47-bit, f64, bytes/str) | Use the reference [`wasm-pdk`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) crate (Rust), a community PDK for your language, or hand-write the wire-format boilerplate |
 | **In-process Rust binding** | Publish a Rust crate; embedders link it as an rlib | Full — any `HeapObj` (str, list, dict, set, tuple, instance, …) | You own a Rust crate; cargo handles distribution |
 
 The `.wasm` path matches the marketplace pattern (`from "https://x.wasm" import f` works in any host). The in-process path matches the embedder pattern (compile your modules into your own `compiler.wasm`). Both are first-class.
 
 ## Path A: `.wasm` module by URL
 
-The contract is the [WASM module ABI](/reference/wasm-abi) — short, language-agnostic, three scalar types. The Edge Python project does **not** ship an SDK crate; you write the boilerplate or use a community-maintained wrapper.
+The contract is the [WASM module ABI](/reference/wasm-abi) — short, language-agnostic, three scalar types. For Rust, the bundled [`wasm-pdk`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) crate is the reference author-side layer (`#[plugin_fn]`, typed `Handle` / `Value` / `Error`). For other languages, use a community PDK or write the boilerplate by hand — the minimal raw version is below.
 
 `Cargo.toml`:
 
@@ -85,7 +85,7 @@ pub extern "C" fn add(argv: *const u32, argc: u32, out: *mut u32) -> i32 {
 }
 ```
 
-For anything but trivial scalar examples, prefer the `edge-pdk` crate (`#[plugin_fn]`) — see the [WASM module ABI](/reference/wasm-abi) worked example. Build and use:
+For anything but trivial scalar examples, prefer the `wasm-pdk` crate (`#[plugin_fn]`) — see the [WASM module ABI](/reference/wasm-abi) worked example. Build and use:
 
 ```bash
 cargo build --release --target wasm32-unknown-unknown
