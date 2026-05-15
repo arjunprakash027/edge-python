@@ -26,6 +26,9 @@ dist/
 pkg/
 **/pkg/
 
+# Cloudflare
+.wrangler/
+
 # Secrets
 .env
 .env.*

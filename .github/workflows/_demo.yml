@@ -3,25 +3,19 @@ name: _Demo Deploy
 on:
   workflow_call:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
 jobs:
   deploy:
-    name: GitHub Pages
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    name: Cloudflare Pages
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
       # Download the .wasm already compiled and optimized by _wasm.yml.
       - name: Download wasm artifact
@@ -43,16 +37,9 @@ jobs:
           echo "@tailwind base;@tailwind components;@tailwind utilities;" \
             | npx tailwindcss@3 --input - --output tailwind.css --minify
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v6
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
         with:
-          enablement: true
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: demo
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy demo --project-name=edge-python-demo --branch=${{ github.ref_name }}

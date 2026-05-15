@@ -29,7 +29,5 @@ jobs:
     needs: wasm
     permissions:
       contents: read
-      pages: write
-      id-token: write
     uses: ./.github/workflows/_demo.yml
     secrets: inherit
