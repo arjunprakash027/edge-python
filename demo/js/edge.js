@@ -166,8 +166,7 @@ export class EdgePython {
     _handleNativeCall(id, argsPtr, argsLen) {
         const callback = this.callbacks[id];
         if (!callback) throw new Error(`Edge Python: no callback registered for id ${id}`);
-        // Read args as BigUint64 — Rust's Val wire format (NaN-boxed u64);
-        // .wasm unpacks i64/f64/bool itself.
+        // Read args as BigUint64 — Rust's Val wire format (NaN-boxed u64); `.wasm` unpacks i64/f64/bool itself.
         return callback(Array.from(new BigUint64Array(this.exports.memory.buffer, argsPtr, argsLen)));
     }
 
