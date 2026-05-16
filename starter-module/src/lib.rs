@@ -1,17 +1,6 @@
-//! Reference Edge Python native module: a few text utilities.
-//!
-//! Build:
-//!   cargo build --release --target wasm32-unknown-unknown -p slugify-mod
-//!
-//! The artifact is at:
-//!   target/wasm32-unknown-unknown/release/slugify_mod.wasm
-//!
-//! Use it from a script:
-//!   from "./slugify_mod.wasm" import slugify, shout, repeat_n, sum_ints
-//!   print(slugify("Hello World"))    # -> hello-world
-//!   print(shout("ok"))               # -> OK!
-//!   print(repeat_n("ha", 3))         # -> hahaha
-//!   print(sum_ints([1, 2, 3, 4]))    # -> 10
+/*
+Reference `wasm-pdk` module. Build with `cargo build --release --target wasm32-unknown-unknown -p slugify-mod`.
+*/
 
 #![no_std]
 #![no_main]
@@ -54,7 +43,7 @@ fn repeat_n(s: String, n: i64) -> Result<String> {
     Ok(s.repeat(n as usize))
 }
 
-/// Universal-dispatch demo: takes a list handle, sums its int items.
+/// Demonstrates universal dispatch over a list handle.
 #[plugin_fn]
 fn sum_ints(items: Handle) -> Result<i64> {
     let n = items.len()? as u32;
@@ -66,5 +55,3 @@ fn sum_ints(items: Handle) -> Result<i64> {
     }
     Ok(total)
 }
-
-// FromValue for i64 / Handle helpers come in via `use wasm_pdk::*;`.
