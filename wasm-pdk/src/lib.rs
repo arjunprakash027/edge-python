@@ -1,36 +1,15 @@
-//! Edge Python Plugin Development Kit (PDK) — author-side runtime for
-//! writing native `.wasm` modules importable from Edge Python scripts.
-//!
-//! This crate is the recommended Rust layer on top of the v1 wasm-abi
-//! (see `documentation/reference/wasm-abi.md`). It provides:
-//!
-//!   * The six host imports (`edge_op`, `edge_encode`, `edge_decode`,
-//!     `edge_release`, `edge_throw`, `edge_take_error`) declared as
-//!     `extern "C"` and wrapped in safe helpers.
-//!   * `Handle` — an opaque RAII wrapper around a host-managed handle.
-//!     Drop releases the underlying refcount automatically.
-//!   * `Value` — a typed enum over the bootstrap codec (Int, Float,
-//!     Bool, None, Bytes/String).
-//!   * `Error` / `Result` — the typed error channel; round-trips through
-//!     `edge_throw` / `edge_take_error`.
-//!   * `FromValue` / `IntoValue` traits with primitive impls (`i64`,
-//!     `f64`, `bool`, `String`, `&str`, `Option<T>`, `Handle`).
-//!   * The `__edge_alloc` export the host shim needs for argv staging
-//!     (lives in the hidden `__internals` module so glob imports stay clean).
-//!
-//! Author code:
-//!
-//! ```ignore
-//! use wasm_pdk::*;
-//!
-//! #[plugin_fn]
-//! fn slugify(s: String) -> String {
-//!     s.to_lowercase().replace(' ', "-")
-//! }
-//! ```
-//!
-//! The `#[plugin_fn]` attribute lives in the internal `wasm-pdk-macros`
-//! sub-crate and is re-exported from here.
+/* 
+Edge Python PDK; Rust runtime for authoring `.wasm` plugins.
+
+```ignore
+use wasm_pdk::*;
+
+#[plugin_fn]
+fn slugify(s: String) -> String {
+    s.to_lowercase().replace(' ', "-")
+}
+``` 
+*/
 
 #![cfg_attr(not(test), no_std)]
 
@@ -38,45 +17,25 @@ extern crate alloc;
 
 pub use wasm_pdk_macros::plugin_fn;
 
-/* Curated public surface for plugin authors. Glob-importing the whole
-   crate exposes #[doc(hidden)] symbols (`__edge_alloc`, `__internals`)
-   which are part of the macro contract, not the user API. The prelude
-   re-exports just what `#[plugin_fn]` expansion needs and what most
-   plugins reach for: type wrappers, the attribute, the trait pair.
-   Recommended: `use wasm_pdk::prelude::*;`. */
+/// Curated import surface; hides `__internals` / `__edge_alloc` from glob users.
 pub mod prelude {
     pub use crate::{plugin_fn, Handle, Value, Error, Result, FromValue, IntoValue};
 }
 
-/* ---------- Plugin bootstrap ----------------------------------------- */
+/* Plugin bootstrap */
 
-/* Re-exported under a hidden path so `module!` can name lol_alloc without
-   forcing the plugin author to add it to their own Cargo.toml. */
+// Hidden re-export so `module!` resolves lol_alloc without the author wiring it.
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
 pub use lol_alloc as __lol_alloc;
 
-/* Emits the wasm32-only boilerplate every Edge Python plugin needs:
-     - a #[global_allocator] backed by lol_alloc::LeakingPageAllocator
-       (single-threaded bump allocator that matches the host model),
-     - a #[panic_handler] that traps via wasm32::unreachable.
-
-   The plugin author still writes #![no_std] / #![no_main] / extern crate
-   alloc; at the crate root — those are crate-level attributes the macro
-   cannot inject from inside an item position.
-
-   Usage:
-     wasm_pdk::module!();
-
-   On non-wasm targets (e.g. host-side unit tests for the plugin) the
-   macro expands to nothing so cargo test still works. */
+/// Emits the wasm32 boilerplate (allocator + panic handler) every plugin needs.
 #[macro_export]
 macro_rules! module {
     () => {
         #[cfg(target_arch = "wasm32")]
         #[global_allocator]
-        static __WASM_PDK_ALLOC: $crate::__lol_alloc::LeakingPageAllocator
-            = $crate::__lol_alloc::LeakingPageAllocator;
+        static __WASM_PDK_ALLOC: $crate::__lol_alloc::LeakingPageAllocator = $crate::__lol_alloc::LeakingPageAllocator;
 
         #[cfg(target_arch = "wasm32")]
         #[panic_handler]
@@ -88,77 +47,46 @@ macro_rules! module {
 
 use alloc::{string::String, vec::Vec};
 
-/* ---------- Wire imports --------------------------------------------- */
+/* Wire imports */
 
 #[link(wasm_import_module = "env")]
 unsafe extern "C" {
-    pub fn edge_op(
-        op: u32,
-        recv: u32,
-        name_ptr: *const u8,
-        name_len: u32,
-        argv_ptr: *const u32,
-        argc: u32,
-        out: *mut u32,
-    ) -> i32;
+    pub fn edge_op(op: u32, recv: u32, name_ptr: *const u8, name_len: u32, argv_ptr: *const u32, argc: u32, out: *mut u32) -> i32;
     pub fn edge_encode(tag: u32, ptr: *const u8, len: u32) -> u32;
-    pub fn edge_decode(
-        h: u32,
-        out_tag: *mut u32,
-        dst: *mut u8,
-        dst_max: u32,
-    ) -> i32;
+    pub fn edge_decode(h: u32, out_tag: *mut u32, dst: *mut u8, dst_max: u32) -> i32;
     pub fn edge_release(h: u32);
-    pub fn edge_take_error(
-        out_kind: *mut u32,
-        dst: *mut u8,
-        dst_max: u32,
-    ) -> i32;
+    pub fn edge_take_error(out_kind: *mut u32, dst: *mut u8, dst_max: u32) -> i32;
     pub fn edge_throw(kind: u32, msg_ptr: *const u8, msg_len: u32);
 }
 
-/* ---------- ABI version handshake ------------------------------------ */
+/* ABI version handshake */
 
-/* Wire-format version this PDK targets. The constant lives in `wasm-abi`
-   so the host and every plugin compile against the same value. Plugins
-   export `__edge_abi_version` returning `EDGE_ABI_VERSION`; the host
-   loader reads that symbol and refuses to instantiate a plugin whose
-   version it does not understand — without the handshake an evolved
-   host would load an old plugin and decode garbage silently. */
+// Host refuses to instantiate plugins whose ABI version it does not understand.
 pub use wasm_abi::EDGE_ABI_VERSION;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn __edge_abi_version() -> u32 { EDGE_ABI_VERSION }
 
-/* ---------- Op codes & tags ------------------------------------------ */
+/* Op codes & tags */
 
-/* Re-exported from `wasm-abi` so the host and the PDK observe the same
-   constants. `use wasm_pdk::op;` keeps working for plugin authors. */
 pub use wasm_abi::{op, tag};
 
-/* ---------- Internals — macro contract surface, not user API --------- */
+/* Internals — macro contract surface, not user API */
 
-/* Sub-module so `use wasm_pdk::*;` cannot pull these into a plugin
-   author's namespace. The `#[plugin_fn]` expansion qualifies the path
-   explicitly (`::wasm_pdk::__internals::stash_error`), and `__edge_alloc`
-   stays a no_mangle WASM export regardless of Rust module nesting. */
+/// Hidden module so `use wasm_pdk::*;` cannot leak the macro contract symbols.
 #[doc(hidden)]
 pub mod __internals {
     use super::Error;
     use alloc::string::ToString;
 
-    /* Used by #[plugin_fn] expansion when a user fn returns Err(_). */
+    /// Invoked by `#[plugin_fn]` expansion when a user fn returns `Err(_)`.
     pub fn stash_error(e: Error) {
         let kind = e.kind();
         let msg = e.message().to_string();
         unsafe { super::edge_throw(kind, msg.as_ptr(), msg.len() as u32); }
     }
 
-    /* Host-side argv stager. The shim allocates space in this module's
-       linear memory before invoking each export; the layout is
-       [u32; argc] for argv and a single u32 for `out`. We use a leak-free
-       bump scheme — every call lives entirely on the heap, so the leak is
-       reclaimed when the WASM instance is torn down. */
+    /// Host-side argv stager; allocations leak until the WASM instance is dropped.
     #[unsafe(no_mangle)]
     pub extern "C" fn __edge_alloc(size: u32) -> *mut u8 {
         let v = alloc::vec![0u8; size as usize];
@@ -166,7 +94,7 @@ pub mod __internals {
     }
 }
 
-/* ---------- Errors --------------------------------------------------- */
+/* Errors */
 
 #[derive(Debug, Clone)]
 pub enum Error {
@@ -189,12 +117,12 @@ impl Error {
     }
     pub fn kind(&self) -> u32 {
         match self {
-            Self::Type(_)      => 0,
-            Self::Value(_)     => 1,
-            Self::Runtime(_)   => 2,
+            Self::Type(_) => 0,
+            Self::Value(_) => 1,
+            Self::Runtime(_) => 2,
             Self::Attribute(_) => 3,
-            Self::Index(_)     => 4,
-            Self::Key(_)       => 5,
+            Self::Index(_) => 4,
+            Self::Key(_) => 5,
             Self::Custom { kind, .. } => *kind,
         }
     }
@@ -213,9 +141,7 @@ impl Error {
 
 pub type Result<T> = core::result::Result<T, Error>;
 
-/// Drain the host's stashed error after a 1-returning edge_op. Always
-/// returns Some — a bare 1 status without a stashed error is an ABI
-/// violation; we surface it as a Runtime error.
+/// Drain the host's stashed error after a 1-returning `edge_op`; never returns `None`.
 pub fn last_error() -> Error {
     let mut kind: u32 = 2;
     let mut buf = alloc::vec![0u8; 256];
@@ -229,27 +155,22 @@ pub fn last_error() -> Error {
             return Error::from_kind(kind, msg);
         }
         if r == -1 { return Error::Runtime(String::from("native error: no message")); }
-        // Negative = -needed. Re-allocate and retry.
+        // Negative = -needed; resize and retry.
         buf.resize((-r) as usize, 0);
     }
 }
 
-/* ---------- Handle (RAII) -------------------------------------------- */
+/* Handle (RAII) */
 
-/// Opaque host-managed reference to an Edge Python value. Carries an
-/// `owned` flag distinguishing handles the guest must release on drop
-/// (created by `edge_encode` or `edge_op`) from handles the host owns
-/// for the duration of a call (argv slots).
+/// Opaque host-managed reference; `owned` distinguishes guest-released from argv-borrowed.
 pub struct Handle { raw: u32, owned: bool }
 
 impl Handle {
-    /// Wrap an argv handle WITHOUT releasing on drop. The host owns
-    /// argv handles for the duration of the call.
+    /// Wrap an argv handle without releasing on drop (host owns it for the call).
     pub fn borrow(raw: u32) -> Self { Self { raw, owned: false } }
-    /// Take ownership of a raw handle. Drop will release the refcount.
+    /// Take ownership of a raw handle; `Drop` will release the refcount.
     pub fn from_raw(raw: u32) -> Self { Self { raw, owned: true } }
-    /// Surrender the handle without running its Drop — used when the
-    /// wrapper transfers ownership back to the host (writing to *out).
+    /// Surrender the handle without running `Drop` (used when writing to `*out`).
     pub fn into_raw(self) -> u32 {
         let r = self.raw;
         core::mem::forget(self);
@@ -271,11 +192,9 @@ impl IntoValue for Handle {
     fn into_handle(self) -> Result<Handle> { Ok(self) }
 }
 
-/* ---------- Bootstrap codec ----------------------------------------- */
+/* Bootstrap codec */
 
-/// Decode a handle into a typed Value. Returns Err if the handle names
-/// a composite (list/dict/etc.) — those should be operated on via
-/// `Handle::call` etc.
+/// Decode a handle into a typed `Value`; errors on composites (use `Handle::call`).
 pub fn decode(h: u32) -> Result<Value> {
     let mut tag: u32 = 0;
     let mut buf = alloc::vec![0u8; 256];
@@ -285,8 +204,7 @@ pub fn decode(h: u32) -> Result<Value> {
         };
         if r >= 0 {
             if tag == u32::MAX {
-                return Err(Error::Type(alloc::string::String::from(
-                    "value is not a primitive (use Handle::call for composites)")));
+                return Err(Error::Type(alloc::string::String::from("value is not a primitive (use Handle::call for composites)")));
             }
             buf.truncate(r as usize);
             return Ok(match tag {
@@ -333,19 +251,18 @@ pub fn encode(v: Value) -> Result<Handle> {
     else { Ok(Handle::from_raw(raw)) }
 }
 
-/// Typed primitive value — the bootstrap codec's basis. Composite types
-/// (list, dict, set, instances) are accessed through `Handle::call`.
+/// Typed primitive value; composites (list, dict, set, instances) go through `Handle::call`.
 #[derive(Debug, Clone)]
 pub enum Value {
     None,
     Bool(bool),
     Int(i64),
     Float(f64),
-    /// UTF-8 bytes when produced from a `str`; raw bytes otherwise.
+    /// UTF-8 when produced from a `str`; raw bytes otherwise.
     Bytes(Vec<u8>),
 }
 
-/* ---------- FromValue / IntoValue ------------------------------------ */
+/* FromValue / IntoValue */
 
 pub trait FromValue: Sized {
     fn from_handle(h: u32) -> Result<Self>;
@@ -407,8 +324,7 @@ impl IntoValue for f64 {
 impl FromValue for String {
     fn from_handle(h: u32) -> Result<Self> {
         match decode(h)? {
-            Value::Bytes(b) => String::from_utf8(b)
-                .map_err(|e| Error::Value(alloc::format!("invalid utf-8: {}", e))),
+            Value::Bytes(b) => String::from_utf8(b).map_err(|e| Error::Value(alloc::format!("invalid utf-8: {}", e))),
             v => Err(Error::Type(alloc::format!("expected str, got {:?}", v))),
         }
     }
@@ -429,7 +345,7 @@ impl IntoValue for alloc::borrow::Cow<'_, str> {
 
 impl<T: FromValue> FromValue for Option<T> {
     fn from_handle(h: u32) -> Result<Self> {
-        // Decode peeks at the tag without consuming; if None, return.
+        // Peek the tag with a zero-length buffer; consume only on non-None.
         let mut tag: u32 = 0;
         let r = unsafe { edge_decode(h, &mut tag as *mut u32, core::ptr::null_mut(), 0) };
         if r >= 0 && tag == 0 { return Ok(None); }
@@ -445,12 +361,10 @@ impl<T: IntoValue> IntoValue for Option<T> {
     }
 }
 
-/* ---------- Universal dispatch via Handle ---------------------------- */
+/* Universal dispatch via Handle */
 
 impl Handle {
-    /// Invoke `recv.<name>(args)`. The args become a transient argv
-    /// array; their handles are NOT released by this call (caller still
-    /// owns them).
+    /// Invoke `recv.<name>(args)`; argv handles stay owned by the caller.
     pub fn call(&self, name: &str, args: &[u32]) -> Result<Handle> {
         let mut out: u32 = 0;
         let r = unsafe {
@@ -465,7 +379,7 @@ impl Handle {
         Ok(Handle::from_raw(out))
     }
 
-    /// `recv.<name>` — read attribute / bind builtin method.
+    /// `recv.<name>` — read attribute or bind builtin method.
     pub fn get_attr(&self, name: &str) -> Result<Handle> {
         let mut out: u32 = 0;
         let r = unsafe {
@@ -509,8 +423,7 @@ impl Handle {
             )
         };
         if r != 0 { return Err(last_error()); }
-        /* Wrap into a Handle so Drop releases on every exit path, including
-           the `?` from a future from_handle that fails between decode and release. */
+        // Wrap before decoding so Drop releases on any early return.
         let h = Handle::from_raw(out);
         i64::from_handle(h.raw())
     }

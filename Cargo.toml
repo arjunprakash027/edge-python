@@ -9,7 +9,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/dylan-sutton-chavez/edge-python/"
 
-# Single source of truth for third-party versions. Members opt in with `dep = { workspace = true }` so a bump touches one line workspace-wide and the lockfile cannot grow accidental version splits.
+# Single source for third-party versions. Members opt in with `dep = { workspace = true }` so a bump touches one line workspace-wide and the lockfile cannot grow accidental version splits.
 [workspace.dependencies]
 wasm-abi = { path = "wasm-abi", version = "0.1.0" }
 hashbrown = { version = "0.17", default-features = false }
