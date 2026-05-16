@@ -32,6 +32,13 @@ from "https://example.com/math.wasm" import add
 from math import sqrt as root
 from utils import normalize as n
 
+# Parenthesized name lists — multi-line, optional trailing comma
+from utils import (
+    slugify,
+    normalize as n,
+    titlecase,
+)
+
 # Plain `import X` — binds the module under its name; access exports via `.`
 import math
 print(math.sqrt(2.0))

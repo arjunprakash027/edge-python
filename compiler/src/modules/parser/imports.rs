@@ -30,7 +30,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* `from <spec> import names|*`: spec is URL, path, or bare name; star binds all exports. */
+    /* `from <spec> import names|*`: spec is URL, path, or bare name; `*` binds all exports. Names may be parenthesized for multi-line lists, trailing comma allowed. */
     pub(super) fn do_from_stmt(&mut self) {
         self.advance(); // 'from'
         let (spec, spec_span) = self.read_module_spec();
@@ -41,13 +41,19 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             return;
         }
 
+        let parens = self.eat_if(TokenType::Lpar);
+
         let mut names: Vec<(String, String)> = Vec::new();
         loop {
+            // Peek flushes Nl/Comment inside parens and lets a trailing `,` end the list.
+            if parens && matches!(self.peek(), Some(TokenType::Rpar)) { break; }
             let name = self.advance_text();
             let alias = if self.eat_if(TokenType::As) { self.advance_text() } else { name.clone() };
             names.push((name, alias));
             if !self.eat_if(TokenType::Comma) { break; }
         }
+
+        if parens { self.eat(TokenType::Rpar); }
 
         self.resolve_and_bind_named(&spec, spec_span, names);
     }

@@ -471,5 +471,23 @@
   {
     "src": "try:\n    import_module(42)\nexcept TypeError:\n    print('arg type')",
     "output": ["arg type"]
+  },
+  {
+    "src": "from m import (add)\nprint(add(2, 3))",
+    "output": ["5"],
+    "modules": { "m": { "native": ["add"] } },
+    "expect_externs": 1
+  },
+  {
+    "src": "from m import (\n    add,\n    square as sq,\n)\nprint(sq(add(2, 3)))",
+    "output": ["25"],
+    "modules": { "m": { "native": ["add", "square"] } },
+    "expect_externs": 2
+  },
+  {
+    "src": "from m import (add, square,)\nprint(add(square(3), square(4)))",
+    "output": ["25"],
+    "modules": { "m": { "native": ["add", "square"] } },
+    "expect_externs": 2
   }
 ]
