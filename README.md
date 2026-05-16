@@ -12,25 +12,41 @@ Edge Python is distributed as a WebAssembly module — `compiler.wasm`, ~170 KB.
 This is a Cargo workspace. The root `Cargo.toml` declares the workspace members and shares profile settings; `cargo` commands work from any directory.
 
 ```text
-Cargo.toml   Workspace manifest (members + shared profile)
-.cargo/config.toml   Workspace-wide aliases (`cargo wasm`)
-
-compiler/   Rust crate `edge-python`: lexer, parser, optimizer, VM, packages module. Compiles to compiler_lib.wasm (the only artifact the project distributes).
-wasm-abi/   Wire-format constants shared by the compiler (host) and wasm-pdk (guest). no_std, zero deps.
-wasm-pdk/   Plugin Development Kit — author-side runtime for writing `.wasm` modules importable from Edge Python scripts (`#[plugin_fn]`, Handle/Value/Error). Published independently of compiler.wasm.
-starter-module/   Reference `.wasm` plugin built with wasm-pdk (`slugify-mod`) — copy as the starting point for your own module.
-
-demo/   Browser playground (HTML + WASM + Web Worker)
-documentation/   Mintlify documentation source
-.github/   CI/CD pipelines (lint, WASM build, demo deploy)
+├── .cargo
+├── .github
+│   └── workflows
+├── compiler
+│   ├── src
+│   └── tests
+├── demo
+│   ├── css
+│   ├── js
+│   ├── runtime
+│   └── static
+├── documentation
+│   ├── getting-started
+│   ├── implementation
+│   ├── language
+│   └── reference
+├── starter-module
+│   └── src
+├── target
+│   ├── debug
+│   ├── flycheck0
+│   └── tmp
+├── wasm-abi
+│   └── src
+└── wasm-pdk
+    ├── macros
+    └── src
 ```
 
 Common commands (from anywhere in the repo):
 
 ```bash
-cargo wasm   # release WebAssembly artifact (the distributed product)
-cargo build --release   # host artifacts (.rlib + cdylib) for Rust embedders
-cargo test --release   # full test suite
+cargo wasm # Release WebAssembly artifact (the distributed product).
+cargo build --release # Host artifacts (.rlib + cdylib) for Rust embedders.
+cargo test --release # Full test suite.
 ```
 
 Native modules come in two flavors: `.wasm` binaries any host can load by URL (per the [WASM ABI](documentation/reference/wasm-abi.md)) and in-process Rust bindings for embedders linking `compiler_lib` (full type coverage). See [Writing modules](documentation/reference/writing-modules.md).
@@ -43,20 +59,20 @@ Two files: the WASM module + a thin JS loader included in this repo at [`demo/ed
 
 ```html
 <script type="module">
-  import { EdgePython } from './edge.js';
+    import { EdgePython } from './edge.js';
 
-  const ep = await EdgePython.create({
-    wasmUrl: './compiler_lib.wasm',
-    imports: { "math": "https://example.com/math.wasm" }
-  });
-  ep.onOutput(line => console.log(line));
+    const ep = await EdgePython.create({
+        wasmUrl: './compiler_lib.wasm',
+        imports: { "math": "https://example.com/math.wasm" }
+    });
+    ep.onOutput(line => console.log(line));
 
-  await ep.run(`
-    from math import add
-    from "https://example.com/utils.py" import normalize
-    print(add(2, 3))
-    print(normalize("  hi  "))
-  `);
+    await ep.run(`
+        from math import add
+        from "https://example.com/utils.py" import normalize
+        print(add(2, 3))
+        print(normalize("  hi  "))
+    `);
 </script>
 ```
 
