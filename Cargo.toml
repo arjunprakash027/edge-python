@@ -1,0 +1,7 @@
+[package]
+name = "edge-python-dom"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+compiler-lib = { git = "https://github.com/dylan-sutton-chavez/edge-python", branch = "main" }
