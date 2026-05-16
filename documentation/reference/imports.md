@@ -14,6 +14,8 @@ Edge Python supports `import`, `from <spec> import <names>`, and `from <spec> im
 
 The same `import` syntax covers both. The host's resolver decides which flavor a given spec maps to.
 
+Native modules also cover **host capabilities**: bindings the embedder ships as part of its runtime (DOM in a browser distribution, FS in a WASI distribution) — same dispatch path as ordinary in-process Rust bindings, just shipped together with the host runtime instead of as a separate crate. See [Writing modules / Path C](/reference/writing-modules#path-c-host-capability).
+
 ## Syntax
 
 ```python

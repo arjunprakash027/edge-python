@@ -5,7 +5,7 @@ description: "Run your first Edge Python program in under a minute."
 
 ## Run it
 
-Edge Python is distributed as a WebAssembly module whit a 170 KB size. The fastest way to try it is the playground; no install, runs entirely client-side via WebAssembly.
+Edge Python is distributed as a WebAssembly module with a 170 KB size. The fastest way to try it is the playground; no install, runs entirely client-side via WebAssembly.
 
 [Open the playground ->](https://demo.edgepython.com)
 
@@ -14,7 +14,7 @@ Edge Python is distributed as a WebAssembly module whit a 170 KB size. The faste
 To run Edge Python in your own host (browser app, server, edge runtime), you need two artifacts:
 
 1. The compiler module: `compiler_lib.wasm` (170 KB, contains lexer, parser, and stack VM).
-2. A loader for your platform, the canonical browser loader is [`demo/js`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/demo/js); WASI hosts wire it up via their runtime's import API.
+2. A loader for your platform — the canonical browser loader is [`demo/edge.js`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/demo/edge.js); WASI hosts wire it up via their runtime's import API.
 
 Build the WASM yourself:
 
@@ -24,7 +24,7 @@ cd edge-python/compiler
 cargo wasm # -> target/wasm32-unknown-unknown/release/compiler_lib.wasm
 ```
 
-There is no native CLI binary, `compiler_lib.wasm` is the release artifact, and `compiler/src/main/` is gated to `wasm32`. The host runtime owns I/O, network, and module fetching: the guest exposes one entry point (`run`) and calls back through `host_print`, `host_fetch_bytes`, and `host_call_native`. This boundary is what keeps Edge Python sandboxed by construction.
+There is no native CLI binary, `compiler_lib.wasm` is the release artifact, and `compiler/src/main/` is gated to `wasm32`. The host runtime owns I/O, network, and module fetching: the guest exposes one entry point (`run`) and calls back through `host_print`, `host_fetch_bytes`, and `host_call_native`. Custom embedders that ship [host capabilities](/reference/writing-modules#path-c-host-capability) declare additional host imports alongside these — DOM in the browser shim, FS in WASI. This boundary is what keeps Edge Python sandboxed by construction.
 
 ## Your first program
 

@@ -5,6 +5,8 @@ description: "The wire format a `.wasm` module must follow to be importable by E
 
 > **Sealed contract — v1.** Every signature, op code, tag, and error kind on this page is part of the public contract. New capabilities arrive as new `Op` values consumed by `edge_op`, never as new imports. Bug fixes that align an implementation with this page are the only acceptable maintenance. A future wire-level break would ship under a different module name (`env_v2.*`) without removing v1.
 
+> **Scope: plugin ABI only.** This page specifies the contract between a CDN-distributed `.wasm` plugin module and the Edge Python runtime — the surface every Path A plugin must conform to. It is **distinct** from the compiler↔host interface that the embedder declares (`host_print`, `host_fetch_bytes`, `host_call_native`, and any embedder-specific host imports — see [host capabilities](/reference/writing-modules#path-c-host-capability)). Plugin authors only target this page; embedders define their own host interface and are not bound by the 6-import limit here.
+
 A `.wasm` module that an Edge Python script imports via `from "<url>" import <names>` follows the contract below. The shape is a small **handle-based** API: the host owns all values, the guest sees only opaque `u32` handles, and one universal dispatch primitive (`edge_op`) covers every operation on those values. This means new types, methods, and language features added to Edge Python become available to existing modules with **no ABI change**.
 
 ## Guest export shape

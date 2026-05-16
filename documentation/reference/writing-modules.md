@@ -1,16 +1,17 @@
 ---
 title: "Writing modules"
-description: "Two paths to extend Edge Python: a `.wasm` module loaded by URL, or in-process Rust closures via the Resolver trait."
+description: "Three paths to extend Edge Python: a `.wasm` module loaded by URL, in-process Rust closures via the Resolver trait, or host capabilities the runtime ships as part of itself."
 ---
 
-Edge Python has no bundled stdlib. There are **two ways** to add native functionality. Pick the one that fits your distribution model.
+Edge Python has no bundled stdlib. There are **three ways** to add native functionality. Pick the one that fits your distribution model.
 
 | Path | Distribution | Type coverage | Maintenance |
 |---|---|---|---|
 | **`.wasm` module via URL** ([WASM ABI](/reference/wasm-abi)) | Publish a `.wasm` to a CDN; any host loads it dynamically | Primitives only (None, bool, i64 truncated to 47-bit, f64, bytes/str) | Use the reference [`wasm-pdk`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) crate (Rust), a community PDK for your language, or hand-write the wire-format boilerplate |
 | **In-process Rust binding** | Publish a Rust crate; embedders link it as an rlib | Full — any `HeapObj` (str, list, dict, set, tuple, instance, …) | You own a Rust crate; cargo handles distribution |
+| **Host capability** | Ship a custom `compiler.wasm` (in-process Rust bindings linked in) plus the host-side runtime they bridge to | Full — same as in-process bindings, plus access to host services (DOM, FS, fetch) through the embedder's host imports | You own the custom embedder and its host runtime; the bindings travel together |
 
-The `.wasm` path matches the marketplace pattern (`from "https://x.wasm" import f` works in any host). The in-process path matches the embedder pattern (compile your modules into your own `compiler.wasm`). Both are first-class.
+The `.wasm` path matches the marketplace pattern (`from "https://x.wasm" import f` works in any host). The in-process path matches the embedder pattern (compile your modules into your own `compiler.wasm`). The host-capability path is the in-process path applied recursively: the embedder *is* a runtime distribution, and the bindings it ships are part of what that runtime offers — exactly the way `print` and `input` already work. All three are first-class.
 
 ## Path A: `.wasm` module by URL
 
@@ -223,7 +224,67 @@ Err(VmErr::Runtime("network unavailable")) // -> RuntimeError
 Err(VmErr::TypeMsg(format!("got {:?}", v))) // dynamically formatted
 ```
 
-## Choosing between the two paths
+## Path C: host capability
+
+Some native functionality cannot live in a CDN-distributed `.wasm` (Path A) because the work happens **outside** the WASM sandbox — DOM mutation in a browser, filesystem I/O on WASI, native crypto on a Rust host. Path A `.wasm` modules only see the sealed 6 `env.*` imports; they have no channel to the host runtime. Path C closes that gap.
+
+A **host capability** is a Path B in-process binding shipped as part of a custom embedder. The Rust closure runs inside the embedder's `compiler.wasm` and bridges to the host runtime through additional host imports that the embedder itself declares — these imports are **not** part of the sealed plugin ABI; they are the embedder's private contract with its host.
+
+Precedent already in the language:
+
+- `print(...)` is a built-in that calls the embedder's `host_print` import. The host runtime (browser shim, WASI runtime, native binary) implements `host_print` against its native output channel.
+- `input()` drains a buffer the host fills via `set_input`.
+
+The same shape generalises. A browser-host distribution can register `dom` as a native module whose `query`, `set_text`, `append_child` closures bridge to a JS-side runtime through embedder-specific host imports. A WASI-host distribution can register `fs` the same way against `wasi_snapshot_preview1`. Scripts see them as ordinary native modules:
+
+```python
+from dom import document, query     # browser host
+from fs  import read_text, write    # WASI host
+```
+
+### What ships in a host-capability distribution
+
+| Artifact | Role |
+|---|---|
+| Custom `compiler.wasm` | Vanilla `compiler_lib` plus the Path B bindings linked in; declares the additional host imports the bindings need |
+| Host runtime | The browser shim / WASI loader / native binary that provides those host imports |
+| (Optional) Pure-Python wrappers (`.py`) | Ergonomic surface on top of the raw bindings, distributed as a code module |
+
+Users opt in by loading the custom `compiler.wasm` and matching host runtime together (typically as a single package). Vanilla `compiler.wasm` keeps working for everyone who doesn't need the capability.
+
+### Sketch
+
+```rust
+// dom-mod/src/lib.rs — Path B binding that bridges to JS
+use compiler_lib::modules::packages::NativeBinding;
+use compiler_lib::modules::vm::types::{HeapObj, HeapPool, Val, VmErr};
+
+#[link(wasm_import_module = "env")]
+unsafe extern "C" {
+    fn host_dom_op(opcode: u32, ptr: *const u8, len: u32) -> u32;
+}
+
+fn query(heap: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
+    let sel = match heap.get(args[0]) {
+        HeapObj::Str(s) => s.clone(),
+        _ => return Err(VmErr::Type("query: expected str")),
+    };
+    let handle = unsafe { host_dom_op(OP_QUERY, sel.as_ptr(), sel.len() as u32) };
+    Ok(heap.alloc(HeapObj::Instance(/* DOM element wrapper, holds `handle` */)))
+}
+
+pub fn module() -> Vec<NativeBinding> {
+    vec![NativeBinding::from_fn("query", query, false), /* ... */]
+}
+```
+
+The custom `compiler.wasm` declares `env.host_dom_op` alongside the standard `env.host_print` / `env.host_fetch_bytes` / `env.host_call_native`. The host runtime supplies its implementation.
+
+### Why this is not a third module flavor
+
+From the script's perspective there are still **two flavors** (code and native — see [Imports](/reference/imports)). Path C is a distribution pattern over Path B, not a new dispatch path. The compiler sees a `Resolved::Native(bindings)` like any other; the bindings happen to bridge externally. This keeps the public language surface and the [WASM module ABI](/reference/wasm-abi) untouched.
+
+## Choosing between the three paths
 
 | You want… | Use |
 |---|---|
@@ -231,6 +292,7 @@ Err(VmErr::TypeMsg(format!("got {:?}", v))) // dynamically formatted
 | Maximum speed and full type coverage (strings, lists, etc.) | Path B (in-process Rust) |
 | Wrap a C/Zig/AS library | Path A (any wasm32-targeting language works) |
 | Plug into a custom Rust app and expose its APIs | Path B |
+| Expose host services (DOM, FS, native crypto) that Path A's sandboxed `.wasm` can't reach | Path C (host capability) |
 | Both at once | Compose: your embedder's `Resolver` can return `Resolved::Native(...)` for in-process modules AND let `.wasm` URL imports flow through to the bridge |
 
 ## Pure vs impure
