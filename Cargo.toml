@@ -9,4 +9,5 @@ test = false
 doctest = false
 
 [dependencies]
+# Clone and build `compiler_lib.wasm` and save the repository in `~/.cargo/git/`.
 edge-python = { git = "https://github.com/dylan-sutton-chavez/edge-python", branch = "main" }
