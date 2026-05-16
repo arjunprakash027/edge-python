@@ -8,6 +8,7 @@ description = "Single-pass SSA compiler and threaded-code VM for a sandboxed Pyt
 readme = "README.md"
 autotests = false
 autobins = false
+links = "compiler_lib"
 
 [lib]
 name = "compiler_lib"

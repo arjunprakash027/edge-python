@@ -185,6 +185,32 @@ Edge Python with native modules from your own Rust app, depend on `compiler_lib`
 
 Edge Python is loaded by a host runtime, browser via `demo/edge.js`, server / edge via wasmtime / wasmer / Cloudflare Workers / Fastly Compute / Spin. There is no native CLI binary; the host owns I/O, network, and module fetching.
 
+### Consuming the release from another Rust crate
+
+The crate declares `links = "compiler_lib"` and its `build.rs` downloads the matching `compiler_lib.wasm` from the GitHub Release for `CARGO_PKG_VERSION` into `OUT_DIR`. Any downstream crate that depends on this one receives the absolute path through `DEP_COMPILER_LIB_WASM` — cargo's standard `links` metadata channel. No need to invoke `cargo wasm` in the consumer build.
+
+Downstream `Cargo.toml`:
+
+```toml
+[dependencies]
+edge-python = { git = "https://github.com/dylan-sutton-chavez/edge-python", tag = "v0.1.0" }
+```
+
+Downstream `build.rs`:
+
+```rust
+fn main() {
+    println!("cargo::rerun-if-changed=build.rs");
+
+    let wasm = std::env::var("DEP_COMPILER_LIB_WASM")
+        .expect("`DEP_COMPILER_LIB_WASM` unset — upstream `edge-python` must declare `links = \"compiler_lib\"`");
+
+    std::fs::copy(&wasm, "runtime/compiler_lib.wasm").expect("copy failed");
+}
+```
+
+URL is derived entirely from this crate's `Cargo.toml` (`<repository>/releases/download/v<version>/compiler_lib.wasm`), so a tag bump is the only thing a consumer ever needs to retarget. `branch = "main"` is also valid for unreleased work; pin to a `tag` for reproducible builds. Requires `curl` on the host PATH.
+
 ---
 
 ## 9. References

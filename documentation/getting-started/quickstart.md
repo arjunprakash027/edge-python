@@ -24,6 +24,28 @@ cd edge-python/compiler
 cargo wasm # -> target/wasm32-unknown-unknown/release/compiler_lib.wasm
 ```
 
+Or, if your host is itself a Rust crate, let cargo fetch the release `compiler_lib.wasm` automatically. Declare `edge-python` as a build dependency and copy the artifact from `DEP_COMPILER_LIB_WASM` (set by the upstream's `links = "compiler_lib"`) into wherever your host loads it from:
+
+```toml
+# Cargo.toml
+[dependencies]
+edge-python = { git = "https://github.com/dylan-sutton-chavez/edge-python", tag = "v0.1.0" }
+```
+
+```rust
+// build.rs
+fn main() {
+    println!("cargo::rerun-if-changed=build.rs");
+
+    let wasm = std::env::var("DEP_COMPILER_LIB_WASM")
+        .expect("`DEP_COMPILER_LIB_WASM` unset — upstream `edge-python` must declare `links = \"compiler_lib\"`");
+
+    std::fs::copy(&wasm, "runtime/compiler_lib.wasm").expect("copy failed");
+}
+```
+
+The upstream `build.rs` downloads the wasm asset attached to the tag into `OUT_DIR` and exposes its absolute path — no `cargo wasm` step in the consumer, no checked-in binary. Pin to a `tag` for reproducible builds (`branch = "main"` is also valid). Requires `curl` on the host PATH.
+
 There is no native CLI binary, `compiler_lib.wasm` is the release artifact, and `compiler/src/main/` is gated to `wasm32`. The host runtime owns I/O, network, and module fetching: the guest exposes one entry point (`run`) and calls back through `host_print`, `host_fetch_bytes`, and `host_call_native`. Custom embedders that ship [host capabilities](/reference/writing-modules#path-c-host-capability) declare additional host imports alongside these — DOM in the browser shim, FS in WASI. This boundary is what keeps Edge Python sandboxed by construction.
 
 ## Your first program
