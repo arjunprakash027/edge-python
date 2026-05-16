@@ -1,6 +1,6 @@
 [workspace]
-members = ["compiler", "wasm-abi", "wasm-pdk", "wasm-pdk/macros", "examples/slugify-mod"]
-# Wasm-only example crates live in `members` (so they share the lockfile and resolve path deps) but are excluded from default workspace commands. Run them explicitly with `-p` against `wasm32-unknown-unknown`.
+members = ["compiler", "wasm-abi", "wasm-pdk", "wasm-pdk/macros", "starter-module"]
+# `starter-module` is wasm-only: kept in `members` so it shares the lockfile and resolves path deps, but excluded from `default-members` so default workspace commands skip it. Build it explicitly with `-p starter-module --target wasm32-unknown-unknown`.
 default-members = ["compiler", "wasm-abi", "wasm-pdk", "wasm-pdk/macros"]
 resolver = "2"
 

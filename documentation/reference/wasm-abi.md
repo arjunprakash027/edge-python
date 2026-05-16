@@ -143,7 +143,7 @@ The `wasm-pdk` crate (in this repo at `wasm-pdk/`) provides the
 Authors write normal Rust:
 
 ```rust
-// examples/slugify-mod/src/lib.rs
+// starter-module/src/lib.rs
 #![no_std] #![no_main]
 extern crate alloc;
 

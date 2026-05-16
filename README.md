@@ -18,7 +18,7 @@ Cargo.toml   Workspace manifest (members + shared profile)
 compiler/   Rust crate `edge-python`: lexer, parser, optimizer, VM, packages module. Compiles to compiler_lib.wasm (the only artifact the project distributes).
 wasm-abi/   Wire-format constants shared by the compiler (host) and wasm-pdk (guest). no_std, zero deps.
 wasm-pdk/   Plugin Development Kit — author-side runtime for writing `.wasm` modules importable from Edge Python scripts (`#[plugin_fn]`, Handle/Value/Error). Published independently of compiler.wasm.
-examples/   Reference `.wasm` plugins built with wasm-pdk (e.g. `slugify-mod`).
+starter-module/   Reference `.wasm` plugin built with wasm-pdk (`slugify-mod`) — copy as the starting point for your own module.
 
 demo/   Browser playground (HTML + WASM + Web Worker)
 documentation/   Mintlify documentation source

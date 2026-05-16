@@ -11,5 +11,5 @@ test = false
 doctest = false
 
 [dependencies]
-wasm-pdk = { path = "../../wasm-pdk" }
+wasm-pdk = { path = "../wasm-pdk" }
 lol_alloc = { workspace = true }
