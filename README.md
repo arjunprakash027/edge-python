@@ -1,38 +1,41 @@
 # Edge Python DOM
 
-A JavaScript runtime that lets Edge Python scripts manipulate the DOM at near-native speed. It exposes a Python-facing API for querying, mutating, and listening to real DOM nodes — no canvas, no virtual layer, no JSON serialization. The bridge between the WebAssembly module and the browser is engineered to minimize every crossing: nodes travel as opaque `u32` handles, strings move zero-copy through shared linear memory, and DOM operations are batched into a command buffer flushed once per microtask.
+A host capability that lets Edge Python scripts manipulate the DOM with the same per-op cost the JS engine's own DOM bindings pay. Distributed as a custom embedder (`dom-edge.wasm`) plus its matching JS host (`@edge-python/dom-runtime`); scripts see it as an ordinary native module:
+
+```python
+from dom import query, set_text
+
+el = query("#app")           # u32 handle, the node never crosses
+set_text(el, "hello")        # ptr + len string, one boundary crossing
+```
+
+Nodes travel as opaque `u32` handles (or `externref` when the engine supports it), strings live in WASM linear memory and are read in-place via typed-array views, and DOM operations accumulate in a binary command buffer flushed once per microtask. No JSON, no structured clone, no virtual layer.
 
 ## Architecture
 
-The runtime keeps a JS-side table of real DOM nodes addressed by index from WebAssembly. A Python call like `query("#app")` returns the integer slot, not a serialized object, and subsequent operations carry only that integer back across the boundary. When the engine supports `externref`, the handle is the `externref` itself and the slot table is managed by the JavaScript GC; otherwise a generational handle table on the JS side detects use-after-free. Strings move without copying: WebAssembly writes UTF-8 into linear memory, and JavaScript reads them through a `Uint8Array` view re-created per call (linear memory may grow and detach the underlying buffer). When the JS String Builtins proposal is available, the runtime imports JS string operations directly and skips decoding entirely.
+The runtime keeps a generational handle table on the JS side that maps `u32` slots to real DOM nodes. A Python call like `query("#app")` returns the integer slot, not a serialised object; subsequent operations carry only that integer back across the boundary. When the engine supports `externref`, the handle is the `externref` itself and the JS GC manages lifecycle directly; otherwise the generational counter on each slot catches use-after-free on any reused index.
 
-```python
-el = query("#app") # Returns a u32 handle.
-set_text(el, "hello") # One crossing, string passed by pointer + length.
-```
+Strings cross by pointer and length: `compiler_lib`'s `HeapObj::Str` is already UTF-8 in linear memory, and JavaScript reads it via a `Uint8Array` view re-created per call (linear memory may grow and detach the underlying buffer). The UTF-8 → UTF-16 conversion runs natively in the engine. When the JS String Builtins proposal is available, the bridge imports JS string operations directly and the engine handles conversion at the calling-convention level.
 
-Mutations issued inside the same microtask accumulate in a command buffer carved out of linear memory and apply in a single drain at the microtask boundary — one boundary crossing for an arbitrary number of DOM operations, the same coalescing principle GPUs use for draw calls. For bulk work (initial render, list virtualization), a `SharedArrayBuffer` path is selected when the host serves the page with the required cross-origin isolation headers.
+For renders touching many nodes, operations are encoded into a tight binary stream in linear memory and drained in a single boundary crossing — the only place the bridge pays for binary layout above the encoding floor, in exchange for collapsing N crossings into 1 (the same coalescing trade-off Vulkan and Metal command buffers make). The library picks the tier from the call context: event handlers dispatch directly, render-frame callbacks batch automatically. The user never flushes manually.
 
-```js
-// Host side, conceptual
-const nodes = [];
-function host_create_element(ptr, len) {
-    const tag = decoder.decode(new Uint8Array(memory.buffer, ptr, len));
-    nodes.push(document.createElement(tag));
-    return nodes.length - 1;
-}
-```
+## Relationship to Edge Python
 
-## Repository Layout
+`edge-python-dom` is a **host capability** in the sense defined by [Edge Python's writing-modules reference](https://docs.edgepython.com/reference/writing-modules#path-c-host-capability) — Path C. Same pattern as `print` and `input`: a Path B in-process binding shipped as part of a custom embedder, with additional host imports the embedder declares against its JS runtime. The sealed v1 [plugin ABI](https://docs.edgepython.com/reference/wasm-abi) is not touched.
+
+## Repository layout
 
 ```bash
 ├── Cargo.toml
 ├── README.md
+├── LICENSE.md
 ├── src
 │   └── main.rs
 └── tests
     └── main.rs
 ```
+
+Target workspace once fleshed out: `dom-mod/` (Path B bindings linked into the custom embedder), `dom-embed/` (the embedder that produces `dom-edge.wasm`), `dom-runtime/` (npm package providing the JS host imports).
 
 ## References
 
