@@ -186,7 +186,7 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-wasm-pdk = { path = "../../wasm-pdk" }   # or = "0.1" once published
+wasm-pdk = { path = "../../wasm-pdk" }   # in-repo example; external authors use the git+tag form below
 ```
 
 Build:
@@ -194,6 +194,19 @@ Build:
 ```bash
 cargo build --release --target wasm32-unknown-unknown -p slugify-mod # -> target/wasm32-unknown-unknown/release/slugify_mod.wasm   (around 74 KB stripped)
 ```
+
+### Consuming `wasm-pdk` from your own crate
+
+`wasm-pdk` is not published to crates.io. For external development, depend on it directly from GitHub, pinned to a release tag:
+
+```toml
+[dependencies]
+wasm-pdk = { git = "https://github.com/dylan-sutton-chavez/edge-python", tag = "v0.1.0" }
+```
+
+Cargo resolves `wasm-abi` and `wasm-pdk-macros` transitively — no other workspace deps to declare. Pinning to a tag (instead of `branch = "main"`) gives reproducible builds and a known wire-ABI version: your module compiled against `wasm-pdk` from `vX.Y.Z` is binary-compatible with the `compiler_lib.wasm` attached to that same release. To upgrade, bump the `tag` value and run `cargo update -p wasm-pdk`.
+
+Use `branch = "main"` only when iterating against unreleased changes — the tag form is the default for shipping modules.
 
 Use it from a script:
 

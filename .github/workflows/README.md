@@ -38,9 +38,17 @@ Then add the secrets at *Settings -> Secrets and variables -> Actions*:
 
 ## Releases
 
-Pushing a `v*` tag triggers the pipeline and `_wasm.yml` uploads `compiler_lib.wasm` to the matching GitHub Release:
+Pushing a `v*` tag triggers the pipeline and `_wasm.yml` uploads `compiler_lib.wasm` to the matching GitHub Release. Tag name must match the workspace version.
+
+1. Bump `version` under `[workspace.package]` in the root `Cargo.toml`. Every crate inherits via `version.workspace = true`, so this single line covers `edge-python`, `wasm-abi`, `wasm-pdk`, and `wasm-pdk-macros` at once. Run `cargo check` to refresh `Cargo.lock`, then commit.
+
+2. Tag and push:
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
+
+**On a tag push, `_check` lints, `_wasm` builds and optimizes `compiler_lib.wasm` then attaches it to a fresh GitHub Release with auto-generated notes from commits since the previous tag, and `_demo` redeploys the playground with the new binary.**
+
+Nothing is published to crates.io — distribution is the `.wasm` artifact attached to the Release. The `starter-module` example carries its own `version` and is intentionally not bumped with the workspace.

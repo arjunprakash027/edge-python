@@ -82,3 +82,4 @@ jobs:
         with:
           files: target/wasm32-unknown-unknown/release/compiler_lib.wasm
           fail_on_unmatched_files: true
+          generate_release_notes: true
