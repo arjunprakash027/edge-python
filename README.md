@@ -1,49 +1,65 @@
 # Edge Python DOM
 
-A host capability that lets Edge Python scripts manipulate the DOM with the same per-op cost the JS engine's own DOM bindings pay. Distributed as a custom embedder (`dom-edge.wasm`) plus its matching JS host (`@edge-python/dom-runtime`); scripts see it as an ordinary native module:
+A host capability that lets Edge Python scripts manipulate the DOM at native-feeling speed. Distributed as a JavaScript host (`@edge-python/dom-runtime`) running on top of vanilla `compiler_lib.wasm`; scripts see it as an ordinary native module:
 
 ```python
 from dom import query, set_text
 
-el = query("#app")           # u32 handle, the node never crosses
-set_text(el, "hello")        # ptr + len string, one boundary crossing
+el = query("#app") # Integer handle, the node never crosses
+set_text(el, "hello") # one boundary crossing, no serialization
 ```
 
-Nodes travel as opaque `u32` handles (or `externref` when the engine supports it), strings live in WASM linear memory and are read in-place via typed-array views, and DOM operations accumulate in a binary command buffer flushed once per microtask. No JSON, no structured clone, no virtual layer.
+DOM nodes travel as 47-bit integer handles into a JavaScript-side node table. Strings cross via Edge Python's existing wasm-abi (UTF-8 in linear memory, decoded once per call). All DOM logic lives in JavaScript — no custom WebAssembly, no fork of `compiler_lib`, no nightly cargo.
 
 ## Architecture
 
-The runtime keeps a generational handle table on the JS side that maps `u32` slots to real DOM nodes. A Python call like `query("#app")` returns the integer slot, not a serialised object; subsequent operations carry only that integer back across the boundary. When the engine supports `externref`, the handle is the `externref` itself and the JS GC manages lifecycle directly; otherwise the generational counter on each slot catches use-after-free on any reused index.
+The JavaScript host loads vanilla `compiler_lib.wasm` and registers `dom` as a native module via `register_native_module("/dom-native", "query\nget_text\nset_text\n...", base_id=0)` before each script run. A `packages.json` served on demand by `host_fetch_bytes` maps the bare name `dom` to that canonical spec, so Python scripts can use `from dom import ...`.
 
-Strings cross by pointer and length: `compiler_lib`'s `HeapObj::Str` is already UTF-8 in linear memory, and JavaScript reads it via a `Uint8Array` view re-created per call (linear memory may grow and detach the underlying buffer). The UTF-8 → UTF-16 conversion runs natively in the engine. When the JS String Builtins proposal is available, the bridge imports JS string operations directly and the engine handles conversion at the calling-convention level.
+When a Python script calls `query("#app")`, the compiler dispatches to JavaScript through `env.host_call_native(id, argv_ptr, argc, out_ptr)` — one of the three host imports the compiler already requires. The handler decodes argument handles via `host_edge_decode`, runs the DOM operation, stores the resulting node in a JavaScript-side array, and encodes the array index as an `Int` handle via `host_edge_encode`. Subsequent operations receive the integer back, look up the actual node, and mutate it directly.
 
-For renders touching many nodes, operations are encoded into a tight binary stream in linear memory and drained in a single boundary crossing — the only place the bridge pays for binary layout above the encoding floor, in exchange for collapsing N crossings into 1 (the same coalescing trade-off Vulkan and Metal command buffers make). The library picks the tier from the call context: event handlers dispatch directly, render-frame callbacks batch automatically. The user never flushes manually.
+The cost: one WASM↔JS crossing per DOM op (~50-100ns of pure overhead before any DOM work). For typical interactions touching dozens of nodes this is imperceptible; for 10k-node renders the overhead grows linearly. A future optimisation is to coalesce mutations through a JavaScript-side deferred queue; eliminating the crossings entirely would require forking the embedder for in-WASM batching, which is out of scope for this library.
+
+## Distribution
+
+`compiler_lib.wasm` is the official Edge Python binary, fetched at build time from the release tag matching the upstream crate's `version`. The cargo dep:
+
+```toml
+[dependencies]
+edge-python = { git = "https://github.com/dylan-sutton-chavez/edge-python", branch = "main" }
+```
+
+triggers the upstream `build.rs` to download the artifact into cargo's `OUT_DIR` and expose its path via the `DEP_COMPILER_LIB_WASM` env var (cargo's `links` metadata channel). The local `build.rs` copies that path into `runtime/compiler_lib.wasm` where the JavaScript host loads it. No binary ever enters version control on either side.
 
 ## Relationship to Edge Python
 
-`edge-python-dom` is a **host capability** in the sense defined by [Edge Python's writing-modules reference](https://docs.edgepython.com/reference/writing-modules#path-c-host-capability) — Path C. Same pattern as `print` and `input`: a Path B in-process binding shipped as part of a custom embedder, with additional host imports the embedder declares against its JS runtime. The sealed v1 [plugin ABI](https://docs.edgepython.com/reference/wasm-abi) is not touched.
+`edge-python-dom` is a **host capability** in the sense of [Edge Python's writing-modules reference](https://docs.edgepython.com/reference/writing-modules#path-c-host-capability) — Path C in spirit. The implementation uses the `register_native_module` mechanism that vanilla `compiler_lib.wasm` already exposes, rather than forking the embedder with custom `env.host_dom_op`-style imports. The sealed v1 [plugin ABI](https://docs.edgepython.com/reference/wasm-abi) is not touched.
 
 ## Repository layout
 
 ```bash
+edge-python-dom/
 ├── Cargo.toml
+├── build.rs
+├── src/
+│   └── lib.rs
+├── runtime/
+│   ├── package.json
+│   ├── index.html
+│   └── src/
+│       └── index.js
+├── tests/
 ├── README.md
-├── LICENSE.md
-├── src
-│   └── main.rs
-└── tests
-    └── main.rs
+├── syntax.md
+└── LICENSE.md
 ```
 
-Target workspace once fleshed out: `dom-mod/` (Path B bindings linked into the custom embedder), `dom-embed/` (the embedder that produces `dom-edge.wasm`), `dom-runtime/` (npm package providing the JS host imports).
+`runtime/compiler_lib.wasm` is generated by `cargo build` and gitignored.
 
 ## References
 
 1. **Haas et al.**, *[Bringing the Web up to Speed with WebAssembly](https://dl.acm.org/doi/10.1145/3062341.3062363)* (PLDI 2017). WebAssembly design and FFI rationale.
 2. **Holmes**, *[When Is WebAssembly Going to Get DOM Support?](https://queue.acm.org/detail.cfm?id=3746174)* (ACM Queue 2026). WASM↔DOM bridge and glue patterns.
-3. **WebAssembly CG**, *[Reference Types Proposal Overview](https://github.com/WebAssembly/reference-types/blob/master/proposals/reference-types/Overview.md)* (2020). `externref` host references.
-4. **WebAssembly CG**, *[JS String Builtins Proposal Overview](https://github.com/WebAssembly/js-string-builtins/blob/main/proposals/js-string-builtins/Overview.md)* (2024). Glue-free JS string interop.
-5. **Calderón**, *[16 Patterns for Crossing the WebAssembly Boundary](https://dev.to/rafacalderon/16-patterns-for-crossing-the-webassembly-boundary-and-the-one-that-wants-to-kill-them-all-5kb)* (2026). JS↔WASM crossing pattern catalog.
+3. **Calderón**, *[16 Patterns for Crossing the WebAssembly Boundary](https://dev.to/rafacalderon/16-patterns-for-crossing-the-webassembly-boundary-and-the-one-that-wants-to-kill-them-all-5kb)* (2026). JS↔WASM crossing pattern catalog.
 
 ## License
 

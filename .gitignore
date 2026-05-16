@@ -1,1 +1,17 @@
+# Build artifacts
 /target
+Cargo.lock
+runtime/compiler_lib.wasm
+runtime/node_modules
+runtime/package-lock.json
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
