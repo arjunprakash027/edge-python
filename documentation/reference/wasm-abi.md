@@ -345,7 +345,7 @@ When the host (browser shim, WASI runtime, Rust embedder) sees `from "<url>" imp
 4. **Walk the export table** and register every callable function under its name.
 5. **At each script call site**, the host registers the args as handles, invokes the matching guest export, reads the result handle, and propagates the `Val`. Errors stashed via `edge_take_error` raise the corresponding Python exception.
 
-The reference browser shim is `demo/worker.js`. WASI hosts and Rust embedders mirror the same shape against their own runtime.
+The reference browser shim is [`runtime/worker/worker.js`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/runtime/worker/worker.js). WASI hosts and Rust embedders mirror the same shape against their own runtime.
 
 ## Constraints and caveats
 

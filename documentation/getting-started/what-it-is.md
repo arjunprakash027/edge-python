@@ -65,7 +65,7 @@ Hitting any limit raises a recoverable `RuntimeError` / `MemoryError` / `Recursi
 
 Edge Python is distributed as a single `.wasm` artifact (`compiler_lib.wasm`, 170 KB). It runs anywhere WebAssembly does:
 
-- **Browser**: served alongside the [`edge.js`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/demo/edge.js) shim, which bridges `print()` and module imports across the WASM ↔ JS boundary.
+- **Browser**: served alongside the [`runtime/`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) JS package, which bridges `print()` and module imports across the WASM ↔ JS boundary.
 - **Server / edge runtimes**: Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute, Spin, etc. The host runtime owns I/O, fetching, and module loading.
 - **Embedded Rust apps**: load `compiler_lib.wasm` via your runtime of choice or, when `cargo`-linked, use the `compiler_lib` rlib directly.
 

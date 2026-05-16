@@ -1,12 +1,15 @@
-/*  
-Native module ABI plumbing: `nativeTable` holds guest exports by u32 id; `host_call_native` dispatches via the universal handle ABI. 
+/*
+Native module loading + dispatch. `nativeTable` indexed by `baseId` from `register_native_module`; entries are wasmpdk fns or capability JS handlers, dispatched by `env.js`'s `host_call_native`.
 */
 
 export const nativeTable = [];
 
-/* Build the guest module's env imports: translate between guest linear memory and compiler memory + handle table. */
+export function resetNativeTable() {
+    nativeTable.length = 0;
+}
+
+/* Build the 6 `env.edge_*` imports for wasm-pdk plugins; bridges guest ↔ compiler memory. */
 export function makeGuestEnv(compilerExports) {
-    /* View factories: `wasm_alloc` and `host_edge_*` may grow memory and detach cached ArrayBuffer views; fresh per use. */
     const compMem = () => new Uint8Array(compilerExports.memory.buffer);
     const compView = () => new DataView(compilerExports.memory.buffer);
 
@@ -14,7 +17,6 @@ export function makeGuestEnv(compilerExports) {
         const gMem = () => new Uint8Array(guestExports.memory.buffer);
         const gView = () => new DataView(guestExports.memory.buffer);
 
-        // Alloc compiler scratch and copy `len` bytes from guest memory; stages name/buf/msg before a `host_edge_*` call.
         const stage = (ptr, len) => {
             const c = compilerExports.wasm_alloc(Math.max(1, len));
             if (len) compMem().set(gMem().subarray(ptr, ptr + len), c);
@@ -41,7 +43,6 @@ export function makeGuestEnv(compilerExports) {
                 const cTag = compilerExports.wasm_alloc(4);
                 const cBuf = compilerExports.wasm_alloc(Math.max(1, dst_max));
                 const ret = compilerExports.host_edge_decode(h, cTag, cBuf, dst_max);
-                // Always write the tag back (caller may inspect it on err too).
                 gView().setUint32(out_tag, compView().getUint32(cTag, true), true);
                 if (ret > 0) gMem().set(compMem().subarray(cBuf, cBuf + ret), dst);
                 return ret;
@@ -67,31 +68,46 @@ export function makeGuestEnv(compilerExports) {
     };
 }
 
-/* Instantiate guest .wasm against universal ABI. Returns callable export names; guest must export `__edge_alloc(size) -> ptr`. */
-export async function instantiateNativeModule(spec, bytes, compilerExports) {
-    const envFactory = makeGuestEnv(compilerExports);
+/* Built-in Path A fallback: instantiate guest, walk exports, annotate each fn with its guest's `__edge_alloc` + `__edge_memory`. */
+async function builtinWasmPdkLoader(module, ctx) {
+    const envFactory = makeGuestEnv(ctx.compilerExports);
     let guest;
     const env = envFactory({ get memory() { return guest.exports.memory; } });
-    const { instance } = await WebAssembly.instantiate(bytes, { env });
+    const { instance } = await WebAssembly.instantiate(module, { env });
     guest = instance;
 
     if (typeof instance.exports.__edge_alloc !== 'function') {
         throw new Error(
-            `native module '${spec}' must export '__edge_alloc(size: u32) -> *mut u8';` +
+            `native module missing '__edge_alloc(size: u32) -> *mut u8';` +
             ` see /reference/wasm-abi for the contract`
         );
     }
 
-    // Discover callable exports. Skip the ABI plumbing (memory) and toolchain post-link helpers (anything prefixed `__`, including __edge_alloc).
     const names = [];
     const fns = [];
     for (const [k, v] of Object.entries(instance.exports)) {
         if (k === 'memory' || k.startsWith('__') || typeof v !== 'function') continue;
         names.push(k);
-        // Annotate the function with its guest's allocator so `host_call_native` stages argv without re-resolving the instance.
         v.__edge_alloc = instance.exports.__edge_alloc;
         v.__edge_memory = instance.exports.memory;
+        v.__edge_kind = 'wasmpdk';
         fns.push(v);
     }
-    return { names, fns };
+    return { kind: 'wasmpdk', names, fns };
+}
+
+/* Try custom loaders first; built-in Path A is the implicit fallback. */
+export async function loadNativeModule(spec, bytes, ctx) {
+    const module = await WebAssembly.compile(bytes);
+
+    for (const loader of ctx.loaders) {
+        if (loader.match(module)) {
+            const result = await loader.load(module, ctx);
+            // Tag each fn with its dispatch kind so host_call_native picks the right path.
+            for (const fn of result.fns) fn.__edge_kind = result.kind;
+            return result;
+        }
+    }
+
+    return await builtinWasmPdkLoader(module, ctx);
 }

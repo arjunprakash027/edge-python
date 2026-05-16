@@ -183,7 +183,7 @@ cargo test --release
 `cargo wasm` is a workspace alias (`.cargo/config.toml` at the repo root) for `cargo build --release --target wasm32-unknown-unknown -p edge-python`.Plain `cargo build --release` produces host-side library artifacts (`.rlib` + host cdylib) for embedders linking `compiler_lib` directly. To extend
 Edge Python with native modules from your own Rust app, depend on `compiler_lib` and implement the `Resolver` trait, see [Writing modules](https://edgepython.com/reference/writing-modules).
 
-Edge Python is loaded by a host runtime, browser via `demo/edge.js`, server / edge via wasmtime / wasmer / Cloudflare Workers / Fastly Compute / Spin. There is no native CLI binary; the host owns I/O, network, and module fetching.
+Edge Python is loaded by a host runtime, browser via the [`runtime/`](../runtime/) JS package, server / edge via wasmtime / wasmer / Cloudflare Workers / Fastly Compute / Spin. There is no native CLI binary; the host owns I/O, network, and module fetching.
 
 ### Consuming the release from another Rust crate
 

@@ -137,11 +137,11 @@ When multiple paths import the same module, it's fetched, parsed, and initialise
 
 ## Host responsibilities
 
-Edge Python's compiler is a WebAssembly module. Fetching bytes — from disk, from `https://`, from your build artifact pipeline — is the host's job. The browser shim ([`demo/edge.js`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/demo/edge.js)) does it via `fetch()`. WASI hosts use their runtime's filesystem and network APIs. Embedders pre-stage modules and feed them to the `Resolver`.
+Edge Python's compiler is a WebAssembly module. Fetching bytes — from disk, from `https://`, from your build artifact pipeline — is the host's job. The browser runtime ([`runtime/`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime)) does it via `fetch()` inside a Web Worker. WASI hosts use their runtime's filesystem and network APIs. Embedders pre-stage modules and feed them to the `Resolver`.
 
 | Scenario | Who fetches |
 |---|---|
-| Browser playground | `edge.js` shim — pre-fetches every spec the script imports. `.py` files register via `register_code_module`; `.wasm` files instantiate via `WebAssembly.instantiate` and register exports via `register_native_module`. |
+| Browser playground | `runtime/` package — pre-fetches every spec the script imports. `.py` files register via `register_code_module`; `.wasm` files instantiate via `WebAssembly.instantiate` and register exports via `register_native_module`. |
 | WASI runtime | Host program reads `.py` files from disk / network using `wasi_snapshot_preview1`. `.wasm` modules can be loaded via the runtime's WebAssembly engine. |
 | Embedded Rust app | Caller links `compiler_lib`, implements `Resolver`, returns either `Resolved::Code(src)` or `Resolved::Native(bindings)`. In-process bindings have full VM heap access (full type coverage); see [Writing modules](/reference/writing-modules). |
 | Production deploy | `edge compile` (planned) will seal all imports into a single `.epy` artifact. |

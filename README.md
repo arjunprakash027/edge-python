@@ -28,6 +28,10 @@ This is a Cargo workspace. The root `Cargo.toml` declares the workspace members 
 │   ├── implementation
 │   ├── language
 │   └── reference
+├── runtime
+│   ├── loaders
+│   ├── src
+│   └── worker
 ├── starter-module
 │   └── src
 ├── target
@@ -55,19 +59,19 @@ Native modules come in two flavors: `.wasm` binaries any host can load by URL (p
 
 ### Browser
 
-Two files: the WASM module + a thin JS loader included in this repo at [`demo/edge.js`](demo/edge.js). Consumers do not write any JavaScript — they include both files and use the `EdgePython` class:
+Two artifacts: the WASM module + the JS runtime published with this repo under [`runtime/`](runtime/). Consumers do not write any JavaScript — they import `createWorker` and use it:
 
 ```html
 <script type="module">
-    import { EdgePython } from './edge.js';
+    import { createWorker } from 'https://cdn.jsdelivr.net/gh/dylan-sutton-chavez/edge-python@main/runtime/src/index.js';
 
-    const ep = await EdgePython.create({
+    const worker = await createWorker({
         wasmUrl: './compiler_lib.wasm',
         imports: { "math": "https://example.com/math.wasm" }
     });
-    ep.onOutput(line => console.log(line));
+    worker.onOutput(line => console.log(line));
 
-    await ep.run(`
+    await worker.run(`
         from math import add
         from "https://example.com/utils.py" import normalize
         print(add(2, 3))
@@ -76,7 +80,7 @@ Two files: the WASM module + a thin JS loader included in this repo at [`demo/ed
 </script>
 ```
 
-The shim handles the WASM ↔ JS plumbing: pre-fetching imports, registering modules with the WASM runtime, dispatching native calls back into JS, and decoding `print()` output. **The JS shim is necessary in browsers:** the WebAssembly sandbox does not expose network or filesystem to the WASM module — every external resource must come through a host-side bridge, and in browsers that bridge is JavaScript. Edge Python's "no JS for the user" principle is preserved by distributing the bridge as part of the official release; `edge.js` is included the same way as any WASM library's loader (Pyodide, sql.js, etc.).
+The runtime spawns a Web Worker that pre-fetches imports, registers modules with the compiler, dispatches native calls, and streams `print()` output back. **The JS runtime is necessary in browsers:** the WebAssembly sandbox does not expose network or filesystem to the WASM module — every external resource must come through a host-side bridge, and in browsers that bridge is JavaScript. Edge Python's "no JS for the user" principle is preserved by distributing the bridge as part of the official release; the runtime is consumed the same way as any WASM library's loader (Pyodide, sql.js, etc.).
 
 Build the WASM yourself:
 

@@ -1,5 +1,5 @@
-/* 
-Spec/URL helpers. Mirror the Rust bridge's modules::packages::manifest so transitively-imported relative paths canonicalize identically on both sides. 
+/*
+Spec/URL helpers. Mirror `compiler_lib::modules::packages::manifest` so transitive imports canonicalize identically on both sides.
 */
 
 export const sha256Hex = async (bytes) => {
@@ -38,5 +38,6 @@ export const joinRel = (base, target) => {
     return b + t;
 };
 
-/* Mirrors Rust bridge `scan_string_imports`. `[ \t]` (not `\s`) keeps the per-line scan from spanning `\n`. */
-export const scanStringImports = (src) => [...src.matchAll(/^[ \t]*from [ \t]*"([^"]+)"/gm)].map(m => m[1]);
+/* Quoted-form imports (`from "<spec>" import ...`); bare names route through packages.json walk-up. */
+export const scanStringImports = (src) =>
+    [...src.matchAll(/^[ \t]*from [ \t]*"([^"]+)"/gm)].map(m => m[1]);

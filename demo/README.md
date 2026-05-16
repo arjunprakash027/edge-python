@@ -27,18 +27,10 @@ The page fetches the WebAssembly module and uses a Web Worker, so it must be ser
 │   └── style.css
 ├── index.html
 ├── js
-│   ├── edge.js
 │   ├── main
 │   │   ├── editor.js
 │   │   └── highlighter.js
-│   ├── main.js
-│   ├── worker
-│   │   ├── fetch.js
-│   │   ├── idb.js
-│   │   ├── native.js
-│   │   ├── prefetch.js
-│   │   └── specs.js
-│   └── worker.js
+│   └── main.js
 ├── README.md
 ├── runtime
 │   ├── lib

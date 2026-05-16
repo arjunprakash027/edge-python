@@ -1,5 +1,5 @@
-/* 
-Demo entry point: config, DOM, status helpers, Python worker shim; editor lives in ./main/editor.js. 
+/*
+Demo entry point: config, DOM, status helpers, runtime worker shim; editor lives in ./main/editor.js.
 */
 
 import { createEditor } from './main/editor.js';
@@ -11,16 +11,12 @@ const ENTRY_DIR = ENTRY_PATH.slice(0, ENTRY_PATH.lastIndexOf('/') + 1);
 const DEV = !['demo.edgepython.com'].includes(location.hostname);
 const FETCH_OPTS = DEV ? { cache: 'no-store' } : {};
 
-/* Single fetch in parallel with worker boot; the body stream is transferred to the worker, so `compileStreaming` runs off-main-thread without a second hit. */
-const WASM_FETCH = (async () => {
-    const ver = await fetch('./version.json', { cache: 'no-store' }).then(r => r.json()).catch(() => ({}));
-    const bust = ver.v ? `?v=${ver.v}` : '';
-    const base = DEV ? 'https://demo.edgepython.com/compiler_lib.wasm' : './compiler_lib.wasm';
-    const url = new URL(base + bust, location.href).toString();
-    const response = await fetch(url, FETCH_OPTS);
-    if (!response.ok) throw new Error(`HTTP ${response.status} fetching compiler_lib.wasm`);
-    return { body: response.body, version: ver.v };
-})();
+/* Dev/prod switch for the runtime JS — local checkout when developing, jsdelivr in production. Mirrors the Tailwind switch in index.html; keeps the same dev-edit-refresh loop without bundling. */
+const RUNTIME_URL = DEV
+    ? '../../runtime/src/index.js'
+    : 'https://cdn.jsdelivr.net/gh/dylan-sutton-chavez/edge-python@main/runtime/src/index.js';
+
+const { createWorker } = await import(RUNTIME_URL);
 
 const DEFAULT_CODE = `"""\nFunctional pipeline using lambdas, closures and list comprehensions.\nReference: Backus, J. (1978).\n"""\n\ndouble = lambda n: n * 2\nsquare = lambda n: n * n\n\ndef compose(*fns):\n    def piped(x):\n        for f in fns:\n            x = f(x)\n        return x\n    return piped\n\npipeline = compose(double, square)\n\ndata = [1, 2, 3]\nresult = [pipeline(x) for x in data]\n\nprint(f"Input:  {data}")\nprint(f"Output: {result}")`;
 
@@ -50,75 +46,62 @@ const loadIcons = (scope = document) => Promise.all(
 
 // Worker
 
-const PythonWorker = (() => {
-    // `{ type: 'module' }` lets worker.js `import` from ./worker/*.js without a build step.
-    const worker = new Worker('./js/worker.js', { type: 'module' });
+let worker = null;
+let busy = true;
+let pendingSrc = null;
+const setBusy = (b) => { busy = b; el.btn.disabled = b; };
 
-    /* Single 'runtime busy' flag gating button + Ctrl+Enter; queued runs fire on `ready` so WASM-load Ctrl+Enter survives. */
-    let busy = true;
-    let pendingRun = null;
-    const setBusy = (b) => { busy = b; el.btn.disabled = b; };
-
-    const doRun = (src) => {
-        setBusy(true);
-        ok('Running...');
-        el.term.textContent = '';
-        worker.postMessage({ type: 'run', src, baseUrl: location.href, entryDir: ENTRY_DIR });
-    };
-
-    const onMsg = {
-        ready: ({ ms }) => {
-            setBusy(false);
-            ok(`Ready${DEV ? ' - Dev' : ''} (Loaded in ${fmt(ms)})`);
-            if (pendingRun != null) { const src = pendingRun; pendingRun = null; doRun(src); }
-        },
-        line: ({ line }) => {
-            // `append` adds a text node in O(1); `+= text` rebuilds the whole string each call.
-            if (el.term.firstChild) el.term.append('\n');
-            el.term.append(line);
-        },
-        result: ({ out, ms }) => {
-            if (out) { el.term.textContent = out; err(`Failed in ${fmt(ms)}`); }
-            else ok(`Ran in ${fmt(ms)}`);
-            setBusy(false);
-        },
-        error: ({ message }) => {
-            setBusy(false); err('Load failed');
-            el.term.textContent = `Could not load WASM.\n\n${message}`;
-        },
-    };
-    worker.onmessage = ({ data }) => onMsg[data.type]?.(data);
-
-    return {
-        load: async () => {
-            ok('Loading WASM...');
-            try {
-                const { body, version } = await WASM_FETCH;
-                worker.postMessage(
-                    { type: 'load', body, baseUrl: location.href, version },
-                    [body],
-                );
-            } catch (e) {
-                err('Load failed');
-                el.term.textContent = `Could not load WASM.\n\n${e.message}`;
-            }
-        },
-        run: (src) => {
-            if (busy) { pendingRun = src; ok('Queued — runtime not ready'); return; }
-            doRun(src);
-        },
-    };
-})();
+async function runPython(src) {
+    if (!worker) { pendingSrc = src; ok('Queued — runtime not ready'); return; }
+    if (busy) return;
+    setBusy(true);
+    ok('Running...');
+    el.term.textContent = '';
+    try {
+        const { out, ms } = await worker.run(src, { baseUrl: location.href, entryDir: ENTRY_DIR });
+        if (out) { el.term.textContent = out; err(`Failed in ${fmt(ms)}`); }
+        else ok(`Ran in ${fmt(ms)}`);
+    } catch (e) {
+        err('Run failed');
+        el.term.textContent = e?.message ?? String(e);
+    } finally {
+        setBusy(false);
+    }
+}
 
 // Init
 
-const Editor = createEditor({ ed: el.ed, ln: el.ln, defaultCode: DEFAULT_CODE, onRun: PythonWorker.run });
+const Editor = createEditor({ ed: el.ed, ln: el.ln, defaultCode: DEFAULT_CODE, onRun: runPython });
 
-el.btn.addEventListener('click', () => PythonWorker.run(Editor.getCode()));
+el.btn.addEventListener('click', () => runPython(Editor.getCode()));
 loadIcons();
-PythonWorker.load();
 
 fetch(`./${ENTRY_PATH}`, FETCH_OPTS)
     .then(r => r.ok ? r.text() : Promise.reject())
     .then(code => Editor.setCode(code.replace(/\r\n?/g, '\n')))
     .catch(() => console.warn(`${ENTRY_PATH} could not be loaded, using default code.`));
+
+// Async: spin up the worker. UI stays interactive (button disabled until ready).
+ok('Loading WASM...');
+(async () => {
+    try {
+        const ver = await fetch('./version.json', { cache: 'no-store' }).then(r => r.json()).catch(() => ({}));
+        const bust = ver.v ? `?v=${ver.v}` : '';
+        const wasmUrl = (DEV ? 'https://demo.edgepython.com/compiler_lib.wasm' : './compiler_lib.wasm') + bust;
+
+        const t0 = performance.now();
+        worker = await createWorker({ wasmUrl, integrity: true, version: ver.v });
+        worker.onOutput((line) => {
+            // `append` adds a text node in O(1); `+= text` rebuilds the whole string each call.
+            if (el.term.firstChild) el.term.append('\n');
+            el.term.append(line);
+        });
+        const ms = performance.now() - t0;
+        ok(`Ready${DEV ? ' - Dev' : ''} (Loaded in ${fmt(ms)})`);
+        setBusy(false);
+        if (pendingSrc != null) { const src = pendingSrc; pendingSrc = null; runPython(src); }
+    } catch (e) {
+        err('Load failed');
+        el.term.textContent = `Could not load WASM.\n\n${e?.message ?? e}`;
+    }
+})();
