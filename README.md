@@ -39,7 +39,7 @@ Requires Rust (`wasm32-unknown-unknown` target), Python 3.7+, and a modern brows
 git clone https://github.com/dylan-sutton-chavez/edge-python-dom
 cd edge-python-dom
 
-cargo build --release --target wasm32-unknown-unknown
+cargo build --release
 cp target/wasm32-unknown-unknown/release/edge_python_dom.wasm web/
 
 python3 -m http.server 8080 --directory web
