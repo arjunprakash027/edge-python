@@ -19,6 +19,9 @@ let cache = null;
 let integrityActive = false;
 let loaders = [];
 let importsMap = null;
+// Source/missing caches persist across runs so the BFS doesn't re-fetch every module — and especially doesn't re-probe 404'd `packages.json` paths — on every Run-button press. Wiped by `clearCache()`.
+const fetchedSources = new Map();
+const knownMissing = new Set();
 
 export async function load({ wasmUrl, integrity = true, loaders: loaderUrls = [], imports = null, version = null }) {
     const t0 = performance.now();
@@ -58,9 +61,6 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
         try { lockfile = await cache.loadLockfile(); }
         catch { /* lockfile load failure is non-fatal; treat as empty */ }
     }
-
-    const fetchedSources = new Map();
-    const knownMissing = new Set();
 
     const env = makeCompilerEnv({
         getExports: () => compilerExports,
@@ -117,6 +117,8 @@ export function reset() {
 }
 
 export async function clearCache() {
+    fetchedSources.clear();
+    knownMissing.clear();
     if (cache) await cache.clear();
 }
 
@@ -126,6 +128,8 @@ export function dispose() {
     cache = null;
     loaders = [];
     importsMap = null;
+    fetchedSources.clear();
+    knownMissing.clear();
     resetNativeTable();
 }
 

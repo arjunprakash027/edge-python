@@ -41,10 +41,10 @@ export async function bfsPrefetch(rootSrc, exports, lockfile, ctx) {
         if (visited.has(spec)) continue;
         visited.add(spec);
 
-        // For the synthetic packages.json, skip the fetch and use the cached entry.
+        // Reuse worker-lifetime cache (synthetic root packages.json from importsMap, or anything previously fetched in an earlier run) instead of re-fetching every Run.
         let bytes;
-        if (spec === 'packages.json' && fetchedSources.has('packages.json') && importsMap) {
-            bytes = fetchedSources.get('packages.json');
+        if (fetchedSources.has(spec)) {
+            bytes = fetchedSources.get(spec);
         } else {
             bytes = await fetchWithLockfile(spec, lockfile, ctx);
             if (!bytes) continue;
