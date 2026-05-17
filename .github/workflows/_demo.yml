@@ -48,4 +48,5 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy demo --project-name=edge-python-demo --branch=${{ github.ref_name }}
+          # Pin to the Pages production branch. See the matching comment in _runtime.yml.
+          command: pages deploy demo --project-name=edge-python-demo --branch=main

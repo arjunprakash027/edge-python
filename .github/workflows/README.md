@@ -20,7 +20,7 @@ Two projects, both in **Direct Upload** mode, where actions pushes prebuilt dire
 | `edge-python-demo` | `demo/` + downloaded `compiler_lib.wasm` | `https://edge-python-demo.pages.dev` |
 | `edge-python-cdn`  | `runtime/` + downloaded `compiler_lib.wasm` | `https://edge-python-cdn.pages.dev`  |
 
-Both projects produce one preview URL per branch / PR.
+Both deploys are pinned to the `main` (production) branch in `_runtime.yml` / `_demo.yml`. Without that pin, a tag push would land at a per-tag preview URL (`v0-1-0.edge-python-cdn.pages.dev`) and the custom domain would never update.
 
 ### Cloudflare and GitHub Setup
 

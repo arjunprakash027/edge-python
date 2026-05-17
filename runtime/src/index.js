@@ -3,8 +3,12 @@ Public entry. `createWorker(opts)` spawns a Web Worker around `engine.js` and re
 */
 
 export async function createWorker(opts) {
-    const workerUrl = new URL('../worker/worker.js', import.meta.url);
-    const worker = new Worker(workerUrl, { type: 'module' });
+    // `new Worker(crossOriginUrl)` is blocked even with `type: 'module'` (Chromium does not implement the cross-origin path of the spec). Bootstrap from a same-origin Blob whose body dynamic-imports the real module; module workers ARE allowed to load cross-origin module scripts when the CDN sends permissive CORS (Cloudflare Pages does by default).
+    const workerUrl = new URL('../worker/worker.js', import.meta.url).href;
+    const blob = new Blob([`import(${JSON.stringify(workerUrl)});`], { type: 'application/javascript' });
+    const blobUrl = URL.createObjectURL(blob);
+    const worker = new Worker(blobUrl, { type: 'module' });
+    URL.revokeObjectURL(blobUrl);
 
     let reqIdCounter = 0;
     const pending = new Map();
