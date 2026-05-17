@@ -1,26 +1,36 @@
-from dom import (
-    query, create_element, append_child, 
-    set_text, set_attribute, add_class,
-)
+STYLES: dict[str, str] = {
+    "box": "aspect-square rounded-[10px] p-3 flex items-end shadow-sm",
+    "label": "text-white font-mono text-xs mix-blend-difference",
+}
 
-palette = [
-    ("Claude", "#d97757"),
-    ("Slate", "#1f2937"),
-    ("Sky", "#0ea5e9"),
-    ("Lime", "#84cc16"),
-    ("Rose", "#f43f5e"),
-    ("Amber", "#f59e0b"),
+from dom import query, create_element, append_child, set_text, set_attribute
+
+class Swatch:
+    def __init__(self, name: str, color: str):
+        self.name = name
+        self.color = color
+
+    def mount(self, parent):
+        box = create_element("div")
+        set_attribute(box, "class", STYLES["box"])
+        set_attribute(box, "style", f"background:{self.color}")
+
+        label = create_element("span")
+        set_attribute(label, "class", STYLES["label"])
+        set_text(label, f"{self.name} {self.color}")
+
+        append_child(box, label)
+        append_child(parent, box)
+
+PALETTE: list[Swatch] = [
+    Swatch("Claude", "#d97757"),
+    Swatch("Slate", "#1f2937"),
+    Swatch("Sky", "#0ea5e9"),
+    Swatch("Lime", "#84cc16"),
+    Swatch("Rose", "#f43f5e"),
+    Swatch("Amber", "#f59e0b"),
 ]
 
 grid = query("#palette")
-for name, hex_code in palette:
-    swatch = create_element("div")
-    add_class(swatch, "swatch")
-    set_attribute(swatch, "style", "background:" + hex_code)
-
-    label = create_element("span")
-    add_class(label, "label")
-    set_text(label, name + " " + hex_code)
-
-    append_child(swatch, label)
-    append_child(grid, swatch)
+for swatch in PALETTE:
+    swatch.mount(grid)
