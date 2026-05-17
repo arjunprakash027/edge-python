@@ -3,11 +3,19 @@ name = "edge-python-dom"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
+description = "DOM capability for Edge Python: self-contained .wasm carrying its own JS bridge for browser DOM access."
+repository = "https://github.com/dylan-sutton-chavez/edge-python-dom"
+readme = "README.md"
 
 [lib]
+name = "edge_python_dom"
+crate-type = ["cdylib"]
 test = false
 doctest = false
 
-[dependencies]
-# Clone and build `compiler_lib.wasm` and save the repository in `~/.cargo/git/`.
-edge-python = { git = "https://github.com/dylan-sutton-chavez/edge-python", branch = "main" }
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
