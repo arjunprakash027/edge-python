@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Edge Python DOM</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 720px; margin: 3em auto; padding: 0 1.5em; color: #1f2937; }
+        h1 { font-size: 1.5em; margin-bottom: 0.2em; }
+        p.sub { color: #6b7280; margin: 0 0 2em; font-size: 0.95em; }
+        #palette { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75em; }
+        .swatch { aspect-ratio: 1; border-radius: 10px; padding: 0.75em; display: flex; align-items: flex-end; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+        .label { color: white; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.8em; mix-blend-mode: difference; }
+        pre { background: #1c1c1c; color: #c2c2c2; padding: 0.75em; border-radius: 6px; font-size: 12px; margin-top: 2em; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>Edge Python DOM</h1>
+    <p class="sub">A color palette, rendered from Python in your browser.</p>
+    <div id="palette"></div>
+    <pre id="output"></pre>
+
+    <script type="module">
+        // Import engine.js directly instead of createWorker: the DOM bridge calls document.* which isn't available in a Web Worker.
+        import * as engine from "https://cdn.edgepython.com/src/engine.js";
+
+        const base = new URL('.', import.meta.url).href;
+        const out = document.getElementById("output");
+
+        await engine.load({
+            // compiler_lib.wasm is the language runtime — pulled from the official CDN, same as the JS engine above. Only edge_python_dom.wasm (the DOM capability) is served locally.
+            wasmUrl: 'https://cdn.edgepython.com/compiler_lib.wasm',
+            imports: { dom: base + 'edge_python_dom.wasm' },
+            loaders: ['https://cdn.edgepython.com/loaders/capability-bridge.js'],
+        });
+
+        const onLine = (line) => { out.textContent += line + "\n"; };
+        try {
+            const src = await (await fetch("./palette.py")).text();
+            const { out: diag, ms } = await engine.run({ src, onLine });
+            out.textContent += `ran in ${ms.toFixed(2)} ms`;
+            if (diag) out.textContent += "\n" + diag;
+        } catch (e) {
+            out.textContent += "[error] " + (e?.message ?? e);
+            console.error(e);
+        }
+    </script>
+</body>
+</html>
