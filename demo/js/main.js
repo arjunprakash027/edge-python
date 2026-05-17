@@ -11,10 +11,10 @@ const ENTRY_DIR = ENTRY_PATH.slice(0, ENTRY_PATH.lastIndexOf('/') + 1);
 const DEV = !['demo.edgepython.com'].includes(location.hostname);
 const FETCH_OPTS = DEV ? { cache: 'no-store' } : {};
 
-/* Dev/prod switch for the runtime JS — local checkout when developing, jsdelivr in production. Mirrors the Tailwind switch in index.html; keeps the same dev-edit-refresh loop without bundling. */
+/* Dev/prod switch for the runtime JS — local checkout when developing, edge-python-cdn in production. Mirrors the Tailwind switch in index.html; keeps the same dev-edit-refresh loop without bundling. */
 const RUNTIME_URL = DEV
     ? '../../runtime/src/index.js'
-    : 'https://cdn.jsdelivr.net/gh/dylan-sutton-chavez/edge-python@main/runtime/src/index.js';
+    : 'https://cdn.edgepython.com/src/index.js';
 
 const { createWorker } = await import(RUNTIME_URL);
 
@@ -87,7 +87,7 @@ ok('Loading WASM...');
     try {
         const ver = await fetch('./version.json', { cache: 'no-store' }).then(r => r.json()).catch(() => ({}));
         const bust = ver.v ? `?v=${ver.v}` : '';
-        const wasmUrl = (DEV ? 'https://demo.edgepython.com/compiler_lib.wasm' : './compiler_lib.wasm') + bust;
+        const wasmUrl = `https://cdn.edgepython.com/compiler_lib.wasm${bust}`;
 
         const t0 = performance.now();
         worker = await createWorker({ wasmUrl, integrity: true, version: ver.v });

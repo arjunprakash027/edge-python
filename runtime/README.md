@@ -4,7 +4,13 @@ The JavaScript half of Edge Python: hosts `compiler_lib.wasm` in a Web Worker, r
 
 ## Install
 
-No install. Import directly from jsdelivr; the tag pins the version:
+No install. The official CDN serves the runtime and the matching `compiler_lib.wasm` from a single origin, tracking `main`:
+
+```js
+import { createWorker } from "https://cdn.edgepython.com/src/index.js";
+```
+
+For a tag-pinned alternative, import from jsdelivr:
 
 ```js
 import { createWorker } from "https://cdn.jsdelivr.net/gh/dylan-sutton-chavez/edge-python@v0.1.0/runtime/src/index.js";
@@ -16,13 +22,13 @@ For local development against a checkout of this repo, import the relative path:
 import { createWorker } from "../../runtime/src/index.js";
 ```
 
-The standard dev/prod switch pattern picks one or the other based on `location.hostname`.
+The standard dev/prod switch pattern picks one of these based on `location.hostname`.
 
 ## Usage
 
 ```js
 const worker = await createWorker({
-    wasmUrl: "./compiler_lib.wasm",
+    wasmUrl: "https://cdn.edgepython.com/compiler_lib.wasm",
     integrity: true, // default: IDB + lockfile CAS
     imports: { dom: "./dom.wasm" }, // bare-name shortcut, optional
     loaders: [], // opt-in module loaders, optional
