@@ -66,8 +66,9 @@ jobs:
       - name: Size (optimized)
         run: ls -lh target/wasm32-unknown-unknown/release/compiler_lib.wasm
 
+      # `--no-default-features` disables the producer's `prebuilt` feature so `compiler/build.rs` doesn't try to fetch the release wasm asset (which is uploaded later in this job on a first-tag publish).
       - name: Test
-        run: cargo test -p edge-python
+        run: cargo test -p edge-python --no-default-features
 
       - name: Upload wasm artifact
         uses: actions/upload-artifact@v6

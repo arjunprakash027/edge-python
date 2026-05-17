@@ -119,6 +119,8 @@ fn main() {
 
 `edge-python`'s own `build.rs` declares `links = "compiler_lib"` and downloads `compiler_lib.wasm` for the matching tag into `OUT_DIR`; cargo exposes its absolute path to your build script as `DEP_COMPILER_LIB_WASM`. Copy it wherever your host loads it from (e.g. a `runtime/` directory served by your JS host, or your binary's resources). Pinning to a tag gives reproducible builds; swap for `branch = "main"` when iterating against unreleased changes. Requires `curl` on the host PATH.
 
+The fetch is gated by the default-on `prebuilt` feature. Default dependency lines (above) already enable it, so nothing changes for typical consumers; if you opt out of default features for unrelated reasons, re-enable explicitly with `features = ["prebuilt"]`.
+
 ### Server / edge runtimes (Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute, Spin)
 
 Edge Python is a `cdylib` — your host runtime instantiates `compiler_lib.wasm` and calls into its exported entry points. The same `.wasm` you serve to browsers is the artifact you embed server-side. Reading scripts, fetching imports, surfacing output are the host's responsibility, exactly as in the browser case (just with WASI / runtime APIs instead of `fetch` / `postMessage`).

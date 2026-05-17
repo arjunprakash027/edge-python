@@ -25,9 +25,9 @@ jobs:
       - name: Shear (unused deps)
         run: cargo shear
 
-      # Host clippy. Wasm crates excluded via default-members.
+      # Host clippy. Wasm crates excluded via default-members. `--no-default-features` disables the producer's `prebuilt` feature so `compiler/build.rs` doesn't try to download the release wasm asset (which doesn't exist yet on the first publish of a new tag).
       - name: Clippy (host / tests)
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --no-default-features -- -D warnings
 
       # Lint for wasm target.
       - name: Install wasm target

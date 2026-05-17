@@ -1,6 +1,7 @@
 /*
 Downloads `<links>.wasm` from this crate's GitHub release into OUT_DIR and exposes its path to downstream build scripts via `DEP_<UPPERCASE(links)>_WASM`.
 URL is derived from `Cargo.toml`: `<repository>/releases/download/v<version>/<links>.wasm`. No-op on wasm32 (the producer target). Requires `curl` on PATH.
+Gated behind the default-on `prebuilt` feature so producer-side commands can opt out with `--no-default-features` and avoid the fetch when no consumer is reading `DEP_COMPILER_LIB_WASM`.
 */
 
 use std::{env, path::PathBuf, process::Command};
@@ -9,6 +10,10 @@ fn main() {
     println!("cargo::rerun-if-changed=build.rs");
 
     if env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("wasm32") {
+        return;
+    }
+
+    if env::var_os("CARGO_FEATURE_PREBUILT").is_none() {
         return;
     }
 

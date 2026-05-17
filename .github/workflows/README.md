@@ -60,3 +60,5 @@ git push origin v0.1.0
 Nothing is published to crates.io — distribution is the `.wasm` artifact attached to the Release. The `starter-module` example carries its own `version` and is intentionally not bumped with the workspace.
 
 Rust crates that consume the release pick it up automatically: `compiler/Cargo.toml` declares `links = "compiler_lib"` and `compiler/build.rs` downloads `<repository>/releases/download/v<version>/compiler_lib.wasm` into `OUT_DIR`. A downstream that depends on `edge-python` reads the resulting path from `DEP_COMPILER_LIB_WASM` in its own `build.rs` — see the consumer pattern in the [root README](../../README.md#consume-the-release-from-a-rust-host). Tag bumps in this repo flow through to consumers via `cargo update`.
+
+The download is gated behind the default-on `prebuilt` feature. Producer-side steps in this pipeline (host clippy in `_check.yml`, host tests in `_wasm.yml`) pass `--no-default-features` so they don't try to fetch a release asset that, on a first-tag publish, only gets uploaded later in this same pipeline.

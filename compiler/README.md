@@ -211,6 +211,8 @@ fn main() {
 
 URL is derived entirely from this crate's `Cargo.toml` (`<repository>/releases/download/v<version>/compiler_lib.wasm`), so a tag bump is the only thing a consumer ever needs to retarget. `branch = "main"` is also valid for unreleased work; pin to a `tag` for reproducible builds. Requires `curl` on the host PATH.
 
+The fetch is gated behind the default-on `prebuilt` feature so this repo's own producer-side commands (`cargo test`, `cargo clippy`) can pass `--no-default-features` and skip it — nothing in this workspace consumes `DEP_COMPILER_LIB_WASM`. A downstream that uses `default-features = false` for unrelated reasons must re-enable it explicitly: `features = ["prebuilt"]`.
+
 ---
 
 ## 9. References
