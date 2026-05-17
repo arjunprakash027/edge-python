@@ -20,6 +20,24 @@ The page fetches the WebAssembly module and uses a Web Worker, so it must be ser
 
 > The page pulls the runtime JS and `compiler_lib.wasm` from `cdn.edgepython.com`, so the demo, the runtime, and the compiler all ship and version independently.
 
+### Cache and deploys
+
+The demo no longer sets HTTP cache headers (the old `demo/_headers` was removed); cache invalidation is driven by `demo/version.json` instead. Every CI deploy writes a short content hash of the runtime and WASM into `version.json`:
+
+```json
+{ "v": "<12-char hash>" }
+```
+
+The page fetches `version.json` with `cache: 'no-store'` on each load, appends `?v=<hash>` to the WASM URL for HTTP-cache busting, and passes the same hash as `version` to `createWorker(...)`. The runtime compares it against the value stored in IndexedDB; on mismatch the IDB CAS and lockfile are wiped before the run, so stale bytes from an old deploy can never be served.
+
+### WASM streaming
+
+The WASM module is fetched **once** in the page (so the network panel shows a single request), and its `ReadableStream` body is transferred to the Worker via `postMessage`. The Worker compiles it with `WebAssembly.compileStreaming`, avoiding the double-fetch + double-decode that the previous main-thread-then-worker path introduced.
+
+### Demo report
+
+The runtime's `format` helper (in `runtime/lib/format.py`) renders class definitions with their inheritance chain and dunder methods, so the perceptron example shows the full surface of Edge Python's object model when the report is generated.
+
 ### Project Structure
 
 ```bash

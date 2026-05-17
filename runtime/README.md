@@ -10,12 +10,6 @@ No install. The official CDN serves the runtime and the matching `compiler_lib.w
 import { createWorker } from "https://cdn.edgepython.com/src/index.js";
 ```
 
-For a tag-pinned alternative, import from jsdelivr:
-
-```js
-import { createWorker } from "https://cdn.jsdelivr.net/gh/dylan-sutton-chavez/edge-python@v0.1.0/runtime/src/index.js";
-```
-
 For local development against a checkout of this repo, import the relative path:
 
 ```js
@@ -109,6 +103,18 @@ Two valid `kind` values:
 The built-in Path A wasm-pdk loader is always tried last as fallback; custom loaders run first in order.
 
 See `loaders/capability-bridge.js` for a complete example.
+
+## Worker bootstrap
+
+When the runtime is served from a different origin than the page (the common case: page on `demo.edgepython.com`, runtime on `cdn.edgepython.com`), Chromium rejects `new Worker(crossOriginUrl)` even with `type: 'module'`. `createWorker` works around this by spawning the Worker from a same-origin **Blob URL** that dynamically `import()`s the real cross-origin module. Same-origin imports use the direct path. No flag, no opt-in — `createWorker` picks the right strategy from `import.meta.url`.
+
+The Blob bootstrap also buffers any `postMessage` that arrives before the imported `worker.js` installs its `onmessage` handler, so the initial `load` request can never be lost to a race.
+
+## Module fetch lifecycle
+
+`load` is called once per Worker; `run` can be called many times. The `compiler_lib.wasm` module is compiled once at `load` time and a **fresh instance** is created on each `run`, so VM state cannot leak between runs.
+
+Module **source bytes** (`.py` / `.wasm` / `packages.json`) are cached across runs in the same Worker — the BFS prefetch skips specs it already fetched, and 404'd `packages.json` paths are remembered in a known-missing set so they aren't re-probed on every Run-button press. Use `clearCache()` to drop both caches and force a clean re-fetch.
 
 ## Architecture
 
