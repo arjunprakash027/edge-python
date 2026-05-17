@@ -73,7 +73,8 @@ async function builtinWasmPdkLoader(module, ctx) {
     const envFactory = makeGuestEnv(ctx.compilerExports);
     let guest;
     const env = envFactory({ get memory() { return guest.exports.memory; } });
-    const { instance } = await WebAssembly.instantiate(module, { env });
+    // WebAssembly.instantiate(Module, ...) returns the Instance directly, not {module, instance}.
+    const instance = await WebAssembly.instantiate(module, { env });
     guest = instance;
 
     if (typeof instance.exports.__edge_alloc !== 'function') {

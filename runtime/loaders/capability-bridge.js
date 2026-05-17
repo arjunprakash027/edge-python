@@ -12,7 +12,8 @@ export default {
     },
 
     async load(module, ctx) {
-        const { instance } = await WebAssembly.instantiate(module, { env: {} });
+        // WebAssembly.instantiate(Module, ...) returns the Instance directly, not {module, instance}.
+        const instance = await WebAssembly.instantiate(module, { env: {} });
 
         const ptr = instance.exports.edge_capability_bridge_ptr();
         const len = instance.exports.edge_capability_bridge_len();
