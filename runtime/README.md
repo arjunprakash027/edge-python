@@ -61,11 +61,12 @@ The returned object exposes:
 | `integrityActive` | `boolean` | `true` iff IDB cache opened successfully. Inspect after `createWorker` to detect silent fallback. |
 | `loadMs` | `number` | Wall time to load + compile `compiler_lib.wasm`. |
 | `run(src, opts?)` | `(string, {entryDir?, baseUrl?}) => Promise<{out, ms}>` | Execute a Python source string. If the script defines a `main` global (typically `async def main()`), it is auto-invoked after top-level execution — scripts never write `run(main())` themselves. Resolves with stdout (concatenated `print()` lines if no `onOutput`) and wall time. |
-| `pushEvent(message)` | `(string) => boolean` | Inject a string into the paused VM's event queue; wakes any coroutine parked in `receive()` and resumes the driver. Returns `false` if no run is paused. Browser bridges that dispatch `CustomEvent("edge-python-event")` are routed through this automatically. |
 | `onOutput(handler)` | `(line: string) => void` | Streaming output callback fired once per `print()` line. |
 | `reset()` | `() => Promise<void>` | Clear registered modules without rebooting the worker. |
 | `clearCache()` | `() => Promise<void>` | Wipe IDB CAS + lockfile (or memory cache). Next run re-fetches everything. |
 | `dispose()` | `() => void` | Terminate the worker. Subsequent calls fail. |
+
+For main-thread embedders that need to inject DOM-driven events into a paused `receive()`, import `engine` directly (not via `createWorker`) and call `engine.pushEvent(message)`. Browser bridges fire `CustomEvent("edge-python-event")` which the engine routes through `pushEvent` automatically.
 
 ## Writing a loader
 
@@ -145,7 +146,7 @@ Module **source bytes** (`.py` / `.wasm` / `packages.json`) are cached across ru
 |---|---|
 | `src/index.js` | Public API. `createWorker` factory (main-thread). |
 | `src/engine.js` | Orchestrator (runs in worker). `load`, `run`, `reset`, `clearCache`, `dispose`. |
-| `src/env.js` | The 3 `env.*` imports `compiler_lib` declares: `host_print`, `host_call_native`, `host_fetch_bytes`. |
+| `src/env.js` | The 4 `env.*` imports `compiler_lib` declares: `host_print`, `host_call_native`, `host_fetch_bytes`, `host_now_ns`. |
 | `src/native.js` | Native module loader extension point + built-in Path A (wasm-pdk) loader + `nativeTable`. |
 | `src/prefetch.js` | BFS over the dependency graph; pre-fetches and registers all `.py` / `.wasm` / `packages.json`. |
 | `src/fetch.js` | CAS-backed fetch with lockfile integrity check. |

@@ -1,6 +1,6 @@
 ---
 title: "Async"
-description: "Cooperative coroutines, sleep, gather, with_timeout, cancel."
+description: "Cooperative coroutines: run, sleep, frame, gather, with_timeout, cancel, receive."
 ---
 
 Edge Python supports cooperative concurrency via `async def` coroutines and the `await` / `yield` keywords. There is **no preemption**: a coroutine runs until it explicitly yields, sleeps, awaits, or returns. The scheduler runs on a single OS thread; concurrency is by interleaving, not parallelism.
@@ -172,7 +172,7 @@ Both are in the built-in exception namespace and match `except` clauses normally
 * **`async with`** reuses the sync `with` dispatch path, invoking `__enter__` / `__exit__` on the context manager. `__aenter__` / `__aexit__` are not consulted (the async dunder forms are not dispatched). For async setup/teardown that needs `await`, use `try` / `finally` with explicit `await` calls.
 * **No async comprehensions.** `[x async for x in it]` is not supported.
 * **No `gen.send` / `.throw` / `.close`.** Generators and coroutines are one-way producers. For bidirectional flow, structure the work with `run` / `gather` and pass messages through call arguments.
-* **`receive()` is unbounded.** Without an external producer pushing into the event queue, `receive()` yields `None` forever. Pair with `with_timeout` if you need a deadline.
+* **`receive()` blocks indefinitely.** With an empty queue and no host `run_push_event` arriving, the coroutine stays parked in `WaitingEvent`. Pair with `with_timeout` if you need a deadline.
 
 ## Time capability
 
