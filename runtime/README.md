@@ -7,7 +7,7 @@ The JavaScript half of Edge Python: hosts `compiler_lib.wasm` in a Web Worker, r
 No install. The official CDN serves the runtime and the matching `compiler_lib.wasm` from a single origin, tracking `main`:
 
 ```js
-import { createWorker } from "https://cdn.edgepython.com/runtime/src/index.js";
+import { createWorker } from "https://runtime.edgepython.com/js/src/index.js";
 ```
 
 For local development against a checkout of this repo, import the relative path:
@@ -22,7 +22,7 @@ The standard dev/prod switch pattern picks one of these based on `location.hostn
 
 ```js
 const worker = await createWorker({
-    wasmUrl: "https://cdn.edgepython.com/runtime/compiler_lib.wasm",
+    wasmUrl: "https://runtime.edgepython.com/js/compiler_lib.wasm",
     integrity: true, // default: IDB + lockfile CAS
     imports: { dom: "./dom.wasm" }, // bare-name shortcut, optional
     loaders: [], // opt-in module loaders, optional
@@ -106,7 +106,7 @@ See `loaders/capability-bridge.js` for a complete example.
 
 ## Worker bootstrap
 
-When the runtime is served from a different origin than the page (the common case: page on `demo.edgepython.com`, runtime on `cdn.edgepython.com`), Chromium rejects `new Worker(crossOriginUrl)` even with `type: 'module'`. `createWorker` works around this by spawning the Worker from a same-origin **Blob URL** that dynamically `import()`s the real cross-origin module. Same-origin imports use the direct path. No flag, no opt-in — `createWorker` picks the right strategy from `import.meta.url`.
+When the runtime is served from a different origin than the page (the common case: page on `demo.edgepython.com`, runtime on `runtime.edgepython.com`), Chromium rejects `new Worker(crossOriginUrl)` even with `type: 'module'`. `createWorker` works around this by spawning the Worker from a same-origin **Blob URL** that dynamically `import()`s the real cross-origin module. Same-origin imports use the direct path. No flag, no opt-in — `createWorker` picks the right strategy from `import.meta.url`.
 
 The Blob bootstrap also buffers any `postMessage` that arrives before the imported `worker.js` installs its `onmessage` handler, so the initial `load` request can never be lost to a race.
 

@@ -18,7 +18,7 @@ Run Edge Python directly in the browser — a sandboxed Python subset with class
 
 The page fetches the WebAssembly module and uses a Web Worker, so it must be served over HTTP, opening `index.html` via `file://` fails with CORS / fetch errors. I recomend to to initialize the localhost for development using the [Live Server](https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer) visual studio code extension.
 
-> The page pulls the runtime JS and `compiler_lib.wasm` from `cdn.edgepython.com`, so the demo, the runtime, and the compiler all ship and version independently.
+> The page pulls the runtime JS and `compiler_lib.wasm` from `runtime.edgepython.com`, so the demo, the runtime, and the compiler all ship and version independently.
 
 ### Cache and deploys
 

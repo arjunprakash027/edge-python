@@ -63,10 +63,10 @@ Two artifacts: the WASM module + the JS runtime published with this repo under [
 
 ```html
 <script type="module">
-    import { createWorker } from 'https://cdn.edgepython.com/runtime/src/index.js';
+    import { createWorker } from 'https://runtime.edgepython.com/js/src/index.js';
 
     const worker = await createWorker({
-        wasmUrl: 'https://cdn.edgepython.com/runtime/compiler_lib.wasm',
+        wasmUrl: 'https://runtime.edgepython.com/js/compiler_lib.wasm',
         imports: { "math": "https://example.com/math.wasm" }
     });
     worker.onOutput(line => console.log(line));
