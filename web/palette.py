@@ -1,9 +1,13 @@
 STYLES: dict[str, str] = {
     "box": "aspect-square rounded-[10px] p-3 flex items-end shadow-sm",
     "label": "text-white font-mono text-xs mix-blend-difference",
+    "btn": "bg-neutral-900 text-white px-4 py-2 rounded text-sm hover:bg-neutral-700 transition mb-6",
 }
 
-from dom import query, create_element, append_child, set_text, set_attribute
+from dom import (
+    query, create_element, append_child, insert_before,
+    set_text, set_attribute, bind_event,
+)
 
 class Swatch:
     def __init__(self, name: str, color: str):
@@ -34,3 +38,16 @@ PALETTE: list[Swatch] = [
 grid = query("#palette")
 for swatch in PALETTE:
     swatch.mount(grid)
+
+btn = create_element("button")
+set_attribute(btn, "class", STYLES["btn"])
+set_text(btn, "Clicked 0 times")
+bind_event(btn, "click", "click")
+insert_before(btn, grid)
+
+async def main():
+    n = 0
+    while True:
+        receive()
+        n += 1
+        set_text(btn, f"Clicked {n} time" + ("s" if n != 1 else ""))

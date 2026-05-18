@@ -9,6 +9,8 @@ touch raw WASM memory or NaN-boxing themselves.
 Each handler receives an array of u32 handles (one per Python arg) and returns
 a single u32 handle as its result. Throw to surface a Python exception — the
 loader converts it into a stashed RuntimeError.
+
+Handlers stay as 1-to-1 wrappers around native DOM methods; behavioural composition lives in Python.
 */
 
 (rt) => {
@@ -37,6 +39,14 @@ loader converts it into a stashed RuntimeError.
 
         append_child: (a) => {
             node(rt.decodeInt(a[0])).appendChild(node(rt.decodeInt(a[1])));
+            return rt.encodeNone();
+        },
+
+        /* `parent.insertBefore(new, ref)` — sibling positioning without needing the parent handle. */
+        insert_before: (a) => {
+            const newNode = node(rt.decodeInt(a[0]));
+            const refNode = node(rt.decodeInt(a[1]));
+            refNode.parentNode.insertBefore(newNode, refNode);
             return rt.encodeNone();
         },
 
@@ -71,6 +81,17 @@ loader converts it into a stashed RuntimeError.
 
         remove_class: (a) => {
             node(rt.decodeInt(a[0])).classList.remove(rt.decodeStr(a[1]));
+            return rt.encodeNone();
+        },
+
+        /* `addEventListener` wrap; on fire dispatches `CustomEvent("edge-python-event")` for the runtime to route into `receive()`. */
+        bind_event: (a) => {
+            const target = node(rt.decodeInt(a[0]));
+            const event_type = rt.decodeStr(a[1]);
+            const message = rt.decodeStr(a[2]);
+            target.addEventListener(event_type, () => {
+                window.dispatchEvent(new CustomEvent("edge-python-event", { detail: message }));
+            });
             return rt.encodeNone();
         },
     };
