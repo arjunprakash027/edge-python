@@ -15,16 +15,16 @@
 
     <script type="module">
         // Import engine.js directly instead of createWorker: the DOM bridge calls document.* which isn't available in a Web Worker.
-        import * as engine from "https://cdn.edgepython.com/src/engine.js";
+        import * as engine from "https://runtime.edgepython.com/js/src/engine.js";
 
         const base = new URL('.', import.meta.url).href;
         const out = document.getElementById("output");
 
         await engine.load({
             // compiler_lib.wasm is the language runtime — pulled from the official CDN, same as the JS engine above. Only edge_python_dom.wasm (the DOM capability) is served locally.
-            wasmUrl: 'https://cdn.edgepython.com/compiler_lib.wasm',
+            wasmUrl: 'https://runtime.edgepython.com/js/compiler_lib.wasm',
             imports: { dom: base + 'edge_python_dom.wasm' },
-            loaders: ['https://cdn.edgepython.com/loaders/capability-bridge.js'],
+            loaders: ['https://runtime.edgepython.com/js/loaders/capability-bridge.js'],
         });
 
         const onLine = (line) => { out.textContent += line + "\n"; };

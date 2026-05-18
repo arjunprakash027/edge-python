@@ -17,13 +17,13 @@ for i in range(5):
 
 ```html
 <script type="module">
-    import * as engine from "https://cdn.edgepython.com/src/engine.js";
+    import * as engine from "https://runtime.edgepython.com/js/src/engine.js";
 
     const base = new URL('.', import.meta.url).href;
     await engine.load({
-        wasmUrl: "https://cdn.edgepython.com/compiler_lib.wasm",
+        wasmUrl: "https://runtime.edgepython.com/js/compiler_lib.wasm",
         imports: { dom: base + "edge_python_dom.wasm" },
-        loaders: ["https://cdn.edgepython.com/loaders/capability-bridge.js"],
+        loaders: ["https://runtime.edgepython.com/js/loaders/capability-bridge.js"],
     });
     await engine.run({ src: await (await fetch("./script.py")).text() });
 </script>
@@ -102,7 +102,7 @@ Path D solves both by making the capability module ship the code it needs. The h
 
 ## Distribution
 
-Only `edge_python_dom.wasm` is built and served from this repo. `compiler_lib.wasm` and the JS engine both come from `cdn.edgepython.com` at page load — no vendored copy of either lives here, and no build script reaches out to fetch them.
+Only `edge_python_dom.wasm` is built and served from this repo. `compiler_lib.wasm` and the JS engine both come from `runtime.edgepython.com` at page load — no vendored copy of either lives here, and no build script reaches out to fetch them.
 
 ## License
 
