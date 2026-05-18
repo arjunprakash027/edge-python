@@ -67,7 +67,16 @@ impl<'a> VM<'a> {
 
     pub fn run(&mut self) -> Result<Val, VmErr> {
         self.error_byte_pos = None;
-        // Initialise imports before user code; DFS gives topological order naturally.
+        // Resume path: scheduler non-empty means a prior `run()` yielded; wake `WaitingFrame` (rAF fired) and drain.
+        if !self.scheduler.is_empty() {
+            for h in self.scheduler.iter_mut() {
+                if matches!(h.state, crate::modules::vm::types::CoroState::WaitingFrame) {
+                    h.state = crate::modules::vm::types::CoroState::Ready;
+                }
+            }
+            return self.run_until_all_done().map(|_| Val::none());
+        }
+        // Fresh entry. Initialise imports before user code; DFS gives topological order naturally.
         let mut in_progress: crate::util::fx::FxHashSet<String> = crate::util::fx::FxHashSet::default();
         self.init_modules(self.chunk, &mut in_progress)?;
         let mut slots = self.fill_builtins(&self.chunk.names);

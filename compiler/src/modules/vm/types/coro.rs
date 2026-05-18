@@ -10,6 +10,10 @@ pub enum CoroState {
     Ready,
     /// Suspended until `until_ns`; the scheduler fast-forwards when all are Sleeping.
     Sleeping(u64),
+    /// Parked waiting for the host's next render frame; resumed when the embedder calls back.
+    WaitingFrame,
+    /// Parked in `receive()` with an empty queue; resumed when the host pushes a message.
+    WaitingEvent,
     /// Next resume injects a `CancelledError` raise.
     CancelPending,
     /// Returned with this Val.

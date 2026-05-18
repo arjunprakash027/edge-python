@@ -1,8 +1,10 @@
 use alloc::string::String;
 
-use super::CallFrame;
+use super::{CallFrame, SchedulerStatus};
 
-/* Runtime errors; static variants are alloc-free, dynamic variants carry user-facing text. */
+/* Runtime errors; static variants are alloc-free, dynamic variants carry user-facing text.
+   `HostYield` is a control-flow signal (not catchable by Python try/except), riding the
+   `Result` chain so propagation reuses `?` without a parallel signaling mechanism. */
 #[derive(Debug, Clone)]
 pub enum VmErr {
     CallDepth, Heap, Budget, ZeroDiv, Overflow,
@@ -13,6 +15,7 @@ pub enum VmErr {
     Runtime(&'static str),
     Attribute(String),
     Raised(String),
+    HostYield(SchedulerStatus),
 }
 
 impl VmErr {
@@ -29,6 +32,8 @@ impl VmErr {
             Self::Heap => "MemoryError".into(),
             Self::Budget | Self::Runtime(_) => "RuntimeError".into(),
             Self::Raised(s) => s.clone(),
+            // Unreachable in correct hosts; embedder catches HostYield before traceback rendering.
+            Self::HostYield(_) => "_HostYield".into(),
         }
     }
 
@@ -46,6 +51,7 @@ impl VmErr {
             Self::Attribute(_) => "AttributeError",
             Self::Name(_) => "NameError",
             Self::Raised(_) => "Exception",
+            Self::HostYield(_) => "host yield requested",
         }
     }
 
@@ -59,6 +65,7 @@ impl VmErr {
             Self::Value(m) => s!("ValueError: ", str m),
             Self::Runtime(m) => s!("RuntimeError: ", str m),
             Self::Attribute(m) => s!("AttributeError: ", str m),
+            Self::HostYield(_) => alloc::string::String::from("RuntimeError: scheduler suspended; embedder must drive `run_start` / `run_resume`"),
             other => alloc::string::String::from(other.as_str()),
         }
     }
@@ -75,6 +82,7 @@ impl VmErr {
             Self::CallDepth => String::from("max depth"),
             Self::Heap => String::from("heap limit"),
             Self::Budget => String::from("budget exceeded"),
+            Self::HostYield(_) => String::from("scheduler suspended; embedder must drive run_start / run_resume"),
         }
     }
 

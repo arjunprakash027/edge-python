@@ -46,7 +46,7 @@ fn main() {
 
 The upstream `build.rs` downloads the wasm asset attached to the tag into `OUT_DIR` and exposes its absolute path — no `cargo wasm` step in the consumer, no checked-in binary. Pin to a `tag` for reproducible builds (`branch = "main"` is also valid). Requires `curl` on the host PATH.
 
-There is no native CLI binary, `compiler_lib.wasm` is the release artifact, and `compiler/src/main/` is gated to `wasm32`. The host runtime owns I/O, network, and module fetching: the guest exposes one entry point (`run`) and calls back through `host_print`, `host_fetch_bytes`, and `host_call_native`. Custom embedders that ship [host capabilities](/reference/writing-modules#path-c-host-capability) declare additional host imports alongside these — DOM in the browser shim, FS in WASI. This boundary is what keeps Edge Python sandboxed by construction.
+There is no native CLI binary, `compiler_lib.wasm` is the release artifact, and `compiler/src/main/` is gated to `wasm32`. The host owns I/O, network, time, and module fetching: the guest exposes `run_start` / `run_resume` / `run_push_event` (cooperative driver) plus a legacy non-suspending `run`, and calls back through `host_print`, `host_fetch_bytes`, `host_call_native`, and `host_now_ns`. Custom embedders that ship [host capabilities](/reference/writing-modules#path-c-host-capability) declare additional imports — DOM in the browser shim, FS in WASI. This boundary is what keeps Edge Python sandboxed by construction.
 
 ## Your first program
 

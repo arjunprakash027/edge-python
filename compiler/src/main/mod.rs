@@ -8,7 +8,7 @@ use crate::abi::{ErrorStash, HandleTable};
 use crate::modules::vm::VM;
 use crate::modules::vm::types::{Val, VmErr};
 use crate::modules::packages::Manifest;
-use alloc::{string::String, vec::Vec};
+use alloc::{boxed::Box, string::String, vec::Vec};
 use core::ptr::NonNull;
 
 mod abi_bridge;
@@ -25,10 +25,18 @@ unsafe extern "C" {
 
     /* Host-cached bytes for `spec`. Non-null `hash_ptr` is a 32-byte expected sha-256. */
     pub(super) fn host_fetch_bytes(spec_ptr: *const u8, spec_len: u32, hash_ptr: *const u8, out_len: *mut u32) -> *mut u8;
+
+    /* Wall-clock in nanoseconds. WASM hosts wire to `Date.now() * 1_000_000`; native hosts to `Instant::now().as_nanos()`. Without this hook the VM falls back to `virtual_clock_ns` which advances deterministically for tests. */
+    pub(super) fn host_now_ns() -> u64;
 }
 
 pub(super) fn stream_print(s: &str) {
     unsafe { host_print(s.as_ptr(), s.len()); }
+}
+
+/* `set_time_hook` wants a `fn() -> u64`. The host import itself is `unsafe extern "C"` so we wrap it in a safe pointer here, the same pattern as `stream_print`. */
+pub(super) fn now_ns_host() -> u64 {
+    unsafe { host_now_ns() }
 }
 
 /*
@@ -55,6 +63,14 @@ pub(super) enum ModuleEntry {
     Native(Vec<(String, u32)>),
 }
 
+/* VM suspended on `VmErr::HostYield`, kept across `run_start` → `run_resume` for cooperative resume. */
+pub(super) struct PausedRun {
+    /* Option so `step_vm` can `take()` for re-entry and stash back without a dummy VM. */
+    pub vm: Option<VM<'static>>,
+    /* Earliest wake-up deadline (ns) from the last yield; zero for `PendingFrame` / `PendingEvent`. */
+    pub last_yield_deadline_ns: u64,
+}
+
 /* All mutable WASM-bridge state in one struct so every accessor funnels through `with_runtime` — the sole `unsafe` point — instead of N independent statics. */
 pub(super) struct WasmRuntime {
     pub src: [u8; SZ],
@@ -67,6 +83,8 @@ pub(super) struct WasmRuntime {
     pub error_stash: ErrorStash,
     /* Set/cleared exclusively by `VmGuard`. The `'static` is storage-only — the pointer is dereferenced only inside the `run()` scope that built it. */
     pub current_vm: Option<NonNull<VM<'static>>>,
+    /* Owned across `run_start` / `run_resume`; mutually exclusive with `current_vm`. */
+    pub paused_run: Option<Box<PausedRun>>,
 }
 
 impl WasmRuntime {
@@ -81,6 +99,7 @@ impl WasmRuntime {
             handles: HandleTable::new(),
             error_stash: ErrorStash::new(),
             current_vm: None,
+            paused_run: None,
         }
     }
 }

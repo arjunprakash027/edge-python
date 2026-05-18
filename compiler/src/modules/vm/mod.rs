@@ -40,6 +40,10 @@ pub(crate) struct Pending {
     pub call_byte_pos: Option<u32>,
     /* Wakeup deadline set by `sleep()` and consumed by the scheduler. */
     pub sleep_until_ns: Option<u64>,
+    /* Set by `frame()`; consumed by `scheduler_step` to transition the coro to `WaitingFrame`. */
+    pub host_frame_request: bool,
+    /* Set by `receive()` on empty queue; transitions the coro to `WaitingEvent`. */
+    pub event_wait_request: bool,
     /* Lifted ExcInstance from `raise X(...)` so `except X as e` binds the real instance. */
     pub exc_val: Option<Val>,
     /* `(class, self)` for the next user-function call when it's invoked as a method; populated by method-dispatch paths and consumed by `run_body_with_frame`. */
@@ -53,6 +57,8 @@ impl Pending {
             kw_delta: 0,
             call_byte_pos: None,
             sleep_until_ns: None,
+            host_frame_request: false,
+            event_wait_request: false,
             exc_val: None,
             method_binding: None,
         }
@@ -314,6 +320,7 @@ impl<'a> VM<'a> {
             NativeFnId::Globals, NativeFnId::Locals,
             NativeFnId::Super,
             NativeFnId::Property,
+            NativeFnId::Frame,
         ];
         for &id in builtin_fns {
             if let Ok(v) = vm.heap.alloc(HeapObj::NativeFn(id)) {

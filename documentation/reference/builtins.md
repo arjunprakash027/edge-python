@@ -816,11 +816,22 @@ These primitives are top-level builtins, not under `asyncio` — there is no `as
 
 ### sleep
 
-`sleep(seconds)` — yield once and resume after the given duration. Negative values clamp to zero. With no host time hook, the VM's `virtual_clock_ns` advances to satisfy the deadline.
+`sleep(seconds)` — yield and resume after the given duration. Negative values clamp to zero. With no host time hook the virtual clock advances; with one wired, the scheduler signals `PendingTimer(deadline_ns)` and the embedder resumes via `run_resume`.
+
+### frame
+
+`frame()` — yield until the host's next render frame. The coro transitions to `WaitingFrame` and the scheduler signals `PendingFrame`; browser embedders hook `requestAnimationFrame`. Use for animation loops driven at the display refresh rate.
+
+```python
+async def animate(node):
+    for i in range(60):
+        set_attribute(node, "style", f"transform: translateX({i}px)")
+        frame()
+```
 
 ### receive
 
-`receive()` — pop the oldest queued message from the scheduler's event queue. Used together with the host pushing into the queue.
+`receive()` — pop the oldest message from the scheduler's event queue. Parks the coro in `WaitingEvent` when empty; the scheduler signals `PendingEvent` and the embedder resumes once `run_push_event(bytes)` injects a message. Messages are arbitrary strings (e.g. DOM event names from `bind_event`).
 
 ### gather
 
@@ -923,6 +934,7 @@ timed out
 | `import_module`   | 1          | runtime lookup of statically-imported module |
 | `run`             | variadic   | drive scheduler until first arg done       |
 | `sleep`           | 1          | yield then resume after seconds            |
+| `frame`           | 0          | yield until host renders next frame        |
 | `gather`          | variadic   | concurrent fan-out; first error cancels peers |
 | `with_timeout`    | 2          | `seconds, coro` -> result or `TimeoutError` |
 | `cancel`          | 1          | mark coroutine cancel-pending              |

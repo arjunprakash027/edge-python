@@ -1,11 +1,21 @@
 use crate::modules::lexer::lex;
-use crate::modules::parser::{Parser, Diagnostic};
+use crate::modules::parser::{Parser, Diagnostic, SSAChunk};
 use crate::modules::vm::{VM, Limits};
+use crate::modules::vm::types::{HeapObj, SchedulerStatus, VmErr};
 use alloc::{boxed::Box, string::{String, ToString}};
 use crate::s;
 
-use super::{ModuleEntry, SZ, VmGuard, safe_bytes, stream_print, with_runtime, write_out};
+use super::{ModuleEntry, PausedRun, SZ, VmGuard, now_ns_host, safe_bytes, stream_print, with_runtime, write_out};
 use super::resolver::WasmHostResolver;
+
+/* Packed `u32` from `run_start` / `run_resume`: top 3 bits = kind, low 29 = out-buffer length. */
+const STATUS_KIND_SHIFT: u32 = 29;
+const STATUS_PAYLOAD_MASK: u32 = (1 << STATUS_KIND_SHIFT) - 1;
+const STATUS_DONE: u32 = 0 << STATUS_KIND_SHIFT;
+const STATUS_PENDING_TIMER: u32 = 1 << STATUS_KIND_SHIFT;
+const STATUS_PENDING_FRAME: u32 = 2 << STATUS_KIND_SHIFT;
+const STATUS_PENDING_EVENT: u32 = 3 << STATUS_KIND_SHIFT;
+const STATUS_ERROR: u32 = 4 << STATUS_KIND_SHIFT;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn src_ptr() -> *mut u8 {
@@ -60,6 +70,8 @@ pub unsafe extern "C" fn reset_modules() {
         rt.manifests.clear();
         rt.handles.clear();
         rt.error_stash.clear();
+        // Paused run references the now-stale module table; drop it for a clean reset.
+        rt.paused_run = None;
     });
 }
 
@@ -80,6 +92,153 @@ pub unsafe extern "C" fn extract_imports(len: usize) -> usize {
     let specs = crate::modules::packages::scan_string_imports(&src);
     let joined = specs.join("\n");
     unsafe { write_out(&joined) }
+}
+
+/* Drive one segment of execution; on `Pending*` re-stash the VM into the recycled `PausedRun` box. */
+fn step_vm(mut vm: VM<'static>, src: &str, prev_paused: Option<Box<PausedRun>>) -> u32 {
+    let result = {
+        let _guard = VmGuard::new(&mut vm);
+        vm.run()
+    };
+    match result {
+        Ok(_) => {
+            drop(vm);
+            drop(prev_paused);
+            STATUS_DONE
+        }
+        Err(VmErr::HostYield(status)) => {
+            let (kind, deadline) = match status {
+                SchedulerStatus::PendingTimer(d) => (STATUS_PENDING_TIMER, d),
+                SchedulerStatus::PendingFrame => (STATUS_PENDING_FRAME, 0),
+                SchedulerStatus::PendingEvent => (STATUS_PENDING_EVENT, 0),
+                SchedulerStatus::Done => (STATUS_DONE, 0),
+            };
+            let paused = match prev_paused {
+                Some(mut b) => {
+                    b.vm = Some(vm);
+                    b.last_yield_deadline_ns = deadline;
+                    b
+                }
+                None => Box::new(PausedRun {
+                    vm: Some(vm),
+                    last_yield_deadline_ns: deadline,
+                }),
+            };
+            with_runtime(|rt| { rt.paused_run = Some(paused); });
+            kind
+        }
+        Err(e) => {
+            let traceback = e.render_traceback(
+                src, vm.error_pos(), None,
+                vm.call_stack_frames(), vm.function_names_ref(),
+            );
+            drop(vm);
+            drop(prev_paused);
+            let n = unsafe { write_out(&traceback) };
+            STATUS_ERROR | ((n as u32) & STATUS_PAYLOAD_MASK)
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn run_start(len: usize) -> u32 {
+    // Discard any previous paused run; a fresh `run_start` is a hard reset of execution state.
+    with_runtime(|rt| { rt.paused_run = None; });
+
+    let src = match read_src(len) {
+        Ok(s) => s,
+        Err(e) => {
+            let msg = s!("input rejected: invalid utf-8 at byte ", int e.valid_up_to());
+            let n = unsafe { write_out(&msg) };
+            return STATUS_ERROR | ((n as u32) & STATUS_PAYLOAD_MASK);
+        }
+    };
+
+    let (tokens, lex_errs) = lex(&src);
+    let resolver = Box::new(WasmHostResolver { dir: String::new() });
+    let mut p = Parser::with_resolver(&src, tokens.into_iter(), resolver);
+    for e in lex_errs {
+        p.errors.push(Diagnostic { start: e.start, end: e.end, msg: e.msg.into() });
+    }
+    let (mut chunk, errs) = p.parse();
+
+    if !errs.is_empty() {
+        let mut buf = String::new();
+        for (i, e) in errs.iter().enumerate() {
+            if i > 0 { buf.push('\n'); }
+            buf.push_str(&e.render(&src, None));
+        }
+        let n = unsafe { write_out(&buf) };
+        return STATUS_ERROR | ((n as u32) & STATUS_PAYLOAD_MASK);
+    }
+
+    crate::modules::vm::optimizer::constant_fold(&mut chunk);
+
+    // Leak chunk so its lifetime survives across `run_resume`; reclaimed on page reload.
+    let chunk_static: &'static SSAChunk = Box::leak(Box::new(chunk));
+    let mut vm = VM::with_limits(chunk_static, Limits::sandbox());
+    vm.print_hook = Some(stream_print);
+    vm.set_time_hook(now_ns_host);
+    vm.strict_input = true;
+
+    let inp_text = with_runtime(|rt| {
+        if rt.inp_len == 0 { return String::new(); }
+        let bytes = &rt.inp[..rt.inp_len];
+        let inp = core::str::from_utf8(bytes).unwrap_or("").to_string();
+        rt.inp_len = 0;
+        inp
+    });
+    if !inp_text.is_empty() {
+        vm.input_buffer = inp_text.split('\n').map(alloc::string::String::from).collect();
+    }
+
+    step_vm(vm, &src, None)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn run_resume() -> u32 {
+    let paused = match with_runtime(|rt| rt.paused_run.take()) {
+        Some(p) => p,
+        None => {
+            let n = unsafe { write_out("RuntimeError: run_resume called with no paused run") };
+            return STATUS_ERROR | ((n as u32) & STATUS_PAYLOAD_MASK);
+        }
+    };
+    // Take VM out so `step_vm` owns it; recycle the empty Box for the next stash.
+    let mut paused_box = paused;
+    let vm = paused_box.vm.take().expect("paused_run with no VM is a runtime bug");
+    step_vm(vm, "", Some(paused_box))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn run_push_event(ptr: *const u8, len: u32) -> i32 {
+    let bytes = unsafe { safe_bytes(ptr, len) };
+    let s = match core::str::from_utf8(bytes) {
+        Ok(s) => s.to_string(),
+        Err(_) => return 1,
+    };
+    with_runtime(|rt| {
+        let Some(paused) = rt.paused_run.as_mut() else { return 1; };
+        let Some(vm) = paused.vm.as_mut() else { return 1; };
+        match vm.heap.alloc(HeapObj::Str(s)) {
+            Ok(v) => {
+                vm.event_queue.push(v);
+                // Wake `receive()` waiters so the next `run_resume` drains them; frame waiters stay parked.
+                for h in vm.scheduler.iter_mut() {
+                    if matches!(h.state, crate::modules::vm::types::CoroState::WaitingEvent) {
+                        h.state = crate::modules::vm::types::CoroState::Ready;
+                    }
+                }
+                0
+            }
+            Err(_) => 2,
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn last_yield_deadline_ns() -> u64 {
+    with_runtime(|rt| rt.paused_run.as_ref().map(|p| p.last_yield_deadline_ns).unwrap_or(0))
 }
 
 #[unsafe(no_mangle)]
@@ -110,6 +269,7 @@ pub unsafe extern "C" fn run(len: usize) -> usize {
         crate::modules::vm::optimizer::constant_fold(&mut chunk);
         let mut vm = VM::with_limits(&chunk, Limits::sandbox());
         vm.print_hook = Some(stream_print);
+        vm.set_time_hook(now_ns_host);
         vm.strict_input = true;
         // Drain any host-supplied input bytes; `UTF-8` invalid bytes degrade to an empty input rather than UB.
         let inp_text = with_runtime(|rt| {
@@ -129,6 +289,10 @@ pub unsafe extern "C" fn run(len: usize) -> usize {
 
         match result {
             Ok(_) => String::new(),
+            // Legacy `run` cannot suspend; embedders that need `sleep(n>0)` / `frame()` / `receive()` must drive `run_start` + `run_resume`.
+            Err(VmErr::HostYield(_)) => String::from(
+                "RuntimeError: scheduler suspended; this build's legacy `run` entry has no resume — drive `run_start` / `run_resume` instead.",
+            ),
             Err(e) => e.render_traceback(
                 &src, vm.error_pos(), None,
                 vm.call_stack_frames(), vm.function_names_ref(),

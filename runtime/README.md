@@ -60,7 +60,8 @@ The returned object exposes:
 |---|---|---|
 | `integrityActive` | `boolean` | `true` iff IDB cache opened successfully. Inspect after `createWorker` to detect silent fallback. |
 | `loadMs` | `number` | Wall time to load + compile `compiler_lib.wasm`. |
-| `run(src, opts?)` | `(string, {entryDir?, baseUrl?}) => Promise<{out, ms}>` | Execute a Python source string. Resolves with stdout (concatenated `print()` lines if no `onOutput`) and wall time. |
+| `run(src, opts?)` | `(string, {entryDir?, baseUrl?}) => Promise<{out, ms}>` | Execute a Python source string. If the script defines a `main` global (typically `async def main()`), it is auto-invoked after top-level execution — scripts never write `run(main())` themselves. Resolves with stdout (concatenated `print()` lines if no `onOutput`) and wall time. |
+| `pushEvent(message)` | `(string) => boolean` | Inject a string into the paused VM's event queue; wakes any coroutine parked in `receive()` and resumes the driver. Returns `false` if no run is paused. Browser bridges that dispatch `CustomEvent("edge-python-event")` are routed through this automatically. |
 | `onOutput(handler)` | `(line: string) => void` | Streaming output callback fired once per `print()` line. |
 | `reset()` | `() => Promise<void>` | Clear registered modules without rebooting the worker. |
 | `clearCache()` | `() => Promise<void>` | Wipe IDB CAS + lockfile (or memory cache). Next run re-fetches everything. |

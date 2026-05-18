@@ -637,6 +637,7 @@ impl<'a> VM<'a> {
             Next => self.call_next(),
             Run => self.call_run(argc),
             Sleep => self.call_sleep(),
+            Frame => self.call_frame(),
             Receive => self.call_receive(),
             Map => self.call_map(chunk, slots),
             Filter => self.call_filter(chunk, slots),

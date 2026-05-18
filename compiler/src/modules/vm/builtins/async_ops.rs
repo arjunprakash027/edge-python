@@ -88,17 +88,24 @@ impl<'a> VM<'a> {
                 CoroState::Ready
                 | CoroState::CancelPending
                 | CoroState::Sleeping(_)
+                | CoroState::WaitingFrame
+                | CoroState::WaitingEvent
             ));
             if !alive { return Ok(()); }
-            // Pick a Ready handle; otherwise advance the clock to the earliest wakeup.
+            // Pick a Ready handle; otherwise inspect parked coros to decide which kind of host
+            // wake-up to request.
             let mut next_ready: Option<usize> = None;
             let mut min_wake: Option<u64> = None;
+            let mut any_frame = false;
+            let mut any_event = false;
             for (i, h) in self.scheduler.iter().enumerate() {
                 match &h.state {
                     CoroState::Ready => { next_ready = Some(i); break; }
                     CoroState::CancelPending => { next_ready = Some(i); break; }
                     CoroState::Sleeping(w)
                         if min_wake.is_none_or(|m| *w < m) => { min_wake = Some(*w); }
+                    CoroState::WaitingFrame => { any_frame = true; }
+                    CoroState::WaitingEvent => { any_event = true; }
                     _ => {}
                 }
             }
@@ -106,11 +113,19 @@ impl<'a> VM<'a> {
                 self.scheduler_step(i)?;
                 continue;
             }
+            // Yield priority: frame tick (~16ms) > sleep deadline > open-ended event push.
+            if any_frame {
+                return Err(VmErr::HostYield(SchedulerStatus::PendingFrame));
+            }
             match min_wake {
                 Some(w) => {
                     let now = self.now_ns();
-                    // Real clock: don't busy-wait, but advance virtual_clock_ns so later sleeps are relative.
-                    if w > now && self.time_hook.is_none() {
+                    if w > now {
+                        if self.time_hook.is_some() {
+                            // Real clock: yield; embedder arms `w - now` timer and calls `run_resume`.
+                            return Err(VmErr::HostYield(SchedulerStatus::PendingTimer(w)));
+                        }
+                        // No host clock: virtual jump so deterministic tests still progress.
                         self.virtual_clock_ns = w;
                     }
                     let now = self.now_ns();
@@ -122,7 +137,13 @@ impl<'a> VM<'a> {
                         }
                     }
                 }
-                None => return Ok(()),
+                None => {
+                    // Only WaitingEvent coros left: open-ended yield until `run_push_event`.
+                    if any_event {
+                        return Err(VmErr::HostYield(SchedulerStatus::PendingEvent));
+                    }
+                    return Ok(());
+                }
             }
         }
     }
@@ -134,17 +155,23 @@ impl<'a> VM<'a> {
             self.scheduler[idx].state = CoroState::Cancelled;
             return Ok(());
         }
-        // Snapshot before resume so a yield during `sleep()` can read it.
+        // Snapshot before resume so a yield during `sleep` / `frame` / `receive` can read it.
         self.pending.sleep_until_ns = None;
+        self.pending.host_frame_request = false;
+        self.pending.event_wait_request = false;
         let result = self.resume_coroutine(coro);
         let yielded = self.yielded;
         self.yielded = false;
         let new_state = match result {
             Err(e) => CoroState::Errored(e),
             Ok(v) if yielded => {
-                // `sleep()` sets `pending_sleep_until_ns`; `receive()` parks Ready and re-drains the queue.
+                // Suspension precedence: sleep > frame > receive > bare yield.
                 if let Some(until) = self.pending.sleep_until_ns.take() {
                     CoroState::Sleeping(until)
+                } else if core::mem::replace(&mut self.pending.host_frame_request, false) {
+                    CoroState::WaitingFrame
+                } else if core::mem::replace(&mut self.pending.event_wait_request, false) {
+                    CoroState::WaitingEvent
                 } else {
                     let _ = v;
                     CoroState::Ready
@@ -153,6 +180,14 @@ impl<'a> VM<'a> {
             Ok(v) => CoroState::Done(v),
         };
         self.scheduler[idx].state = new_state;
+        Ok(())
+    }
+
+    /* Suspend until the host's next render frame; browsers hook `requestAnimationFrame`. */
+    pub fn call_frame(&mut self) -> Result<(), VmErr> {
+        self.pending.host_frame_request = true;
+        self.push(Val::none());
+        self.yielded = true;
         Ok(())
     }
 
@@ -232,15 +267,18 @@ impl<'a> VM<'a> {
                 | CoroState::Errored(_)
                 | CoroState::Cancelled => break,
                 CoroState::Sleeping(until) => {
-                    // Coro asked to sleep past our deadline -> time out now.
+                    // Sleep past our deadline -> time out now.
                     if until >= deadline {
                         self.scheduler[idx].state = CoroState::CancelPending;
                         timed_out = true;
                         self.scheduler_step(idx)?;
                         break;
                     }
-                    // Sleep wakes before deadline -> advance clock and wake.
-                    if self.time_hook.is_none() && until > self.virtual_clock_ns {
+                    // Sleep wakes before deadline: host clock yields to embedder; else virtual-jump.
+                    if self.time_hook.is_some() {
+                        return Err(VmErr::HostYield(SchedulerStatus::PendingTimer(until)));
+                    }
+                    if until > self.virtual_clock_ns {
                         self.virtual_clock_ns = until;
                     }
                     self.scheduler[idx].state = CoroState::Ready;
@@ -276,12 +314,13 @@ impl<'a> VM<'a> {
         self.push(Val::none()); Ok(())
     }
 
-    /* Pop the oldest queued message, or yield None to signal "still waiting". */
+    /* Pop oldest queued message; if empty, park in `WaitingEvent` until `run_push_event`. */
     pub fn call_receive(&mut self) -> Result<(), VmErr> {
         if !self.event_queue.is_empty() {
             let val = self.event_queue.remove(0);
             self.push(val);
         } else {
+            self.pending.event_wait_request = true;
             self.push(Val::none());
             self.yielded = true;
         }

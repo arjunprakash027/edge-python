@@ -6,11 +6,13 @@ pub mod coro;
 pub mod eq;
 pub mod err;
 pub mod math;
+pub mod scheduler;
 
 pub use coro::*;
 pub use eq::*;
 pub use err::*;
 pub use math::*;
+pub use scheduler::*;
 
 /* Per-execution caps: recursion depth, op budget, heap quota. */
 pub struct Limits { pub calls: usize, pub ops: usize, pub heap: usize }
@@ -185,6 +187,7 @@ pub enum NativeFnId {
     Globals, Locals,
     Super,
     Property,
+    Frame,
 }
 
 impl NativeFnId {
@@ -204,6 +207,7 @@ impl NativeFnId {
             "globals", "locals",
             "super",
             "property",
+            "frame",
         ];
         NAMES[self as usize]
     }

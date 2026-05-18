@@ -183,6 +183,10 @@ impl<'a> VM<'a> {
                         return Ok(v);
                     }
                     Err(e) => {
+                        // HostYield is a control-flow signal, not a Python exception — bypass try/except.
+                        if matches!(e, VmErr::HostYield(_)) {
+                            return Err(e);
+                        }
                         // Innermost frame wins; cleared below on swallow so later errors re-anchor.
                         if self.error_byte_pos.is_none() {
                             self.error_byte_pos = chunk.resolve(rip as u32);

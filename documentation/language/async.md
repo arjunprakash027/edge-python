@@ -5,7 +5,7 @@ description: "Cooperative coroutines, sleep, gather, with_timeout, cancel."
 
 Edge Python supports cooperative concurrency via `async def` coroutines and the `await` / `yield` keywords. There is **no preemption**: a coroutine runs until it explicitly yields, sleeps, awaits, or returns. The scheduler runs on a single OS thread; concurrency is by interleaving, not parallelism.
 
-There is **no `asyncio` module**. The async primitives; `run`, `sleep`, `gather`, `with_timeout`, `cancel`, `receive`, are top-level builtins. The scheduler is direct enough that wrapping it in a module-shaped namespace would add no semantic value.
+There is **no `asyncio` module**. The async primitives; `run`, `sleep`, `frame`, `gather`, `with_timeout`, `cancel`, `receive`, are top-level builtins. The scheduler is direct enough that wrapping it in a module-shaped namespace would add no semantic value.
 
 ```python
 import asyncio   # ModuleNotFoundError — there is no asyncio
@@ -167,7 +167,7 @@ Both are in the built-in exception namespace and match `except` clauses normally
 
 * **No preemption.** A `while True: pass` inside a coroutine blocks the scheduler.
 * **Cancellation is silent.** `cancel(coro)` stops the coroutine; the body does not see `CancelledError`. Use `with_timeout` if you need deadline semantics that propagate as exceptions.
-* **No host event loop integration.** Edge Python's scheduler is in-process. Real I/O concurrency requires the host to expose async-shaped externs (e.g. `await fetch_json(url)` where `fetch_json` is a host function that queues a callback and yields).
+* **Host event loop is cooperative.** When the scheduler cannot make synchronous progress it yields a `SchedulerStatus` through `VmErr::HostYield` — `PendingTimer(deadline_ns)`, `PendingFrame`, or `PendingEvent`. Embedders drive the cycle via the `run_start` / `run_resume` / `run_push_event` exports; the bundled JS runtime (`runtime/src/engine.js`) handles it automatically with `setTimeout`, `requestAnimationFrame`, and a Promise resolved by `pushEvent`, and also auto-invokes a `main` global if the script defines one — scripts never call `run(main())` directly. The legacy `run` entry cannot resume — code that needs `sleep(n>0)`, `frame()`, or an empty `receive()` must use the driver loop. Resume re-enters the scheduler, not the dispatch loop, so statements after a top-level `run()` do not execute after a yield.
 * **`async for`** works against any iterable accepted by `for`, *plus* coroutines and async generators (functions defined with both `async def` and `yield`). Each iteration resumes the coroutine to its next yield. There is no `__aiter__` / `__anext__` dispatch on user-defined classes — define an `async def` generator instead. Behavior over plain lists/tuples/dicts is identical to a regular `for`.
 * **`async with`** reuses the sync `with` dispatch path, invoking `__enter__` / `__exit__` on the context manager. `__aenter__` / `__aexit__` are not consulted (the async dunder forms are not dispatched). For async setup/teardown that needs `await`, use `try` / `finally` with explicit `await` calls.
 * **No async comprehensions.** `[x async for x in it]` is not supported.
@@ -176,4 +176,4 @@ Both are in the built-in exception namespace and match `except` clauses normally
 
 ## Time capability
 
-The scheduler reads time from `vm.time_hook`. WASM hosts wire it to `Date.now() * 1e6`; native hosts can use `std::time::Instant`. Without a hook installed, `sleep` advances a virtual clock so deterministic tests still interleave coroutines correctly.
+The scheduler reads time from `vm.time_hook`. WASM hosts wire it to `Date.now() * 1e6` via the `host_now_ns` import; native hosts can use `std::time::Instant`. Without a hook installed, `sleep` advances a virtual clock so deterministic tests still interleave coroutines correctly.
