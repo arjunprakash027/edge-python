@@ -18,7 +18,7 @@ jobs:
           node-version: "22"
 
       # Download the .wasm for hashing only; the demo loads it from the CDN at runtime
-      # (https://cdn.edgepython.com/compiler_lib.wasm), so it does not ship inside demo/.
+      # (https://cdn.edgepython.com/runtime/compiler_lib.wasm), so it does not ship inside demo/.
       - name: Download wasm artifact
         uses: actions/download-artifact@v8
         with:
