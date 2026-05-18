@@ -169,9 +169,10 @@ impl<'a> VM<'a> {
                 match self.dispatch(chunk, slots, &mut cache, insns, consts, &mut ip) {
                     Ok(None) => {
                         if self.yielded {
-                            let val = self.pop().unwrap_or(Val::none());
-                            // Skip the PopTop after Yield on resume to avoid double-discard.
-                            self.resume_ip = if ip < n && matches!(insns.get(ip), Some(ins) if ins.opcode == OpCode::PopTop) { ip + 1 } else { ip };
+                            // Event yields keep the None placeholder; `run_push_event` overwrites it before resume.
+                            let event_yield = self.pending.event_wait_request;
+                            let val = if event_yield { Val::none() } else { self.pop().unwrap_or(Val::none()) };
+                            self.resume_ip = if !event_yield && ip < n && matches!(insns.get(ip), Some(ins) if ins.opcode == OpCode::PopTop) { ip + 1 } else { ip };
                             self.live_slots.truncate(slots_base);
                             self.exception_stack.truncate(exc_base);
                             return Ok(val);

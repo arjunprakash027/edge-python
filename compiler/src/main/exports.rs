@@ -220,19 +220,23 @@ pub unsafe extern "C" fn run_push_event(ptr: *const u8, len: u32) -> i32 {
     with_runtime(|rt| {
         let Some(paused) = rt.paused_run.as_mut() else { return 1; };
         let Some(vm) = paused.vm.as_mut() else { return 1; };
-        match vm.heap.alloc(HeapObj::Str(s)) {
-            Ok(v) => {
-                vm.event_queue.push(v);
-                // Wake `receive()` waiters so the next `run_resume` drains them; frame waiters stay parked.
-                for h in vm.scheduler.iter_mut() {
-                    if matches!(h.state, crate::modules::vm::types::CoroState::WaitingEvent) {
-                        h.state = crate::modules::vm::types::CoroState::Ready;
-                    }
-                }
-                0
+        let val = match vm.heap.alloc(HeapObj::Str(s)) {
+            Ok(v) => v,
+            Err(_) => return 2,
+        };
+        // Inject into the first waiter's saved stack to replace the None placeholder; queue otherwise.
+        let waiter = vm.scheduler.iter().enumerate()
+            .find(|(_, h)| matches!(h.state, crate::modules::vm::types::CoroState::WaitingEvent))
+            .map(|(i, h)| (i, h.coro));
+        if let Some((idx, coro)) = waiter {
+            if let crate::modules::vm::types::HeapObj::Coroutine(_, _, saved_stack, _, _) = vm.heap.get_mut(coro) {
+                if let Some(top) = saved_stack.last_mut() { *top = val; } else { saved_stack.push(val); }
             }
-            Err(_) => 2,
+            vm.scheduler[idx].state = crate::modules::vm::types::CoroState::Ready;
+        } else {
+            vm.event_queue.push(val);
         }
+        0
     })
 }
 
