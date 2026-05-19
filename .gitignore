@@ -14,4 +14,4 @@ Thumbs.db
 desktop.ini
 
 # WebAssembly artifacts
-*.wasm
+**/*.wasm
