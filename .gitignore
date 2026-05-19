@@ -12,3 +12,6 @@ Cargo.lock
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# WebAssembly artifacts
+*.wasm
