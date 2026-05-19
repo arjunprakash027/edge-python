@@ -554,6 +554,7 @@
   {"src": "async def good():\n    return 1\nasync def bad():\n    raise ValueError\ntry:\n    gather(good(), bad())\nexcept ValueError:\n    print('caught')", "output": ["caught"]},
   {"src": "async def slow():\n    sleep(10)\n    return 'never'\ntry:\n    with_timeout(0.1, slow())\nexcept TimeoutError:\n    print('timed out')", "output": ["timed out"]},
   {"src": "async def fast():\n    return 'done'\nprint(with_timeout(1, fast()))", "output": ["done"]},
+  {"src": "counter = 0\ndef tick():\n    global counter\n    counter = counter + 1\n    return counter\nprint(tick())\nprint(tick())\nprint(tick())", "output": ["1", "2", "3"]},
   {"src": "async def a():\n    print('a1')\n    sleep(0)\n    print('a2')\nasync def b():\n    print('b1')\n    sleep(0)\n    print('b2')\ngather(a(), b())", "output": ["a1", "b1", "a2", "b2"]},
   {"src": "print(callable(frame))", "output": ["True"]},
   {"src": "async def f():\n    frame()\nrun(f())", "output": [], "error": "scheduler suspended"},

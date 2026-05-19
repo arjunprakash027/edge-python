@@ -75,6 +75,8 @@ pub struct VM<'a> {
     pub(crate) yields: Vec<Val>,
     pub(crate) chunk: &'a SSAChunk,
     pub(crate) globals: HashMap<String, Val>,
+    /* User-mutated module-level state, keyed by bare name; mirrors entry-chunk stores and backs `global` declarations. */
+    pub(crate) module_state: HashMap<String, Val>,
     pub(crate) live_slots: Vec<Val>,
     pub(crate) templates: Templates,
     pub(crate) budget: usize,
@@ -147,6 +149,7 @@ impl<'a> VM<'a> {
             chunk,
             heap: HeapPool::new(limits.heap),
             globals: HashMap::default(),
+            module_state: HashMap::default(),
             live_slots: Vec::new(),
             templates: Templates::new(),
             budget: limits.ops,

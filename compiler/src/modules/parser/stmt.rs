@@ -297,13 +297,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Emits Global/Nonlocal opcodes for a comma-separated name list. */
+    /* Emits Global/Nonlocal opcodes for a comma-separated name list. For Global, also registers each name so subsequent loads/stores route through LoadGlobal/StoreGlobal. */
     pub(super) fn emit_name_list(&mut self, op: OpCode) {
         self.advance();
         loop {
             let name = self.advance_text();
             let idx = self.chunk.push_name(&name);
             self.chunk.emit(op, idx);
+            if matches!(op, OpCode::Global) { self.globals_decl.insert(name); }
             if !self.eat_if(TokenType::Comma) { break; }
         }
     }

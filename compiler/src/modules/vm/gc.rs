@@ -15,6 +15,7 @@ impl<'a> VM<'a> {
             for &v in tpl { self.heap.mark(v); }
         }
         for &v in self.globals.values() { self.heap.mark(v); }
+        for &v in self.module_state.values() { self.heap.mark(v); }
         for frame in &self.iter_stack {
             match frame {
                 IterFrame::Seq { items, .. } => {

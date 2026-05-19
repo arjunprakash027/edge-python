@@ -139,6 +139,10 @@ impl<'a> VM<'a> {
             // User assignment overrides the builtin entry of the same name.
             out.insert(bare, v);
         }
+        // Module state (user-mutated via `global` from inside functions) overrides entry-chunk snapshots.
+        for (k, v) in self.module_state.iter() {
+            out.insert(k.clone(), *v);
+        }
         let mut dm = DictMap::with_capacity(out.len());
         for (k, v) in out {
             let key = self.heap.alloc(HeapObj::Str(k))?;

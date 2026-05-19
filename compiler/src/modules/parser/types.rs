@@ -28,6 +28,8 @@ pub enum OpCode {
     BuildModule,
     /* Constant-time lookup of chunk.imports[operand] from `vm.module_table`. */
     LoadModule,
+    /* Read/write a `global`-declared name from/to `self.globals`; operand indexes the bare name in `chunk.names`. */
+    LoadGlobal, StoreGlobal,
 }
 
 // Python builtin name -> (specialised OpCode, `leaves_value_on_stack`).

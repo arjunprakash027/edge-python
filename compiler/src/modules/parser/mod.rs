@@ -50,6 +50,8 @@ pub struct Parser<'src, I: Iterator<Item = Token>> {
     pub(super) tokens: Peekable<I>,
     pub(super) chunk: SSAChunk,
     pub(super) ssa_versions: HashMap<String, u32>,
+    /* Names declared `global` in the current function body; redirects load/store to `self.globals`. */
+    pub(super) globals_decl: crate::util::fx::FxHashSet<String>,
     pub(super) join_stack: Vec<JoinNode>,
     pub(super) loop_starts: Vec<u16>,
     pub(super) last_line: usize,
@@ -108,6 +110,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     }
 
     pub(super) fn emit_load_ssa(&mut self, name: String) {
+        if self.globals_decl.contains(&name) {
+            let i = self.chunk.push_name(&name);
+            self.chunk.emit(OpCode::LoadGlobal, i);
+            return;
+        }
         let i = self.push_ssa_name(&name, self.current_version(&name));
         self.chunk.emit(OpCode::LoadName, i);
     }
@@ -118,6 +125,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     }
 
     pub(super) fn store_name(&mut self, name: String) {
+        if self.globals_decl.contains(&name) {
+            let i = self.chunk.push_name(&name);
+            self.chunk.emit(OpCode::StoreGlobal, i);
+            return;
+        }
         let ver = self.increment_version(&name);
         let i = self.push_ssa_name(&name, ver);
         self.chunk.emit(OpCode::StoreName, i);
@@ -126,6 +138,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     pub(super) fn with_fresh_chunk(&mut self, f: impl FnOnce(&mut Self)) -> SSAChunk {
         let saved_chunk = core::mem::take(&mut self.chunk);
         let saved_ver = self.ssa_versions.clone();
+        let saved_globals = core::mem::take(&mut self.globals_decl);
         // Copy parent externs so nested def bodies can call imported natives; extras don't leak up.
         self.chunk.extern_table = saved_chunk.extern_table.clone();
         self.chunk.extern_index = saved_chunk.extern_index.clone();
@@ -136,6 +149,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let body = core::mem::take(&mut self.chunk);
         self.chunk = saved_chunk;
         self.ssa_versions = saved_ver;
+        self.globals_decl = saved_globals;
         body
     }
 }
@@ -426,6 +440,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             tokens: iter.peekable(),
             chunk,
             ssa_versions: HashMap::default(),
+            globals_decl: crate::util::fx::FxHashSet::default(),
             join_stack: Vec::new(),
             loop_starts: Vec::new(),
             loop_breaks: Vec::new(),

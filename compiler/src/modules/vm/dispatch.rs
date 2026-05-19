@@ -355,17 +355,33 @@ impl<'a> VM<'a> {
             }
             OpCode::StoreName => {
                 self.handle_store(op, slots)?;
-                // Mirror entry-chunk Module stores into `globals` so `import_module()` finds the alias.
-                if core::ptr::eq(chunk, self.chunk) {
+                // Mirror entry-chunk stores into `module_state` so functions with `global X` see updates,
+                // and mirror Module values into `globals` so `import_module()` finds module aliases.
+                if core::ptr::eq(chunk, self.chunk)
+                    && let Some(name) = chunk.names.get(op as usize)
+                {
                     let v = slots[op as usize];
-                    if v.is_heap()
-                        && matches!(self.heap.get(v), HeapObj::Module(..))
-                        && let Some(name) = chunk.names.get(op as usize)
-                    {
-                        let bare = ssa_strip(name).to_string();
+                    let bare = ssa_strip(name).to_string();
+                    self.module_state.insert(bare.clone(), v);
+                    if v.is_heap() && matches!(self.heap.get(v), HeapObj::Module(..)) {
                         self.globals.insert(bare, v);
                     }
                 }
+            }
+            OpCode::LoadGlobal => {
+                let name = chunk.names.get(op as usize).ok_or(cold_runtime("LoadGlobal: name index out of bounds"))?;
+                let v = self.module_state.get(name.as_str()).copied()
+                    .or_else(|| self.globals.get(name.as_str()).copied())
+                    .unwrap_or(Val::undef());
+                if v.is_undef() {
+                    return Err(VmErr::Name(name.clone()));
+                }
+                self.push(v);
+            }
+            OpCode::StoreGlobal => {
+                let v = self.pop()?;
+                let name = chunk.names.get(op as usize).ok_or(cold_runtime("StoreGlobal: name index out of bounds"))?;
+                self.module_state.insert(name.clone(), v);
             }
             OpCode::LoadConst => {
                 // Constants are pre-materialised at exec entry, so this is a single bounds-checked index instead of a Value->Val conversion.
