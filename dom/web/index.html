@@ -10,7 +10,14 @@
     <h1 class="text-2xl mb-1">Edge Python DOM</h1>
     <p class="text-gray-500 text-[0.95em] mb-8">A color palette, rendered from Python in your browser.</p>
 
-    <button id="counter" class="bg-neutral-900 text-white px-4 py-2 rounded text-sm hover:bg-neutral-700 transition mb-6">Clicked 0 times</button>
+    <div class="flex gap-2 mb-6">
+        <button id="counter" class="bg-neutral-900 text-white px-4 py-2 rounded text-sm hover:bg-neutral-700 transition">Clicked 0 times</button>
+        <button id="add-random" class="bg-emerald-600 text-white px-3 py-2 rounded text-sm hover:bg-emerald-500 transition">+ random</button>
+    </div>
+
+    <input id="hex-input"
+           placeholder="enter hex (e.g. #ff0080) and press Enter"
+           class="block w-full mb-4 px-3 py-2 border border-neutral-200 rounded text-sm font-mono">
 
     <div id="palette" class="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3"></div>
 
@@ -24,7 +31,6 @@
         const out = document.getElementById("output");
 
         await engine.load({
-            // compiler_lib.wasm is the language runtime — pulled from the official CDN, same as the JS engine above. Only edge_python_dom.wasm (the DOM capability) is served locally.
             wasmUrl: 'https://runtime.edgepython.com/js/compiler_lib.wasm',
             imports: { dom: base + 'edge_python_dom.wasm' },
             loaders: ['https://runtime.edgepython.com/js/loaders/capability-bridge.js'],
@@ -33,9 +39,10 @@
         const onLine = (line) => { out.textContent += line + "\n"; };
         try {
             const src = await (await fetch("./palette.py")).text();
-            const { out: diag, ms } = await engine.run({ src, onLine });
-            out.textContent += `ran in ${ms.toFixed(2)} ms`;
-            if (diag) out.textContent += "\n" + diag;
+            // `engine.run` returns `out` non-empty only on VM error (print() goes through onLine).
+            const { out: trace, ms } = await engine.run({ src, onLine });
+            if (trace) out.textContent += `[failed after ${ms.toFixed(2)} ms]\n${trace}`;
+            else out.textContent += `ran in ${ms.toFixed(2)} ms`;
         } catch (e) {
             out.textContent += "[error] " + (e?.message ?? e);
             console.error(e);
