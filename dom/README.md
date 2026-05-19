@@ -4,14 +4,13 @@ DOM access for Edge Python, shipped as a single self-contained `.wasm`. Python s
 
 ```python
 from dom import query, set_text, bind_event
-import json
 
 bind_event(query("#btn"), "click", "click")
 
 async def main():
     n = 0
     while True:
-        json.loads(receive())
+        receive()  # payload string; ignore content for a simple counter
         n += 1
         set_text(query("#btn"), f"clicked {n} times")
 ```
@@ -54,8 +53,10 @@ Open <http://127.0.0.1:8080/dom/web/>. Missing the target? `rustup target add wa
 
 - Handles are opaque integers — store them, pass them, never compute on them.
 - Multi-result queries (`query_all`, `children`) return CSV strings of handles.
-- Structured returns (`rect`, `validity`, `form_data`, `bbox`, event payloads) are JSON strings — decode with `json.loads`.
+- Structured returns (`rect`, `validity`, `form_data`, `bbox`, event payloads) are JSON strings.
 - All async results (events, FileReader, animation finishes, observer entries) arrive through `receive()`.
+
+**Parsing JSON returns.** Edge Python has no stdlib `json` — declare one in your `packages.json` (e.g. `{ "imports": { "json": "https://runtime.edgepython.com/lib/json.py" } }`) to get `json.loads`. For simple dispatch by event tag you can skip it and substring-match the raw payload (`'"msg":"click"' in ev`) as shown in `web/palette.py`. Examples below assume `json` is mapped where they use it.
 
 ### Selection and traversal
 
@@ -250,7 +251,7 @@ platform.js     <dialog>, fullscreen, pointer lock, SVG geometry
 bridge.js       composer (factory the loader eval's)
 ```
 
-Each module is a standalone function `xHandlers(rt, state)` returning its slice of the handler map. The composer (`bridge.js`) builds a fresh state and `Object.assign`s the slices together. `build.rs` concatenates the fragments at compile time in an order declared explicitly by its `PARTS` array.
+The fragments are concatenated by `build.rs` into a single arrow-function factory. `state.js` opens it (`(rt) => { ... }`) and declares the handle tables plus `alloc` / `node` / `allocList` helpers. The middle modules contribute object literals (`const tree = { ... };`) that close over those helpers and over `rt`. `bridge.js` closes the factory with `return Object.assign({}, tree, style, events, forms, observers, animationsApi, media, platform); }`. The order is declared explicitly in `PARTS` so renaming a file doesn't break composition.
 
 Adding a handler is one entry in one JS module. The Rust carrier never grows.
 

@@ -6,12 +6,12 @@ Official `.wasm` capability packages for [Edge Python](https://edgepython.com). 
 
 ```
 edge-python-capabilities/
-├── Cargo.toml          # workspace root
-├── dom/                # DOM bindings for browser interaction
+├── Cargo.toml
+├── dom/
 │   ├── Cargo.toml
 │   ├── src/
-│   └── web/            # demo page
-└── target/             # shared build output (gitignored)
+│   └── web/
+└── target/
 ```
 
 Each top-level folder is one capability and one workspace member. Planned siblings include `requests/` (networking) and others.
