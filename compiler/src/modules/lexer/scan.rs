@@ -352,8 +352,11 @@ impl<'a> Scanner<'a> {
             return self.pending.pop();
         }
 
-        // Comment
-        if b == b'#' {
+        if b == b'#' { // inside an f-string interpolation, '#' is part of the format spec — skip silently
+            if !self.fstring_stack.is_empty() {
+                self.pos += 1;
+                return self.next_token();
+            }
             while self.pos < self.src.len() && self.src[self.pos] != b'\n' {
                 self.pos += 1;
             }

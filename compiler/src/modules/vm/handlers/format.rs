@@ -21,6 +21,7 @@ struct Spec {
     fill: char,
     align: Option<u8>, // b'<' b'>' b'^' b'='
     sign: u8, // 0, b'+', b'-', b' '
+    alt: bool, // '#' alternate form — emits base prefix for b/o/x/X
     zero_pad: bool,
     width: usize,
     thousands: bool,
@@ -48,8 +49,8 @@ fn parse_spec(spec: &str) -> Result<Spec, &'static str> {
         i += 1;
     }
 
-    // '#' parsed but ignored — we emit prefixes for `b/o/x` unconditionally (matches `bin()`/`hex()`).
-    if i < bytes.len() && bytes[i] == b'#' { i += 1; }
+    // '#' alternate form — opt in to base prefix on b/o/x/X.
+    if i < bytes.len() && bytes[i] == b'#' { s.alt = true; i += 1; }
 
     if i < bytes.len() && bytes[i] == b'0' {
         s.zero_pad = true;
@@ -168,10 +169,10 @@ fn format_int(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static str>
     let (neg, mag) = int_to_decimal_parts(v, heap)?;
     let (digits, prefix): (String, &'static str) = match s.ty {
         b'd' => (mag, ""),
-        b'b' => (decimal_to_radix(&mag, 2), "0b"),
-        b'o' => (decimal_to_radix(&mag, 8), "0o"),
-        b'x' => (decimal_to_radix(&mag, 16), "0x"),
-        b'X' => (decimal_to_radix(&mag, 16).to_uppercase(), "0X"),
+        b'b' => (decimal_to_radix(&mag, 2), if s.alt { "0b" } else { "" }),
+        b'o' => (decimal_to_radix(&mag, 8), if s.alt { "0o" } else { "" }),
+        b'x' => (decimal_to_radix(&mag, 16), if s.alt { "0x" } else { "" }),
+        b'X' => (decimal_to_radix(&mag, 16).to_uppercase(), if s.alt { "0X" } else { "" }),
         _ => unreachable!(),
     };
     let body = if s.thousands && s.ty == b'd' { add_thousands(&digits) } else { digits };
