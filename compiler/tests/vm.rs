@@ -13,6 +13,8 @@ mod test {
         error: Option<String>,
         #[serde(default)]
         input: Vec<String>,
+        #[serde(default)]
+        events: Vec<String>,
     }
 
     #[test]
@@ -31,6 +33,7 @@ mod test {
             let (chunk, _errors) = Parser::new(&case.src, tokens.into_iter()).parse();
             let mut vm = VM::new(&chunk);
             vm.input_buffer = case.input.clone();
+            for evt in &case.events { vm.push_event(evt).expect("push_event"); }
             let result = vm.run();
 
             match result {
@@ -85,6 +88,7 @@ mod test {
             let mut vm = VM::new(&chunk);
             vm.strict_input = true;
             vm.input_buffer = case.input.clone();
+            for evt in &case.events { vm.push_event(evt).expect("push_event"); }
             let expects_input_error = case.input.is_empty()
                 && (case.src.contains("input(") || case.src.contains("input ("));
 

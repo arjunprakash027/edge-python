@@ -65,6 +65,13 @@ impl<'a> VM<'a> {
         }
     }
 
+    /* Push a string event onto the event queue; consumed by the next `receive()` call. Mirrors what `run_push_event` does for WASM hosts. */
+    pub fn push_event(&mut self, message: &str) -> Result<(), VmErr> {
+        let val = self.heap.alloc(crate::modules::vm::types::HeapObj::Str(message.into()))?;
+        self.event_queue.push(val);
+        Ok(())
+    }
+
     pub fn run(&mut self) -> Result<Val, VmErr> {
         self.error_byte_pos = None;
         // Resume path: scheduler non-empty means a prior `run()` yielded; wake `WaitingFrame` (rAF fired) and drain.
