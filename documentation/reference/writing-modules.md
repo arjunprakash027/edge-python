@@ -1,17 +1,18 @@
 ---
 title: "Writing modules"
-description: "Three paths to extend Edge Python: a `.wasm` module loaded by URL, in-process Rust closures via the Resolver trait, or host capabilities the runtime ships as part of itself."
+description: "Four paths to extend Edge Python: a `.wasm` module loaded by URL, in-process Rust closures via the Resolver trait, host capabilities the runtime ships as part of itself, or a self-contained capability `.wasm` that carries its own JS bridge."
 ---
 
-Edge Python has no bundled stdlib. There are **three ways** to add native functionality. Pick the one that fits your distribution model.
+Edge Python has no bundled stdlib. There are **four ways** to add native functionality. Pick the one that fits your distribution model.
 
 | Path | Distribution | Type coverage | Maintenance |
 |---|---|---|---|
 | **`.wasm` module via URL** ([WASM ABI](/reference/wasm-abi)) | Publish a `.wasm` to a CDN; any host loads it dynamically | Primitives only (None, bool, i64 truncated to 47-bit, f64, bytes/str) | Use the reference [`wasm-pdk`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) crate (Rust), a community PDK for your language, or hand-write the wire-format boilerplate |
 | **In-process Rust binding** | Publish a Rust crate; embedders link it as an rlib | Full — any `HeapObj` (str, list, dict, set, tuple, instance, …) | You own a Rust crate; cargo handles distribution |
 | **Host capability** | Ship a custom `compiler.wasm` (in-process Rust bindings linked in) plus the host-side runtime they bridge to | Full — same as in-process bindings, plus access to host services (DOM, FS, fetch) through the embedder's host imports | You own the custom embedder and its host runtime; the bindings travel together |
+| **Self-contained capability `.wasm`** | Publish a single `.wasm` that embeds its own JS bridge as bytes; the vanilla upstream `compiler_lib.wasm` loads it by URL alongside any other capability | Primitives only (same as Path A) — handlers go through `host_call_native` | You own one `.wasm` per capability; capabilities compose by URL at load time |
 
-The `.wasm` path matches the marketplace pattern (`from "https://x.wasm" import f` works in any host). The in-process path matches the embedder pattern (compile your modules into your own `compiler.wasm`). The host-capability path is the in-process path applied recursively: the embedder *is* a runtime distribution, and the bindings it ships are part of what that runtime offers — exactly the way `print` and `input` already work. All three are first-class.
+The `.wasm` path matches the marketplace pattern (`from "https://x.wasm" import f` works in any host). The in-process path matches the embedder pattern (compile your modules into your own `compiler.wasm`). The host-capability path is the in-process path applied recursively: the embedder *is* a runtime distribution, and the bindings it ships are part of what that runtime offers — exactly the way `print` and `input` already work. The self-contained-capability path keeps the upstream `compiler_lib.wasm` untouched and lets capabilities compose by URL instead of by recompilation. All four are first-class.
 
 ## Path A: `.wasm` module by URL
 
@@ -284,7 +285,84 @@ The custom `compiler.wasm` declares `env.host_dom_op` alongside the standard `en
 
 From the script's perspective there are still **two flavors** (code and native — see [Imports](/reference/imports)). Path C is a distribution pattern over Path B, not a new dispatch path. The compiler sees a `Resolved::Native(bindings)` like any other; the bindings happen to bridge externally. This keeps the public language surface and the [WASM module ABI](/reference/wasm-abi) untouched.
 
-## Choosing between the three paths
+## Path D: self-contained capability `.wasm`
+
+Path C needs a **custom `compiler.wasm`**: every capability mix is a separate embedder build. Path D removes that step. The capability ships as a **single `.wasm`** that the vanilla upstream `compiler_lib.wasm` loads by URL, exactly like a Path A module. Capabilities compose at load time by listing them in the runtime's `imports` map.
+
+The `.wasm` is a thin carrier — it embeds plain JavaScript inside its linear memory and exports two pointers to it: `edge_capability_bridge_ptr` and `edge_capability_bridge_len`. The [`capability-bridge`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/runtime/loaders/capability-bridge.js) loader (opted in at `engine.load()`) detects those exports, evals the source as a factory `(rt) => handlerMap`, and registers every handler as a native binding dispatched via `host_call_native` — the same path Path A natives use, so no new ABI.
+
+Handlers run on the page's **main thread** (the bridge loader is wired into `engine.js` directly, not the worker), giving them access to `document`, `localStorage`, `crypto.subtle`, and anything else only the main thread sees.
+
+```html
+<script type="module">
+    import * as engine from "https://runtime.edgepython.com/js/src/engine.js";
+
+    await engine.load({
+        wasmUrl: "https://runtime.edgepython.com/js/compiler_lib.wasm",
+        imports: { dom: "https://cdn.example.com/edge_python_dom.wasm" },
+        loaders: ["https://runtime.edgepython.com/js/loaders/capability-bridge.js"],
+    });
+    await engine.run({ src: await (await fetch("./script.py")).text() });
+</script>
+```
+
+```python
+from dom import query, set_text
+set_text(query("#app"), "hello from Python")
+```
+
+### Sketch
+
+`src/lib.rs` is all the Rust there is:
+
+```rust
+#![no_std]
+#![no_main]
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo) -> ! { core::arch::wasm32::unreachable() }
+
+static BRIDGE: &[u8] = include_bytes!("bridge.js");
+
+#[unsafe(no_mangle)] pub extern "C" fn edge_capability_bridge_ptr() -> *const u8 { BRIDGE.as_ptr() }
+#[unsafe(no_mangle)] pub extern "C" fn edge_capability_bridge_len() -> u32 { BRIDGE.len() as u32 }
+```
+
+`src/bridge.js` holds the actual logic — a factory returning one JS function per Python entry point:
+
+```js
+(rt) => {
+    const handles = new Map();
+    let next = 1;
+    const wrap = (n) => { const id = next++; handles.set(id, n); return id; };
+
+    return {
+        query: (sel) => {
+            const el = document.querySelector(rt.readStr(sel));
+            return el ? wrap(el) : null;
+        },
+        set_text: (h, t) => { handles.get(rt.readInt(h)).textContent = rt.readStr(t); },
+    };
+}
+```
+
+`rt` exposes the helpers (`readStr`, `readInt`, `alloc`, …) for crossing the JS↔compiler memory boundary. The compiler doesn't know — or care — that the implementation is JS rather than a wasm-pdk `.wasm`.
+
+### Trade-offs vs Path C
+
+| | Path C | Path D |
+|---|---|---|
+| Compiler artifact | Custom per capability set | Vanilla upstream |
+| Composition | Embed-time | Load-time, by URL |
+| Binding language | Rust closures, full `HeapObj` access | JS handlers via wire ABI (primitives only) |
+| Per-op overhead | Direct `Val` reads | Encode/decode per arg |
+| Threading model | Wherever the embedder runs | Main thread (handlers reach `document`) |
+| CSP requirement | None beyond standard | Requires `'unsafe-eval'` (loader uses `new Function`) |
+
+Path D is the right pick when load-time composition and main-thread host access matter more than per-op throughput — invisible for typical UI work (~50–200 ops/frame), visible only in tight loops of thousands of fine-grained ops per frame. Reach for Path C when those loops dominate, or when strict CSP rules out `'unsafe-eval'`.
+
+A reference implementation lives in [`edge-python-capabilities`](https://github.com/dylan-sutton-chavez/edge-python-capabilities) — currently exposing `dom`. Adding a capability is one more workspace member and one more entry in the consumer's `imports` map; no changes to upstream `compiler_lib` or the runtime.
+
+## Choosing between the four paths
 
 | You want… | Use |
 |---|---|
@@ -292,7 +370,8 @@ From the script's perspective there are still **two flavors** (code and native �
 | Maximum speed and full type coverage (strings, lists, etc.) | Path B (in-process Rust) |
 | Wrap a C/Zig/AS library | Path A (any wasm32-targeting language works) |
 | Plug into a custom Rust app and expose its APIs | Path B |
-| Expose host services (DOM, FS, native crypto) that Path A's sandboxed `.wasm` can't reach | Path C (host capability) |
+| Expose host services (DOM, FS, native crypto) bundled into your own runtime distribution | Path C (host capability) |
+| Expose host services as a CDN-distributed `.wasm` users can mix and match without a custom embedder | Path D (self-contained capability `.wasm`) |
 | Both at once | Compose: your embedder's `Resolver` can return `Resolved::Native(...)` for in-process modules AND let `.wasm` URL imports flow through to the bridge |
 
 ## Pure vs impure
