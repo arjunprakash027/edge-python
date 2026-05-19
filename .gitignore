@@ -1,7 +1,7 @@
 # Build artifacts
 /target
 Cargo.lock
-web/edge_python_dom.wasm
+dom/web/edge_python_dom.wasm
 
 # Editor / IDE
 .vscode/
