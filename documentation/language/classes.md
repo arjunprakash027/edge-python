@@ -89,8 +89,6 @@ Rex (lab)
 True
 ```
 
-A multi-base declaration `class C(A, B):` is parsed and both bases are stored, but resolution is a simple left-to-right depth-first walk, not Python's C3 MRO. Prefer single inheritance.
-
 ## Attribute access on classes vs instances
 
 | Access form         | Resolves to                               |
@@ -177,6 +175,6 @@ See [Dunder methods](/language/dunders) for the full matrix.
 * Multi-base inheritance with proper C3 MRO. `class C(A, B):` is parsed and both bases are stored, but resolution is a linear depth-first walk, not Python's C3 algorithm. Prefer single inheritance.
 * Metaclasses, descriptors (`__get__` / `__set__`), `__slots__`, abstract base classes, `__init_subclass__`.
 * `@staticmethod` and `@classmethod`. Use the namespace pattern above or free functions instead.
-* Async dunders: `__aenter__` / `__aexit__` / `__aiter__` / `__anext__`. `async with` and `async for` do not dispatch these hooks.
+* Async dunders — see [Dunders — What's not dispatched](/language/dunders#whats-not-dispatched).
 
 Behaviour reuse via free functions and composition is still the preferred default — it keeps dispatch fast and aligns with the functional-first identity. Reach for operator overloading and inheritance when the abstraction genuinely calls for them.

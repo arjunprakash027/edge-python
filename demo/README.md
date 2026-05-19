@@ -1,11 +1,6 @@
-## Edge Python — WebAssembly Demo for the Edge
+# Edge Python — WebAssembly Demo for the Edge
 
-Run Edge Python directly in the browser — a sandboxed Python subset with classes, async/await, structural pattern matching, and `packages.json` imports. The compiler is a single-pass SSA bytecode (linear time complexity), VM with adaptive inline caching and pure-function memoization, written in Rust and compiled to WebAssembly.
-
-* **Demo:** *[demo.edgepython.com](https://demo.edgepython.com/)*
-* **Docs:** *[edgepython.com](https://edgepython.com/)*
-
----
+The interactive playground at [demo.edgepython.com](https://demo.edgepython.com/) — a static page that runs Edge Python entirely client-side via the [`runtime/`](../runtime/) package. See the [docs](https://edgepython.com/) for the language itself.
 
 ## Features
 
@@ -16,7 +11,7 @@ Run Edge Python directly in the browser — a sandboxed Python subset with class
 
 ## Local Start
 
-The page fetches the WebAssembly module and uses a Web Worker, so it must be served over HTTP, opening `index.html` via `file://` fails with CORS / fetch errors. I recomend to to initialize the localhost for development using the [Live Server](https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer) visual studio code extension.
+The page fetches the WebAssembly module and uses a Web Worker, so it must be served over HTTP — opening `index.html` via `file://` fails with CORS / fetch errors. For development, the [Live Server](https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer) VS Code extension is the easiest way to spin up a local server.
 
 > The page pulls the runtime JS and `compiler_lib.wasm` from `runtime.edgepython.com`, so the demo, the runtime, and the compiler all ship and version independently.
 
@@ -34,13 +29,13 @@ The page fetches `version.json` with `cache: 'no-store'` on each load, appends `
 
 The WASM module is fetched **once** in the page (so the network panel shows a single request), and its `ReadableStream` body is transferred to the Worker via `postMessage`. The Worker compiles it with `WebAssembly.compileStreaming`, avoiding the double-fetch + double-decode that the previous main-thread-then-worker path introduced.
 
-### Demo report
+## Demo report
 
-The runtime's `format` helper (in `runtime/lib/format.py`) renders class definitions with their inheritance chain and dunder methods, so the perceptron example shows the full surface of Edge Python's object model when the report is generated.
+The `format` helper in [`runtime/lib/format.py`](runtime/lib/format.py) renders class definitions with their inheritance chain and dunder methods, so the perceptron example shows the full surface of Edge Python's object model when the report is generated.
 
-### Project Structure
+## Layout
 
-```bash
+```text
 ├── css
 │   └── style.css
 ├── index.html
@@ -63,6 +58,6 @@ The runtime's `format` helper (in `runtime/lib/format.py`) renders class definit
 └── version.json
 ```
 
-### License
+## License
 
 MIT OR Apache-2.0

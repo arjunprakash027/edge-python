@@ -9,7 +9,7 @@ check -> wasm -> runtime -> demo
 | `_check.yml`   | `cargo shear` + `clippy` (host and wasm targets) |
 | `_wasm.yml`    | Builds and optimizes `compiler_lib.wasm`. On tags, attaches the `.wasm` to the GitHub Release |
 | `_runtime.yml` | Bundles `runtime/` + `compiler_lib.wasm` and deploys them to Cloudflare Pages |
-| `_demo.yml`    | Deploys `demo/` to Cloudflare Pages |
+| `_demo.yml`    | Hashes `compiler_lib.wasm` into `version.json` (cache-busting) and deploys `demo/` to Cloudflare Pages |
 
 ## Cloudflare Pages
 
@@ -17,8 +17,8 @@ Two projects, both in **Direct Upload** mode, where actions pushes prebuilt dire
 
 | Project | Source | Production URL |
 |---------|--------|----------------|
-| `edge-python-demo` | `demo/` + downloaded `compiler_lib.wasm` | `https://edge-python-demo.pages.dev` |
-| `edge-python-runtime`  | `runtime/` + downloaded `compiler_lib.wasm` | `https://edge-python-runtime.pages.dev`  |
+| `edge-python-demo` | `demo/` (wasm downloaded only to hash for `version.json` cache-busting; not bundled) | `https://edge-python-demo.pages.dev` |
+| `edge-python-runtime` | `runtime/` + bundled `compiler_lib.wasm` | `https://edge-python-runtime.pages.dev` |
 
 Both deploys are pinned to the `main` (production) branch in `_runtime.yml` / `_demo.yml`. Without that pin, a tag push would land at a per-tag preview URL (`v0-1-0.edge-python-runtime.pages.dev`) and the custom domain would never update.
 

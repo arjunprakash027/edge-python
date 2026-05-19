@@ -16,90 +16,14 @@ The `.wasm` path matches the marketplace pattern (`from "https://x.wasm" import 
 
 ## Path A: `.wasm` module by URL
 
-The contract is the [WASM module ABI](/reference/wasm-abi) — short, language-agnostic, three scalar types. For Rust, the bundled [`wasm-pdk`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) crate is the reference author-side layer (`#[plugin_fn]`, typed `Handle` / `Value` / `Error`). For other languages, use a community PDK or write the boilerplate by hand — the minimal raw version is below.
+The contract is the [WASM module ABI](/reference/wasm-abi) — short, language-agnostic, three scalar types. For Rust, the bundled [`wasm-pdk`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) crate is the reference author-side layer (`#[plugin_fn]`, typed `Handle` / `Value` / `Error`); for other languages, use a community PDK or write the boilerplate by hand.
 
-`Cargo.toml`:
-
-```toml
-[package]
-name = "my-edge-mod"
-version = "0.1.0"
-edition = "2024"
-
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-lol_alloc = "0.4"
-
-[profile.release]
-opt-level = "z"
-lto = true
-panic = "abort"
-strip = true
-```
-
-`src/lib.rs` — every export follows the wire ABI signature `(argv: *const u32, argc: u32, out: *mut u32) -> i32`, where `argv` carries host-owned handles and the result is written back as a handle:
-
-```rust
-#![no_std]
-#![no_main]
-extern crate alloc;
-use alloc::{boxed::Box, vec};
-
-#[global_allocator]
-static A: lol_alloc::LeakingPageAllocator = lol_alloc::LeakingPageAllocator;
-#[panic_handler]
-fn panic(_: &core::panic::PanicInfo) -> ! { core::arch::wasm32::unreachable() }
-
-#[link(wasm_import_module = "env")]
-unsafe extern "C" {
-    fn edge_encode(tag: u32, ptr: *const u8, len: u32) -> u32;
-    fn edge_decode(h: u32, out_tag: *mut u32, dst: *mut u8, dst_max: u32) -> i32;
-}
-
-const TAG_INT: u32 = 2;
-
-#[unsafe(no_mangle)]
-pub extern "C" fn __edge_alloc(size: u32) -> *mut u8 {
-    Box::into_raw(vec![0u8; size as usize].into_boxed_slice()) as *mut u8
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn __edge_abi_version() -> u32 { 1 }
-
-#[unsafe(no_mangle)]
-pub extern "C" fn add(argv: *const u32, argc: u32, out: *mut u32) -> i32 {
-    if argc != 2 { return 1; }
-    let mut tag: u32 = 0;
-    let mut buf = [0u8; 8];
-    let mut read_int = |h: u32| -> Option<i64> {
-        let r = unsafe { edge_decode(h, &mut tag, buf.as_mut_ptr(), 8) };
-        if r < 0 || tag != TAG_INT { return None; }
-        Some(i64::from_le_bytes(buf))
-    };
-    let a = match read_int(unsafe { *argv }) { Some(v) => v, None => return 1 };
-    let b = match read_int(unsafe { *argv.add(1) }) { Some(v) => v, None => return 1 };
-    let sum = (a + b).to_le_bytes();
-    let h = unsafe { edge_encode(TAG_INT, sum.as_ptr(), 8) };
-    unsafe { *out = h; }
-    0
-}
-```
-
-For anything but trivial scalar examples, prefer the `wasm-pdk` crate (`#[plugin_fn]`) — see the [WASM module ABI](/reference/wasm-abi) worked example. Build and use:
-
-```bash
-cargo build --release --target wasm32-unknown-unknown
-# -> target/wasm32-unknown-unknown/release/my_edge_mod.wasm
-```
+Complete worked examples (with and without the SDK), encoding tables, and language-specific snippets live in [WASM module ABI](/reference/wasm-abi). The script side is just:
 
 ```python
 from "./my_edge_mod.wasm" import add
 print(add(2, 3))   # -> 5
 ```
-
-Full encoding tables and language-specific snippets (C, Zig, AssemblyScript) live in [WASM module ABI](/reference/wasm-abi).
 
 ## Path B: in-process Rust binding
 

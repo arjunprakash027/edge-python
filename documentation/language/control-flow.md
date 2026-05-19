@@ -274,28 +274,7 @@ subclass caught
 
 ### Exception names available
 
-These are pre-bound type names you can match against, with their parent links shown so you know which `except <Parent>:` clauses catch each one:
-
-| Class | Parent |
-|---|---|
-| `BaseException` | — |
-| `Exception` | `BaseException` |
-| `RuntimeError` | `Exception` |
-| `ValueError` | `Exception` |
-| `TypeError` | `Exception` |
-| `KeyError` | `Exception` |
-| `IndexError` | `Exception` |
-| `AttributeError` | `Exception` |
-| `ZeroDivisionError` | `Exception` |
-| `OverflowError` | `Exception` |
-| `NameError` | `Exception` |
-| `MemoryError` | `Exception` |
-| `StopIteration` | `Exception` |
-| `StopAsyncIteration` | `Exception` |
-| `TimeoutError` | `Exception` |
-| `CancelledError` | `Exception` |
-| `NotImplementedError` | `RuntimeError` |
-| `RecursionError` | `RuntimeError` |
+Pre-bound exception classes (with their parent links so `except <Parent>:` matches subclasses) are listed in [Limits and errors — Runtime](/reference/limits-and-errors#runtime).
 
 ## with
 

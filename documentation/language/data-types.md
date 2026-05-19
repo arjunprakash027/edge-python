@@ -29,17 +29,7 @@ print(type(True))
 <class 'bool'>
 ```
 
-```python
-print(isinstance(42, int))
-print(isinstance(True, int)) # bools are ints
-print(isinstance(42, (str, int))) # tuple of types
-```
-
-```text Output
-True
-True
-True
-```
+For runtime membership in a type, use [`isinstance`](/reference/builtins#isinstance).
 
 ## Integer
 

@@ -66,14 +66,13 @@ if (n := len(data)) > 0:
 
 ## Numbers
 
-Integers are 47-bit signed inline (range $2^{47}$) with automatic promotion to 128-bit when arithmetic overflows the inline range. Values up to $2^{127}$ work transparently; anything beyond raises `OverflowError`. Hex (`0x`), octal (`0o`), and binary (`0b`) prefixes are supported, with `_` digit separators between digits.
+Integer literals accept hex (`0x`), octal (`0o`), and binary (`0b`) prefixes, with `_` digit separators between digits. Runtime range and promotion rules live in [Data types — Integer](/language/data-types#integer).
 
 ```python
 print(0xDEAD_BEEF)
 print(0o777)
 print(0b1010_1010)
 print(1_000_000)
-print(2 ** 46)
 ```
 
 ```text Output
@@ -81,7 +80,6 @@ print(2 ** 46)
 511
 170
 1000000
-70368744177664
 ```
 
 Underscores are validated: `1_`, `1__2`, `0x_1`, and `1e_5` are rejected as `SyntaxError`. They must sit between two digits.
@@ -289,68 +287,7 @@ big
 
 ## Containers
 
-### Lists
-
-```python
-xs = [1, 2, 3]
-print(xs[0], xs[-1])
-print(xs[1:3])
-print(xs + [4, 5])
-print(xs * 2)
-```
-
-```text Output
-1 3
-[2, 3]
-[1, 2, 3, 4, 5]
-[1, 2, 3, 1, 2, 3]
-```
-
-### Tuples
-
-```python
-t = (1, 2, 3)
-print(t[1])
-print((1,)) # singleton needs the comma
-print(()) # empty tuple
-```
-
-```text Output
-2
-(1,)
-()
-```
-
-### Dicts (insertion-ordered)
-
-```python
-d = {"a": 1, "b": 2}
-print(d["a"])
-d["c"] = 3
-print(d)
-print(list(d.keys()))
-```
-
-```text Output
-1
-{'a': 1, 'b': 2, 'c': 3}
-['a', 'b', 'c']
-```
-
-### Sets
-
-```python
-s = {1, 2, 2, 3}
-print(s)
-print(2 in s)
-print(set()) # empty set literal needs the function
-```
-
-```text Output
-{1, 2, 3}
-True
-set()
-```
+Container literals: `[1, 2, 3]` (list), `(1, 2, 3)` and `(1,)` / `()` (tuple), `{"a": 1}` (dict), `{1, 2, 3}` (set — empty is `set()`, since `{}` is a dict). Full semantics, mutation, and methods live in [Data types](/language/data-types).
 
 ### Slicing
 

@@ -51,11 +51,8 @@ print(slugify("Hello world"))
 ## How resolution works
 
 1. The compiler scans your source for every `from <spec> ...` statement.
-2. For each spec, it asks the **host's `Resolver`** to materialise the module:
-   * `Resolved::Native { bindings, canonical }`, list of `(name, function pointer, pure flag)` tuples plus the resolver's authoritative spec.
-   * `Resolved::Code { src, canonical }`; raw `.py` source plus the canonical spec.
-3. For natives, the bindings are appended to the chunk's `extern_table`. Named imports register the alias so the call site can emit a direct `CallExtern idx, argc`. The module is also added to the chunk's `imports` list keyed by its canonical spec so first-class references and `import_module()` lookups resolve.
-4. For code modules, the source is parsed into a fresh `SSAChunk` and registered in the chunk's `imports` list. Each requested name becomes a `LoadModule + LoadAttr + StoreName` triple at the call site — no per-importer splicing, no name mangling.
+2. For each spec, it asks the **host's `Resolver`** to materialise the module as either `Resolved::Native { bindings, canonical }` (function-pointer tuples + canonical spec) or `Resolved::Code { src, canonical }` (raw `.py` source + canonical spec).
+3. Natives become direct-dispatch entries; code modules are parsed into a fresh `SSAChunk`. Both register under the canonical spec so first-class references and `import_module()` lookups resolve uniformly. See [Syntax — Imports](/implementation/syntax) for the codegen details.
 
 Modules are **singletons across the compilation unit**: the same canonical spec compiles to one `SSAChunk`, runs its top level once, and lives as one `HeapObj::Module` value shared by every importer. Two files importing `./util.py` see literally the same module value — `mod is mod_alias` is true and mutations to module attributes are observed by every consumer. Inside the module's top level, `__name__` is bound to the canonical spec, so the `if __name__ == "__main__":` guard skips when the file is imported.
 
@@ -211,9 +208,7 @@ integrity drift for 'https://cdn.foo/kit/index.py'
 
 This is the same primitive as inline `#sha256-...` integrity, applied automatically to every URL the user imports — explicit hashes in the source are still honoured and fail at compile time before any code runs.
 
-### Other hosts
-
-WASI hosts and Rust embedders make their own caching choices: the `Resolver` trait sees only `(spec -> Resolved)` and `(spec -> bytes via fetch_bytes)`. A CLI host typically pairs `packages.lock.json` next to `packages.json` (commitable to git) with `~/.cache/edgepython/sha256/` for the CAS, mirroring Cargo's split between project lockfile and shared registry cache. The browser worker uses IDB instead because that's where persistent storage lives in the browser.
+Non-browser hosts make their own caching choices — the `Resolver` trait sees only `(spec -> Resolved)` and `(spec -> bytes)`.
 
 ## Sandbox
 

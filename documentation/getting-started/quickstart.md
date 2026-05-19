@@ -24,29 +24,7 @@ cd edge-python/compiler
 cargo wasm # -> target/wasm32-unknown-unknown/release/compiler_lib.wasm
 ```
 
-Or, if your host is itself a Rust crate, let cargo fetch the release `compiler_lib.wasm` automatically. Declare `edge-python` as a build dependency and copy the artifact from `DEP_COMPILER_LIB_WASM` (set by the upstream's `links = "compiler_lib"`) into wherever your host loads it from:
-
-```toml
-# Cargo.toml
-[dependencies]
-edge-python = { git = "https://github.com/dylan-sutton-chavez/edge-python", tag = "v0.1.0" }
-```
-
-```rust
-// build.rs
-fn main() {
-    println!("cargo::rerun-if-changed=build.rs");
-
-    let wasm = std::env::var("DEP_COMPILER_LIB_WASM")
-        .expect("`DEP_COMPILER_LIB_WASM` unset — upstream `edge-python` must declare `links = \"compiler_lib\"`");
-
-    std::fs::copy(&wasm, "runtime/compiler_lib.wasm").expect("copy failed");
-}
-```
-
-The upstream `build.rs` downloads the wasm asset attached to the tag into `OUT_DIR` and exposes its absolute path — no `cargo wasm` step in the consumer, no checked-in binary. Pin to a `tag` for reproducible builds (`branch = "main"` is also valid). Requires `curl` on the host PATH.
-
-There is no native CLI binary, `compiler_lib.wasm` is the release artifact, and `compiler/src/main/` is gated to `wasm32`. The host owns I/O, network, time, and module fetching: the guest exposes `run_start` / `run_resume` / `run_push_event` (cooperative driver) plus a legacy non-suspending `run`, and calls back through `host_print`, `host_fetch_bytes`, `host_call_native`, and `host_now_ns`. Custom embedders that ship [host capabilities](/reference/writing-modules#path-c-host-capability) declare additional imports — DOM in the browser shim, FS in WASI. This boundary is what keeps Edge Python sandboxed by construction.
+Rust crate consumers can let cargo fetch the release artifact via `DEP_COMPILER_LIB_WASM` (see the repo README). There is no native CLI binary — `compiler_lib.wasm` is the release artifact, and the host owns I/O, network, time, and module fetching. The full compiler↔host ABI is documented under [What it is — Where it runs](/getting-started/what-it-is#where-it-runs).
 
 ## Your first program
 
@@ -67,7 +45,7 @@ Hello, python!
 
 ## Language overview
 
-Edge Python is a Python subset with classes, async/await, structural pattern matching, and `packages.json` imports. The compiler is a single-pass SSA bytecode (linear time complexity), VM with adaptive inline caching and pure-function memoization, written in Rust and compiled to WebAssembly.
+Edge Python is a Python subset with classes, async/await, structural pattern matching, and `packages.json` imports — compiled to bytecode and run on a sandboxed WebAssembly VM.
 
 ```python
 # First-class functions

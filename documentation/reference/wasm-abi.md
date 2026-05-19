@@ -3,9 +3,7 @@ title: "WASM module ABI"
 description: "The wire format a `.wasm` module must follow to be importable by Edge Python."
 ---
 
-> **Sealed contract — v1.** Every signature, op code, tag, and error kind on this page is part of the public contract. New capabilities arrive as new `Op` values consumed by `edge_op`, never as new imports. Bug fixes that align an implementation with this page are the only acceptable maintenance. A future wire-level break would ship under a different module name (`env_v2.*`) without removing v1.
-
-> **Scope: plugin ABI only.** This page specifies the contract between a CDN-distributed `.wasm` plugin module and the Edge Python runtime — the surface every Path A plugin must conform to. It is **distinct** from the compiler↔host interface that the embedder declares (`host_print`, `host_fetch_bytes`, `host_call_native`, and any embedder-specific host imports — see [host capabilities](/reference/writing-modules#path-c-host-capability)). Plugin authors only target this page; embedders define their own host interface and are not bound by the 6-import limit here.
+> **Sealed contract — plugin ABI v1.** Every signature, op code, tag, and error kind on this page is part of the public contract for CDN-distributed `.wasm` plugin modules (Path A). New capabilities arrive as new `Op` values, never as new imports; a future wire-level break would ship as `env_v2.*` without removing v1. This is **distinct** from the compiler↔host interface that embedders declare (see [host capabilities](/reference/writing-modules#path-c-host-capability)) — embedders are not bound by the 6-import limit here.
 
 A `.wasm` module that an Edge Python script imports via `from "<url>" import <names>` follows the contract below. The shape is a small **handle-based** API: the host owns all values, the guest sees only opaque `u32` handles, and one universal dispatch primitive (`edge_op`) covers every operation on those values. This means new types, methods, and language features added to Edge Python become available to existing modules with **no ABI change**.
 
@@ -285,67 +283,11 @@ pub extern "C" fn slugify(argv: *const u32, argc: u32, out: *mut u32) -> i32 {
 }
 ```
 
-### `Cargo.toml`
-
-```toml
-[package]
-name = "slugify-mod"
-version = "0.1.0"
-edition = "2024"
-
-[lib]
-crate-type = ["cdylib"]
-
-[profile.release]
-opt-level = "z"
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = true
-```
-
-### Compile
-
-```bash
-cargo build --release --target wasm32-unknown-unknown
-# -> target/wasm32-unknown-unknown/release/slugify_mod.wasm   (around 1-2 KB)
-```
-
-### Use it from an Edge Python script
-
-```python
-from "https://example.com/slugify.wasm" import slugify
-
-print(slugify("Hello World")) # -> hello-world
-print(slugify("ABC 123")) # -> abc-123
-```
-
-Or via `packages.json`:
-
-```json
-{
-  "imports": {
-    "slug": "https://example.com/slugify.wasm"
-  }
-}
-```
-
-```python
-from slug import slugify
-print(slugify("Hello World"))
-```
+Build with the same `Cargo.toml` shape as the `wasm-pdk` example (drop the `wasm-pdk` dependency, add `lol_alloc = "0.4"`); import from a script the same way.
 
 ## How the host loads it
 
-When the host (browser shim, WASI runtime, Rust embedder) sees `from "<url>" import <names>` and the URL ends in `.wasm`:
-
-1. **Fetch** the bytes (browser: `fetch()`; CLI: filesystem or HTTP).
-2. **Verify integrity** if a `#sha256-...` fragment is present (parser-side, before any code runs).
-3. **Instantiate** the module with the 6 host imports wired to compiler.wasm exports (`host_edge_op`, `host_edge_encode`, `host_edge_decode`, `host_edge_release`, `host_edge_take_error`, `host_edge_throw`).
-4. **Walk the export table** and register every callable function under its name.
-5. **At each script call site**, the host registers the args as handles, invokes the matching guest export, reads the result handle, and propagates the `Val`. Errors stashed via `edge_take_error` raise the corresponding Python exception.
-
-The reference browser shim is [`runtime/worker/worker.js`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/runtime/worker/worker.js). WASI hosts and Rust embedders mirror the same shape against their own runtime.
+When the host sees `from "<url>" import <names>` and the URL ends in `.wasm`, it fetches the bytes (verifying any `#sha256-...` fragment), instantiates the module with the 6 host imports wired up, walks the export table, and at each call site marshals args as handles and propagates the result. The reference browser shim is [`runtime/worker/worker.js`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/runtime/worker/worker.js); WASI hosts and Rust embedders mirror the same shape.
 
 ## Constraints and caveats
 
@@ -365,20 +307,7 @@ The reference Rust author layer is the **`wasm-pdk`** crate (Plugin Development 
 * `Handle` / `Value` / `Error` types wrapping handles with `Drop`-driven release.
 * The required `__edge_alloc` and `__edge_abi_version` exports emitted automatically.
 
-A typical author-side function with the macro:
-
-```rust
-use wasm_pdk::*;
-
-wasm_pdk::module!();
-
-#[plugin_fn]
-fn slugify(s: String) -> String {
-    s.to_lowercase().replace(' ', "-")
-}
-```
-
-The macro emits the boilerplate seen in the worked example above. Authors who don't want a toolchain write the boilerplate manually (~25 lines for the first function, ~5 lines per additional).
+The macro emits the boilerplate seen in the worked example above; authors who don't want a toolchain write it manually (~25 lines for the first function, ~5 lines per additional).
 
 Per the project's policy, similar community PDKs exist for Zig (`wasm-pdk-zig`), AssemblyScript (`wasm-pdk-as`), and C (`wasm-pdk.h`) without coordinated releases — each tracks the sealed wire spec on its own cadence.
 

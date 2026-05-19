@@ -26,12 +26,7 @@ ok
 
 ## Two kinds of callables
 
-| Construct | Runs as | Cancellable | Real time |
-|---|---|---|---|
-| `def` (a routine) | synchronous, in-place | no | no |
-| `async def` (a coroutine) | suspended object until passed to `run`/`gather` | yes (via `cancel`) | yes (via `sleep`) |
-
-A `def` body executes immediately when called. An `async def` body returns a coroutine value that does nothing until you drive it.
+A `def` body executes immediately when called. An `async def` body returns a coroutine value that does nothing until you drive it with `run` / `gather`. Only coroutines are cancellable (`cancel`) and can suspend on real time (`sleep`).
 
 ```python
 def routine():
@@ -167,7 +162,7 @@ Both are in the built-in exception namespace and match `except` clauses normally
 
 * **No preemption.** A `while True: pass` inside a coroutine blocks the scheduler.
 * **Cancellation is silent.** `cancel(coro)` stops the coroutine; the body does not see `CancelledError`. Use `with_timeout` if you need deadline semantics that propagate as exceptions.
-* **Host event loop is cooperative.** When the scheduler cannot make synchronous progress it yields a `SchedulerStatus` through `VmErr::HostYield` — `PendingTimer(deadline_ns)`, `PendingFrame`, or `PendingEvent`. Embedders drive the cycle via the `run_start` / `run_resume` / `run_push_event` exports; the bundled JS runtime (`runtime/src/engine.js`) handles it automatically with `setTimeout`, `requestAnimationFrame`, and a Promise resolved by `pushEvent`, and also auto-invokes a `main` global if the script defines one — scripts never call `run(main())` directly. The legacy `run` entry cannot resume — code that needs `sleep(n>0)`, `frame()`, or an empty `receive()` must use the driver loop. Resume re-enters the scheduler, not the dispatch loop, so statements after a top-level `run()` do not execute after a yield.
+* **Cooperative host loop.** The scheduler suspends back to the host when it cannot make synchronous progress (pending timer, frame, or event); the embedder resumes it through the `run_start` / `run_resume` / `run_push_event` exports. The legacy non-suspending `run` entry **cannot resume** — code that uses `sleep(n>0)`, `frame()`, or an empty `receive()` must run via the driver loop, and statements after a top-level `run()` do not execute after a yield.
 * **`async for`** works against any iterable accepted by `for`, *plus* coroutines and async generators (functions defined with both `async def` and `yield`). Each iteration resumes the coroutine to its next yield. There is no `__aiter__` / `__anext__` dispatch on user-defined classes — define an `async def` generator instead. Behavior over plain lists/tuples/dicts is identical to a regular `for`.
 * **`async with`** reuses the sync `with` dispatch path, invoking `__enter__` / `__exit__` on the context manager. `__aenter__` / `__aexit__` are not consulted (the async dunder forms are not dispatched). For async setup/teardown that needs `await`, use `try` / `finally` with explicit `await` calls.
 * **No async comprehensions.** `[x async for x in it]` is not supported.

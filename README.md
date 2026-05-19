@@ -1,15 +1,15 @@
 # Edge Python
 
-A compact, single-pass SSA bytecode compiler and stack VM for a sandboxed Python subset. Hand-written lexer, Pratt parser that emits bytecode directly, and a threaded-code interpreter with dual inline caching (scalar + instance-dunder), super-instruction fusion, and pure-function memoization.
+A compact bytecode compiler and stack VM for a sandboxed Python subset, written in Rust. See [Design](https://edgepython.com/implementation/design) for the architecture.
 
-Edge Python is distributed as a WebAssembly module — `compiler.wasm`, ~170 KB. It runs anywhere WebAssembly runs: browsers, Cloudflare Workers, Fastly Compute, Wasmtime, Wasmer, Spin. Sandboxed by construction; no native release artifact.
+Edge Python is distributed as a WebAssembly module — `compiler.wasm`, ~170 KB. It runs anywhere WebAssembly runs: browsers, Cloudflare Workers, Fastly Compute, Wasmtime, Wasmer, Spin. Sandboxed by construction.
 
 - **Demo:** [demo.edgepython.com](https://demo.edgepython.com/)
 - **Docs:** [edgepython.com](https://edgepython.com/)
 
 ## Repository layout
 
-This is a Cargo workspace. The root `Cargo.toml` declares the workspace members and shares profile settings; `cargo` commands work from any directory.
+Cargo workspace; commands work from any directory.
 
 ```text
 ├── .cargo
@@ -53,7 +53,7 @@ cargo build --release # Host artifacts (.rlib + cdylib) for Rust embedders.
 cargo test --release # Full test suite.
 ```
 
-Native modules come in two flavors: `.wasm` binaries any host can load by URL (per the [WASM ABI](documentation/reference/wasm-abi.md)) and in-process Rust bindings for embedders linking `compiler_lib` (full type coverage). See [Writing modules](documentation/reference/writing-modules.md).
+Native modules ship via four delivery paths (CDN `.wasm`, in-process Rust, host capability, self-contained capability `.wasm`) — see [Writing modules](https://edgepython.com/reference/writing-modules).
 
 ## Quick start
 
@@ -80,7 +80,7 @@ Two artifacts: the WASM module + the JS runtime published with this repo under [
 </script>
 ```
 
-The runtime spawns a Web Worker that pre-fetches imports, registers modules with the compiler, dispatches native calls, and streams `print()` output back. **The JS runtime is necessary in browsers:** the WebAssembly sandbox does not expose network or filesystem to the WASM module — every external resource must come through a host-side bridge, and in browsers that bridge is JavaScript. Edge Python's "no JS for the user" principle is preserved by distributing the bridge as part of the official release; the runtime is consumed the same way as any WASM library's loader (Pyodide, sql.js, etc.).
+The runtime spawns a Web Worker that pre-fetches imports, dispatches native calls, and streams `print()` output back.
 
 Build the WASM yourself:
 
@@ -90,8 +90,6 @@ cargo wasm # -> target/wasm32-unknown-unknown/release/compiler_lib.wasm  (~390 K
 # Optional: optimize with wasm-opt
 wasm-opt -Oz target/.../compiler_lib.wasm -o compiler_lib.opt.wasm
 ```
-
-`cargo wasm` is a workspace alias (`.cargo/config.toml`) for `cargo build --release --target wasm32-unknown-unknown -p edge-python`. Plain `cargo build --release` produces host-side library artifacts (`.rlib` + host cdylib) for embedders linking `compiler_lib` directly into a Rust app.
 
 ### Consume the release from a Rust host
 
@@ -117,9 +115,7 @@ fn main() {
 }
 ```
 
-`edge-python`'s own `build.rs` declares `links = "compiler_lib"` and downloads `compiler_lib.wasm` for the matching tag into `OUT_DIR`; cargo exposes its absolute path to your build script as `DEP_COMPILER_LIB_WASM`. Copy it wherever your host loads it from (e.g. a `runtime/` directory served by your JS host, or your binary's resources). Pinning to a tag gives reproducible builds; swap for `branch = "main"` when iterating against unreleased changes. Requires `curl` on the host PATH.
-
-The fetch is gated by the default-on `prebuilt` feature. Default dependency lines (above) already enable it, so nothing changes for typical consumers; if you opt out of default features for unrelated reasons, re-enable explicitly with `features = ["prebuilt"]`.
+`edge-python`'s own `build.rs` declares `links = "compiler_lib"` and downloads `compiler_lib.wasm` for the matching tag into `OUT_DIR`; cargo exposes its absolute path to your build script as `DEP_COMPILER_LIB_WASM`. Copy it wherever your host loads it from. Pinning to a tag gives reproducible builds; swap for `branch = "main"` when iterating against unreleased changes. Requires `curl` on the host PATH. The fetch is gated by the default-on `prebuilt` feature.
 
 ### Server / edge runtimes (Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute, Spin)
 
@@ -129,11 +125,9 @@ There is no built-in CLI binary. If you need one for local development, embed `c
 
 ## What it is
 
-Edge Python targets sandboxed edge computing. The language is dynamic and multi-paradigm: first-class functions, lambdas, closures, decorators (including class decorators), generators, async/await with a built-in cooperative scheduler, comprehensions, structural pattern matching, and pure-function memoization. Classes support single-level inheritance, `super()`, dunder-method dispatch (operators, indexing, iteration, context managers, etc.), and `@property` / `@x.setter`. Integers are 47-bit inline with automatic promotion to i128 LongInt on overflow; the hard cap is ±2^127.
+Edge Python targets sandboxed edge computing: a dynamic, multi-paradigm Python subset with classes, async/await, structural pattern matching, and compile-time module resolution. There is no bundled stdlib — modules are external artifacts.
 
-Imports resolve at compile time through a host-injected resolver. Bare names walk up `packages.json` manifests; quoted specs (`"./util.py"`, `"https://..."`) are loaded verbatim and may carry a `#sha256-<hex>` integrity fragment. `.py` modules are compiled and run once; native modules dispatch via the `CallExtern` opcode (either a `.wasm` loaded by URL per the public ABI, or in-process Rust closures from the embedder). There is no bundled stdlib — modules are external artifacts.
-
-For architecture details, see [`compiler/README.md`](compiler/README.md). For language reference and the import system, see the [docs](https://edgepython.com/).
+Full language reference, scope, and what intentionally isn't supported: [What Edge Python is](https://edgepython.com/getting-started/what-it-is). Architecture details: [`compiler/README.md`](compiler/README.md).
 
 ## License
 
