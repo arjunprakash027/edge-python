@@ -40,16 +40,12 @@ git clone https://github.com/dylan-sutton-chavez/edge-python-capabilities
 cd edge-python-capabilities
 
 cargo build --release
-cp target/wasm32-unknown-unknown/release/edge_python_dom.wasm dom/web/
-
-python3 -m http.server 8080 --directory dom/web
+python3 -m http.server 8080
 ```
 
-Open <http://127.0.0.1:8080/>.
+Open <http://127.0.0.1:8080/dom/web/>.
 
-The repo is a Cargo workspace — `cargo build --release` from the root builds every capability member and drops artifacts in the shared `target/` at the workspace root.
-
-Any static HTTP server works in place of `python3 -m http.server` — the VS Code [Live Server](https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer) extension is a one-click alternative (right-click `dom/web/index.html` → "Open with Live Server").
+The repo is a Cargo workspace — `cargo build --release` from the root builds every capability member and drops artifacts in the shared `target/` at the workspace root. `dom/web/index.html` references `../../target/wasm32-unknown-unknown/release/edge_python_dom.wasm` directly, so no copy step is needed — the static server has to run from the repo root, not from `dom/web/`.
 
 If the wasm32 target is missing: `rustup target add wasm32-unknown-unknown`.
 
