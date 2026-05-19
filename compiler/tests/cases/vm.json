@@ -561,6 +561,7 @@
   {"src": "async def main():\n    try:\n        evt = receive()\n        raise ValueError(evt)\n    except ValueError as e:\n        print(f'caught:{e.args[0]}')\nrun(main())", "events": ["boom"], "output": ["caught:boom"]},
   {"src": "class Box:\n    def __init__(self, v):\n        self.v = v\nasync def main():\n    evt = receive()\n    obj = Box(evt)\n    print(obj.v)\nrun(main())", "events": ["payload"], "output": ["payload"]},
   {"src": "async def main():\n    a = receive()\n    sleep(0)\n    b = receive()\n    print(f'{a}-{b}')\nrun(main())", "events": ["one", "two"], "output": ["one-two"]},
+  {"src": "class Box:\n    def __init__(self, v):\n        self.v = v\n    def use(self):\n        return self.v * 2\nasync def main():\n    evt = receive()\n    print('resumed')\n    b = Box(21)\n    print('constructed')\n    r = b.use()\n    print(f'result:{r}')\nrun(main())", "events": ["click"], "output": ["resumed", "constructed", "result:42"]},
   {"src": "async def a():\n    print('a1')\n    sleep(0)\n    print('a2')\nasync def b():\n    print('b1')\n    sleep(0)\n    print('b2')\ngather(a(), b())", "output": ["a1", "b1", "a2", "b2"]},
   {"src": "print(callable(frame))", "output": ["True"]},
   {"src": "async def f():\n    frame()\nrun(f())", "output": [], "error": "scheduler suspended"},
