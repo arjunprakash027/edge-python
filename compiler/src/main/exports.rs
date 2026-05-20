@@ -3,6 +3,7 @@ use crate::modules::parser::{Parser, Diagnostic, SSAChunk};
 use crate::modules::vm::{VM, Limits};
 use crate::modules::vm::types::{HeapObj, SchedulerStatus, VmErr};
 use alloc::{boxed::Box, string::{String, ToString}};
+use core::ptr::NonNull;
 use crate::s;
 
 use super::{ModuleEntry, PausedRun, SZ, VmGuard, now_ns_host, safe_bytes, stream_print, with_runtime, write_out};
@@ -73,6 +74,8 @@ pub unsafe extern "C" fn reset_modules() {
         rt.error_stash.clear();
         // Paused run references the now-stale module table; drop it for a clean reset.
         rt.paused_run = None;
+        // current_vm may have pointed into the dropped paused VM; clear it so a stray host_edge_* sees None instead of dangling.
+        rt.current_vm = None;
     });
 }
 
@@ -115,7 +118,7 @@ fn step_vm(mut vm: VM<'static>, src: &str, prev_paused: Option<Box<PausedRun>>) 
                 SchedulerStatus::PendingHostCall => (STATUS_PENDING_HOST_CALL, 0),
                 SchedulerStatus::Done => (STATUS_DONE, 0),
             };
-            let paused = match prev_paused {
+            let mut paused = match prev_paused {
                 Some(mut b) => {
                     b.vm = Some(vm);
                     b.last_yield_deadline_ns = deadline;
@@ -126,7 +129,12 @@ fn step_vm(mut vm: VM<'static>, src: &str, prev_paused: Option<Box<PausedRun>>) 
                     last_yield_deadline_ns: deadline,
                 }),
             };
-            with_runtime(|rt| { rt.paused_run = Some(paused); });
+            // Re-publish `current_vm` to the boxed VM so embedder calls like `host_edge_encode` (run between this yield and the next `run_resume`) can still allocate into the heap. The Box's address is stable across the move into rt.
+            let vm_ptr = paused.vm.as_mut().map(|v| NonNull::from(v).cast::<VM<'static>>());
+            with_runtime(|rt| {
+                rt.paused_run = Some(paused);
+                rt.current_vm = vm_ptr;
+            });
             kind
         }
         Err(e) => {
