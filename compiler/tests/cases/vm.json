@@ -1679,5 +1679,8 @@
   {"src": "class NotCallable:\n    pass\nNotCallable()(1)", "output": [], "error": "not callable"},
   {"src": "class P:\n    def __repr__(self):\n        return 'r'\nprint(P())\nprint(repr(P()))", "output": ["r", "r"]},
   {"src": "class P:\n    def __str__(self):\n        return 's'\n    def __repr__(self):\n        return 'r'\nprint(str(P()))\nprint(repr(P()))\nprint(f'{P()}')", "output": ["s", "r", "s"]},
-  {"src": "class P:\n    def __format__(self, spec):\n        return 'fmt[' + spec + ']'\nprint(f'{P():>10}')\nprint(format(P(), 'x'))", "output": ["fmt[>10]", "fmt[x]"]}
+  {"src": "class P:\n    def __format__(self, spec):\n        return 'fmt[' + spec + ']'\nprint(f'{P():>10}')\nprint(format(P(), 'x'))", "output": ["fmt[>10]", "fmt[x]"]},
+  {"src": "def helper():\n    return receive()\nasync def main():\n    a = helper()\n    print(a)\nrun(main())", "events": ["hi"], "output": ["hi"]},
+  {"src": "def helper(label):\n    sleep(0)\n    return label\nasync def main():\n    a = helper('x')\n    b = helper('y')\n    print(f'{a}-{b}')\nrun(main())", "output": ["x-y"]},
+  {"src": "def mount(grid, name):\n    sleep(0)\n    print(f'{grid}:{name}')\nasync def main():\n    for n in ('a', 'b', 'c'):\n        mount('g', n)\nrun(main())", "output": ["g:a", "g:b", "g:c"]}
 ]
