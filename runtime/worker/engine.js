@@ -250,7 +250,7 @@ export function dispose() {
 async function openCache(integrity) {
     if (!integrity) return new MemoryCache();
     try {
-        const { IdbCache } = await import('./cache/idb.js');
+        const { IdbCache } = await import('../src/cache/idb.js');
         const idb = new IdbCache();
         await idb.open();
         return idb;
