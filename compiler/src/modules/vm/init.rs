@@ -65,10 +65,26 @@ impl<'a> VM<'a> {
         }
     }
 
+    /* Inject `val` into the first `WaitingEvent` waiter's saved stack (innermost sync sub-frame wins) and mark it Ready; queues `val` otherwise. Shared by `push_event` and `run_push_event`. */
+    pub fn inject_event(&mut self, val: Val) {
+        let waiter = self.scheduler.iter().enumerate()
+            .find(|(_, h)| matches!(h.state, crate::modules::vm::types::CoroState::WaitingEvent))
+            .map(|(i, h)| (i, h.coro));
+        if let Some((idx, coro)) = waiter {
+            if let crate::modules::vm::types::HeapObj::Coroutine(_, _, saved_stack, _, _, sub_frames) = self.heap.get_mut(coro) {
+                let target_stack = if let Some(frame) = sub_frames.last_mut() { &mut frame.stack_delta } else { saved_stack };
+                if let Some(top) = target_stack.last_mut() { *top = val; } else { target_stack.push(val); }
+            }
+            self.scheduler[idx].state = crate::modules::vm::types::CoroState::Ready;
+        } else {
+            self.event_queue.push(val);
+        }
+    }
+
     /* Push a string event onto the event queue; consumed by the next `receive()` call. Mirrors what `run_push_event` does for WASM hosts. */
     pub fn push_event(&mut self, message: &str) -> Result<(), VmErr> {
         let val = self.heap.alloc(crate::modules::vm::types::HeapObj::Str(message.into()))?;
-        self.event_queue.push(val);
+        self.inject_event(val);
         Ok(())
     }
 
@@ -81,7 +97,14 @@ impl<'a> VM<'a> {
                     h.state = crate::modules::vm::types::CoroState::Ready;
                 }
             }
-            return self.run_until_all_done().map(|_| Val::none());
+            self.run_until_all_done()?;
+            // Surface any Errored coro (typically the module body) so the embedder sees the failure instead of a silent Ok.
+            for h in &self.scheduler {
+                if let crate::modules::vm::types::CoroState::Errored(e) = &h.state {
+                    return Err(e.clone());
+                }
+            }
+            return Ok(Val::none());
         }
         // Fresh entry. Initialise imports before user code; DFS gives topological order naturally.
         let mut in_progress: crate::util::fx::FxHashSet<String> = crate::util::fx::FxHashSet::default();

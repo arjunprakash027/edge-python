@@ -46,6 +46,8 @@ pub(crate) struct Pending {
     pub event_wait_request: bool,
     /* Set by `call_extern` on deferred native; transitions the coro to `WaitingHostCall`. */
     pub host_call_request: bool,
+    /* Set by `call_run` when a nested drain yielded; transitions the outer to `WaitingForChildren`. */
+    pub waiting_for_children: Option<(Vec<Val>, Val)>,
     /* Lifted ExcInstance from `raise X(...)` so `except X as e` binds the real instance. */
     pub exc_val: Option<Val>,
     /* `(class, self)` for the next user-function call when it's invoked as a method; populated by method-dispatch paths and consumed by `run_body_with_frame`. */
@@ -62,6 +64,7 @@ impl Pending {
             host_frame_request: false,
             event_wait_request: false,
             host_call_request: false,
+            waiting_for_children: None,
             exc_val: None,
             method_binding: None,
         }
@@ -138,6 +141,8 @@ pub struct VM<'a> {
     pub(crate) scheduler: Vec<CoroutineHandle>,
     /* Stack of currently-running coros; nested `run(...)` drivers skip these to avoid recursing into themselves. */
     pub(crate) executing_coros: Vec<Val>,
+    /* Count of scheduler entries in `WaitingForChildren`; gates the sweep so the common (zero-nested-run) tick is branch-only. */
+    pub(crate) waiting_for_children_count: usize,
     /* Host-installed wall-clock (ns). */
     pub(crate) time_hook: Option<fn() -> u64>,
     /* Fallback monotonic counter when `time_hook` is None; reset each `run()`. */
@@ -181,6 +186,7 @@ impl<'a> VM<'a> {
             call_stack: Vec::new(),
             scheduler: Vec::new(),
             executing_coros: Vec::new(),
+            waiting_for_children_count: 0,
             time_hook: None,
             virtual_clock_ns: 0,
             functions: Vec::new(),

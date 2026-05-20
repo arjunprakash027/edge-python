@@ -16,6 +16,8 @@ pub enum CoroState {
     WaitingEvent,
     /// Parked mid-`CallExtern`; resumed when the host calls `set_host_result`.
     WaitingHostCall,
+    /// Parked in `run(...)` waiting for `tasks` to finish; result of `target` lands on the outer's stack.
+    WaitingForChildren { tasks: Vec<Val>, target: Val },
     /// Next resume injects a `CancelledError` raise.
     CancelPending,
     /// Returned with this Val.

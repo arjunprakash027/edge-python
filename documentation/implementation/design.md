@@ -83,6 +83,8 @@ A plain `def` invoked from inside a coroutine that calls a yielding builtin (`sl
 
 `vm.run()` wraps the module body as an implicit `HeapObj::Coroutine` with `BodyRef::Module` on fresh entry and pushes it on the scheduler before draining; top-level statements therefore reach the same suspend path as `async def` bodies (deferred host calls, `receive()`, `sleep()` all just work at module scope). A reentrancy guard (`executing_coros`) keeps a nested `run(child)` from re-picking the actively-running outer coro and recursing on itself.
 
+A nested `run(*tasks)` that can't drain synchronously (a child parked in `WaitingEvent` / `WaitingHostCall`) pushes a `None` placeholder onto the outer's stack, transitions the outer to `CoroState::WaitingForChildren { tasks, target }`, and lets the host yield bubble out. Each scheduler tick calls `wake_waiting_outers` first: when every tracked task has reached terminal state it drops them, splices the target's result into the placeholder slot (or transitions the outer to `Errored`), and marks the outer `Ready`. Without this, the outer's saved `ip` / stack would not be persisted across the nested yield and the body would restart from its last proper suspend point on the next `run_resume`.
+
 `with` invokes `__enter__` on entry and `__exit__(exc_type, exc_val, traceback)` on exit, supporting suppression via a truthy `__exit__` return. `async with` still uses the sync `__enter__` / `__exit__` (no `__aenter__` / `__aexit__` dispatch).
 
 ## References

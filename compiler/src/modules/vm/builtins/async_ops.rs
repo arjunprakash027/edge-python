@@ -96,45 +96,89 @@ impl<'a> VM<'a> {
 
     /* `run(*coros)` — drive the scheduler until the *first* arg finishes; the rest still drain to completion (matches `gather` semantics). Returns the first result. */
     pub fn call_run(&mut self, argc: u16) -> Result<(), VmErr> {
-        let tasks = self.pop_n(argc as usize)?;
-        if tasks.is_empty() {
+        let raw_tasks = self.pop_n(argc as usize)?;
+        if raw_tasks.is_empty() {
             self.push(Val::none());
             return Ok(());
         }
-        let target = tasks[0];
+        let target = raw_tasks[0];
         // Reset per-run virtual clock so deterministic tests don't drift.
         if self.time_hook.is_none() { self.virtual_clock_ns = 0; }
-        for v in &tasks {
-            if v.is_heap() && matches!(self.heap.get(*v), HeapObj::Coroutine(..)) {
-                self.scheduler.push(CoroutineHandle {
-                    coro: *v,
-                    state: CoroState::Ready,
-                });
-            }
+        let coros: Vec<Val> = raw_tasks.into_iter()
+            .filter(|v| v.is_heap() && matches!(self.heap.get(*v), HeapObj::Coroutine(..)))
+            .collect();
+        for v in &coros {
+            self.scheduler.push(CoroutineHandle { coro: *v, state: CoroState::Ready });
         }
-        // Drain everything so concurrent coroutines all run to completion; remember the target handle's result for the return value.
-        self.run_until_all_done()?;
+        // Placeholder; replaced on completion or by the wake-loop after a nested yield.
+        self.push(Val::none());
+        match self.run_until_all_done() {
+            Ok(()) => self.finalize_run(target, &coros),
+            Err(VmErr::HostYield(_)) => {
+                self.pending.waiting_for_children = Some((coros, target));
+                self.yielded = true;
+                Ok(())
+            }
+            Err(e) => { self.stack.pop(); Err(e) }
+        }
+    }
+
+    // Extract target's terminal state, drop our scheduler handles, replace the placeholder on stack top.
+    fn finalize_run(&mut self, target: Val, coros: &[Val]) -> Result<(), VmErr> {
         let mut result = Val::none();
         if let Some(h) = self.scheduler.iter().find(|h| h.coro == target) {
             match &h.state {
                 CoroState::Done(v) => result = *v,
                 CoroState::Errored(e) => {
                     let e = e.clone();
-                    // Only drop the handles we pushed; an enclosing driver (e.g. the implicit module-body coro) may still own scheduler entries.
-                    self.scheduler.retain(|h| !tasks.contains(&h.coro));
+                    self.scheduler.retain(|h| !coros.contains(&h.coro));
+                    self.stack.pop();
                     return Err(e);
                 }
                 _ => {}
             }
         }
-        self.scheduler.retain(|h| !tasks.contains(&h.coro));
-        self.push(result);
+        self.scheduler.retain(|h| !coros.contains(&h.coro));
+        *self.stack.last_mut().unwrap() = result;
         Ok(())
+    }
+
+    // Sweep `WaitingForChildren` outers; if every tracked task is terminal, drop the children, splice the target's result into the outer's saved stack (or transition Errored), and mark the outer Ready. Gated by `waiting_for_children_count` so the zero-nested-run case is one comparison.
+    fn wake_waiting_outers(&mut self) {
+        while self.waiting_for_children_count > 0 {
+            let candidate = self.scheduler.iter().find_map(|h| {
+                let CoroState::WaitingForChildren { tasks, target } = &h.state else { return None; };
+                let all_terminal = tasks.iter().all(|t| {
+                    self.scheduler.iter().find(|c| c.coro == *t)
+                        .is_none_or(|c| matches!(c.state, CoroState::Done(_) | CoroState::Errored(_) | CoroState::Cancelled))
+                });
+                if !all_terminal { return None; }
+                Some((h.coro, tasks.clone(), *target))
+            });
+            let Some((outer, tasks, target)) = candidate else { return; };
+            let outcome = self.scheduler.iter().find(|h| h.coro == target).map(|h| h.state.clone());
+            self.scheduler.retain(|h| h.coro == outer || !tasks.contains(&h.coro));
+            let idx = self.scheduler.iter().position(|h| h.coro == outer).unwrap();
+            self.waiting_for_children_count -= 1;
+            match outcome {
+                Some(CoroState::Errored(e)) => {
+                    self.scheduler[idx].state = CoroState::Errored(e);
+                }
+                Some(CoroState::Done(v)) => {
+                    if let HeapObj::Coroutine(_, _, stack, _, _, _) = self.heap.get_mut(outer)
+                        && let Some(top) = stack.last_mut() { *top = v; }
+                    self.scheduler[idx].state = CoroState::Ready;
+                }
+                _ => { self.scheduler[idx].state = CoroState::Ready; }
+            }
+        }
     }
 
     // Drive the scheduler until every handle is terminal (Done / Errored / Cancelled). Skip currently-executing handles — `executing_coros` is non-empty when a coro called `run(...)` mid-body and we're driving its children from a nested invocation.
     pub(crate) fn run_until_all_done(&mut self) -> Result<(), VmErr> {
         loop {
+            // Wake outers parked in `WaitingForChildren` whose tracked tasks are now all terminal.
+            self.wake_waiting_outers();
             let alive = self.scheduler.iter().any(|h| !self.executing_coros.contains(&h.coro) && matches!(
                 h.state,
                 CoroState::Ready
@@ -143,6 +187,7 @@ impl<'a> VM<'a> {
                 | CoroState::WaitingFrame
                 | CoroState::WaitingEvent
                 | CoroState::WaitingHostCall
+                | CoroState::WaitingForChildren { .. }
             ));
             if !alive { return Ok(()); }
             // Pick a Ready handle; otherwise inspect parked coros to decide which kind of host
@@ -214,11 +259,12 @@ impl<'a> VM<'a> {
             self.scheduler[idx].state = CoroState::Cancelled;
             return Ok(());
         }
-        // Snapshot before resume so a yield during `sleep` / `frame` / `receive` can read it.
+        // Snapshot before resume so a yield during `sleep` / `frame` / `receive` / `run` can read it.
         self.pending.sleep_until_ns = None;
         self.pending.host_frame_request = false;
         self.pending.event_wait_request = false;
         self.pending.host_call_request = false;
+        self.pending.waiting_for_children = None;
         // Park the running coro on the executing stack so nested `run(...)` drivers skip it.
         self.executing_coros.push(coro);
         let result = self.resume_coroutine(coro);
@@ -230,7 +276,7 @@ impl<'a> VM<'a> {
             Err(VmErr::HostYield(s)) => return Err(VmErr::HostYield(s)),
             Err(e) => CoroState::Errored(e),
             Ok(v) if yielded => {
-                // Suspension precedence: sleep > frame > receive > host-call > bare yield.
+                // Suspension precedence: sleep > frame > receive > host-call > children > bare yield.
                 if let Some(until) = self.pending.sleep_until_ns.take() {
                     CoroState::Sleeping(until)
                 } else if core::mem::replace(&mut self.pending.host_frame_request, false) {
@@ -239,6 +285,9 @@ impl<'a> VM<'a> {
                     CoroState::WaitingEvent
                 } else if core::mem::replace(&mut self.pending.host_call_request, false) {
                     CoroState::WaitingHostCall
+                } else if let Some((tasks, target)) = self.pending.waiting_for_children.take() {
+                    self.waiting_for_children_count += 1;
+                    CoroState::WaitingForChildren { tasks, target }
                 } else {
                     let _ = v;
                     CoroState::Ready

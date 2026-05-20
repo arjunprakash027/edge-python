@@ -1689,5 +1689,8 @@
   {"src": "def grab():\n    return receive()\nprint(grab())\nprint(grab())", "events": ["a", "b"], "output": ["a", "b"]},
   {"src": "for evt in (receive(), receive()):\n    print(evt)", "events": ["one", "two"], "output": ["one", "two"]},
   {"src": "evt = receive()\nasync def main():\n    print(f'main:{receive()}')\nprint(f'top:{evt}')\nrun(main())", "events": ["a", "b"], "output": ["top:a", "main:b"]},
-  {"src": "print('ready')\nasync def main():\n    for _ in range(2):\n        print(receive())\nrun(main())\nprint('done')", "interactive_events": ["a", "b"], "output": ["ready", "a", "b", "done"]}
+  {"src": "print('ready')\nasync def main():\n    for _ in range(2):\n        print(receive())\nrun(main())\nprint('done')", "interactive_events": ["a", "b"], "output": ["ready", "a", "b", "done"]},
+  {"src": "async def child():\n    receive()\n    raise ValueError('boom')\nrun(child())\nprint('never')", "interactive_events": ["x"], "error": "ValueError", "output": []},
+  {"src": "async def a():\n    receive()\n    print('a done')\n    return 1\nasync def b():\n    receive()\n    receive()\n    print('b done')\n    return 2\nr = run(a(), b())\nprint(f'result={r}')", "interactive_events": ["x", "y", "z"], "output": ["a done", "b done", "result=1"]},
+  {"src": "async def child():\n    return receive()\nr = run(child())\nprint(f'got:{r}')", "events": ["hello"], "output": ["got:hello"]}
 ]
