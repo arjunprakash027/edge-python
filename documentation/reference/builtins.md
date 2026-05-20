@@ -812,7 +812,7 @@ These primitives are top-level builtins, not under `asyncio` — there is no `as
 
 ### run
 
-`run(*coros)` — drive the cooperative scheduler until the **first** argument coroutine is done; additional coroutines are added to the scheduler and run concurrently. Returns the first coroutine's result.
+`run(*coros)` — adds every argument to the scheduler, drains until **every** coroutine reaches a terminal state, and returns the **first** argument's result. Errors raised by peers other than the first are discarded; for fan-out semantics that collect every result, use `gather`.
 
 ### sleep
 
