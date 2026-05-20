@@ -22,23 +22,20 @@
     <pre id="output" class="bg-neutral-900 text-neutral-300 p-3 rounded-md text-xs mt-8 overflow-x-auto"></pre>
 
     <script type="module">
-        // Import engine.js directly instead of createWorker: the DOM bridge calls document.* which isn't available in a Web Worker.
-        import * as engine from "https://runtime.edgepython.com/js/src/engine.js";
+        import { createWorker } from "https://runtime.edgepython.com/js/src/index.js";
+        import { dom } from "../src/index.js";
 
-        const base = new URL('.', import.meta.url).href;
         const out = document.getElementById("output");
 
-        await engine.load({
+        const worker = await createWorker({
             wasmUrl: 'https://runtime.edgepython.com/js/compiler_lib.wasm',
-            imports: { dom: base + 'edge_python_dom.wasm' },
-            loaders: ['https://runtime.edgepython.com/js/loaders/capability-bridge.js'],
+            mainThreadModules: { dom },
         });
+        worker.onOutput((line) => { out.textContent += line + "\n"; });
 
-        const onLine = (line) => { out.textContent += line + "\n"; };
         try {
             const src = await (await fetch("./palette.py")).text();
-            // `engine.run` returns `out` non-empty only on VM error (print() goes through onLine).
-            const { out: trace, ms } = await engine.run({ src, onLine });
+            const { out: trace, ms } = await worker.run(src);
             if (trace) out.textContent += `[failed after ${ms.toFixed(2)} ms]\n${trace}`;
             else out.textContent += `ran in ${ms.toFixed(2)} ms`;
         } catch (e) {

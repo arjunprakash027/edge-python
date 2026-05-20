@@ -1,6 +1,8 @@
-// Factory the upstream loader eval's. Each handler slice is an object scoped inside this function;
-// `rt`, `alloc`, `node`, `allocList` and the handle tables are closure-shared.
-(rt) => {
+/* Shared handle tables + helpers. One `makeState()` per `createWorker` so multiple workers don't share `nodes[]`. */
+
+const HANDLE_NONE = -1;
+
+export const makeState = () => {
     const nodes = [];
     const bindings = [];
     const intersectionObservers = [];
@@ -8,7 +10,6 @@
     const mutationObservers = [];
     const animations = [];
     const files = [];
-    const HANDLE_NONE = -1;
 
     const alloc = (n) => {
         if (n === null || n === undefined) return HANDLE_NONE;
@@ -18,14 +19,17 @@
 
     const node = (h) => {
         if (h < 0 || h >= nodes.length || nodes[h] === null) {
-            throw new Error("invalid DOM node handle: " + h);
+            throw new Error('invalid DOM node handle: ' + h);
         }
         return nodes[h];
     };
 
     const allocList = (list) => {
-        if (!list || list.length === 0) return "";
+        if (!list || list.length === 0) return '';
         const out = new Array(list.length);
         for (let i = 0; i < list.length; i++) out[i] = alloc(list[i]);
-        return out.join(",");
+        return out.join(',');
     };
+
+    return { nodes, bindings, intersectionObservers, resizeObservers, mutationObservers, animations, files, alloc, node, allocList };
+};

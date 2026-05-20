@@ -1,13 +1,12 @@
 # Edge Python DOM
 
-DOM access for Edge Python, shipped as a single self-contained `.wasm`. Python scripts see `dom` as an ordinary module — full surface coverage: queries, mutation, events, forms, files, observers, animations, layout, media, SVG, and modern platform APIs (dialog, fullscreen, pointer lock).
+DOM access for Edge Python, shipped as a plain ESM module. Python scripts see `dom` as an ordinary module — full surface coverage: queries, mutation, events, forms, files, observers, animations, layout, media, SVG, and modern platform APIs (dialog, fullscreen, pointer lock).
 
 ```python
 from dom import query, set_text, bind_event
 
-bind_event(query("#btn"), "click", "click")
-
 async def main():
+    bind_event(query("#btn"), "click", "click")
     n = 0
     while True:
         receive()  # payload string; ignore content for a simple counter
@@ -15,37 +14,34 @@ async def main():
         set_text(query("#btn"), f"clicked {n} times")
 ```
 
+> **Note:** all DOM access must live inside an `async def` (top-level statements can't suspend on deferred host calls yet).
+
 ## Setup
 
 ```html
 <script type="module">
-    import * as engine from "https://runtime.edgepython.com/js/src/engine.js";
+    import { createWorker } from "https://runtime.edgepython.com/js/src/index.js";
+    import { dom } from "./src/index.js";
 
-    const base = new URL('.', import.meta.url).href;
-    await engine.load({
+    const worker = await createWorker({
         wasmUrl: "https://runtime.edgepython.com/js/compiler_lib.wasm",
-        imports: { dom: base + "edge_python_dom.wasm" },
-        loaders: ["https://runtime.edgepython.com/js/loaders/capability-bridge.js"],
+        mainThreadModules: { dom },
     });
-    await engine.run({ src: await (await fetch("./script.py")).text() });
+    await worker.run(await (await fetch("./script.py")).text());
 </script>
 ```
 
-DOM imports `engine.js` directly instead of `createWorker`: the bridge calls `document.*`, only available on the main thread.
+The engine runs in a Web Worker; `dom` handlers run on the page's main thread (where `document` lives) via the runtime's deferred host-call mechanism. Python sees every call as synchronous.
 
 ## Quick start
-
-Requires Rust (`wasm32-unknown-unknown` target) and Python 3.7+.
 
 ```bash
 git clone https://github.com/dylan-sutton-chavez/edge-python-capabilities
 cd edge-python-capabilities
-
-cargo build --release
 python3 -m http.server 8080
 ```
 
-Open <http://127.0.0.1:8080/dom/web/>. Missing the target? `rustup target add wasm32-unknown-unknown`.
+Open <http://127.0.0.1:8080/dom/web/>. No build step.
 
 ## API
 
@@ -182,7 +178,7 @@ async def main():
             set_attribute(query("#hero img"), "src", "/large.jpg")
 ```
 
-`observe_intersection`, `observe_resize`, `observe_mutations` and their `unobserve_*` counterparts. Each fires a `CustomEvent` per entry with observer-specific payload fields.
+`observe_intersection`, `observe_resize`, `observe_mutations` and their `unobserve_*` counterparts. Each fires a payload through `receive()` per entry with observer-specific fields.
 
 ### Animations
 
@@ -234,49 +230,19 @@ append_child(query("svg"), circle)
 
 ## How it works
 
-The Rust crate (`src/lib.rs`, ~12 lines) is a carrier: it embeds a JS bridge as static bytes and exposes two exports — `edge_capability_bridge_ptr` and `edge_capability_bridge_len` — that the upstream loader reads at load time.
+The module is a factory `(ctx) => handlers`. `src/state.js` opens a fresh closure per `createWorker` with the handle tables (`nodes`, `bindings`, `files`, observers, animations) and the `alloc` / `node` / `allocList` helpers. Eight handler slices (`tree`, `style`, `events`, `forms`, `observers`, `animations`, `media`, `platform`) each return an object literal of named handlers that close over the shared state; `src/index.js` composes them with `Object.assign`. Async callbacks (event listeners, `FileReader`, animation `finished`, observer entries) call `ctx.pushEvent(jsonDetail)` to wake a paused `receive()` in the script.
 
-The bridge lives under `src/bridge/`, composed from nine small JS modules:
-
-```
-state.js        handle tables + helpers
-tree.js         selection, traversal, mutation, content, attrs, classes, dataset
-style.js        CSSOM, layout queries, focus
-events.js       bind / unbind / dispatch + synthetic click
-forms.js        value, checked, submit/reset, FormData, Validity, files
-observers.js    Intersection / Resize / Mutation
-animations.js   Web Animations API
-media.js        <video> / <audio> controls
-platform.js     <dialog>, fullscreen, pointer lock, SVG geometry
-bridge.js       composer (factory the loader eval's)
-```
-
-The fragments are concatenated by `build.rs` into a single arrow-function factory. `state.js` opens it (`(rt) => { ... }`) and declares the handle tables plus `alloc` / `node` / `allocList` helpers. The middle modules contribute object literals (`const tree = { ... };`) that close over those helpers and over `rt`. `bridge.js` closes the factory with `return Object.assign({}, tree, style, events, forms, observers, animationsApi, media, platform); }`. The order is declared explicitly in `PARTS` so renaming a file doesn't break composition.
-
-Adding a handler is one entry in one JS module. The Rust carrier never grows.
+Adding a handler is one entry in one slice. Nothing else changes.
 
 ## Performance
 
-Per-handler bridge cost: ~2.75 µs in debug, ~0.7 µs in release (the CDN-served `compiler_lib.wasm` is `wasm-opt -O3`).
+Per-handler cost is one `postMessage` round-trip between the Worker (engine) and the main thread (handlers): ~0.1–0.4 ms in modern browsers. Plenty of headroom for UI-rate workloads — events, mutations, layout — at hundreds of ops per frame.
 
-For a 16.67 ms frame budget at 60fps with ~3 ms of one-time `engine.run` overhead, you can touch roughly:
-
-- ~1,000 nodes/frame in debug, ~3,000+ in release
-- ~1,300 / ~4,000 inside a long-lived script (no per-frame Python re-parse)
-
-Comfortable workloads: dashboards, forms, dialogs, reactive lists (hundreds of nodes per update), real-time charts (~500 points/frame), drag-and-drop with live repositioning.
-
-Bad fit: pixel-precise renders or particle systems with thousands of active sprites — pair with a `<canvas>` capability for the framebuffer path.
-
-## Trade-offs
-
-**Wire-ABI overhead per op.** Every DOM call pays several WASM↔JS crossings (dispatch entry, argument decode, return encode). A canonical in-process Rust binding would skip that. We accepted it because the carrier stays at ~12 lines of Rust (no wasm-pdk dispatch surface, no allocator, no panic-stash plumbing) and the bridge is plain JS — easier to read and evolve than Rust-with-FFI. Invisible for typical UI workloads; shows up only in tight loops of thousands of fine-grained ops per frame.
-
-**Requires CSP `'unsafe-eval'`.** The loader compiles the embedded bridge with `new Function(src)`, which strict Content-Security-Policy headers block. Affected: Chrome Extensions MV3, sandboxed iframes, some bank/gov/healthcare sites. Most web apps ship permissive CSP and work out of the box.
+Bad fit: tight per-frame loops with thousands of fine-grained ops, or pixel-precise renders. Pair with a `<canvas>` capability for the framebuffer path.
 
 ## Distribution
 
-Only `edge_python_dom.wasm` is built and served from this repo. `compiler_lib.wasm` and the JS engine both come from `runtime.edgepython.com` at page load — no vendored copy lives here, no build script reaches out to fetch them.
+This repo serves only the JS sources. `compiler_lib.wasm` and the Edge Python runtime both come from `runtime.edgepython.com` at page load — no vendored copy here, no build step.
 
 ## License
 
