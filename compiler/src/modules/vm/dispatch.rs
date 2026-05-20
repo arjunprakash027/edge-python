@@ -136,7 +136,8 @@ impl<'a> VM<'a> {
     pub(crate) fn exec(&mut self, chunk: &SSAChunk, slots: &mut [Val]) -> Result<Val, VmErr> {
 
         let slots_base = self.live_slots.len();
-        let exc_base = self.exception_stack.len();
+        // `resume_coroutine` pre-pushes restored exception frames before calling us; honor its override so dispatch's handler search includes them.
+        let exc_base = self.pending_exec_exc_base.take().unwrap_or(self.exception_stack.len());
         let key = chunk as *const _;
 
         let mut cache = self.opcode_caches.remove(&key).unwrap_or_else(|| OpcodeCache::new(chunk));
@@ -176,7 +177,7 @@ impl<'a> VM<'a> {
                             let val = if event_yield || sub_call_yield || child_yield { Val::none() } else { self.pop().unwrap_or(Val::none()) };
                             self.resume_ip = if !event_yield && !sub_call_yield && !child_yield && ip < n && matches!(insns.get(ip), Some(ins) if ins.opcode == OpCode::PopTop) { ip + 1 } else { ip };
                             self.live_slots.truncate(slots_base);
-                            self.exception_stack.truncate(exc_base);
+                            // DON'T truncate exception_stack here — frames pushed in this exec belong to active try/except blocks; the enclosing `resume_coroutine` drains them into the coroutine's saved state so `try` survives the yield.
                             return Ok(val);
                         }
                     }

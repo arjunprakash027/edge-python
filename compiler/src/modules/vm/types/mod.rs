@@ -164,8 +164,8 @@ pub enum HeapObj {
     Property(Val, Val),
     // Intermediate produced by `prop.setter`: callable that takes a function and returns a new `Property` with the setter attached.
     PropertySetter(Val),
-    // Trailing `Vec<SyncFrame>` stacks suspended sync sub-calls (innermost-last): plain user fns called from this coro that hit a yielding builtin before returning. Resume walks inside-out so each return lands on the next frame's stack at the Call site. `BodyRef` discriminates user-fn coroutines from the implicit module-body coro.
-    Coroutine(usize, Vec<Val>, Vec<Val>, BodyRef, Vec<IterFrame>, Vec<SyncFrame>),
+    // Trailing `Vec<SyncFrame>` stacks suspended sync sub-calls (innermost-last): plain user fns called from this coro that hit a yielding builtin before returning. Resume walks inside-out so each return lands on the next frame's stack at the Call site. `BodyRef` discriminates user-fn coroutines from the implicit module-body coro. The final `Vec<ExceptionFrame>` carries this coro's try/except frames across yields so cross-yield `try` works.
+    Coroutine(usize, Vec<Val>, Vec<Val>, BodyRef, Vec<IterFrame>, Vec<SyncFrame>, Vec<ExceptionFrame>),
     /* Produced by `import m`; attr access via LoadAttr, calls fuse through CallMethod. */
     Module(String, Vec<(String, Val)>),
     /* A native binding lifted to a first-class callable. */
@@ -309,7 +309,7 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
             f(*cls);
             for (k, v) in attrs.borrow().iter() { f(k); f(v); }
         }
-        HeapObj::Coroutine(_, slots, stack, _, iters, sub_frames) => {
+        HeapObj::Coroutine(_, slots, stack, _, iters, sub_frames, _) => {
             for &v in slots { f(v); }
             for &v in stack { f(v); }
             for fr in iters { match fr {

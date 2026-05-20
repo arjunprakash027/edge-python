@@ -254,7 +254,7 @@ pub unsafe extern "C" fn set_host_result(handle: u32) -> i32 {
             .find(|(_, h)| matches!(h.state, crate::modules::vm::types::CoroState::WaitingHostCall))
             .map(|(i, h)| (i, h.coro));
         let Some((idx, coro)) = waiter else { return 2; };
-        if let crate::modules::vm::types::HeapObj::Coroutine(_, _, saved_stack, _, _, sub_frames) = vm.heap.get_mut(coro) {
+        if let crate::modules::vm::types::HeapObj::Coroutine(_, _, saved_stack, _, _, sub_frames, _) = vm.heap.get_mut(coro) {
             let target_stack = if let Some(frame) = sub_frames.last_mut() { &mut frame.stack_delta } else { saved_stack };
             if let Some(top) = target_stack.last_mut() { *top = val; } else { target_stack.push(val); }
         }

@@ -71,7 +71,7 @@ impl<'a> VM<'a> {
             .find(|(_, h)| matches!(h.state, crate::modules::vm::types::CoroState::WaitingEvent))
             .map(|(i, h)| (i, h.coro));
         if let Some((idx, coro)) = waiter {
-            if let crate::modules::vm::types::HeapObj::Coroutine(_, _, saved_stack, _, _, sub_frames) = self.heap.get_mut(coro) {
+            if let crate::modules::vm::types::HeapObj::Coroutine(_, _, saved_stack, _, _, sub_frames, _) = self.heap.get_mut(coro) {
                 let target_stack = if let Some(frame) = sub_frames.last_mut() { &mut frame.stack_delta } else { saved_stack };
                 if let Some(top) = target_stack.last_mut() { *top = val; } else { target_stack.push(val); }
             }
@@ -91,43 +91,49 @@ impl<'a> VM<'a> {
     pub fn run(&mut self) -> Result<Val, VmErr> {
         self.error_byte_pos = None;
         // Resume path: scheduler non-empty means a prior `run()` yielded; wake `WaitingFrame` (rAF fired) and drain.
-        if !self.scheduler.is_empty() {
+        let fresh_entry = self.scheduler.is_empty();
+        if fresh_entry {
+            // Fresh entry. Initialise imports before user code; DFS gives topological order naturally.
+            let mut in_progress: crate::util::fx::FxHashSet<String> = crate::util::fx::FxHashSet::default();
+            self.init_modules(self.chunk, &mut in_progress)?;
+            // Wrap the module body as an implicit coroutine; lets top-level statements suspend on deferred host calls (DOM, sleep, receive) through the same scheduler path as `async def`.
+            let slots = self.fill_builtins(&self.chunk.names);
+            let coro = self.heap.alloc(HeapObj::Coroutine(
+                0, slots, Vec::new(),
+                crate::modules::vm::types::BodyRef::Module,
+                Vec::new(), Vec::new(), Vec::new(),
+            ))?;
+            self.scheduler.push(crate::modules::vm::types::CoroutineHandle {
+                coro,
+                state: crate::modules::vm::types::CoroState::Ready,
+            });
+        } else {
             for h in self.scheduler.iter_mut() {
                 if matches!(h.state, crate::modules::vm::types::CoroState::WaitingFrame) {
                     h.state = crate::modules::vm::types::CoroState::Ready;
                 }
             }
-            self.run_until_all_done()?;
-            // Surface any Errored coro (typically the module body) so the embedder sees the failure instead of a silent Ok.
-            for h in &self.scheduler {
-                if let crate::modules::vm::types::CoroState::Errored(e) = &h.state {
-                    return Err(e.clone());
-                }
-            }
-            return Ok(Val::none());
         }
-        // Fresh entry. Initialise imports before user code; DFS gives topological order naturally.
-        let mut in_progress: crate::util::fx::FxHashSet<String> = crate::util::fx::FxHashSet::default();
-        self.init_modules(self.chunk, &mut in_progress)?;
-        // Wrap the module body as an implicit coroutine; lets top-level statements suspend on deferred host calls (DOM, sleep, receive) through the same scheduler path as `async def`.
-        let slots = self.fill_builtins(&self.chunk.names);
-        let coro = self.heap.alloc(HeapObj::Coroutine(
-            0, slots, Vec::new(),
-            crate::modules::vm::types::BodyRef::Module,
-            Vec::new(), Vec::new(),
-        ))?;
-        self.scheduler.push(crate::modules::vm::types::CoroutineHandle {
-            coro,
-            state: crate::modules::vm::types::CoroState::Ready,
-        });
-        self.run_until_all_done()?;
-        let outcome = self.scheduler.iter().find(|h| h.coro == coro).map(|h| h.state.clone());
-        self.scheduler.clear();
-        match outcome {
-            Some(crate::modules::vm::types::CoroState::Done(v)) => Ok(v),
-            Some(crate::modules::vm::types::CoroState::Errored(e)) => Err(e),
-            _ => Ok(Val::none()),
+        self.top_loop()?;
+        // Inspect the module body's outcome (BodyRef::Module). Single entry point for both fresh and resume.
+        let module_coro = self.scheduler.iter().find(|h| {
+            matches!(self.heap.get(h.coro), HeapObj::Coroutine(_, _, _, crate::modules::vm::types::BodyRef::Module, _, _, _))
+        }).map(|h| (h.coro, h.state.clone()));
+        if let Some((_coro, state)) = module_coro {
+            // Clear the scheduler only once the module body is terminal — otherwise we're mid-yield and need to keep it for the next resume.
+            let terminal = matches!(state,
+                crate::modules::vm::types::CoroState::Done(_)
+                | crate::modules::vm::types::CoroState::Errored(_)
+                | crate::modules::vm::types::CoroState::Cancelled);
+            if terminal { self.scheduler.clear(); }
+            return match state {
+                crate::modules::vm::types::CoroState::Done(v) => Ok(v),
+                crate::modules::vm::types::CoroState::Errored(e) => Err(e),
+                crate::modules::vm::types::CoroState::Cancelled => Err(VmErr::Raised("CancelledError".into())),
+                _ => Ok(Val::none()),
+            };
         }
+        Ok(Val::none())
     }
 
     /* Init each unique import once; code modules run their top-level, native ones just bind. `in_progress` catches cycles cleanly. */

@@ -81,7 +81,7 @@ b step 2
 
 ## gather
 
-`gather(*coros)` runs every argument concurrently and returns a list of their results in argument order. If any coroutine raises, the others are cancelled and the first error propagates.
+`gather(*coros)` runs every argument concurrently and returns a list of their results in argument order. If any coroutine raises, the first error (in argument order) propagates after all peers reach a terminal state — surviving peers are **not** auto-cancelled.
 
 ```python
 async def fetch(name, delay):
@@ -147,7 +147,7 @@ async def loop_forever():
     sleep(0) # cancellable from this point on
 ```
 
-For deadline-driven cancellation use `with_timeout`. For peer-cancellation on error use `gather` (it cancels surviving peers automatically).
+For deadline-driven cancellation use `with_timeout`.
 
 ## Exception types
 

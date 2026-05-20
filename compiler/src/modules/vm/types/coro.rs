@@ -16,8 +16,8 @@ pub enum CoroState {
     WaitingEvent,
     /// Parked mid-`CallExtern`; resumed when the host calls `set_host_result`.
     WaitingHostCall,
-    /// Parked in `run(...)` waiting for `tasks` to finish; result of `target` lands on the outer's stack.
-    WaitingForChildren { tasks: Vec<Val>, target: Val },
+    /// Parked in `run(...)` / `gather(...)` / `with_timeout(...)` until `tasks` all terminate; `kind` selects how to finalize.
+    WaitingForChildren { tasks: Vec<Val>, kind: WaitKind },
     /// Next resume injects a `CancelledError` raise.
     CancelPending,
     /// Returned with this Val.
@@ -28,6 +28,14 @@ pub enum CoroState {
     Cancelled,
 }
 
+/* How `WaitingForChildren` finalizes when its tasks all reach terminal: `Run` returns target's value (or its error); `Gather` returns a list of all values (or the first error); `Timeout` returns the target's value, or `TimeoutError` if the deadline expired before completion. */
+#[derive(Clone, Debug)]
+pub enum WaitKind {
+    Run(Val),
+    Gather,
+    Timeout { deadline_ns: u64, target: Val },
+}
+
 #[derive(Clone, Debug)]
 pub struct CoroutineHandle {
     /// User-provided Coroutine HeapObj.
@@ -35,7 +43,7 @@ pub struct CoroutineHandle {
     pub state: CoroState,
 }
 
-// Suspended sync helper frame: a plain user fn called from a coroutine hit a yielding builtin mid-execution, so its state is snapshotted and parked on the enclosing Coroutine. Frames stack innermost-last; resume walks inside-out so each return value lands on the next frame's stack at the Call site.
+// Suspended sync helper frame: a plain user fn called from a coroutine hit a yielding builtin mid-execution, so its state is snapshotted and parked on the enclosing Coroutine. Frames stack innermost-last; resume walks inside-out so each return value lands on the next frame's stack at the Call site. `exception_delta` carries the helper's try/except frames pushed in its exec so they survive the yield.
 #[derive(Clone, Debug)]
 pub struct SyncFrame {
     pub ip: usize,
@@ -43,6 +51,16 @@ pub struct SyncFrame {
     pub slots: Vec<Val>,
     pub stack_delta: Vec<Val>,
     pub iter_delta: Vec<IterFrame>,
+    pub exception_delta: Vec<ExceptionFrame>,
+}
+
+/* Saved stack/iter/with depths for unwinding to a try arm's handler. Stored on the active Coroutine so `try`/`except` survives yields. */
+#[derive(Clone, Debug)]
+pub struct ExceptionFrame {
+    pub handler_ip: usize,
+    pub stack_depth: usize,
+    pub iter_depth: usize,
+    pub with_depth: usize,
 }
 
 // Coroutine body: user fn (Fn) or the implicit module-body coro (Module → self.chunk).

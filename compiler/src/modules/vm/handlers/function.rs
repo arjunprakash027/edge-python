@@ -145,15 +145,16 @@ impl<'a> VM<'a> {
         // Generator/coroutine: return a suspended Coroutine instead of running. Both flags are O(1).
         let is_async_fn = self.is_async.get(fi).copied().unwrap_or(false);
         if is_async_fn || body.is_generator {
-            let coro = self.heap.alloc(HeapObj::Coroutine(0, fn_slots, Vec::new(), BodyRef::Fn(fi), Vec::new(), Vec::new()))?;
+            let coro = self.heap.alloc(HeapObj::Coroutine(0, fn_slots, Vec::new(), BodyRef::Fn(fi), Vec::new(), Vec::new(), Vec::new()))?;
             self.push(coro);
             self.depth -= 1;
             return Ok(());
         }
 
-        // Snapshot caller-visible depths so we can split the helper's stack/iter contributions out if it suspends mid-body via a yielding builtin.
+        // Snapshot caller-visible depths so we can split the helper's stack/iter/exception contributions out if it suspends mid-body via a yielding builtin.
         let stack_base = self.stack.len();
         let iter_base = self.iter_stack.len();
+        let exc_base = self.exception_stack.len();
         let yields_before = self.yields.len();
         let (callee_impure, exec_result) = self.run_body_with_frame(fi, body, chunk, &mut fn_slots, slots);
         self.depth -= 1;
@@ -169,9 +170,18 @@ impl<'a> VM<'a> {
             self.resume_ip = 0;
             let helper_stack_delta = if self.stack.len() > stack_base { self.stack.split_off(stack_base) } else { Vec::new() };
             let helper_iter_delta: Vec<IterFrame> = if self.iter_stack.len() > iter_base { self.iter_stack.drain(iter_base..).collect() } else { Vec::new() };
+            let helper_exc_delta: Vec<ExceptionFrame> = if self.exception_stack.len() > exc_base {
+                self.exception_stack.drain(exc_base..)
+                    .map(|mut f| {
+                        f.stack_depth = f.stack_depth.saturating_sub(stack_base);
+                        f.iter_depth = f.iter_depth.saturating_sub(iter_base);
+                        f
+                    })
+                    .collect()
+            } else { Vec::new() };
             self.pending_sync_frames.push(SyncFrame {
                 ip: helper_resume_ip, fi, slots: fn_slots,
-                stack_delta: helper_stack_delta, iter_delta: helper_iter_delta,
+                stack_delta: helper_stack_delta, iter_delta: helper_iter_delta, exception_delta: helper_exc_delta,
             });
             return Ok(());
         }

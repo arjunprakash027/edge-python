@@ -1692,5 +1692,10 @@
   {"src": "print('ready')\nasync def main():\n    for _ in range(2):\n        print(receive())\nrun(main())\nprint('done')", "interactive_events": ["a", "b"], "output": ["ready", "a", "b", "done"]},
   {"src": "async def child():\n    receive()\n    raise ValueError('boom')\nrun(child())\nprint('never')", "interactive_events": ["x"], "error": "ValueError", "output": []},
   {"src": "async def a():\n    receive()\n    print('a done')\n    return 1\nasync def b():\n    receive()\n    receive()\n    print('b done')\n    return 2\nr = run(a(), b())\nprint(f'result={r}')", "interactive_events": ["x", "y", "z"], "output": ["a done", "b done", "result=1"]},
-  {"src": "async def child():\n    return receive()\nr = run(child())\nprint(f'got:{r}')", "events": ["hello"], "output": ["got:hello"]}
+  {"src": "async def child():\n    return receive()\nr = run(child())\nprint(f'got:{r}')", "events": ["hello"], "output": ["got:hello"]},
+  {"src": "async def inner():\n    receive()\n    return 'inner'\nasync def outer():\n    r = run(inner())\n    return r + ':outer'\nprint(run(outer()))", "interactive_events": ["x"], "output": ["inner:outer"]},
+  {"src": "async def child():\n    receive()\n    return 42\nr = run(child())\nprint(r + 1)", "interactive_events": ["x"], "output": ["43"]},
+  {"src": "r = run(42)\nprint(r)", "output": ["None"]},
+  {"src": "async def first():\n    return receive()\nasync def second():\n    return receive()\nprint(run(first()))\nprint(run(second()))", "interactive_events": ["one", "two"], "output": ["one", "two"]},
+  {"src": "async def child():\n    receive()\n    return receive()\ntry:\n    r = run(child())\n    print(f'ok:{r}')\nexcept Exception as e:\n    print(f'err:{e}')", "interactive_events": ["a", "b"], "output": ["ok:b"]}
 ]

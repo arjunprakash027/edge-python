@@ -835,7 +835,7 @@ async def animate(node):
 
 ### gather
 
-`gather(*coros)` — concurrent fan-out. Adds every argument to the scheduler, drains until each is terminal, returns a list of their results in argument order. First error cancels remaining peers and propagates.
+`gather(*coros)` — concurrent fan-out. Adds every argument to the scheduler, drains until each is terminal, returns a list of their results in argument order. If any coroutine raised, the first error (in argument order) propagates after all peers reach a terminal state.
 
 ```python
 async def task(n):

@@ -21,6 +21,18 @@ impl<'a> VM<'a> {
         for &v in &self.with_stack { self.heap.mark(v); }
         for &v in &self.yields { self.heap.mark(v); }
         for &v in &self.event_queue { self.heap.mark(v); }
+        // Scheduler holds parked coroutines (and their `WaitingForChildren` task lists) across `top_loop` resumes; mark them so the saved state isn't swept under us.
+        for handle in &self.scheduler {
+            self.heap.mark(handle.coro);
+            if let CoroState::WaitingForChildren { tasks, kind } = &handle.state {
+                for &t in tasks { self.heap.mark(t); }
+                match kind {
+                    WaitKind::Run(t) => self.heap.mark(*t),
+                    WaitKind::Timeout { target, .. } => self.heap.mark(*target),
+                    WaitKind::Gather => {}
+                }
+            }
+        }
         for &v in current_slots { self.heap.mark(v); }
         for &v in &self.live_slots { self.heap.mark(v); }
         for tpl in &self.slot_templates {

@@ -20,13 +20,7 @@ use types::*;
 use cache::{OpcodeCache, Templates};
 use alloc::{string::{String, ToString}, vec::Vec};
 
-/* Saved stack/iter/with depths for unwinding to a try arm's handler. */
-pub(crate) struct ExceptionFrame {
-    pub handler_ip: usize,
-    pub stack_depth: usize,
-    pub iter_depth: usize,
-    pub with_depth: usize,
-}
+pub(crate) use types::ExceptionFrame;
 
 #[derive(Clone, Copy)]
 pub(crate) enum ParamKind { Normal, Star, DoubleStar, KwOnly }
@@ -46,8 +40,8 @@ pub(crate) struct Pending {
     pub event_wait_request: bool,
     /* Set by `call_extern` on deferred native; transitions the coro to `WaitingHostCall`. */
     pub host_call_request: bool,
-    /* Set by `call_run` when a nested drain yielded; transitions the outer to `WaitingForChildren`. */
-    pub waiting_for_children: Option<(Vec<Val>, Val)>,
+    /* Set by `call_run` / `call_gather` / `call_with_timeout` when they yield; transitions the outer to `WaitingForChildren`. */
+    pub waiting_for_children: Option<(Vec<Val>, types::WaitKind)>,
     /* Lifted ExcInstance from `raise X(...)` so `except X as e` binds the real instance. */
     pub exc_val: Option<Val>,
     /* `(class, self)` for the next user-function call when it's invoked as a method; populated by method-dispatch paths and consumed by `run_body_with_frame`. */
@@ -120,6 +114,8 @@ pub struct VM<'a> {
     pub(crate) pending: Pending,
     /* Sync helpers that suspended during the current resume; drained into the active Coroutine on yield-save. Lives at VM scope (not `Pending`) because it propagates across dispatch frames, not within one. */
     pub(crate) pending_sync_frames: Vec<types::SyncFrame>,
+    /* Overrides `exec`'s captured `exc_base`. Set by `resume_coroutine` to the level *before* restored exception frames so dispatch's handler search includes them; consumed once at exec entry. */
+    pub(crate) pending_exec_exc_base: Option<usize>,
     pub(crate) yielded: bool,
     pub(crate) resume_ip: usize,
     pub output: Vec<String>,
@@ -137,11 +133,9 @@ pub struct VM<'a> {
     pub(crate) function_names: Vec<String>,
     /* Active call frames (innermost at end); drained by the traceback renderer on error. */
     pub(crate) call_stack: Vec<CallFrame>,
-    /* Cooperative scheduler for `run` / `gather` / `with_timeout`; one handle per coroutine. */
+    /* Cooperative scheduler for `run` / `gather` / `with_timeout`; one handle per coroutine. Single-driver model: only `top_loop` drives this — async builtins yield instead of recursing. */
     pub(crate) scheduler: Vec<CoroutineHandle>,
-    /* Stack of currently-running coros; nested `run(...)` drivers skip these to avoid recursing into themselves. */
-    pub(crate) executing_coros: Vec<Val>,
-    /* Count of scheduler entries in `WaitingForChildren`; gates the sweep so the common (zero-nested-run) tick is branch-only. */
+    /* Count of scheduler entries in `WaitingForChildren`; gates the sweep so the common (no-nested-run) tick is one comparison. */
     pub(crate) waiting_for_children_count: usize,
     /* Host-installed wall-clock (ns). */
     pub(crate) time_hook: Option<fn() -> u64>,
@@ -170,6 +164,7 @@ impl<'a> VM<'a> {
             with_stack: Vec::new(),
             pending: Pending::new(),
             pending_sync_frames: Vec::new(),
+            pending_exec_exc_base: None,
             yielded: false,
             resume_ip: 0,
             strict_input: false,
@@ -185,7 +180,6 @@ impl<'a> VM<'a> {
             function_names: Vec::new(),
             call_stack: Vec::new(),
             scheduler: Vec::new(),
-            executing_coros: Vec::new(),
             waiting_for_children_count: 0,
             time_hook: None,
             virtual_clock_ns: 0,
