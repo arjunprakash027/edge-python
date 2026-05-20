@@ -16,6 +16,8 @@ pub enum VmErr {
     Attribute(String),
     Raised(String),
     HostYield(SchedulerStatus),
+    /// Native `CallExtern` deferred to host; caught locally by `call_extern`, never propagates.
+    HostCallDeferred,
 }
 
 impl VmErr {
@@ -34,6 +36,8 @@ impl VmErr {
             Self::Raised(s) => s.clone(),
             // Unreachable in correct hosts; embedder catches HostYield before traceback rendering.
             Self::HostYield(_) => "_HostYield".into(),
+            // Caught locally in call_extern; unreachable here.
+            Self::HostCallDeferred => "_HostCallDeferred".into(),
         }
     }
 
@@ -52,6 +56,7 @@ impl VmErr {
             Self::Name(_) => "NameError",
             Self::Raised(_) => "Exception",
             Self::HostYield(_) => "host yield requested",
+            Self::HostCallDeferred => "native call deferred to host",
         }
     }
 
@@ -66,6 +71,7 @@ impl VmErr {
             Self::Runtime(m) => s!("RuntimeError: ", str m),
             Self::Attribute(m) => s!("AttributeError: ", str m),
             Self::HostYield(_) => alloc::string::String::from("RuntimeError: scheduler suspended; embedder must drive `run_start` / `run_resume`"),
+            Self::HostCallDeferred => alloc::string::String::from("RuntimeError: HostCallDeferred leaked past `call_extern` (compiler bug)"),
             other => alloc::string::String::from(other.as_str()),
         }
     }
@@ -83,6 +89,7 @@ impl VmErr {
             Self::Heap => String::from("heap limit"),
             Self::Budget => String::from("budget exceeded"),
             Self::HostYield(_) => String::from("scheduler suspended; embedder must drive run_start / run_resume"),
+            Self::HostCallDeferred => String::from("native call deferred to host"),
         }
     }
 

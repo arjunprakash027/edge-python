@@ -14,6 +14,8 @@ pub enum CoroState {
     WaitingFrame,
     /// Parked in `receive()` with an empty queue; resumed when the host pushes a message.
     WaitingEvent,
+    /// Parked mid-`CallExtern`; resumed when the host calls `set_host_result`.
+    WaitingHostCall,
     /// Next resume injects a `CancelledError` raise.
     CancelPending,
     /// Returned with this Val.

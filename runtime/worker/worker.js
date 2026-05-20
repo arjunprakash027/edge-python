@@ -2,16 +2,36 @@
 Web Worker entry. Receives postMessage requests from `createWorker`, dispatches to the engine, posts responses.
 */
 
-import * as engine from '../src/engine.js';
+import * as engine from './engine.js';
 
 const onLine = (text) => self.postMessage({ type: 'line', text });
 
+/* Deferred host calls: post `{type:'host-call', reqId, module, name, args}` to main and await `{type:'host-call-response'}`. */
+let nextHostReqId = 0;
+const pendingHostCalls = new Map();
+
+engine.setHostCallDelegate((module, name, args) => new Promise((resolve, reject) => {
+    const reqId = ++nextHostReqId;
+    pendingHostCalls.set(reqId, { resolve, reject });
+    self.postMessage({ type: 'host-call', reqId, module, name, args });
+}));
+
 const handlers = {
-    load: (data) => engine.load(data.opts),
+    load: (data) => engine.load(data.opts, data.mainThreadManifests),
     run: (data) => engine.run({ ...data, onLine }),
     reset: () => engine.reset(),
     clearCache: () => engine.clearCache(),
     dispose: () => { engine.dispose(); self.close(); },
+    /* Wake a paused `receive()` in the running script; fire-and-forget, no response needed. */
+    'push-event': (data) => engine.pushEvent(data.message),
+    /* Main thread answered a deferred host call; resolve the waiting delegate Promise. */
+    'host-call-response': (data) => {
+        const cb = pendingHostCalls.get(data.reqId);
+        if (!cb) return;
+        pendingHostCalls.delete(data.reqId);
+        if (data.error) cb.reject(new Error(data.error));
+        else cb.resolve(data.value);
+    },
 };
 
 self.onmessage = async ({ data }) => {
@@ -22,7 +42,8 @@ self.onmessage = async ({ data }) => {
     }
     try {
         const result = await handler(data);
-        if (data.reqId != null) {
+        /* Fire-and-forget message types skip the response post; only reply when an outer reqId was attached. */
+        if (data.reqId != null && data.type !== 'host-call-response' && data.type !== 'push-event') {
             self.postMessage({ type: 'response', reqId: data.reqId, result });
         }
     } catch (e) {

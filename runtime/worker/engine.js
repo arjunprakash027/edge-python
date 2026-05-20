@@ -1,12 +1,12 @@
 /*
-Engine orchestrator (runs inside the Worker). Lifecycle: `load` once → many `run` cycles → `dispose`. Each run instantiates compiler_lib fresh so prior-run state cannot leak.
+Engine orchestrator. Internal to the Worker — consumers go through `createWorker` in `src/index.js`. Lifecycle: `load` once → many `run` cycles → `dispose`. Each run instantiates compiler_lib fresh so prior-run state cannot leak.
 */
 
-import { MemoryCache } from './cache/memory.js';
-import { bfsPrefetch } from './prefetch.js';
-import { makeCompilerEnv } from './env.js';
-import { makeRt } from './rt.js';
-import { nativeTable, resetNativeTable } from './native.js';
+import { MemoryCache } from '../src/cache/memory.js';
+import { bfsPrefetch } from '../src/prefetch.js';
+import { makeCompilerEnv } from '../src/env.js';
+import { makeRt } from '../src/rt.js';
+import { nativeTable, resetNativeTable } from '../src/native.js';
 
 const SOURCE_LIMIT = 1 << 20; // 1 MiB
 const TE = new TextEncoder();
@@ -20,6 +20,7 @@ const STATUS_PENDING_TIMER = 1;
 const STATUS_PENDING_FRAME = 2;
 const STATUS_PENDING_EVENT = 3;
 const STATUS_ERROR = 4;
+const STATUS_PENDING_HOST_CALL = 5;
 
 // Worker-lifetime state
 let wasmModule = null;
@@ -30,11 +31,17 @@ let loaders = [];
 let importsMap = null;
 // Resolves run()'s current `await` when a `PendingEvent` wake-up arrives via `pushEvent`.
 let eventWaiter = null;
+/* Captured by env.host_call_native on DEFERRED; consumed by the PENDING_HOST_CALL driver branch. */
+let pendingHostCall = null;
+/* (name, args) => Promise<value>. Set by worker.js (postMessage round-trip) or by a main-thread embedder. */
+let hostCallDelegate = null;
 // Source/missing caches persist across runs so the BFS doesn't re-fetch every module — and especially doesn't re-probe 404'd `packages.json` paths — on every Run-button press. Wiped by `clearCache()`.
 const fetchedSources = new Map();
 const knownMissing = new Set();
+/* Synthetic native modules (handlers live on main thread). Re-applied at every `run` since `resetNativeTable` clears them. */
+let mainThreadManifests = [];
 
-export async function load({ wasmUrl, integrity = true, loaders: loaderUrls = [], imports = null, version = null }) {
+export async function load({ wasmUrl, integrity = true, loaders: loaderUrls = [], imports = null, version = null }, manifests = []) {
     const t0 = performance.now();
     importsMap = imports;
 
@@ -52,6 +59,8 @@ export async function load({ wasmUrl, integrity = true, loaders: loaderUrls = []
     loaders = await Promise.all(
         loaderUrls.map(async (url) => (await import(url)).default)
     );
+
+    mainThreadManifests = manifests;
 
     const response = await fetch(wasmUrl);
     if (!response.ok) throw new Error(`fetch failed for '${wasmUrl}' (${response.status})`);
@@ -77,12 +86,17 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
         catch { /* lockfile load failure is non-fatal; treat as empty */ }
     }
 
+    /* rt built first (lazy getter) so makeCompilerEnv can decode handles during deferred host calls. */
+    const rt = makeRt(() => compilerExports);
+
     const env = makeCompilerEnv({
         getExports: () => compilerExports,
         onLine: onLine ?? (() => {}),
         fetchedSources,
         lockfile,
         integrityActive,
+        rt,
+        captureHostCall: (call) => { pendingHostCall = call; },
     });
 
     const { exports } = await WebAssembly.instantiate(wasmModule, { env });
@@ -90,7 +104,31 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
     exports.reset_modules();
     resetNativeTable();
 
-    const rt = makeRt(() => compilerExports);
+    const writeBytes = (bytes) => {
+        const ptr = exports.wasm_alloc(Math.max(1, bytes.length));
+        new Uint8Array(exports.memory.buffer, ptr, bytes.length).set(bytes);
+        return ptr;
+    };
+
+    /* Synthetic main-thread modules: push deferral stubs and call `register_native_module` so Python's `from <name> import ...` resolves. */
+    for (const m of mainThreadManifests) {
+        const baseId = nativeTable.length;
+        for (const fnName of m.exports) {
+            const stub = () => {};
+            stub.__edge_kind = 'capability';
+            stub.__edge_main_thread = true;
+            stub.__edge_name = fnName;
+            stub.__edge_module = m.name;
+            nativeTable.push(stub);
+        }
+        const specBytes = TE.encode(m.name);
+        const namesBytes = TE.encode(m.exports.join('\n'));
+        exports.register_native_module(
+            writeBytes(specBytes), specBytes.length,
+            writeBytes(namesBytes), namesBytes.length,
+            baseId,
+        );
+    }
 
     const writeSrc = () => new Uint8Array(exports.memory.buffer).set(srcBytes, exports.src_ptr());
     writeSrc();
@@ -126,6 +164,15 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
             await new Promise(r => requestAnimationFrame(r));
         } else if (kind === STATUS_PENDING_EVENT) {
             await new Promise(r => { eventWaiter = r; });
+        } else if (kind === STATUS_PENDING_HOST_CALL) {
+            const call = pendingHostCall;
+            pendingHostCall = null;
+            if (!call) throw new Error('PENDING_HOST_CALL without captured args (compiler/runtime drift)');
+            if (!hostCallDelegate) throw new Error(`native '${call.module}.${call.name}' deferred but setHostCallDelegate() never set`);
+            const value = await hostCallDelegate(call.module, call.name, call.args);
+            const handle = rt.encodeAny(value);
+            const rv = exports.set_host_result(handle);
+            if (rv !== 0) throw new Error(`set_host_result returned ${rv} for '${call.module}.${call.name}'`);
         } else {
             // Unknown kind — bail out instead of looping forever.
             break;
@@ -163,16 +210,15 @@ export function pushEvent(message) {
     return status === 0;
 }
 
-/* Browser bridges fire `CustomEvent("edge-python-event")`; engine routes the detail string to `pushEvent`. */
-if (typeof window !== 'undefined') {
-    window.addEventListener('edge-python-event', (e) => {
-        if (typeof e.detail === 'string') pushEvent(e.detail);
-    });
+/* Register the host-call delegate. worker.js wires a postMessage round-trip; no other consumer is supported. */
+export function setHostCallDelegate(fn) {
+    hostCallDelegate = fn;
 }
 
 export function reset() {
     if (compilerExports) compilerExports.reset_modules();
     resetNativeTable();
+    pendingHostCall = null;
 }
 
 export async function clearCache() {
@@ -190,6 +236,9 @@ export function dispose() {
     fetchedSources.clear();
     knownMissing.clear();
     resetNativeTable();
+    pendingHostCall = null;
+    hostCallDelegate = null;
+    mainThreadManifests = [];
 }
 
 async function openCache(integrity) {

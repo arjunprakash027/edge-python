@@ -8,4 +8,6 @@ pub enum SchedulerStatus {
     PendingFrame,
     /// One or more coros parked in `receive()`; host waits for `run_push_event`.
     PendingEvent,
+    /// Coro parked mid-`CallExtern`; host wakes via `set_host_result`.
+    PendingHostCall,
 }

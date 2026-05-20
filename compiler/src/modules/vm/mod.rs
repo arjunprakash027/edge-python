@@ -44,6 +44,8 @@ pub(crate) struct Pending {
     pub host_frame_request: bool,
     /* Set by `receive()` on empty queue; transitions the coro to `WaitingEvent`. */
     pub event_wait_request: bool,
+    /* Set by `call_extern` on deferred native; transitions the coro to `WaitingHostCall`. */
+    pub host_call_request: bool,
     /* Lifted ExcInstance from `raise X(...)` so `except X as e` binds the real instance. */
     pub exc_val: Option<Val>,
     /* `(class, self)` for the next user-function call when it's invoked as a method; populated by method-dispatch paths and consumed by `run_body_with_frame`. */
@@ -59,6 +61,7 @@ impl Pending {
             sleep_until_ns: None,
             host_frame_request: false,
             event_wait_request: false,
+            host_call_request: false,
             exc_val: None,
             method_binding: None,
         }

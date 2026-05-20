@@ -489,5 +489,15 @@
     "output": ["25"],
     "modules": { "m": { "native": ["add", "square"] } },
     "expect_externs": 2
+  },
+  {
+    "src": "from m import host_defer\nasync def main():\n    host_defer()\nrun(main())",
+    "modules": { "m": { "native": ["host_defer"] } },
+    "error": "scheduler suspended"
+  },
+  {
+    "src": "from m import host_defer\nasync def a():\n    host_defer()\nasync def b():\n    print('ran')\ngather(a(), b())",
+    "modules": { "m": { "native": ["host_defer"] } },
+    "error": "scheduler suspended"
   }
 ]

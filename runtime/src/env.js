@@ -8,7 +8,7 @@ const TD = new TextDecoder();
 const TE = new TextEncoder();
 const ERR_RUNTIME = 2; // wasm-abi/src/lib.rs error_kind::RUNTIME
 
-export function makeCompilerEnv({ getExports, onLine, fetchedSources, lockfile, integrityActive }) {
+export function makeCompilerEnv({ getExports, onLine, fetchedSources, lockfile, integrityActive, rt, captureHostCall }) {
     const readStr = (ptr, len) => TD.decode(new Uint8Array(getExports().memory.buffer, ptr, len));
     const setU32 = (ptr, v) => new DataView(getExports().memory.buffer).setUint32(ptr, v, true);
 
@@ -27,6 +27,21 @@ export function makeCompilerEnv({ getExports, onLine, fetchedSources, lockfile, 
 
             if (fn.__edge_kind === 'capability') {
                 const handles = Array.from(new Uint32Array(exports.memory.buffer, argv_ptr, argc));
+                /* Marked main-thread: decode args to JS, defer via captureHostCall; driver wakes us with set_host_result. */
+                if (fn.__edge_main_thread) {
+                    if (!captureHostCall || !rt) {
+                        stashError(exports, `native '${fn.__edge_module}.${fn.__edge_name}' marked main-thread but no host-call delegate wired`);
+                        return 1;
+                    }
+                    try {
+                        const args = handles.map((h) => rt.decodeAny(h));
+                        captureHostCall({ module: fn.__edge_module, name: fn.__edge_name, args });
+                        return 2;
+                    } catch (e) {
+                        stashError(exports, e?.message ?? String(e));
+                        return 1;
+                    }
+                }
                 try {
                     const resultHandle = fn(handles);
                     new DataView(exports.memory.buffer).setUint32(out_ptr, resultHandle, true);

@@ -48,6 +48,7 @@ Spawns a Web Worker, loads `compiler_lib.wasm` inside it, returns a proxy.
 | `integrity` | `boolean` | `true` | When `true`, use IDB + lockfile to cache and verify fetched module bytes. Falls back to in-memory cache (with `console.warn`) if IDB is unavailable. |
 | `imports` | `Record<string, string>` | `null` | Bare-name shortcut: maps Python bare names (`from <name> import ...`) to URLs of `.py` / `.wasm` modules. Replaces the need for a physical `packages.json` for simple projects. |
 | `loaders` | `string[]` | `[]` | URLs of module loader plugins. Each loader is a `.js` file with a default export `{ match, load }`. See [Writing a loader](#writing-a-loader). |
+| `mainThreadModules` | `Record<string, factory \| object>` | `{}` | Synthetic native modules whose handlers run on the main thread. Each entry registers `from <name> import ...` for Python. See [Main-thread modules](#main-thread-modules). |
 | `version` | `string` | `null` | Optional lockfile version key. When present, mismatches with the stored version invalidate the cache before run. Useful to pin cache to a deploy/commit. |
 
 ### `Worker`
@@ -62,9 +63,8 @@ The returned object exposes:
 | `onOutput(handler)` | `(line: string) => void` | Streaming output callback fired once per `print()` line. |
 | `reset()` | `() => Promise<void>` | Clear registered modules without rebooting the worker. |
 | `clearCache()` | `() => Promise<void>` | Wipe IDB CAS + lockfile (or memory cache). Next run re-fetches everything. |
+| `pushEvent(message)` | `(string) => void` | Wake a paused `receive()` in the running script with `message`. Fire-and-forget. Browser bridges fire `CustomEvent("edge-python-event")` on `window`, which `createWorker` routes through `pushEvent` automatically. |
 | `dispose()` | `() => void` | Terminate the worker. Subsequent calls fail. |
-
-For main-thread embedders that need to inject DOM-driven events into a paused `receive()`, import `engine` directly from [`src/engine.js`](src/engine.js) (not via `createWorker`) and call `engine.pushEvent(message)`. Browser bridges fire `CustomEvent("edge-python-event")` which the engine routes through `pushEvent` automatically.
 
 ## Writing a loader
 
@@ -102,7 +102,48 @@ Two valid `kind` values:
 
 The built-in Path A wasm-pdk loader is always tried last as fallback; custom loaders run first in order.
 
-See `loaders/capability-bridge.js` for a complete example.
+## Main-thread modules
+
+The engine runs in a Web Worker, so handlers don't have access to `document`, `window`, or other main-thread-only globals. `mainThreadModules` solves that: a pure-JS module declares its handlers, the runtime synthesizes the native registration so Python can `from <name> import ...`, and each call defers to the main thread transparently. Python sees a regular synchronous call — no `await`, no event-loop juggling.
+
+A module is a factory `(ctx) => handlers` or a plain `{name: handler}` object. The factory form receives `{ pushEvent }` so async callbacks (events, observers, file reads) can wake a paused `receive()` in the script.
+
+```js
+const dom = ({ pushEvent }) => {
+    const nodes = [];
+    const alloc = (n) => { nodes.push(n); return nodes.length - 1; };
+    const node = (h) => nodes[h];
+
+    return {
+        query: (sel) => alloc(document.querySelector(sel)),
+        set_text: (h, txt) => { node(h).textContent = txt; },
+        bind_event: (h, type, msg) => {
+            node(h).addEventListener(type, (e) => {
+                pushEvent(JSON.stringify({ msg, type: e.type, target_id: e.target.id }));
+            });
+        },
+    };
+};
+
+const worker = await createWorker({
+    wasmUrl: "...",
+    mainThreadModules: { dom },
+});
+```
+
+```python
+from dom import query, set_text, bind_event
+
+bind_event(query("#btn"), "click", "click")
+async def main():
+    while True:
+        receive()
+        set_text(query("#btn"), "clicked")
+```
+
+Supported handle tags for shuttle: `None`, `bool`, `int` (i64, range-limited by JS Number), `float`, and string bytes. Opaque object references (DOM nodes, file objects, observers) should be modelled as integer IDs into a main-thread registry that your handlers own — the `alloc` / `node` pattern above.
+
+Per-call overhead is a single `postMessage` round-trip (~0.1–0.4 ms in modern browsers). Suitable for UI-rate workloads (events, mutations, layout). For tight per-frame loops over thousands of fine-grained ops, prefer a Worker-side capability (Path A `.wasm`).
 
 ## Worker bootstrap
 
@@ -119,14 +160,11 @@ Module **source bytes** (`.py` / `.wasm` / `packages.json`) are cached across ru
 ## Layout
 
 ```
-├── loaders
-│   └── capability-bridge.js
 ├── README.md
 ├── src
 │   ├── cache
 │   │   ├── idb.js
 │   │   └── memory.js
-│   ├── engine.js
 │   ├── env.js
 │   ├── fetch.js
 │   ├── index.js
@@ -135,6 +173,7 @@ Module **source bytes** (`.py` / `.wasm` / `packages.json`) are cached across ru
 │   ├── rt.js
 │   └── specs.js
 └── worker
+    ├── engine.js
     └── worker.js
 ```
 
@@ -143,7 +182,7 @@ Module **source bytes** (`.py` / `.wasm` / `packages.json`) are cached across ru
 | Path | Purpose |
 |---|---|
 | `src/index.js` | Public API. `createWorker` factory (main-thread). |
-| `src/engine.js` | Orchestrator (runs in worker, also importable from main thread). `load`, `run`, `pushEvent`, `reset`, `clearCache`, `dispose`. |
+| `worker/engine.js` | Internal orchestrator (Worker only). `load`, `run`, `pushEvent`, `reset`, `clearCache`, `dispose`, `setHostCallDelegate`. |
 | `src/env.js` | The 4 `env.*` imports `compiler_lib` declares: `host_print`, `host_call_native`, `host_fetch_bytes`, `host_now_ns`. |
 | `src/native.js` | Native module loader extension point + built-in Path A (wasm-pdk) loader + `nativeTable`. |
 | `src/prefetch.js` | BFS over the dependency graph; pre-fetches and registers all `.py` / `.wasm` / `packages.json`. |
@@ -153,7 +192,6 @@ Module **source bytes** (`.py` / `.wasm` / `packages.json`) are cached across ru
 | `src/cache/memory.js` | In-memory cache backend (per-Worker only). |
 | `src/cache/idb.js` | IndexedDB cache backend (persistent across sessions). |
 | `worker/worker.js` | Web Worker entry; postMessage protocol. |
-| `loaders/capability-bridge.js` | Path D loader: capability modules with embedded JS bridge. Opt-in. |
 
 ## License
 

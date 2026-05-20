@@ -16,6 +16,7 @@ const STATUS_PENDING_TIMER: u32 = 1 << STATUS_KIND_SHIFT;
 const STATUS_PENDING_FRAME: u32 = 2 << STATUS_KIND_SHIFT;
 const STATUS_PENDING_EVENT: u32 = 3 << STATUS_KIND_SHIFT;
 const STATUS_ERROR: u32 = 4 << STATUS_KIND_SHIFT;
+const STATUS_PENDING_HOST_CALL: u32 = 5 << STATUS_KIND_SHIFT;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn src_ptr() -> *mut u8 {
@@ -111,6 +112,7 @@ fn step_vm(mut vm: VM<'static>, src: &str, prev_paused: Option<Box<PausedRun>>) 
                 SchedulerStatus::PendingTimer(d) => (STATUS_PENDING_TIMER, d),
                 SchedulerStatus::PendingFrame => (STATUS_PENDING_FRAME, 0),
                 SchedulerStatus::PendingEvent => (STATUS_PENDING_EVENT, 0),
+                SchedulerStatus::PendingHostCall => (STATUS_PENDING_HOST_CALL, 0),
                 SchedulerStatus::Done => (STATUS_DONE, 0),
             };
             let paused = match prev_paused {
@@ -236,6 +238,29 @@ pub unsafe extern "C" fn run_push_event(ptr: *const u8, len: u32) -> i32 {
         } else {
             vm.event_queue.push(val);
         }
+        0
+    })
+}
+
+/* Wake a `WaitingHostCall` coro: inject `handle`'s Val into its saved-stack top. 0 ok / 1 stale / 2 no waiter / 3 no paused run. */
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn set_host_result(handle: u32) -> i32 {
+    let val = match super::get_val(handle) {
+        Some(v) => v,
+        None => return 1,
+    };
+    super::with_runtime(|rt| { rt.handles.release(handle); });
+    super::with_runtime(|rt| {
+        let Some(paused) = rt.paused_run.as_mut() else { return 3; };
+        let Some(vm) = paused.vm.as_mut() else { return 3; };
+        let waiter = vm.scheduler.iter().enumerate()
+            .find(|(_, h)| matches!(h.state, crate::modules::vm::types::CoroState::WaitingHostCall))
+            .map(|(i, h)| (i, h.coro));
+        let Some((idx, coro)) = waiter else { return 2; };
+        if let crate::modules::vm::types::HeapObj::Coroutine(_, _, saved_stack, _, _) = vm.heap.get_mut(coro) {
+            if let Some(top) = saved_stack.last_mut() { *top = val; } else { saved_stack.push(val); }
+        }
+        vm.scheduler[idx].state = crate::modules::vm::types::CoroState::Ready;
         0
     })
 }

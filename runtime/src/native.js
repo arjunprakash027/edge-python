@@ -106,9 +106,17 @@ export async function loadNativeModule(spec, bytes, ctx) {
             const result = await loader.load(module, ctx);
             // Tag each fn with its dispatch kind so host_call_native picks the right path.
             for (const fn of result.fns) fn.__edge_kind = result.kind;
+            annotateNames(result);
             return result;
         }
     }
 
-    return await builtinWasmPdkLoader(module, ctx);
+    const result = await builtinWasmPdkLoader(module, ctx);
+    annotateNames(result);
+    return result;
+}
+
+/* Pair each fn with its declared name so deferred dispatch can route by name on the main thread. */
+function annotateNames({ names, fns }) {
+    for (let i = 0; i < fns.length; i++) fns[i].__edge_name = names[i];
 }

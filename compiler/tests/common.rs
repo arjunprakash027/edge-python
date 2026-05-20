@@ -244,6 +244,11 @@ fn negate(_: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
     Ok(Val::bool(!args[0].as_bool()))
 }
 
+/* Returns HostCallDeferred; exercises the PendingHostCall yield path through call_extern. */
+fn host_defer(_: &mut HeapPool, _args: &[Val]) -> Result<Val, VmErr> {
+    Err(VmErr::HostCallDeferred)
+}
+
 /* Pure: bool, int -> int. Mixes types to confirm per-arg decode is correct. */
 fn pick(_: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
     if args.len() != 3 || !args[0].is_bool() || !args[1].is_int() || !args[2].is_int() {
@@ -266,6 +271,7 @@ pub fn test_native(name: &str) -> Option<NativeBinding> {
         "double_f" => (double_f, true),
         "negate" => (negate, true),
         "pick" => (pick, true),
+        "host_defer" => (host_defer, false),
         _ => return None,
     };
     Some(NativeBinding::from_fn(name, func, pure))

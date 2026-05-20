@@ -23,6 +23,10 @@ export function makeRt(getExports) {
         encodeBool: (b) => encodeBool(getExports(), b),
         encodeFloat: (f) => encodeFloat(getExports(), f),
         encodeNone: () => getExports().host_edge_encode(TAG_NONE, 0, 0),
+        /* Tag-agnostic: decode any handle to a plain JS value; used by deferred host-call shuttling. */
+        decodeAny: (h) => decodeAny(getExports(), h),
+        /* Tag-agnostic: encode a plain JS value back into a handle. Integer numbers become INT; non-integer become FLOAT. */
+        encodeAny: (v) => encodeAny(getExports(), v),
     };
 }
 
@@ -88,4 +92,43 @@ function encodeFloat(exps, f) {
     const h = exps.host_edge_encode(TAG_FLOAT, buf, 8);
     exps.wasm_free(buf, 8);
     return h;
+}
+
+/* Decode any tag → JS value; mirrors `decodeBytes` but inspects (not asserts) the tag. */
+function decodeAny(exps, handle) {
+    const tagPtr = exps.wasm_alloc(4);
+    let cap = 256;
+    let dstPtr = exps.wasm_alloc(cap);
+    let n = exps.host_edge_decode(handle, tagPtr, dstPtr, cap);
+    if (n < 0) {
+        const needed = -n;
+        exps.wasm_free(dstPtr, cap);
+        cap = needed;
+        dstPtr = exps.wasm_alloc(cap);
+        n = exps.host_edge_decode(handle, tagPtr, dstPtr, cap);
+    }
+    const tag = new DataView(exps.memory.buffer).getUint32(tagPtr, true);
+    exps.wasm_free(tagPtr, 4);
+    const bytes = n > 0 ? new Uint8Array(exps.memory.buffer, dstPtr, n).slice() : new Uint8Array(0);
+    exps.wasm_free(dstPtr, cap);
+    switch (tag) {
+        case TAG_NONE: return null;
+        case TAG_BOOL: return bytes[0] !== 0;
+        case TAG_INT: return Number(new DataView(bytes.buffer, bytes.byteOffset, 8).getBigInt64(0, true));
+        case TAG_FLOAT: return new DataView(bytes.buffer, bytes.byteOffset, 8).getFloat64(0, true);
+        case TAG_BYTES: return TD.decode(bytes);
+        default: throw new Error(`unknown handle tag ${tag}`);
+    }
+}
+
+/* JS value → handle; chooses tag from typeof. Bigint also accepted for int. */
+function encodeAny(exps, value) {
+    if (value === null || value === undefined) return exps.host_edge_encode(TAG_NONE, 0, 0);
+    if (typeof value === 'boolean') return encodeBool(exps, value);
+    if (typeof value === 'bigint') return encodeInt(exps, Number(value));
+    if (typeof value === 'number') {
+        return Number.isInteger(value) ? encodeInt(exps, value) : encodeFloat(exps, value);
+    }
+    if (typeof value === 'string') return encodeStr(exps, value);
+    throw new Error(`cannot encode JS value of type ${typeof value}`);
 }

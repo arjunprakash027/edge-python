@@ -90,6 +90,7 @@ impl<'a> VM<'a> {
                 | CoroState::Sleeping(_)
                 | CoroState::WaitingFrame
                 | CoroState::WaitingEvent
+                | CoroState::WaitingHostCall
             ));
             if !alive { return Ok(()); }
             // Pick a Ready handle; otherwise inspect parked coros to decide which kind of host
@@ -98,6 +99,7 @@ impl<'a> VM<'a> {
             let mut min_wake: Option<u64> = None;
             let mut any_frame = false;
             let mut any_event = false;
+            let mut any_host_call = false;
             for (i, h) in self.scheduler.iter().enumerate() {
                 match &h.state {
                     CoroState::Ready => { next_ready = Some(i); break; }
@@ -106,6 +108,7 @@ impl<'a> VM<'a> {
                         if min_wake.is_none_or(|m| *w < m) => { min_wake = Some(*w); }
                     CoroState::WaitingFrame => { any_frame = true; }
                     CoroState::WaitingEvent => { any_event = true; }
+                    CoroState::WaitingHostCall => { any_host_call = true; }
                     _ => {}
                 }
             }
@@ -113,7 +116,7 @@ impl<'a> VM<'a> {
                 self.scheduler_step(i)?;
                 continue;
             }
-            // Yield priority: frame tick (~16ms) > sleep deadline > open-ended event push.
+            // Yield priority: frame tick (~16ms) > sleep deadline > host call > open-ended event push.
             if any_frame {
                 return Err(VmErr::HostYield(SchedulerStatus::PendingFrame));
             }
@@ -138,7 +141,10 @@ impl<'a> VM<'a> {
                     }
                 }
                 None => {
-                    // Only WaitingEvent coros left: open-ended yield until `run_push_event`.
+                    // Host-call precedence: a deferred DOM op resolves before unrelated `receive()` waits.
+                    if any_host_call {
+                        return Err(VmErr::HostYield(SchedulerStatus::PendingHostCall));
+                    }
                     if any_event {
                         return Err(VmErr::HostYield(SchedulerStatus::PendingEvent));
                     }
@@ -159,19 +165,22 @@ impl<'a> VM<'a> {
         self.pending.sleep_until_ns = None;
         self.pending.host_frame_request = false;
         self.pending.event_wait_request = false;
+        self.pending.host_call_request = false;
         let result = self.resume_coroutine(coro);
         let yielded = self.yielded;
         self.yielded = false;
         let new_state = match result {
             Err(e) => CoroState::Errored(e),
             Ok(v) if yielded => {
-                // Suspension precedence: sleep > frame > receive > bare yield.
+                // Suspension precedence: sleep > frame > receive > host-call > bare yield.
                 if let Some(until) = self.pending.sleep_until_ns.take() {
                     CoroState::Sleeping(until)
                 } else if core::mem::replace(&mut self.pending.host_frame_request, false) {
                     CoroState::WaitingFrame
                 } else if core::mem::replace(&mut self.pending.event_wait_request, false) {
                     CoroState::WaitingEvent
+                } else if core::mem::replace(&mut self.pending.host_call_request, false) {
+                    CoroState::WaitingHostCall
                 } else {
                     let _ = v;
                     CoroState::Ready

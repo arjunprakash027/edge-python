@@ -53,7 +53,7 @@ cargo build --release # Host artifacts (.rlib + cdylib) for Rust embedders.
 cargo test --release # Full test suite.
 ```
 
-Native modules ship via four delivery paths (CDN `.wasm`, in-process Rust, host capability, self-contained capability `.wasm`) — see [Writing modules](https://edgepython.com/reference/writing-modules).
+Native modules ship via four delivery paths (CDN `.wasm`, in-process Rust, host capability, JS host module) — see [Writing modules](https://edgepython.com/reference/writing-modules).
 
 ## Quick start
 

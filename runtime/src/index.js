@@ -14,9 +14,37 @@ export async function createWorker(opts) {
     const pending = new Map();
     let outputHandler = null;
 
-    worker.onmessage = ({ data }) => {
+    /* Fire a string into the running script's `receive()` queue. Defined early so main-thread module factories can capture it. */
+    const pushEvent = (message) => worker.postMessage({ type: 'push-event', message: String(message) });
+
+    /* Resolve each `mainThreadModules[name]` (factory or object) into a flat handler map keyed `module:name`. */
+    const mainThreadHandlers = {};
+    const manifests = [];
+    for (const [modName, src] of Object.entries(opts?.mainThreadModules || {})) {
+        const handlers = typeof src === 'function' ? src({ pushEvent }) : src;
+        manifests.push({ name: modName, exports: Object.keys(handlers) });
+        for (const [fnName, handler] of Object.entries(handlers)) {
+            mainThreadHandlers[`${modName}:${fnName}`] = handler;
+        }
+    }
+
+    worker.onmessage = async ({ data }) => {
         if (data.type === 'line') {
             if (outputHandler) outputHandler(data.text);
+            return;
+        }
+        if (data.type === 'host-call') {
+            const handler = mainThreadHandlers[`${data.module}:${data.name}`];
+            if (!handler) {
+                worker.postMessage({ type: 'host-call-response', reqId: data.reqId, error: `no main-thread handler for '${data.module}.${data.name}'` });
+                return;
+            }
+            try {
+                const value = await handler(...data.args);
+                worker.postMessage({ type: 'host-call-response', reqId: data.reqId, value });
+            } catch (e) {
+                worker.postMessage({ type: 'host-call-response', reqId: data.reqId, error: e?.message ?? String(e) });
+            }
             return;
         }
         const cb = pending.get(data.reqId);
@@ -38,7 +66,16 @@ export async function createWorker(opts) {
         worker.postMessage({ type, reqId, ...payload });
     });
 
-    const ready = await send('load', { opts });
+    /* Strip mainThreadModules before crossing postMessage: factories/handlers aren't structured-cloneable. Send only the manifests. */
+    const { mainThreadModules: _drop, ...workerOpts } = opts || {};
+    const ready = await send('load', { opts: workerOpts, mainThreadManifests: manifests });
+
+    /* Browser bridges fire `CustomEvent("edge-python-event")` on window; route the detail to the Worker. */
+    if (typeof window !== 'undefined') {
+        window.addEventListener('edge-python-event', (e) => {
+            if (typeof e.detail === 'string') pushEvent(e.detail);
+        });
+    }
 
     return {
         integrityActive: ready.integrityActive,
@@ -47,6 +84,7 @@ export async function createWorker(opts) {
         run: (src, runOpts = {}) => send('run', { src, ...runOpts }),
         reset: () => send('reset'),
         clearCache: () => send('clearCache'),
+        pushEvent,
 
         onOutput(handler) { outputHandler = handler; },
 

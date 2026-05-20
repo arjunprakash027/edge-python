@@ -526,9 +526,17 @@ impl<'a> VM<'a> {
         let pure = extern_fn.pure;
         let args = self.pop_n(argc)?;
         if !pure { self.mark_impure(); }
-        let result = func(&mut self.heap, &args)?;
-        self.push(result);
-        Ok(())
+        match func(&mut self.heap, &args) {
+            Ok(result) => { self.push(result); Ok(()) }
+            // Native deferred; park with a `None` placeholder that `set_host_result` overwrites before resume.
+            Err(VmErr::HostCallDeferred) => {
+                self.push(Val::none());
+                self.pending.host_call_request = true;
+                self.yielded = true;
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
     }
 
     pub(crate) fn dispatch_native(&mut self, id: super::super::types::NativeFnId, positional: &[Val], kw: &[Val], chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {

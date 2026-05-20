@@ -304,6 +304,11 @@ pub(super) fn make_native_binding(name: String, id: u32) -> NativeBinding {
         };
 
         /* 3. Read result BEFORE releasing argv: a returned input would point into slots we're about to free. */
+        // Status 2 = DEFERRED: handler has captured what it needs; release argv and park the VM.
+        if status == 2 {
+            with_runtime(|rt| { for h in &argv { rt.handles.release(*h); } });
+            return Err(VmErr::HostCallDeferred);
+        }
         if status != 0 {
             with_runtime(|rt| { for h in &argv { rt.handles.release(*h); } });
             let (kind, msg) = with_runtime(|rt| rt.error_stash.take())
