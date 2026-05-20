@@ -14,8 +14,6 @@ async def main():
         set_text(query("#btn"), f"clicked {n} times")
 ```
 
-> **Note:** all DOM access must live inside an `async def` (top-level statements can't suspend on deferred host calls yet).
-
 ## Setup
 
 ```html
