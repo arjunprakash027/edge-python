@@ -4,6 +4,7 @@ mod test {
     use compiler_lib::modules::lexer::lex;
     use compiler_lib::modules::parser::Parser;
     use compiler_lib::modules::vm::VM;
+    use compiler_lib::modules::vm::types::{SchedulerStatus, VmErr};
 
     #[derive(serde::Deserialize)]
     struct Case {
@@ -15,6 +16,25 @@ mod test {
         input: Vec<String>,
         #[serde(default)]
         events: Vec<String>,
+        // Events pushed one-at-a-time after each PendingEvent yield (host-resume path).
+        #[serde(default)]
+        interactive_events: Vec<String>,
+    }
+
+    // Resume on each PendingEvent by pushing the next interactive_events entry.
+    fn drive(vm: &mut VM, interactive: &[String]) -> Result<(), VmErr> {
+        let mut idx = 0;
+        loop {
+            match vm.run() {
+                Ok(_) => return Ok(()),
+                Err(VmErr::HostYield(SchedulerStatus::PendingEvent)) => {
+                    if idx >= interactive.len() { return Ok(()); }
+                    vm.push_event(&interactive[idx]).expect("push_event");
+                    idx += 1;
+                }
+                Err(e) => return Err(e),
+            }
+        }
     }
 
     #[test]
@@ -34,7 +54,7 @@ mod test {
             let mut vm = VM::new(&chunk);
             vm.input_buffer = case.input.clone();
             for evt in &case.events { vm.push_event(evt).expect("push_event"); }
-            let result = vm.run();
+            let result = drive(&mut vm, &case.interactive_events);
 
             match result {
                 Ok(_obj) => { assert_eq!(vm.output, case.output, "output mismatch on: {:?}", case.src); }
@@ -46,8 +66,7 @@ mod test {
         }
     }
 
-    /* Reruns every vm.json case in strict_input mode (host-supplied buffer; reading past = RuntimeError).
-       Lex/parse errors are also asserted here. */
+    /* Reruns every vm.json case in strict_input mode (host-supplied buffer; reading past = RuntimeError). Lex/parse errors are also asserted here. */
     #[test]
     fn strict_cases() {
         let cases: Vec<Case> = serde_json::from_str(include_str!("cases/vm.json")).expect("invalid JSON");
@@ -89,10 +108,9 @@ mod test {
             vm.strict_input = true;
             vm.input_buffer = case.input.clone();
             for evt in &case.events { vm.push_event(evt).expect("push_event"); }
-            let expects_input_error = case.input.is_empty()
-                && (case.src.contains("input(") || case.src.contains("input ("));
+            let expects_input_error = case.input.is_empty() && (case.src.contains("input(") || case.src.contains("input ("));
 
-            match vm.run() {
+            match drive(&mut vm, &case.interactive_events) {
                 Ok(_) => {
                     assert!(!expects_input_error, "expected input() to error under strict mode for: {:?}", case.src);
                     assert_eq!(vm.output, case.output, "output mismatch on: {:?}", case.src);

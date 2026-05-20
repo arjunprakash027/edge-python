@@ -1688,5 +1688,6 @@
   {"src": "def setup(label):\n    sleep(0)\n    return f'ready:{label}'\nprint(setup('x'))\nprint(setup('y'))", "output": ["ready:x", "ready:y"]},
   {"src": "def grab():\n    return receive()\nprint(grab())\nprint(grab())", "events": ["a", "b"], "output": ["a", "b"]},
   {"src": "for evt in (receive(), receive()):\n    print(evt)", "events": ["one", "two"], "output": ["one", "two"]},
-  {"src": "evt = receive()\nasync def main():\n    print(f'main:{receive()}')\nprint(f'top:{evt}')\nrun(main())", "events": ["a", "b"], "output": ["top:a", "main:b"]}
+  {"src": "evt = receive()\nasync def main():\n    print(f'main:{receive()}')\nprint(f'top:{evt}')\nrun(main())", "events": ["a", "b"], "output": ["top:a", "main:b"]},
+  {"src": "print('ready')\nasync def main():\n    for _ in range(2):\n        print(receive())\nrun(main())\nprint('done')", "interactive_events": ["a", "b"], "output": ["ready", "a", "b", "done"]}
 ]
