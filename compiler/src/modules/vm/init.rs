@@ -86,8 +86,25 @@ impl<'a> VM<'a> {
         // Fresh entry. Initialise imports before user code; DFS gives topological order naturally.
         let mut in_progress: crate::util::fx::FxHashSet<String> = crate::util::fx::FxHashSet::default();
         self.init_modules(self.chunk, &mut in_progress)?;
-        let mut slots = self.fill_builtins(&self.chunk.names);
-        self.exec(self.chunk, &mut slots)
+        // Wrap the module body as an implicit coroutine; lets top-level statements suspend on deferred host calls (DOM, sleep, receive) through the same scheduler path as `async def`.
+        let slots = self.fill_builtins(&self.chunk.names);
+        let coro = self.heap.alloc(HeapObj::Coroutine(
+            0, slots, Vec::new(),
+            crate::modules::vm::types::BodyRef::Module,
+            Vec::new(), Vec::new(),
+        ))?;
+        self.scheduler.push(crate::modules::vm::types::CoroutineHandle {
+            coro,
+            state: crate::modules::vm::types::CoroState::Ready,
+        });
+        self.run_until_all_done()?;
+        let outcome = self.scheduler.iter().find(|h| h.coro == coro).map(|h| h.state.clone());
+        self.scheduler.clear();
+        match outcome {
+            Some(crate::modules::vm::types::CoroState::Done(v)) => Ok(v),
+            Some(crate::modules::vm::types::CoroState::Errored(e)) => Err(e),
+            _ => Ok(Val::none()),
+        }
     }
 
     /* Init each unique import once; code modules run their top-level, native ones just bind. `in_progress` catches cycles cleanly. */

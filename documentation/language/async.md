@@ -28,6 +28,8 @@ ok
 
 A `def` body executes immediately when called. An `async def` body returns a coroutine value that does nothing until you drive it with `run` / `gather`. Only coroutines are cancellable (`cancel`) and can suspend on real time (`sleep`).
 
+A plain `def` invoked from inside a coroutine — or directly at module top-level — may still call yielding builtins (`sleep`, `receive`, deferred host calls); the scheduler snapshots the helper's frame, suspends the whole call chain, and re-enters the helper on resume so its return value reaches the original call site. The module body itself runs as an implicit coroutine, so top-level statements suspend the same way. From the caller's perspective, a sync helper that internally sleeps behaves the same as one that does not — the suspend is transparent.
+
 ```python
 def routine():
     return 1

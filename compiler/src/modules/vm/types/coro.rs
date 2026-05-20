@@ -33,6 +33,23 @@ pub struct CoroutineHandle {
     pub state: CoroState,
 }
 
+// Suspended sync helper frame: a plain user fn called from a coroutine hit a yielding builtin mid-execution, so its state is snapshotted and parked on the enclosing Coroutine. Frames stack innermost-last; resume walks inside-out so each return value lands on the next frame's stack at the Call site.
+#[derive(Clone, Debug)]
+pub struct SyncFrame {
+    pub ip: usize,
+    pub fi: usize,
+    pub slots: Vec<Val>,
+    pub stack_delta: Vec<Val>,
+    pub iter_delta: Vec<IterFrame>,
+}
+
+// Coroutine body: user fn (Fn) or the implicit module-body coro (Module → self.chunk).
+#[derive(Clone, Copy, Debug)]
+pub enum BodyRef {
+    Fn(usize),
+    Module,
+}
+
 /* Call-site snapshot for traceback rendering; pushed by `exec_call`, popped on return/error. */
 #[derive(Clone, Debug)]
 pub struct CallFrame {

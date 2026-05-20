@@ -63,7 +63,7 @@ For arithmetic and comparison opcodes, the loop first checks `cache.get_fast(ip)
 
 The heap is a `Vec<HeapSlot>` arena with a free list (capped at 524,288 slots and sorted to prefer low indices). String, bytes (≤128 bytes), and LongInt values are interned in side hashes (`strings`, `bytes_intern`, `longints`) so equal values collapse to the same slot — short literal compares short-circuit through identity, and dict/set lookups stay consistent across heap allocations of the same i128 value. The hard cap on live heap objects comes from `Limits.heap` (default 10M; sandbox 100K). Integer arithmetic stays within around $2^{127}$ (inline $2^{47}$ + LongInt $2^{127}$); anything beyond raises `OverflowError`. The collector is a single-colour mark-and-sweep that runs when `live >= gc_threshold` or `alloc_count >= max(live/4, 4096)`; cycles are reclaimed natively (there is no refcount).
 
-`HeapObj` variants: `Str`, `Bytes`, `List` (`Rc<RefCell<Vec<Val>>>`), `Dict` (insertion-ordered), `Set`, `FrozenSet`, `Tuple`, `Func(fn_idx, defaults, captures)`, `Range`, `Slice`, `Ellipsis` (true singleton, distinct from `'...'`), `Type`, `ExcInstance`, `BoundMethod`, `NativeFn`, `Class(name, members)`, `Instance(class, attrs)`, `BoundUserMethod(recv, fn)`, `Coroutine(ip, slots, stack, fi, iter_stack)` (shared by generators and `async def`), `Module(spec, attrs)`, `Extern(Arc<dyn Fn>)`.
+`HeapObj` variants: `Str`, `Bytes`, `List` (`Rc<RefCell<Vec<Val>>>`), `Dict` (insertion-ordered), `Set`, `FrozenSet`, `Tuple`, `Func(fn_idx, defaults, captures)`, `Range`, `Slice`, `Ellipsis` (true singleton, distinct from `'...'`), `Type`, `ExcInstance`, `BoundMethod`, `NativeFn`, `Class(name, members)`, `Instance(class, attrs)`, `BoundUserMethod(recv, fn)`, `Coroutine(ip, slots, stack, body, iter_stack, sync_frames)` (shared by generators, `async def`, and the implicit module-body coro; `body` is a `BodyRef::Fn(usize)` for user-defined coroutines or `BodyRef::Module` for the module body, and `sync_frames` stacks suspended sync sub-calls so a plain `def` that hits a yielding builtin can be resumed mid-body), `Module(spec, attrs)`, `Extern(Arc<dyn Fn>)`.
 
 ## What the compiler intentionally does *not* do
 
@@ -78,6 +78,10 @@ The heap is a `Vec<HeapSlot>` arena with a free list (capped at 524,288 slots an
 ## Coroutine and context-manager dispatch
 
 `async def` and `yield`-bearing `def` both produce a `HeapObj::Coroutine` (one variant covers both). `run()` drives the cooperative scheduler with `sleep()`, `gather()`, `with_timeout()`, `cancel()`, and `receive()` as top-level builtins. There is no `asyncio` module.
+
+A plain `def` invoked from inside a coroutine that calls a yielding builtin (`sleep`, `receive`, deferred host-call) has its mid-execution state — `ip`, slots, stack/iter deltas — snapshotted as a `SyncFrame` and pushed onto the enclosing Coroutine's `sync_frames` stack (innermost-last). `resume_coroutine` walks this stack inside-out before re-entering the outer body, so each helper's return value lands on the next frame's stack at the original `Call` site. Without this, the outer's `resume_ip` would skip past the unfinished helper and the next `StoreName` would underflow.
+
+`vm.run()` wraps the module body as an implicit `HeapObj::Coroutine` with `BodyRef::Module` on fresh entry and pushes it on the scheduler before draining; top-level statements therefore reach the same suspend path as `async def` bodies (deferred host calls, `receive()`, `sleep()` all just work at module scope). A reentrancy guard (`executing_coros`) keeps a nested `run(child)` from re-picking the actively-running outer coro and recursing on itself.
 
 `with` invokes `__enter__` on entry and `__exit__(exc_type, exc_val, traceback)` on exit, supporting suppression via a truthy `__exit__` return. `async with` still uses the sync `__enter__` / `__exit__` (no `__aenter__` / `__aexit__` dispatch).
 

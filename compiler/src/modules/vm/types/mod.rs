@@ -164,7 +164,8 @@ pub enum HeapObj {
     Property(Val, Val),
     // Intermediate produced by `prop.setter`: callable that takes a function and returns a new `Property` with the setter attached.
     PropertySetter(Val),
-    Coroutine(usize, Vec<Val>, Vec<Val>, usize, Vec<IterFrame>),
+    // Trailing `Vec<SyncFrame>` stacks suspended sync sub-calls (innermost-last): plain user fns called from this coro that hit a yielding builtin before returning. Resume walks inside-out so each return lands on the next frame's stack at the Call site. `BodyRef` discriminates user-fn coroutines from the implicit module-body coro.
+    Coroutine(usize, Vec<Val>, Vec<Val>, BodyRef, Vec<IterFrame>, Vec<SyncFrame>),
     /* Produced by `import m`; attr access via LoadAttr, calls fuse through CallMethod. */
     Module(String, Vec<(String, Val)>),
     /* A native binding lifted to a first-class callable. */
@@ -308,7 +309,7 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
             f(*cls);
             for (k, v) in attrs.borrow().iter() { f(k); f(v); }
         }
-        HeapObj::Coroutine(_, slots, stack, _, iters) => {
+        HeapObj::Coroutine(_, slots, stack, _, iters, sub_frames) => {
             for &v in slots { f(v); }
             for &v in stack { f(v); }
             for fr in iters { match fr {
@@ -317,6 +318,16 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
                 IterFrame::UserDefined(v) => f(*v),
                 IterFrame::Range { .. } => {}
             }}
+            for sf in sub_frames {
+                for &v in &sf.slots { f(v); }
+                for &v in &sf.stack_delta { f(v); }
+                for fr in &sf.iter_delta { match fr {
+                    IterFrame::Seq { items, .. } => for &v in items { f(v); },
+                    IterFrame::Coroutine(v) => f(*v),
+                    IterFrame::UserDefined(v) => f(*v),
+                    IterFrame::Range { .. } => {}
+                }}
+            }
         }
         HeapObj::Func(_, defaults, captures) => {
             for &v in defaults { f(v); }

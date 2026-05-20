@@ -169,10 +169,11 @@ impl<'a> VM<'a> {
                 match self.dispatch(chunk, slots, &mut cache, insns, consts, &mut ip) {
                     Ok(None) => {
                         if self.yielded {
-                            // Event yields keep the None placeholder; `run_push_event` overwrites it before resume.
+                            // Event yields keep the None placeholder (overwritten by `run_push_event` before resume). Sync sub-call yields pushed nothing — the helper's return lands on the stack when its frame completes — so don't pop and don't skip the next PopTop.
                             let event_yield = self.pending.event_wait_request;
-                            let val = if event_yield { Val::none() } else { self.pop().unwrap_or(Val::none()) };
-                            self.resume_ip = if !event_yield && ip < n && matches!(insns.get(ip), Some(ins) if ins.opcode == OpCode::PopTop) { ip + 1 } else { ip };
+                            let sub_call_yield = !self.pending_sync_frames.is_empty();
+                            let val = if event_yield || sub_call_yield { Val::none() } else { self.pop().unwrap_or(Val::none()) };
+                            self.resume_ip = if !event_yield && !sub_call_yield && ip < n && matches!(insns.get(ip), Some(ins) if ins.opcode == OpCode::PopTop) { ip + 1 } else { ip };
                             self.live_slots.truncate(slots_base);
                             self.exception_stack.truncate(exc_base);
                             return Ok(val);

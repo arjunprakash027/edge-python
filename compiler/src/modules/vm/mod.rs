@@ -115,6 +115,8 @@ pub struct VM<'a> {
     pub(crate) sandbox_off: bool,
     pub(crate) with_stack: Vec<Val>,
     pub(crate) pending: Pending,
+    /* Sync helpers that suspended during the current resume; drained into the active Coroutine on yield-save. Lives at VM scope (not `Pending`) because it propagates across dispatch frames, not within one. */
+    pub(crate) pending_sync_frames: Vec<types::SyncFrame>,
     pub(crate) yielded: bool,
     pub(crate) resume_ip: usize,
     pub output: Vec<String>,
@@ -134,6 +136,8 @@ pub struct VM<'a> {
     pub(crate) call_stack: Vec<CallFrame>,
     /* Cooperative scheduler for `run` / `gather` / `with_timeout`; one handle per coroutine. */
     pub(crate) scheduler: Vec<CoroutineHandle>,
+    /* Stack of currently-running coros; nested `run(...)` drivers skip these to avoid recursing into themselves. */
+    pub(crate) executing_coros: Vec<Val>,
     /* Host-installed wall-clock (ns). */
     pub(crate) time_hook: Option<fn() -> u64>,
     /* Fallback monotonic counter when `time_hook` is None; reset each `run()`. */
@@ -160,6 +164,7 @@ impl<'a> VM<'a> {
             max_calls: limits.calls,
             with_stack: Vec::new(),
             pending: Pending::new(),
+            pending_sync_frames: Vec::new(),
             yielded: false,
             resume_ip: 0,
             strict_input: false,
@@ -175,6 +180,7 @@ impl<'a> VM<'a> {
             function_names: Vec::new(),
             call_stack: Vec::new(),
             scheduler: Vec::new(),
+            executing_coros: Vec::new(),
             time_hook: None,
             virtual_clock_ns: 0,
             functions: Vec::new(),

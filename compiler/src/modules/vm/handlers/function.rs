@@ -145,12 +145,15 @@ impl<'a> VM<'a> {
         // Generator/coroutine: return a suspended Coroutine instead of running. Both flags are O(1).
         let is_async_fn = self.is_async.get(fi).copied().unwrap_or(false);
         if is_async_fn || body.is_generator {
-            let coro = self.heap.alloc(HeapObj::Coroutine(0, fn_slots, Vec::new(), fi, Vec::new()))?;
+            let coro = self.heap.alloc(HeapObj::Coroutine(0, fn_slots, Vec::new(), BodyRef::Fn(fi), Vec::new(), Vec::new()))?;
             self.push(coro);
             self.depth -= 1;
             return Ok(());
         }
 
+        // Snapshot caller-visible depths so we can split the helper's stack/iter contributions out if it suspends mid-body via a yielding builtin.
+        let stack_base = self.stack.len();
+        let iter_base = self.iter_stack.len();
         let yields_before = self.yields.len();
         let (callee_impure, exec_result) = self.run_body_with_frame(fi, body, chunk, &mut fn_slots, slots);
         self.depth -= 1;
@@ -159,6 +162,19 @@ impl<'a> VM<'a> {
 
         let result = exec_result?;
         if callee_impure { self.mark_impure(); }
+
+        if self.yielded {
+            // Sync helper suspended mid-execution (e.g. `sleep(0)` from inside a sync fn called by an async coro). Stage its frame on the VM-level buffer; `resume_coroutine` drains it onto the enclosing coro so the helper is re-entered from the right ip. Without this, the outer's resume_ip would skip past the unfinished helper and the next StoreName would underflow. A nested sync call inside this helper would already have pushed its own frame first, so the buffer ends up innermost-last.
+            let helper_resume_ip = self.resume_ip;
+            self.resume_ip = 0;
+            let helper_stack_delta = if self.stack.len() > stack_base { self.stack.split_off(stack_base) } else { Vec::new() };
+            let helper_iter_delta: Vec<IterFrame> = if self.iter_stack.len() > iter_base { self.iter_stack.drain(iter_base..).collect() } else { Vec::new() };
+            self.pending_sync_frames.push(SyncFrame {
+                ip: helper_resume_ip, fi, slots: fn_slots,
+                stack_delta: helper_stack_delta, iter_delta: helper_iter_delta,
+            });
+            return Ok(());
+        }
 
         if self.yields.len() > yields_before {
             let fn_yields = self.yields.split_off(yields_before);

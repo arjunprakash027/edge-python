@@ -231,8 +231,10 @@ pub unsafe extern "C" fn run_push_event(ptr: *const u8, len: u32) -> i32 {
             .find(|(_, h)| matches!(h.state, crate::modules::vm::types::CoroState::WaitingEvent))
             .map(|(i, h)| (i, h.coro));
         if let Some((idx, coro)) = waiter {
-            if let crate::modules::vm::types::HeapObj::Coroutine(_, _, saved_stack, _, _) = vm.heap.get_mut(coro) {
-                if let Some(top) = saved_stack.last_mut() { *top = val; } else { saved_stack.push(val); }
+            if let crate::modules::vm::types::HeapObj::Coroutine(_, _, saved_stack, _, _, sub_frames) = vm.heap.get_mut(coro) {
+                // When a sync helper called from this coro hit `receive()`, the None placeholder lives in the innermost suspended frame's stack — not the outer's. Pick that frame's buffer when present.
+                let target_stack = if let Some(frame) = sub_frames.last_mut() { &mut frame.stack_delta } else { saved_stack };
+                if let Some(top) = target_stack.last_mut() { *top = val; } else { target_stack.push(val); }
             }
             vm.scheduler[idx].state = crate::modules::vm::types::CoroState::Ready;
         } else {
@@ -257,8 +259,9 @@ pub unsafe extern "C" fn set_host_result(handle: u32) -> i32 {
             .find(|(_, h)| matches!(h.state, crate::modules::vm::types::CoroState::WaitingHostCall))
             .map(|(i, h)| (i, h.coro));
         let Some((idx, coro)) = waiter else { return 2; };
-        if let crate::modules::vm::types::HeapObj::Coroutine(_, _, saved_stack, _, _) = vm.heap.get_mut(coro) {
-            if let Some(top) = saved_stack.last_mut() { *top = val; } else { saved_stack.push(val); }
+        if let crate::modules::vm::types::HeapObj::Coroutine(_, _, saved_stack, _, _, sub_frames) = vm.heap.get_mut(coro) {
+            let target_stack = if let Some(frame) = sub_frames.last_mut() { &mut frame.stack_delta } else { saved_stack };
+            if let Some(top) = target_stack.last_mut() { *top = val; } else { target_stack.push(val); }
         }
         vm.scheduler[idx].state = crate::modules::vm::types::CoroState::Ready;
         0

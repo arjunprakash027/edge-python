@@ -1682,5 +1682,11 @@
   {"src": "class P:\n    def __format__(self, spec):\n        return 'fmt[' + spec + ']'\nprint(f'{P():>10}')\nprint(format(P(), 'x'))", "output": ["fmt[>10]", "fmt[x]"]},
   {"src": "def helper():\n    return receive()\nasync def main():\n    a = helper()\n    print(a)\nrun(main())", "events": ["hi"], "output": ["hi"]},
   {"src": "def helper(label):\n    sleep(0)\n    return label\nasync def main():\n    a = helper('x')\n    b = helper('y')\n    print(f'{a}-{b}')\nrun(main())", "output": ["x-y"]},
-  {"src": "def mount(grid, name):\n    sleep(0)\n    print(f'{grid}:{name}')\nasync def main():\n    for n in ('a', 'b', 'c'):\n        mount('g', n)\nrun(main())", "output": ["g:a", "g:b", "g:c"]}
+  {"src": "def mount(grid, name):\n    sleep(0)\n    print(f'{grid}:{name}')\nasync def main():\n    for n in ('a', 'b', 'c'):\n        mount('g', n)\nrun(main())", "output": ["g:a", "g:b", "g:c"]},
+  {"src": "evt = receive()\nprint(f'top:{evt}')", "events": ["hello"], "output": ["top:hello"]},
+  {"src": "sleep(0)\nprint('after sleep')", "output": ["after sleep"]},
+  {"src": "def setup(label):\n    sleep(0)\n    return f'ready:{label}'\nprint(setup('x'))\nprint(setup('y'))", "output": ["ready:x", "ready:y"]},
+  {"src": "def grab():\n    return receive()\nprint(grab())\nprint(grab())", "events": ["a", "b"], "output": ["a", "b"]},
+  {"src": "for evt in (receive(), receive()):\n    print(evt)", "events": ["one", "two"], "output": ["one", "two"]},
+  {"src": "evt = receive()\nasync def main():\n    print(f'main:{receive()}')\nprint(f'top:{evt}')\nrun(main())", "events": ["a", "b"], "output": ["top:a", "main:b"]}
 ]

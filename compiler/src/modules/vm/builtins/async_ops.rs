@@ -1,45 +1,96 @@
 use alloc::vec::Vec;
 
+use crate::modules::parser::SSAChunk;
 use super::super::VM;
 use super::super::types::*;
 
 impl<'a> VM<'a> {
 
-    /* Resume a coroutine. On yield: persist ip/slots/stack/iters back into it. On return: restore caller stack/iter state. */
+    // Resume coroutine: persist state on yield, restore caller on return. Suspended sync sub-frames run innermost-first, each pushing its result onto the next frame's stack at the Call site.
     pub fn resume_coroutine(&mut self, callee: Val) -> Result<Val, VmErr> {
-        if let HeapObj::Coroutine(ip, saved_slots, saved_stack, fi, saved_iters) = self.heap.get(callee) {
-            let (ip, fi) = (*ip, *fi);
-            let mut fn_slots = saved_slots.clone();
-            let saved_stack_len = self.stack.len();
-            let saved_iter_len = self.iter_stack.len();
-            self.stack.extend_from_slice(&saved_stack.clone());
-            self.iter_stack.extend(saved_iters.clone());
-            let saved_yielded = self.yielded;
-            self.yielded = false;
-            self.depth += 1;
-            let (_, body, _, _) = self.functions[fi];
-            let result = self.exec_from(body, &mut fn_slots, ip);
-            self.depth -= 1;
-            let result = result?;
-            if self.yielded {
-                let resume_ip = self.resume_ip;
-                let remaining = self.stack.split_off(saved_stack_len);
-                let coro_iters: Vec<IterFrame> = self.iter_stack.drain(saved_iter_len..).collect();
-                if let HeapObj::Coroutine(sip, ss, sst, _, si) = self.heap.get_mut(callee) {
-                    *sip = resume_ip;
-                    *ss = fn_slots;
-                    *sst = remaining;
-                    *si = coro_iters;
-                }
-                Ok(result)
+        let (outer_ip, mut outer_slots, outer_stack, outer_body, outer_iters, mut sync_frames) =
+            if let HeapObj::Coroutine(ip, slots, stack, body, iters, sf) = self.heap.get(callee) {
+                (*ip, slots.clone(), stack.clone(), *body, iters.clone(), sf.clone())
             } else {
-                self.stack.truncate(saved_stack_len);
-                self.iter_stack.truncate(saved_iter_len);
-                self.yielded = saved_yielded;
-                Ok(result)
+                return Err(cold_type("not a coroutine"));
+            };
+
+        let saved_stack_len = self.stack.len();
+        let saved_iter_len = self.iter_stack.len();
+        self.stack.extend_from_slice(&outer_stack);
+        self.iter_stack.extend(outer_iters);
+        let saved_yielded = self.yielded;
+        self.yielded = false;
+        self.depth += 1;
+
+        // Walk frames inside-out, then the outer. `outer_ran` tracks whether `outer_ip` should be overwritten by `resume_ip` on save — a re-yield inside a sync frame leaves the outer pristine.
+        let mut outer_ran = false;
+        let result: Result<Val, VmErr> = 'drive: loop {
+            if let Some(frame) = sync_frames.pop() {
+                let SyncFrame { ip, fi, mut slots, stack_delta, iter_delta } = frame;
+                let frame_stack_base = self.stack.len();
+                let frame_iter_base = self.iter_stack.len();
+                self.stack.extend(stack_delta);
+                self.iter_stack.extend(iter_delta);
+                let (_, body, _, _) = self.functions[fi];
+                match self.exec_from(body, &mut slots, ip) {
+                    Err(e) => break 'drive Err(e),
+                    Ok(val) if self.yielded => {
+                        let new_stack = if self.stack.len() > frame_stack_base { self.stack.split_off(frame_stack_base) } else { Vec::new() };
+                        let new_iter: Vec<IterFrame> = if self.iter_stack.len() > frame_iter_base { self.iter_stack.drain(frame_iter_base..).collect() } else { Vec::new() };
+                        sync_frames.push(SyncFrame {
+                            ip: self.resume_ip, fi, slots,
+                            stack_delta: new_stack, iter_delta: new_iter,
+                        });
+                        // Any deeper sync calls suspended during this exec come back via the VM-level buffer; chain them on top (still innermost-last).
+                        let newer = core::mem::take(&mut self.pending_sync_frames);
+                        sync_frames.extend(newer);
+                        break 'drive Ok(val);
+                    }
+                    Ok(val) => {
+                        // Frame completed; its return value feeds whatever frame (or outer) was waiting at the Call site.
+                        self.push(val);
+                    }
+                }
+            } else {
+                let body: &SSAChunk = match outer_body {
+                    BodyRef::Fn(fi) => &self.functions[fi].1,
+                    BodyRef::Module => self.chunk,
+                };
+                outer_ran = true;
+                match self.exec_from(body, &mut outer_slots, outer_ip) {
+                    Err(e) => break 'drive Err(e),
+                    Ok(val) => {
+                        if self.yielded {
+                            let newer = core::mem::take(&mut self.pending_sync_frames);
+                            sync_frames.extend(newer);
+                        }
+                        break 'drive Ok(val);
+                    }
+                }
             }
+        };
+
+        self.depth -= 1;
+        let result = result?;
+
+        if self.yielded {
+            let resume_ip = if outer_ran { self.resume_ip } else { outer_ip };
+            let remaining = self.stack.split_off(saved_stack_len);
+            let coro_iters: Vec<IterFrame> = self.iter_stack.drain(saved_iter_len..).collect();
+            if let HeapObj::Coroutine(sip, ss, sst, _, si, sf) = self.heap.get_mut(callee) {
+                *sip = resume_ip;
+                *ss = outer_slots;
+                *sst = remaining;
+                *si = coro_iters;
+                *sf = sync_frames;
+            }
+            Ok(result)
         } else {
-            Err(cold_type("not a coroutine"))
+            self.stack.truncate(saved_stack_len);
+            self.iter_stack.truncate(saved_iter_len);
+            self.yielded = saved_yielded;
+            Ok(result)
         }
     }
 
@@ -69,21 +120,22 @@ impl<'a> VM<'a> {
                 CoroState::Done(v) => result = *v,
                 CoroState::Errored(e) => {
                     let e = e.clone();
-                    self.scheduler.clear();
+                    // Only drop the handles we pushed; an enclosing driver (e.g. the implicit module-body coro) may still own scheduler entries.
+                    self.scheduler.retain(|h| !tasks.contains(&h.coro));
                     return Err(e);
                 }
                 _ => {}
             }
         }
-        self.scheduler.clear();
+        self.scheduler.retain(|h| !tasks.contains(&h.coro));
         self.push(result);
         Ok(())
     }
 
-    // Drive the scheduler until every handle is terminal (Done / Errored / Cancelled).
+    // Drive the scheduler until every handle is terminal (Done / Errored / Cancelled). Skip currently-executing handles — `executing_coros` is non-empty when a coro called `run(...)` mid-body and we're driving its children from a nested invocation.
     pub(crate) fn run_until_all_done(&mut self) -> Result<(), VmErr> {
         loop {
-            let alive = self.scheduler.iter().any(|h| matches!(
+            let alive = self.scheduler.iter().any(|h| !self.executing_coros.contains(&h.coro) && matches!(
                 h.state,
                 CoroState::Ready
                 | CoroState::CancelPending
@@ -101,6 +153,7 @@ impl<'a> VM<'a> {
             let mut any_event = false;
             let mut any_host_call = false;
             for (i, h) in self.scheduler.iter().enumerate() {
+                if self.executing_coros.contains(&h.coro) { continue; }
                 match &h.state {
                     CoroState::Ready => { next_ready = Some(i); break; }
                     CoroState::CancelPending => { next_ready = Some(i); break; }
@@ -166,10 +219,15 @@ impl<'a> VM<'a> {
         self.pending.host_frame_request = false;
         self.pending.event_wait_request = false;
         self.pending.host_call_request = false;
+        // Park the running coro on the executing stack so nested `run(...)` drivers skip it.
+        self.executing_coros.push(coro);
         let result = self.resume_coroutine(coro);
+        self.executing_coros.pop();
         let yielded = self.yielded;
         self.yielded = false;
         let new_state = match result {
+            // Nested host yield bubbles up unchanged; this coro stays Ready so the outer driver re-picks it after `run_resume`.
+            Err(VmErr::HostYield(s)) => return Err(VmErr::HostYield(s)),
             Err(e) => CoroState::Errored(e),
             Ok(v) if yielded => {
                 // Suspension precedence: sleep > frame > receive > host-call > bare yield.
