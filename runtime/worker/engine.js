@@ -110,7 +110,9 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
         return ptr;
     };
 
-    /* Synthetic main-thread modules: push deferral stubs and call `register_native_module` so Python's `from <name> import ...` resolves. */
+    /* Synthetic main-thread modules: register at `mt:<name>` specs and graft `<name> → mt:<name>` into importsMap so the bare name resolves via the synthesized packages.json. */
+    const mainThreadSpecs = new Set();
+    const augmentedImports = { ...(importsMap || {}) };
     for (const m of mainThreadManifests) {
         const baseId = nativeTable.length;
         for (const fnName of m.exports) {
@@ -121,7 +123,10 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
             stub.__edge_module = m.name;
             nativeTable.push(stub);
         }
-        const specBytes = TE.encode(m.name);
+        const spec = `mt:${m.name}`;
+        mainThreadSpecs.add(spec);
+        augmentedImports[m.name] = spec;
+        const specBytes = TE.encode(spec);
         const namesBytes = TE.encode(m.exports.join('\n'));
         exports.register_native_module(
             writeBytes(specBytes), specBytes.length,
@@ -138,7 +143,8 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
         baseUrl,
         entryDir,
         knownMissing,
-        importsMap,
+        importsMap: mainThreadManifests.length ? augmentedImports : importsMap,
+        mainThreadSpecs,
         integrityActive,
         fetchedSources,
         compilerExports: exports,

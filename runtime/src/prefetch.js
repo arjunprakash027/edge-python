@@ -10,7 +10,7 @@ const TD = new TextDecoder();
 const TE = new TextEncoder();
 
 export async function bfsPrefetch(rootSrc, exports, lockfile, ctx) {
-    const { fetchedSources, knownMissing, importsMap } = ctx;
+    const { fetchedSources, knownMissing, importsMap, mainThreadSpecs } = ctx;
     const visited = new Set();
     const queue = [];
 
@@ -40,6 +40,9 @@ export async function bfsPrefetch(rootSrc, exports, lockfile, ctx) {
         const spec = queue.shift();
         if (visited.has(spec)) continue;
         visited.add(spec);
+
+        // Main-thread modules are pre-registered by engine.run; the synthetic `mt:<name>` spec has no bytes to fetch.
+        if (mainThreadSpecs && mainThreadSpecs.has(spec)) continue;
 
         // Reuse worker-lifetime cache (synthetic root packages.json from importsMap, or anything previously fetched in an earlier run) instead of re-fetching every Run.
         let bytes;
