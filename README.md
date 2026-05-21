@@ -9,6 +9,7 @@ edge-python-capabilities/
 ├── dom/
 │   ├── src/
 │   ├── web/
+│   ├── tests/
 │   └── README.md
 └── static/
 ```
