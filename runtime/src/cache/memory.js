@@ -1,5 +1,5 @@
 /*
-In-memory cache backend; same shape as `cache/idb.js`. Used when `integrity:false` or as fallback when IDB is unavailable.
+In-memory cache backend; same shape as `cache/idb.js`. Used when `integrity:false` or as fallback when IDB is unavailable. Methods are synchronous but callers `await` them uniformly — `await sync_value` resolves immediately, so the interface stays interchangeable with `IdbCache` without lying with `async` keywords.
 */
 
 export class MemoryCache {
@@ -8,30 +8,30 @@ export class MemoryCache {
         this.lockfile = new Map(); // spec -> hash
     }
 
-    async open() { /* no-op */ }
+    open() { /* no-op */ }
 
-    async getBytes(hash) {
+    getBytes(hash) {
         return this.cas.get(hash) ?? null;
     }
 
-    async putBytes(hash, bytes) {
+    putBytes(hash, bytes) {
         this.cas.set(hash, bytes);
     }
 
-    async loadLockfile() {
+    loadLockfile() {
         return new Map(this.lockfile);
     }
 
-    async saveLockfile(entries) {
+    saveLockfile(entries) {
         for (const [k, v] of entries) this.lockfile.set(k, v);
     }
 
-    async clear() {
+    clear() {
         this.cas.clear();
         this.lockfile.clear();
     }
 
-    async setVersion(_version) { /* no-op: nothing to invalidate across sessions */ }
+    setVersion(_version) { /* no-op: nothing to invalidate across sessions */ }
 
-    async getVersion() { return null; }
+    getVersion() { return null; }
 }
