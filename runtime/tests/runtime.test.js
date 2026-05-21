@@ -88,8 +88,10 @@ Deno.test("runtime", async (t) => {
                     const worker = await createWorker({ wasmUrl: WASM_URL, mainThreadModules });
                     const out = [];
                     worker.onOutput((line) => out.push(line));
+                    /* `pushEvent` injects into the paused VM's queue — it only works once `run()` is in flight and `receive()` has yielded. Start the run first, then post events; postMessage is FIFO so the worker processes 'run' before the 'push-event' messages. */
+                    const runPromise = worker.run(c.script);
                     for (const e of c.events ?? []) worker.pushEvent(e);
-                    const run = await worker.run(c.script);
+                    const run = await runPromise;
                     worker.dispose();
                     return { out, trace: run.out ?? "" };
                 }, { c, FIXTURES, WASM_URL });
