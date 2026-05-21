@@ -499,5 +499,17 @@
     "src": "from m import host_defer\nasync def a():\n    host_defer()\nasync def b():\n    print('ran')\ngather(a(), b())",
     "modules": { "m": { "native": ["host_defer"] } },
     "error": "scheduler suspended"
+  },
+  {
+    "src": "from m import host_defer\nv = host_defer()\nprint(f'got:{v}')",
+    "modules": { "m": { "native": ["host_defer"] } },
+    "host_results": ["dark"],
+    "output": ["got:dark"]
+  },
+  {
+    "src": "from m import host_defer\nprint(f'got:{host_defer()}')",
+    "modules": { "m": { "native": ["host_defer"] } },
+    "host_results": ["dark"],
+    "output": ["got:dark"]
   }
 ]

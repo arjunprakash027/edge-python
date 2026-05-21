@@ -250,16 +250,7 @@ pub unsafe extern "C" fn set_host_result(handle: u32) -> i32 {
     super::with_runtime(|rt| {
         let Some(paused) = rt.paused_run.as_mut() else { return 3; };
         let Some(vm) = paused.vm.as_mut() else { return 3; };
-        let waiter = vm.scheduler.iter().enumerate()
-            .find(|(_, h)| matches!(h.state, crate::modules::vm::types::CoroState::WaitingHostCall))
-            .map(|(i, h)| (i, h.coro));
-        let Some((idx, coro)) = waiter else { return 2; };
-        if let crate::modules::vm::types::HeapObj::Coroutine(_, _, saved_stack, _, _, sub_frames, _) = vm.heap.get_mut(coro) {
-            let target_stack = if let Some(frame) = sub_frames.last_mut() { &mut frame.stack_delta } else { saved_stack };
-            if let Some(top) = target_stack.last_mut() { *top = val; } else { target_stack.push(val); }
-        }
-        vm.scheduler[idx].state = crate::modules::vm::types::CoroState::Ready;
-        0
+        if vm.inject_host_result(val) { 0 } else { 2 }
     })
 }
 

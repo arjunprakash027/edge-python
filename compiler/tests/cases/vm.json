@@ -1697,5 +1697,8 @@
   {"src": "async def child():\n    receive()\n    return 42\nr = run(child())\nprint(r + 1)", "interactive_events": ["x"], "output": ["43"]},
   {"src": "r = run(42)\nprint(r)", "output": ["None"]},
   {"src": "async def first():\n    return receive()\nasync def second():\n    return receive()\nprint(run(first()))\nprint(run(second()))", "interactive_events": ["one", "two"], "output": ["one", "two"]},
-  {"src": "async def child():\n    receive()\n    return receive()\ntry:\n    r = run(child())\n    print(f'ok:{r}')\nexcept Exception as e:\n    print(f'err:{e}')", "interactive_events": ["a", "b"], "output": ["ok:b"]}
+  {"src": "async def child():\n    receive()\n    return receive()\ntry:\n    r = run(child())\n    print(f'ok:{r}')\nexcept Exception as e:\n    print(f'err:{e}')", "interactive_events": ["a", "b"], "output": ["ok:b"]},
+  {"src": "def f():\n    return 'x'\nprint(f'val:{f()}')", "output": ["val:x"]},
+  {"src": "print(f'got:{receive()}')", "events": ["hi"], "output": ["got:hi"]},
+  {"src": "async def child():\n    return 'x'\nprint(f'got:{run(child())}')", "output": ["got:x"]}
 ]

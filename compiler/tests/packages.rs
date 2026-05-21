@@ -10,6 +10,7 @@ mod test {
     use compiler_lib::modules::lexer::lex;
     use compiler_lib::modules::parser::Parser;
     use compiler_lib::modules::vm::VM;
+    use compiler_lib::modules::vm::types::{SchedulerStatus, VmErr};
     use compiler_lib::modules::packages::NativeBinding;
 
     use crate::common::{TestResolver, test_native};
@@ -62,6 +63,9 @@ mod test {
         expect_functions: Option<usize>,
         #[serde(default)]
         error_span_covers: Option<String>,
+        /* String values injected one-at-a-time after each PendingHostCall yield, simulating the JS bridge's `set_host_result`. */
+        #[serde(default)]
+        host_results: Vec<String>,
     }
 
     fn build_resolver(modules: &HashMap<String, ModuleDef>, aliases: &HashMap<String, String>, manifests: &HashMap<String, ManifestDef>) -> TestResolver {
@@ -137,7 +141,19 @@ mod test {
 
             let mut vm = VM::new(&chunk);
             vm.input_buffer = case.input.clone();
-            match vm.run() {
+            // Drive loop: resume on PendingHostCall by injecting the next host_results entry as a string Val.
+            let mut hr_idx = 0usize;
+            let result = loop {
+                match vm.run() {
+                    Ok(v) => break Ok(v),
+                    Err(VmErr::HostYield(SchedulerStatus::PendingHostCall)) if hr_idx < case.host_results.len() => {
+                        vm.push_host_result(&case.host_results[hr_idx]).expect("push_host_result");
+                        hr_idx += 1;
+                    }
+                    Err(e) => break Err(e),
+                }
+            };
+            match result {
                 Ok(_) => {
                     if case.error.is_some() { panic!("expected error on {:?}, got success with output {:?}", case.src, vm.output); }
                     assert_eq!(vm.output, case.output, "output mismatch on: {:?}", case.src);

@@ -81,6 +81,26 @@ impl<'a> VM<'a> {
         }
     }
 
+    /* Inject `val` into the first `WaitingHostCall` waiter's saved stack and mark it Ready; returns false if no waiter exists. Shared by the WASM `set_host_result` ABI and Rust hosts/tests that drive deferred host-calls. */
+    pub fn inject_host_result(&mut self, val: Val) -> bool {
+        let waiter = self.scheduler.iter().enumerate()
+            .find(|(_, h)| matches!(h.state, crate::modules::vm::types::CoroState::WaitingHostCall))
+            .map(|(i, h)| (i, h.coro));
+        let Some((idx, coro)) = waiter else { return false; };
+        if let crate::modules::vm::types::HeapObj::Coroutine(_, _, saved_stack, _, _, sub_frames, _) = self.heap.get_mut(coro) {
+            let target_stack = if let Some(frame) = sub_frames.last_mut() { &mut frame.stack_delta } else { saved_stack };
+            if let Some(top) = target_stack.last_mut() { *top = val; } else { target_stack.push(val); }
+        }
+        self.scheduler[idx].state = crate::modules::vm::types::CoroState::Ready;
+        true
+    }
+
+    /* String form of `inject_host_result`: allocates `message` on the heap and injects it. Used by Rust hosts that return text bodies (and test fixtures simulating that path). */
+    pub fn push_host_result(&mut self, message: &str) -> Result<bool, VmErr> {
+        let val = self.heap.alloc(crate::modules::vm::types::HeapObj::Str(message.into()))?;
+        Ok(self.inject_host_result(val))
+    }
+
     /* Push a string event onto the event queue; consumed by the next `receive()` call. Mirrors what `run_push_event` does for WASM hosts. */
     pub fn push_event(&mut self, message: &str) -> Result<(), VmErr> {
         let val = self.heap.alloc(crate::modules::vm::types::HeapObj::Str(message.into()))?;
