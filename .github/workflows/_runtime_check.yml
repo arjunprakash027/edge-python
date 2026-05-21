@@ -4,30 +4,8 @@ on:
   workflow_call:
 
 jobs:
-  lint:
-    name: Deno Lint
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-
-      - name: Cache Deno modules
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/deno
-          key: deno-${{ runner.os }}-${{ hashFiles('**/deno.json', '**/deno.lock') }}
-          restore-keys: deno-${{ runner.os }}-
-
-      - name: Lint runtime/
-        run: deno lint runtime/
-
-  test:
-    name: Deno Test (Playwright + CDN wasm)
-    needs: lint
+  check:
+    name: Deno Lint + Test
     runs-on: ubuntu-latest
 
     steps:
@@ -54,6 +32,10 @@ jobs:
       # --with-deps installs OS-level libs (libnss, libatk, ...) required by Chromium on Linux runners.
       - name: Install Chromium
         run: deno run -A npm:playwright install --with-deps chromium
+
+      # Lint first — fails fast and cheap on style/syntax issues before paying for the browser-driven test.
+      - name: Lint runtime/
+        run: deno lint runtime/
 
       - name: Test runtime/tests/
         run: deno test --allow-all runtime/tests/runtime.test.js

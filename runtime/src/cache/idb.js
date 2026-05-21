@@ -35,11 +35,11 @@ export class IdbCache {
         });
     }
 
-    async getBytes(hash) {
+    getBytes(hash) {
         return this._req(this._tx('cas', 'readonly').get(hash));
     }
 
-    async putBytes(hash, bytes) {
+    putBytes(hash, bytes) {
         return this._req(this._tx('cas', 'readwrite').put(bytes, hash));
     }
 
@@ -60,7 +60,9 @@ export class IdbCache {
 
     async saveLockfile(entries) {
         const s = this._tx('lockfile', 'readwrite');
-        for (const [k, v] of entries) s.put(v, k);
+        let last;
+        for (const [k, v] of entries) last = s.put(v, k);
+        if (last) await this._req(last);
     }
 
     async clear() {

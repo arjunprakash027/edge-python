@@ -70,9 +70,9 @@ export async function createWorker(opts) {
     const { mainThreadModules: _drop, ...workerOpts } = opts || {};
     const ready = await send('load', { opts: workerOpts, mainThreadManifests: manifests });
 
-    /* Browser bridges fire `CustomEvent("edge-python-event")` on window; route the detail to the Worker. */
-    if (typeof window !== 'undefined') {
-        window.addEventListener('edge-python-event', (e) => {
+    /* Browser bridges fire `CustomEvent("edge-python-event")` on the global; route the detail to the Worker. Gated on `document` to skip Workers / Deno where this listener has no meaning. */
+    if (typeof document !== 'undefined') {
+        addEventListener('edge-python-event', (e) => {
             if (typeof e.detail === 'string') pushEvent(e.detail);
         });
     }
