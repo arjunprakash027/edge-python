@@ -1,0 +1,59 @@
+name: _Runtime Check
+
+on:
+  workflow_call:
+
+jobs:
+  lint:
+    name: Deno Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Cache Deno modules
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/deno
+          key: deno-${{ runner.os }}-${{ hashFiles('**/deno.json', '**/deno.lock') }}
+          restore-keys: deno-${{ runner.os }}-
+
+      - name: Lint runtime/
+        run: deno lint runtime/
+
+  test:
+    name: Deno Test (Playwright + CDN wasm)
+    needs: lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Cache Deno modules
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/deno
+          key: deno-${{ runner.os }}-${{ hashFiles('**/deno.json', '**/deno.lock') }}
+          restore-keys: deno-${{ runner.os }}-
+
+      # ~150MB Chromium binary; cached across runs so only the first run pays the download.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium
+
+      # --with-deps installs OS-level libs (libnss, libatk, ...) required by Chromium on Linux runners.
+      - name: Install Chromium
+        run: deno run -A npm:playwright install --with-deps chromium
+
+      - name: Test runtime/tests/
+        run: deno test --allow-all runtime/tests/runtime.test.js
