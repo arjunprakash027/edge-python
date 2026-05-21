@@ -36,7 +36,7 @@ def mount_swatch(parent, name: str, color: str):
     append_child(parent, box)
 
 PALETTE: list[tuple[str, str]] = [
-    ("Claude", "#d97757"),
+    ("Orange", "#d97757"),
     ("Slate", "#1f2937"),
     ("Sky", "#0ea5e9"),
     ("Lime", "#84cc16"),
