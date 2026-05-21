@@ -1,5 +1,5 @@
 /*
-Engine orchestrator. Internal to the Worker — consumers go through `createWorker` in `src/index.js`. Lifecycle: `load` once → many `run` cycles → `dispose`. Each run instantiates compiler_lib fresh so prior-run state cannot leak.
+Engine orchestrator. Internal to the Worker — consumers go through `createWorker` in `src/index.js`. Lifecycle: `load` once -> many `run` cycles -> `dispose`. Each run instantiates compiler_lib fresh so prior-run state cannot leak.
 */
 
 import { MemoryCache } from '../src/cache/memory.js';
@@ -110,7 +110,7 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
         return ptr;
     };
 
-    /* Synthetic main-thread modules: register at `mt:<name>` specs and graft `<name> → mt:<name>` into importsMap so the bare name resolves via the synthesized packages.json. */
+    /* Synthetic main-thread modules: register at `mt:<name>` specs and graft `<name> -> mt:<name>` into importsMap so the bare name resolves via the synthesized packages.json. */
     const mainThreadSpecs = new Set();
     const augmentedImports = { ...(importsMap || {}) };
     for (const m of mainThreadManifests) {

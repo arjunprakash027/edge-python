@@ -63,7 +63,7 @@ pub(super) enum ModuleEntry {
     Native(Vec<(String, u32)>),
 }
 
-/* VM suspended on `VmErr::HostYield`, kept across `run_start` → `run_resume` for cooperative resume. */
+/* VM suspended on `VmErr::HostYield`, kept across `run_start` -> `run_resume` for cooperative resume. */
 pub(super) struct PausedRun {
     /* Option so `step_vm` can `take()` for re-entry and stash back without a dummy VM. */
     pub vm: Option<VM<'static>>,

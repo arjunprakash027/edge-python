@@ -203,7 +203,7 @@ Built-in dict and set still compare instance keys by identity (`Val` bit pattern
 
 ## Attribute access fallback
 
-`__getattr__(self, name)` runs only when the normal lookup (instance dict → class chain) misses. It receives the attribute name as a string and returns the value to use, or raises `AttributeError` to surface a real miss.
+`__getattr__(self, name)` runs only when the normal lookup (instance dict -> class chain) misses. It receives the attribute name as a string and returns the value to use, or raises `AttributeError` to surface a real miss.
 
 ```python
 class Proxy:

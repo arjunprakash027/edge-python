@@ -63,7 +63,7 @@ pub struct ExceptionFrame {
     pub with_depth: usize,
 }
 
-// Coroutine body: user fn (Fn) or the implicit module-body coro (Module → self.chunk).
+// Coroutine body: user fn (Fn) or the implicit module-body coro (Module -> self.chunk).
 #[derive(Clone, Copy, Debug)]
 pub enum BodyRef {
     Fn(usize),

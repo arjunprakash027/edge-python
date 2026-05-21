@@ -38,7 +38,7 @@ worker.dispose();
 
 ## API
 
-### `createWorker(opts)` → `Promise<Worker>`
+### `createWorker(opts)` -> `Promise<Worker>`
 
 Spawns a Web Worker, loads `compiler_lib.wasm` inside it, returns a proxy.
 
@@ -82,7 +82,7 @@ export default {
     async load(module, ctx) {
         // ctx.compilerExports  — compiler_lib.wasm instance exports (wasm_alloc, host_edge_*, etc.)
         // ctx.rt  — handle codec helpers (decodeStr, encodeInt, ...)
-        // ctx.fetchedSources  — Map of already-fetched spec → bytes
+        // ctx.fetchedSources  — Map of already-fetched spec -> bytes
         // ctx.loaders  — full loader list (in order)
 
         return {

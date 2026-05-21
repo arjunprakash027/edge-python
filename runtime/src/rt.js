@@ -94,7 +94,7 @@ function encodeFloat(exps, f) {
     return h;
 }
 
-/* Decode any tag → JS value; mirrors `decodeBytes` but inspects (not asserts) the tag. */
+/* Decode any tag -> JS value; mirrors `decodeBytes` but inspects (not asserts) the tag. */
 function decodeAny(exps, handle) {
     const tagPtr = exps.wasm_alloc(4);
     let cap = 256;
@@ -121,7 +121,7 @@ function decodeAny(exps, handle) {
     }
 }
 
-/* JS value → handle; chooses tag from typeof. Bigint also accepted for int. */
+/* JS value -> handle; chooses tag from typeof. Bigint also accepted for int. */
 function encodeAny(exps, value) {
     if (value === null || value === undefined) return exps.host_edge_encode(TAG_NONE, 0, 0);
     if (typeof value === 'boolean') return encodeBool(exps, value);
