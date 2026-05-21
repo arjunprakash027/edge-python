@@ -7,12 +7,12 @@ from storage import local_set, local_get, idb_open, idb_put, idb_get
 import json
 
 local_set("theme", "dark")
-print(local_get("theme"))   # → "dark"
+print(local_get("theme")) # -> "dark"
 
 db = idb_open("notes", 1, '{"stores":["items"]}')
 idb_put(db, "items", "1", '{"title":"hello"}')
 note = json.loads(idb_get(db, "items", "1"))
-print(note["title"])        # → "hello"
+print(note["title"]) # -> "hello"
 ```
 
 ## Setup
@@ -58,9 +58,9 @@ import json
 
 local_set("theme", "dark")
 local_set("user", "ada")
-print(local_get("theme"))           # → "dark"
-print(local_get("missing"))         # → None
-print(json.loads(local_keys()))     # → ["theme", "user"]
+print(local_get("theme")) # -> "dark"
+print(local_get("missing")) # -> None
+print(json.loads(local_keys())) # -> ["theme", "user"]
 local_remove("user")
 local_clear()
 ```

@@ -1,6 +1,6 @@
 /* IndexedDB — async handlers; the worker parks the coro on the returned Promise so Python sees `idb_*` as yielding builtins that compose with `gather` / `with_timeout`. */
 
-/* IDBRequest → Promise. Native IndexedDB is callback-only; this is the standard one-liner wrapper. */
+/* IDBRequest -> Promise. Native IndexedDB is callback-only; this is the standard one-liner wrapper. */
 const promisify = (req) => new Promise((resolve, reject) => {
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
