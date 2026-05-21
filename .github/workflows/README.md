@@ -1,7 +1,7 @@
 # Edge Python CI/CD
 
 ```
-         deno check ┐
+deno lint -> deno test ┐
 check -> wasm -> runtime -> demo
 ```
 
@@ -9,7 +9,7 @@ check -> wasm -> runtime -> demo
 |----------|------|
 | `_check.yml`         | `cargo shear` + `clippy` (host and wasm targets) |
 | `_wasm.yml`          | Builds and optimizes `compiler_lib.wasm`. On tags, attaches the `.wasm` to the GitHub Release |
-| `_runtime_check.yml` | JS-only check for `runtime/`: `deno lint` + Playwright suite against the CDN-deployed wasm. Independent of the Rust pipeline — runs in parallel with `wasm`; gates the CDN upload below |
+| `_runtime_check.yml` | JS-side gate: `deno lint runtime/` + `deno test runtime/tests/` (Playwright + Chromium driving `createWorker` against the CDN-deployed wasm). Independent branch — runs in parallel with the Rust pipeline; only the CDN upload below blocks on it |
 | `_runtime.yml`       | Bundles `runtime/` + `compiler_lib.wasm` and deploys them to Cloudflare Pages |
 | `_demo.yml`          | Hashes `compiler_lib.wasm` into `version.json` (cache-busting) and deploys `demo/` to Cloudflare Pages |
 
