@@ -1,0 +1,36 @@
+[
+    {
+        "name": "boot + print literal",
+        "script": "print('hello')",
+        "output": ["hello"]
+    },
+    {
+        "name": "arithmetic + f-string",
+        "script": "x = 21\nprint(f'answer = {x * 2}')",
+        "output": ["answer = 42"]
+    },
+    {
+        "name": "receive() drains pushEvent queue",
+        "script": "for _ in range(2):\n    print(receive())",
+        "events": ["one", "two"],
+        "output": ["one", "two"]
+    },
+    {
+        "name": "mainThreadModule sync handler",
+        "script": "from m import uppercase\nprint(uppercase('hi'))",
+        "main_thread": { "m": ["uppercase"] },
+        "output": ["HI"]
+    },
+    {
+        "name": "mainThreadModule async handler (deferred host-call path)",
+        "script": "from m import echo_async\nprint(echo_async('ping'))",
+        "main_thread": { "m": ["echo_async"] },
+        "output": ["echo:ping"]
+    },
+    {
+        "name": "async handler inline in f-string (regression guard for dispatch.rs host_yield fix)",
+        "script": "from m import echo_async\nprint(f'got:{echo_async(\"x\")}')",
+        "main_thread": { "m": ["echo_async"] },
+        "output": ["got:echo:x"]
+    }
+]

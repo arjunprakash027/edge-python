@@ -1,54 +1,18 @@
-/* Single-file runtime tester. Serves runtime/ from disk, drives `createWorker(...)` in Chromium per case. Uses the CDN-deployed wasm so this test is decoupled from local builds (mirrors the capabilities pattern). Run: deno test --allow-all runtime/tests/runtime.test.js (one-time: deno run -A npm:playwright install chromium). */
+/* Runtime tester. Cases live in `./cases.json` (table-driven, same pattern as `compiler/tests/cases/vm.json`); this file is just the harness. Serves runtime/ from disk, drives `createWorker(...)` in Chromium per case, uses the CDN-deployed wasm so the test is decoupled from local builds. Run: deno test --allow-all runtime/tests/runtime.test.js (one-time: deno run -A npm:playwright install chromium). */
 
 import { chromium } from "npm:playwright@latest";
 import { readFileSync } from "node:fs";
 
 const REPO = new URL("../../", import.meta.url).pathname; // edge-python/
 const WASM_URL = "https://runtime.edgepython.com/js/compiler_lib.wasm";
+const cases = JSON.parse(readFileSync(new URL("./cases.json", import.meta.url)));
 
-/* Named handler fixtures referenced by cases.main_thread — keeps cases declarative (no inline JS). */
+/* Named handler fixtures referenced by `cases.main_thread` — kept in JS because handler bodies are functions (not JSON-serializable). Each case lists fixture names; the harness rehydrates them into actual functions inside the browser. */
 const FIXTURES = {
     uppercase: "(s) => s.toUpperCase()",
     double:    "(n) => Number(n) * 2",
     echo_async: "async (s) => { await new Promise(r => setTimeout(r, 10)); return 'echo:' + s; }",
 };
-
-const cases = [
-    {
-        name: "boot + print literal",
-        script: "print('hello')",
-        output: ["hello"],
-    },
-    {
-        name: "arithmetic + f-string",
-        script: "x = 21\nprint(f'answer = {x * 2}')",
-        output: ["answer = 42"],
-    },
-    {
-        name: "receive() drains pushEvent queue",
-        script: "for _ in range(2):\n    print(receive())",
-        events: ["one", "two"],
-        output: ["one", "two"],
-    },
-    {
-        name: "mainThreadModule sync handler",
-        script: "from m import uppercase\nprint(uppercase('hi'))",
-        main_thread: { m: ["uppercase"] },
-        output: ["HI"],
-    },
-    {
-        name: "mainThreadModule async handler (deferred host-call path)",
-        script: "from m import echo_async\nprint(echo_async('ping'))",
-        main_thread: { m: ["echo_async"] },
-        output: ["echo:ping"],
-    },
-    {
-        name: "async handler inline in f-string (regression guard for dispatch.rs host_yield fix)",
-        script: "from m import echo_async\nprint(f'got:{echo_async(\"x\")}')",
-        main_thread: { m: ["echo_async"] },
-        output: ["got:echo:x"],
-    },
-];
 
 const TYPES = { ".js": "text/javascript", ".wasm": "application/wasm", ".html": "text/html" };
 
