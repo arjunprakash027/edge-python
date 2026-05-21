@@ -71,11 +71,10 @@ export function makeGuestEnv(compilerExports) {
 /* Built-in Path A fallback: instantiate guest, walk exports, annotate each fn with its guest's `__edge_alloc` + `__edge_memory`. */
 async function builtinWasmPdkLoader(module, ctx) {
     const envFactory = makeGuestEnv(ctx.compilerExports);
-    let guest;
-    const env = envFactory({ get memory() { return guest.exports.memory; } });
+    // Forward reference: the getter captures `instance` lazily. It's only read when env functions fire during VM execution, by which point `instance` is bound.
+    const env = envFactory({ get memory() { return instance.exports.memory; } });
     // WebAssembly.instantiate(Module, ...) returns the Instance directly, not {module, instance}.
     const instance = await WebAssembly.instantiate(module, { env });
-    guest = instance;
 
     if (typeof instance.exports.__edge_alloc !== 'function') {
         throw new Error(
@@ -98,7 +97,7 @@ async function builtinWasmPdkLoader(module, ctx) {
 }
 
 /* Try custom loaders first; built-in Path A is the implicit fallback. */
-export async function loadNativeModule(spec, bytes, ctx) {
+export async function loadNativeModule(_spec, bytes, ctx) {
     const module = await WebAssembly.compile(bytes);
 
     for (const loader of ctx.loaders) {

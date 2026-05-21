@@ -74,7 +74,7 @@ export class IdbCache {
         if (version) await this._req(this._tx('lockfile', 'readwrite').put(version, VERSION_KEY));
     }
 
-    async getVersion() {
+    getVersion() {
         return this._req(this._tx('lockfile', 'readonly').get(VERSION_KEY));
     }
 }

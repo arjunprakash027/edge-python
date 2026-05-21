@@ -1,6 +1,6 @@
 /* Single-file runtime tester. Serves runtime/ from disk, drives `createWorker(...)` in Chromium per case. Uses the CDN-deployed wasm so this test is decoupled from local builds (mirrors the capabilities pattern). Run: deno test --allow-all runtime/tests/runtime.test.js (one-time: deno run -A npm:playwright install chromium). */
 
-import { chromium } from "npm:playwright";
+import { chromium } from "npm:playwright@latest";
 import { readFileSync } from "node:fs";
 
 const REPO = new URL("../../", import.meta.url).pathname; // edge-python/
