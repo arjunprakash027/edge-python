@@ -11,10 +11,15 @@ edge-python-capabilities/
 │   ├── web/
 │   ├── tests/
 │   └── README.md
+├── network/
+│   ├── src/
+│   ├── web/
+│   ├── tests/
+│   └── README.md
 └── static/
 ```
 
-Each top-level folder is one capability. Planned siblings include `requests/` (networking) and others.
+Each top-level folder is one capability.
 
 ## Usage
 
@@ -35,7 +40,8 @@ Each top-level folder is one capability. Planned siblings include `requests/` (n
 
 | Folder | Description |
 |--------|-------------|
-| `dom`  | Browser DOM access — see [`dom/README.md`](dom/README.md) |
+| `dom`     | Browser DOM access — see [`dom/README.md`](dom/README.md) |
+| `network` | HTTP fetch, WebSocket, SSE — see [`network/README.md`](network/README.md) |
 
 ## License
 
