@@ -74,3 +74,5 @@ async def main():
                 mount_swatch(grid, "Custom", val)
                 animate(last_child(grid), FADE_IN, '{"duration": 240, "fill": "forwards"}')
                 set_value(hex_inp, "")
+
+run(main())
