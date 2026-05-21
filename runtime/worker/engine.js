@@ -31,6 +31,8 @@ let loaders = [];
 let importsMap = null;
 // Resolves run()'s current `await` when a `PendingEvent` wake-up arrives via `pushEvent`.
 let eventWaiter = null;
+// Events `pushEvent`'d before the VM was ready (no `compilerExports`, or no paused run yet). Drained at the next `PENDING_EVENT` yield.
+const pendingEvents = [];
 /* Captured by env.host_call_native on DEFERRED; consumed by the PENDING_HOST_CALL driver branch. */
 let pendingHostCall = null;
 /* (name, args) => Promise<value>. Set by worker.js (postMessage round-trip) or by a main-thread embedder. */
@@ -169,7 +171,15 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
         } else if (kind === STATUS_PENDING_FRAME) {
             await new Promise(r => requestAnimationFrame(r));
         } else if (kind === STATUS_PENDING_EVENT) {
-            await new Promise(r => { eventWaiter = r; });
+            // Drain any events buffered before the VM became ready. `inject_event` wakes the waiter on the first one and queues the rest for subsequent `receive()` calls; either way no `await` is needed.
+            let injected = 0;
+            while (pendingEvents.length > 0 && injectEvent(pendingEvents[0])) {
+                pendingEvents.shift();
+                injected++;
+            }
+            if (injected === 0) {
+                await new Promise(r => { eventWaiter = r; });
+            }
         } else if (kind === STATUS_PENDING_HOST_CALL) {
             const call = pendingHostCall;
             pendingHostCall = null;
@@ -200,20 +210,30 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
     return { out, ms };
 }
 
-/* Push a string into the paused VM's `event_queue`; wakes `receive()` and resolves the driver's await. */
-export function pushEvent(message) {
+/* Inject directly into the paused VM. Returns false if the VM isn't ready yet (no compilerExports, or no paused run) so callers can buffer. */
+function injectEvent(message) {
     if (!compilerExports) return false;
-    const bytes = TE.encode(String(message));
+    const bytes = TE.encode(message);
     const ptr = compilerExports.wasm_alloc(bytes.length);
     new Uint8Array(compilerExports.memory.buffer, ptr, bytes.length).set(bytes);
     const status = compilerExports.run_push_event(ptr, bytes.length);
     compilerExports.wasm_free(ptr, bytes.length);
+    return status === 0;
+}
+
+/* Push a string into the VM's event queue; wakes `receive()`. Buffers if the VM isn't paused on PENDING_EVENT yet — the driver loop drains the buffer at the next yield, so callers never need to know about the VM's readiness window. */
+export function pushEvent(message) {
+    const msg = String(message);
+    if (!injectEvent(msg)) {
+        pendingEvents.push(msg);
+        return true;
+    }
     if (eventWaiter) {
         const w = eventWaiter;
         eventWaiter = null;
         w();
     }
-    return status === 0;
+    return true;
 }
 
 /* Register the host-call delegate. worker.js wires a postMessage round-trip; no other consumer is supported. */
