@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Edge Python Storage</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" type="image/svg+xml" href="../../static/favicon.svg">
+</head>
+<body class="font-sans bg-[#FFFFFF] text-gray-800 max-w-3xl mx-auto my-12 px-6">
+    <h1 class="text-2xl mb-1">Edge Python Storage</h1>
+    <p class="text-gray-500 text-[0.95em] mb-8">localStorage, sessionStorage, IndexedDB — from Python in your browser.</p>
+
+    <pre id="output" class="bg-neutral-900 text-neutral-300 p-3 rounded-md text-xs overflow-x-auto"></pre>
+
+    <script type="module">
+        import { createWorker } from "https://runtime.edgepython.com/js/src/index.js";
+        import { storage } from "../src/index.js";
+
+        const out = document.getElementById("output");
+
+        const worker = await createWorker({
+            wasmUrl: 'https://runtime.edgepython.com/js/compiler_lib.wasm',
+            mainThreadModules: { storage },
+        });
+        worker.onOutput((line) => { out.textContent += line + "\n"; });
+
+        try {
+            const src = await (await fetch("./example.py")).text();
+            const { out: trace, ms } = await worker.run(src);
+            if (trace) out.textContent += `[failed after ${ms.toFixed(2)} ms]\n${trace}`;
+            else out.textContent += `ran in ${ms.toFixed(2)} ms`;
+        } catch (e) {
+            out.textContent += "[error] " + (e?.message ?? e);
+            console.error(e);
+        }
+    </script>
+</body>
+</html>

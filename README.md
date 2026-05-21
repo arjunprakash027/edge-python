@@ -16,6 +16,11 @@ edge-python-capabilities/
 │   ├── web/
 │   ├── tests/
 │   └── README.md
+├── storage/
+│   ├── src/
+│   ├── web/
+│   ├── tests/
+│   └── README.md
 └── static/
 ```
 
@@ -42,6 +47,7 @@ Each top-level folder is one capability.
 |--------|-------------|
 | `dom`     | Browser DOM access — see [`dom/README.md`](dom/README.md) |
 | `network` | HTTP fetch, WebSocket, SSE — see [`network/README.md`](network/README.md) |
+| `storage` | localStorage, sessionStorage, IndexedDB — see [`storage/README.md`](storage/README.md) |
 
 ## License
 
