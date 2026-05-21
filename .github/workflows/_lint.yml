@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: denoland/setup-deno@v2
         with:
@@ -22,7 +22,7 @@ jobs:
 
       # Caches npm: and jsr: imports. Lint usually has nothing to fetch, but the cache stays consistent with `_test.yml` and protects against capabilities that lint remote-imported modules.
       - name: Cache Deno modules
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/deno
           key: deno-${{ runner.os }}-${{ hashFiles('**/deno.json', '**/deno.lock') }}
