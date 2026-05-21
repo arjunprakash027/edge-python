@@ -41,6 +41,23 @@ python3 -m http.server 8080
 
 Open <http://127.0.0.1:8080/dom/web/>. No build step.
 
+## Testing
+
+A smoke test loads the demo in headless Chromium, clicks through a few interactions, and fails if any console error fires.
+
+```bash
+# Deno setup
+curl -fsSL https://deno.land/install.sh | sh
+source ~/.bashrc
+
+#Cache the browser binary
+deno run -A npm:playwright install chromium
+
+# Run
+cd edge-python-capabilities/dom
+deno test --allow-all tests/dom.test.js
+```
+
 ## API
 
 **Conventions.**

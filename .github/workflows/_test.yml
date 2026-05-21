@@ -1,0 +1,44 @@
+name: _Test
+
+on:
+  workflow_call:
+    inputs:
+      capability:
+        description: Capability directory whose tests/ folder to run (e.g. dom).
+        required: true
+        type: string
+
+jobs:
+  test:
+    name: Deno Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      # Caches npm: and jsr: imports (e.g. npm:playwright, jsr:@std/assert). Key invalidates when deno.json / deno.lock change.
+      - name: Cache Deno modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/deno
+          key: deno-${{ runner.os }}-${{ hashFiles('**/deno.json', '**/deno.lock') }}
+          restore-keys: deno-${{ runner.os }}-
+
+      # ~150MB Chromium binary; cached across runs so only the first run pays the download.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium
+
+      # --with-deps installs OS-level libs (libnss, libatk, ...) required by Chromium on Linux runners. Idempotent: cache-hit makes it a no-op.
+      - name: Install Chromium
+        run: deno run -A npm:playwright install --with-deps chromium
+
+      - name: Test tests/
+        working-directory: ${{ inputs.capability }}
+        run: deno test --allow-all tests/
