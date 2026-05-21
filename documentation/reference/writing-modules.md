@@ -258,6 +258,7 @@ async def main():
     while True:
         receive()
         set_text(query("#btn"), "clicked")
+run(main())
 ```
 
 Handlers take **decoded JS values** and return **plain JS values**. Supported tags across the boundary: `None`, `bool`, `int` (i64, range-limited by JS Number), `float`, and string bytes. Opaque object references (DOM nodes, file objects, observers) are modelled as integer IDs into a main-thread registry the handlers own — the `alloc`/`node` pattern above.

@@ -72,13 +72,9 @@ export async function load({ wasmUrl, integrity = true, loaders: loaderUrls = []
     return { integrityActive, loadMs: performance.now() - t0 };
 }
 
-/* If the script defines `main`, drive it automatically — keeps user scripts free of explicit `run(main())`. */
-const AUTO_ENTRY = '\n"main" in globals() and run(main())\n';
-
 export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
     if (!wasmModule) throw new Error('engine.load() must be called before run()');
 
-    src = src + AUTO_ENTRY;
     const srcBytes = TE.encode(src);
     if (srcBytes.length > SOURCE_LIMIT) throw new Error(`source exceeds ${SOURCE_LIMIT} bytes`);
 
