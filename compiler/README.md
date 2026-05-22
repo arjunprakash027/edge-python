@@ -7,7 +7,7 @@ A compact single-pass SSA bytecode compiler and stack VM for a sandboxed Python 
 
 ## Architecture
 
-Single-pass pipeline: source → bytecode in an SSA chunk; stack interpreter with adaptive inline caching and pure-function memoization.
+Single-pass pipeline: source -> bytecode in an SSA chunk; stack interpreter with adaptive inline caching and pure-function memoization.
 
 * **Lexer** (`modules/lexer/`) — LUT-driven, offset-based tokens. See [Lexical](https://edgepython.com/implementation/lexical).
 * **Parser** (`modules/parser/`) — Pratt precedence; SSA-versioned bytecode with `Phi` at control-flow joins; no AST. See [Syntax (impl)](https://edgepython.com/implementation/syntax).

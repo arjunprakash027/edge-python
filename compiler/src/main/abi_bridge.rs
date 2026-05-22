@@ -38,6 +38,21 @@ pub unsafe extern "C" fn host_edge_op(op: u32, recv: u32, name_ptr: *const u8, n
 
 fn dispatch_call(recv_h: u32, name: &str, args: &[Val]) -> Result<Val, VmErr> {
     with_recv("edge_op call: invalid receiver handle", recv_h, |vm, recv| {
+        // `__call__` means "invoke `recv` as a callable", letting plugins forward arbitrary Python hooks (lambdas, builtins, classes) through `Handle::call("__call__", args)`. Pushes args + callee then drives `exec_call` so every callable kind (`Extern`, `NativeFn`, `Func`, `BoundMethod`, `Class`, …) routes through the same dispatch path the VM uses normally. Empty caller-slots are fine because lambdas/hooks that escape a plugin call cannot reference caller-frame locals — they can still capture their own defining scope through the regular Func captures vector.
+        if name == "__call__" {
+            // Stack layout for `Call`: callee at the bottom, then positional args (top is the rightmost). `parse_call_args` pops args first, then `exec_call` pops the callee.
+            let stack_before = vm.stack.len();
+            vm.stack.push(recv);
+            for a in args { vm.stack.push(*a); }
+            let operand = args.len() as u16; // (num_kw<<8)|num_pos; no kwargs from FFI hooks.
+            let chunk: &crate::modules::parser::SSAChunk = unsafe { &*(vm.chunk as *const _) };
+            let mut empty_slots: [Val; 0] = [];
+            vm.exec_call(operand, chunk, &mut empty_slots)?;
+            if vm.stack.len() != stack_before + 1 {
+                return Err(VmErr::Runtime("edge_op call(__call__): callable left no result"));
+            }
+            return vm.stack.pop().ok_or(VmErr::Runtime("edge_op call(__call__): stack drained"));
+        }
         let ty = vm.type_name(recv);
         let mid = lookup_method(ty, name).ok_or_else(|| VmErr::Attribute(s!("'", str ty, "' object has no method '", str name, "'")))?;
         let stack_before = vm.stack.len();
@@ -317,11 +332,19 @@ pub unsafe extern "C" fn host_edge_take_error(out_kind: *mut u32, dst: *mut u8, 
     bytes.len() as i32
 }
 
+/* Pack a flat `[name, val, name, val, …]` slice into a heap dict for the trailing-kwargs slot. `None` when there are no kwargs so callers serialize handle 0 on the wire. */
+pub(crate) fn pack_kw_dict(heap: &mut crate::modules::vm::types::HeapPool, kw_flat: &[Val]) -> Result<Option<Val>, VmErr> {
+    if kw_flat.is_empty() { return Ok(None); }
+    let dm = DictMap::from_pairs(kw_flat.chunks_exact(2).map(|p| (p[0], p[1])).collect());
+    Ok(Some(heap.alloc(HeapObj::Dict(Rc::new(RefCell::new(dm))))?))
+}
+
 /* Builds a NativeBinding that marshals handles around `host_call_native`. Kept out of resolver.rs so the resolver stays ABI-agnostic. */
 pub(super) fn make_native_binding(name: String, id: u32) -> NativeBinding {
-    let closure = move |_: &mut crate::modules::vm::types::HeapPool, args: &[Val]| -> Result<Val, VmErr> {
-        /* 1. Register args as handles the guest will see. */
-        let argv: Vec<u32> = args.iter().map(|v| put_val(*v)).collect();
+    let closure = move |_: &mut crate::modules::vm::types::HeapPool, args: &[Val], kwargs: Option<Val>| -> Result<Val, VmErr> {
+        /* 1. Register positional args as handles the guest will see; append the kwargs handle (0 means no kwargs). */
+        let mut argv: Vec<u32> = args.iter().map(|v| put_val(*v)).collect();
+        argv.push(kwargs.map_or(0, put_val));
         let mut out_handle: u32 = 0;
 
         /* 2. Call guest export through the host shim. */

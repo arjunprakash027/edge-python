@@ -38,7 +38,7 @@ Dunders are looked up on the class chain (instance dict skipped). Subclasses inh
 | `a ** b` | `__pow__`       | `__rpow__`       |
 | `-a`     | `__neg__`       | —                |
 
-Returning `NotImplemented` from the forward op tells the VM to try the reflected op on the other operand. Both `NotImplemented` (or neither defined) → `TypeError`.
+Returning `NotImplemented` from the forward op tells the VM to try the reflected op on the other operand. Both `NotImplemented` (or neither defined) -> `TypeError`.
 
 Subclass-first: when `type(b)` is a strict subclass of `type(a)`, `b.__radd__` runs before `a.__add__` — lets a subclass override an inherited reflected op without touching the base.
 
@@ -76,8 +76,8 @@ print((3 + Money(7)).n)
 
 `bool(x)` (and any boolean context) consults:
 
-1. `__bool__` if defined → cast to bool.
-2. `__len__` if defined → `False` when length is 0, else `True`.
+1. `__bool__` if defined -> cast to bool.
+2. `__len__` if defined -> `False` when length is 0, else `True`.
 3. Default `True`.
 
 `len(x)` calls `__len__` directly; must return a non-negative int.
@@ -203,7 +203,7 @@ Built-in dict/set still compare instance keys by identity (`Val` bits); user `__
 
 ## Attribute access fallback
 
-`__getattr__(self, name)` runs only when normal lookup (instance dict → class chain) misses. Receives the name as a string; returns the value or raises `AttributeError` to surface a real miss.
+`__getattr__(self, name)` runs only when normal lookup (instance dict -> class chain) misses. Receives the name as a string; returns the value or raises `AttributeError` to surface a real miss.
 
 ```python
 class Proxy:

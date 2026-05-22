@@ -54,7 +54,7 @@ print(slugify("Hello world"))
 2. For each spec, asks the host `Resolver` to materialise as `Resolved::Native { bindings, canonical }` or `Resolved::Code { src, canonical }`.
 3. Natives become direct-dispatch entries; code modules parse to a fresh `SSAChunk`. Both register under the canonical spec so first-class references and `import_module()` lookups resolve uniformly. See [Syntax — Imports](/implementation/syntax).
 
-Modules are singletons across the compilation unit: same canonical spec → one `SSAChunk`, top level runs once, one `HeapObj::Module` shared by every importer. Two files importing `./util.py` see the same module — `mod is mod_alias` is true; module-attr mutations are observed by every consumer. Inside the module's top level, `__name__` is bound to the canonical spec so `if __name__ == "__main__":` skips when imported.
+Modules are singletons across the compilation unit: same canonical spec -> one `SSAChunk`, top level runs once, one `HeapObj::Module` shared by every importer. Two files importing `./util.py` see the same module — `mod is mod_alias` is true; module-attr mutations are observed by every consumer. Inside the module's top level, `__name__` is bound to the canonical spec so `if __name__ == "__main__":` skips when imported.
 
 Helpers and constants stay private: they live in the module's slot frame, reached via attribute access on the `HeapObj::Module` Val, not through the parent chunk's name table. `a.f` calling `helper` resolves through `a`'s attrs, not the importer's globals.
 
@@ -77,7 +77,7 @@ Bare-name imports resolve through an import map in `packages.json` (next to the 
 Schema:
 
 - Top-level value is a JSON object. Empty `{}` is valid.
-- `imports` (optional): alias → spec string.
+- `imports` (optional): alias -> spec string.
 - `extends` (optional): directory whose `packages.json` is consulted when an alias isn't found locally.
 - Unknown top-level keys silently ignored (forward-compatible).
 - Booleans, numbers, arrays at any level are rejected.
@@ -129,7 +129,7 @@ Spec classification (handled by the resolver):
 
 ### Diamond imports and cycles
 
-When multiple paths import the same module, it's fetched, parsed, and initialised once. The parser caches `SSAChunk` per canonical spec; the VM's `init_modules` walk dedupes by spec. Cycles (`a.py` → `b.py` → `a.py`) surface as runtime `circular import`.
+When multiple paths import the same module, it's fetched, parsed, and initialised once. The parser caches `SSAChunk` per canonical spec; the VM's `init_modules` walk dedupes by spec. Cycles (`a.py` -> `b.py` -> `a.py`) surface as runtime `circular import`.
 
 ## Host responsibilities
 

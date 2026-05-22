@@ -33,12 +33,12 @@ npx wrangler pages project create edge-python-demo --production-branch=main
 npx wrangler pages project create edge-python-runtime --production-branch=main
 ```
 
-Repo secrets (*Settings → Secrets and variables → Actions*):
+Repo secrets (*Settings -> Secrets and variables -> Actions*):
 
-- `CLOUDFLARE_API_TOKEN` — `Account → Cloudflare Pages → Edit`. Create via dashboard: <https://dash.cloudflare.com/profile/api-tokens>.
+- `CLOUDFLARE_API_TOKEN` — `Account -> Cloudflare Pages -> Edit`. Create via dashboard: <https://dash.cloudflare.com/profile/api-tokens>.
 - `CLOUDFLARE_ACCOUNT_ID` — from `npx wrangler whoami` or any dashboard sidebar.
 
-Rotate: create new token → update secret → revoke old token.
+Rotate: create new token -> update secret -> revoke old token.
 
 ## Releases
 

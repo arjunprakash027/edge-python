@@ -19,7 +19,7 @@ pub use wasm_pdk_macros::{plugin_fn, plugin_class, plugin_methods, plugin_ctor};
 
 /// Curated import surface; hides `__internals` / `__edge_alloc` from glob users.
 pub mod prelude {
-    pub use crate::{plugin_fn, plugin_class, plugin_methods, plugin_ctor, Handle, Value, Error, Result, FromValue, IntoValue, PluginCell};
+    pub use crate::{plugin_fn, plugin_class, plugin_methods, plugin_ctor, Handle, Value, Error, Result, FromValue, IntoValue, Kwargs, PluginCell};
 }
 
 /* Plugin bootstrap */
@@ -190,6 +190,38 @@ impl FromValue for Handle {
 }
 impl IntoValue for Handle {
     fn into_handle(self) -> Result<Handle> { Ok(self) }
+}
+
+/* Kwargs */
+
+/// Trailing kwargs slot. `None` when no kwargs were passed (host sends handle 0); `Some(dict)` otherwise.
+pub struct Kwargs(Option<Handle>);
+
+impl Kwargs {
+    /// Decode `name` from kwargs as primitive `T`. Returns `Ok(None)` if absent or kwargs slot empty; `Ok(Some(_))` on hit; `Err` on decode failure. Use `get_handle` for non-primitive values (callables, tuples, lists).
+    pub fn get<T: FromValue>(&self, name: &str) -> Result<Option<T>> {
+        match self.get_handle(name)? {
+            None => Ok(None),
+            Some(h) => T::from_handle(h.into_raw()).map(Some),
+        }
+    }
+
+    /// Borrow the value for `name` as a raw `Handle`. Returns `Ok(None)` if absent. Use for callables, tuples, lists, dicts — anything `get::<T>` can't decode.
+    pub fn get_handle(&self, name: &str) -> Result<Option<Handle>> {
+        let Some(dict) = self.0.as_ref() else { return Ok(None); };
+        let key = encode(Value::Bytes(name.as_bytes().to_vec()))?;
+        let val = dict.call("get", &[key.raw()])?;
+        let ty = val.type_of()?;
+        let ty_str = String::from_handle(ty.raw())?;
+        if ty_str == "NoneType" { Ok(None) } else { Ok(Some(val)) }
+    }
+}
+
+impl FromValue for Kwargs {
+    /// Macro-generated decode for the trailing kwargs slot: handle 0 = no kwargs, else borrow the dict.
+    fn from_handle(h: u32) -> Result<Self> {
+        if h == 0 { Ok(Kwargs(None)) } else { Ok(Kwargs(Some(Handle::borrow(h)))) }
+    }
 }
 
 /* Bootstrap codec */

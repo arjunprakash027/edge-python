@@ -46,7 +46,11 @@ pub fn plugin_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
     };
     let is_result = matches!(&return_ty, syn::Type::Path(p) if p.path.segments.last().map(|s| s.ident == "Result").unwrap_or(false));
 
-    let argc_expected = bindings.len();
+    // Host always appends a trailing kwargs slot. If the user declared `Kwargs` as last param, that slot IS their arg (FromValue maps h=0 -> None). Otherwise we expect one more argv entry than user params and silently drop it.
+    let last_is_kwargs = bindings.last()
+        .map(|(_, ty)| matches!(ty, Type::Path(p) if p.path.segments.last().map(|s| s.ident == "Kwargs").unwrap_or(false)))
+        .unwrap_or(false);
+    let argc_expected = if last_is_kwargs { bindings.len() } else { bindings.len() + 1 };
     let decodes: Vec<TokenStream2> = bindings.iter().enumerate().map(|(i, (name, ty))| {
         quote! {
             let h = unsafe { *argv.add(#i) };

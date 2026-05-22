@@ -41,13 +41,13 @@ hello world
 
 ### input
 
-`input()` — one line from the host buffer. Native: stdin. WASM: drains the buffer the host wrote via `set_input`. Empty buffer → empty string. No prompt argument.
+`input()` — one line from the host buffer. Native: stdin. WASM: drains the buffer the host wrote via `set_input`. Empty buffer -> empty string. No prompt argument.
 
 ## Numeric
 
 ### abs
 
-`abs(x)` — absolute value of int or float. Non-numeric → `TypeError`. Works on inline and `LongInt` i128; literals beyond ±2¹²⁷ are rejected at parse time.
+`abs(x)` — absolute value of int or float. Non-numeric -> `TypeError`. Works on inline and `LongInt` i128; literals beyond ±2¹²⁷ are rejected at parse time.
 
 ```python
 print(abs(-7))
@@ -79,7 +79,7 @@ print(round(1.55, 1))
 
 ### min, max
 
-Variadic or single iterable. Empty → `ValueError`. No `key=` / `default=`.
+Variadic or single iterable. Empty -> `ValueError`. No `key=` / `default=`.
 
 ```python
 print(min(3, 1, 4))
@@ -111,7 +111,7 @@ print(sum(x * x for x in range(5)))
 
 ### pow
 
-`pow(base, exp)` or `pow(base, exp, mod)` for modular exp. 3-arg requires int operands and non-negative exp (`pow(a, b, 0)` → `ZeroDivisionError`; `pow(a, -1, m)` → `ValueError`). Modulus must be `< 2^63` (larger overflows i128 in `(result * base) % m`) — raises `ValueError("pow() modulus too large; must be < 2^63")`.
+`pow(base, exp)` or `pow(base, exp, mod)` for modular exp. 3-arg requires int operands and non-negative exp (`pow(a, b, 0)` -> `ZeroDivisionError`; `pow(a, -1, m)` -> `ValueError`). Modulus must be `< 2^63` (larger overflows i128 in `(result * base) % m`) — raises `ValueError("pow() modulus too large; must be < 2^63")`.
 
 ```python
 print(pow(2, 10))
@@ -161,7 +161,7 @@ print(hex(-256))
 
 ### int
 
-`int(x)` — single-arg. Accepts `int`, `bool`, `float` (truncates toward zero), numeric string. Bad strings → `ValueError`. Supports ±2¹²⁷ (inline 47-bit + `LongInt` i128); wider → `OverflowError`. No `int(x, base)` form — parse hex/oct/bin yourself or use `0x` / `0o` / `0b` literals.
+`int(x)` — single-arg. Accepts `int`, `bool`, `float` (truncates toward zero), numeric string. Bad strings -> `ValueError`. Supports ±2¹²⁷ (inline 47-bit + `LongInt` i128); wider -> `OverflowError`. No `int(x, base)` form — parse hex/oct/bin yourself or use `0x` / `0o` / `0b` literals.
 
 ```python
 print(int(3.9))
@@ -193,7 +193,7 @@ inf
 
 ### str
 
-`str(x)` — display form. No arg → empty string.
+`str(x)` — display form. No arg -> empty string.
 
 ```python
 print(str(42))
@@ -245,7 +245,7 @@ frozenset({1, 2, 3})
 
 ### chr, ord
 
-Convert between code points and single-char strings. `chr` accepts full Unicode (`chr(0x1F600)` → `"😀"`); negative → `ValueError`. `ord` requires a length-1 string; `ord(b'A')` not accepted.
+Convert between code points and single-char strings. `chr` accepts full Unicode (`chr(0x1F600)` -> `"😀"`); negative -> `ValueError`. `ord` requires a length-1 string; `ord(b'A')` not accepted.
 
 ```python
 print(chr(65))
@@ -281,7 +281,7 @@ print(len(range(100)))
 
 ### range
 
-`range(stop)`, `range(start, stop)`, `range(start, stop, step)`. Lazy. `step=0` → `ValueError`; non-int args → `TypeError`.
+`range(stop)`, `range(start, stop)`, `range(start, stop, step)`. Lazy. `step=0` -> `ValueError`; non-int args -> `TypeError`.
 
 ```python
 print(list(range(5)))
@@ -325,7 +325,7 @@ print(reversed("abc"))
 
 ### enumerate
 
-Pairs each element with its index → list of `(i, value)` tuples. No `start=` — add the offset yourself.
+Pairs each element with its index -> list of `(i, value)` tuples. No `start=` — add the offset yourself.
 
 ```python
 for i, v in enumerate(["a", "b", "c"]):
@@ -358,7 +358,7 @@ print(list(zip([1, 2], [3, 4], [5, 6])))
 
 ### next
 
-`next(iterator)` → next item. Exhausted → `StopIteration`. Two-arg `next(it, default)` not supported.
+`next(iterator)` -> next item. Exhausted -> `StopIteration`. Two-arg `next(it, default)` not supported.
 
 ```python
 it = iter([10, 20, 30])
@@ -395,7 +395,7 @@ a
 
 ### map
 
-`map(fn, iterable)` → list of `fn(item)`. Eager — full list materialises immediately; pipelines into `sum`, `list`, `max`.
+`map(fn, iterable)` -> list of `fn(item)`. Eager — full list materialises immediately; pipelines into `sum`, `list`, `max`.
 
 ```python
 print(list(map(lambda x: x * 2, [1, 2, 3])))
@@ -415,7 +415,7 @@ print(list(map(normalize, ["  Hi ", "WORLD"])))
 
 ### filter
 
-`filter(pred, iterable)` → list of items where `pred(item)` is truthy. `None` predicate filters by truthiness (equivalent to `lambda x: x`).
+`filter(pred, iterable)` -> list of items where `pred(item)` is truthy. `None` predicate filters by truthiness (equivalent to `lambda x: x`).
 
 ```python
 print(list(filter(lambda x: x > 2, [1, 2, 3, 4])))
@@ -444,7 +444,7 @@ handle("prod", req)
 handle("dev",  req)
 ```
 
-Candidates must be imported statically somewhere — `import_module` is a runtime *lookup*, not a *fetch*. Preserves lockfile and integrity: every reachable module is verified at compile time. Unknown name → `NameError`; non-module global → `TypeError`.
+Candidates must be imported statically somewhere — `import_module` is a runtime *lookup*, not a *fetch*. Preserves lockfile and integrity: every reachable module is verified at compile time. Unknown name -> `NameError`; non-module global -> `TypeError`.
 
 Dynamic loading (`importlib.import_module`, `__import__`) doesn't exist by design — static-import + runtime-dispatch replaces it.
 
@@ -452,10 +452,10 @@ Dynamic loading (`importlib.import_module`, `__import__`) doesn't exist by desig
 
 Four forms:
 
-- `bytes()` → empty
-- `bytes(n)` → `n` zero bytes
-- `bytes(iterable)` of ints in `0..=255` → those values
-- `bytes(s, encoding)` → encoded (`"utf-8"`, `"utf8"`, `"ascii"` only; else `ValueError`)
+- `bytes()` -> empty
+- `bytes(n)` -> `n` zero bytes
+- `bytes(iterable)` of ints in `0..=255` -> those values
+- `bytes(s, encoding)` -> encoded (`"utf-8"`, `"utf8"`, `"ascii"` only; else `ValueError`)
 
 ```python
 print(bytes())
@@ -477,9 +477,9 @@ See [Bytes](/language/data-types#bytes) for literal syntax (`b"..."`), indexing,
 
 Free functions, not int/bytes methods — primitives have no bound methods (`(5).bit_length()`, `(255).to_bytes(...)` don't exist).
 
-- `bytes_fromhex(s)` — hex string → bytes. Inner whitespace ignored; non-hex → `ValueError`.
+- `bytes_fromhex(s)` — hex string -> bytes. Inner whitespace ignored; non-hex -> `ValueError`.
 - `int_from_bytes(b, order)` — `order` is `"big"` or `"little"`. Unsigned (high bit never sign).
-- `int_to_bytes(n, length, order)` — `n ≥ 0`, `length ≤ 8`. Accepts inline ints or `LongInt`; doesn't fit → `OverflowError`.
+- `int_to_bytes(n, length, order)` — `n ≥ 0`, `length ≤ 8`. Accepts inline ints or `LongInt`; doesn't fit -> `OverflowError`.
 
 ```python
 print(bytes_fromhex("48656c6c6f"))
@@ -538,7 +538,7 @@ print(type(print))
 
 ### isinstance
 
-`isinstance(obj, X)` — `X` is a built-in type, exception class, user-defined `Class`, or tuple of any of those. String `X` (`isinstance(x, "str")`) → `TypeError`. `bool` is a subtype of `int`. Exception classes walk the standard hierarchy (`isinstance(e, Exception)` matches any built-in exception). User classes walk the inheritance chain.
+`isinstance(obj, X)` — `X` is a built-in type, exception class, user-defined `Class`, or tuple of any of those. String `X` (`isinstance(x, "str")`) -> `TypeError`. `bool` is a subtype of `int`. Exception classes walk the standard hierarchy (`isinstance(e, Exception)` matches any built-in exception). User classes walk the inheritance chain.
 
 ```python
 print(isinstance(42, int))
@@ -601,7 +601,7 @@ except TypeError:
 unhashable
 ```
 
-Mutable containers used as dict keys / set members → `TypeError("unhashable type")` at insertion (caught in `store_item`, `BuildDict`, `build_set`).
+Mutable containers used as dict keys / set members -> `TypeError("unhashable type")` at insertion (caught in `store_item`, `BuildDict`, `build_set`).
 
 ## Representation
 
@@ -623,7 +623,7 @@ print(repr([1, "two", 3]))
 
 ### format
 
-`format(value)` → display form. `format(value, spec)` applies the f-string spec mini-language (`[[fill]align][sign][#][0][width][,][.precision][type]`).
+`format(value)` -> display form. `format(value, spec)` applies the f-string spec mini-language (`[[fill]align][sign][#][0][width][,][.precision][type]`).
 
 ```python
 print(format(42))
@@ -744,7 +744,7 @@ print(xs[slice(0, 5, 2)])
 
 ### vars
 
-`vars(instance)` → attr-dict snapshot. `vars(module)` → exported-names dict. Only instances and modules — no no-arg form (use `locals()`).
+`vars(instance)` -> attr-dict snapshot. `vars(module)` -> exported-names dict. Only instances and modules — no no-arg form (use `locals()`).
 
 ```python
 class P:
@@ -764,7 +764,7 @@ print(vars(p))
 
 ### super
 
-`super()` — zero-arg only. Proxy resolving attribute access against the bases of the current method's class, starting one step up the MRO. Outside a method → `TypeError`.
+`super()` — zero-arg only. Proxy resolving attribute access against the bases of the current method's class, starting one step up the MRO. Outside a method -> `TypeError`.
 
 ```python
 class A:
@@ -820,7 +820,7 @@ Top-level builtins, no `asyncio` module.
 
 ### frame
 
-`frame()` — yield until the host's next render frame. Coro → `WaitingFrame`, scheduler signals `PendingFrame`; browser embedders hook `requestAnimationFrame`. Use for animation loops at display refresh rate.
+`frame()` — yield until the host's next render frame. Coro -> `WaitingFrame`, scheduler signals `PendingFrame`; browser embedders hook `requestAnimationFrame`. Use for animation loops at display refresh rate.
 
 ```python
 async def animate(node):
@@ -831,7 +831,7 @@ async def animate(node):
 
 ### receive
 
-`receive()` — pop the oldest message from the scheduler queue. Empty → parks in `WaitingEvent`, scheduler signals `PendingEvent`; embedder resumes via `run_push_event(bytes)`. Messages are arbitrary strings (e.g. DOM event names from `bind_event`).
+`receive()` — pop the oldest message from the scheduler queue. Empty -> parks in `WaitingEvent`, scheduler signals `PendingEvent`; embedder resumes via `run_push_event(bytes)`. Messages are arbitrary strings (e.g. DOM event names from `bind_event`).
 
 ### gather
 

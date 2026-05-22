@@ -97,7 +97,7 @@ Preserves operand identity (returns the actual value, not a coerced bool) withou
 
 ## SSA versioning
 
-Each binding emits a fresh slot with an incremented version. The parser keeps a `HashMap<String, u32>` of name → current version. Names in `chunk.names` are stored as `name_version`:
+Each binding emits a fresh slot with an incremented version. The parser keeps a `HashMap<String, u32>` of name -> current version. Names in `chunk.names` are stored as `name_version`:
 
 ```python
 x = 1 # x_1
@@ -116,7 +116,7 @@ chunk.instructions:
    StoreName 2   (y_1)
 ```
 
-Undefined names target version 0 (`x_0`), filled by the host before execution (VM seeds globals like `print_0`). Still unbound at load time → `NameError`.
+Undefined names target version 0 (`x_0`), filled by the host before execution (VM seeds globals like `print_0`). Still unbound at load time -> `NameError`.
 
 ## Phi nodes at joins
 
@@ -201,11 +201,11 @@ self.with_fresh_chunk(|s| {
 });
 ```
 
-Free variables (non-parameters with no local binding) are looked up in the outer chunk. `MakeFunction` captures matching slots from the enclosing scope into `captures` (snapshotted, no cell objects). Nested `def`/`lambda` push their free names back into the parent's name table — capture propagates through any depth (`A → B → C` where `C` references a var in `A`).
+Free variables (non-parameters with no local binding) are looked up in the outer chunk. `MakeFunction` captures matching slots from the enclosing scope into `captures` (snapshotted, no cell objects). Nested `def`/`lambda` push their free names back into the parent's name table — capture propagates through any depth (`A -> B -> C` where `C` references a var in `A`).
 
 Parameter slots: `Normal`, `Star` (`*args`), `DoubleStar` (`**kwargs`). Lone `*` separator marks following params as keyword-only. Defaults live in `HeapObj::Func.defaults` and apply to the last-N positional slots. Annotations (`x: T`, `-> T`) parse and drain to `chunk.annotations` (tooling-only).
 
-`compile_body` checks impurity opcodes (`StoreItem`, `StoreAttr`, `CallPrint`, `CallInput`, `Global`, `Nonlocal`, `Import`, `Raise`, `Yield`, `LoadAttr`) to set `body.is_pure`. Template memoisation caches pure `(args) → result` after `TPL_THRESH = 2` hits (capped at 256 entries).
+`compile_body` checks impurity opcodes (`StoreItem`, `StoreAttr`, `CallPrint`, `CallInput`, `Global`, `Nonlocal`, `Import`, `Raise`, `Yield`, `LoadAttr`) to set `body.is_pure`. Template memoisation caches pure `(args) -> result` after `TPL_THRESH = 2` hits (capped at 256 entries).
 
 ## Type annotations
 
@@ -249,7 +249,7 @@ BuildString 5
 * bit 0 — set when a format spec string is on the stack just below the value (collected as the raw text between `:` and `}` and emitted as a constant).
 * bits 1–2 — conversion: `0` none, `1` `!r`, `2` `!s`, `3` `!a`.
 
-VM applies conversion first, then the spec mini-language `[[fill]align][sign][#][0][width][,][.precision][type]` with type chars `s d b o x X f F e E g G n % c`. `n` aliases `d` (no locale). `=` self-documenting form (`{expr=}`) emits a literal `expr=` prefix. Adjacent string literals concatenate at parse time. Spec parse failures → `ValueError` at runtime.
+VM applies conversion first, then the spec mini-language `[[fill]align][sign][#][0][width][,][.precision][type]` with type chars `s d b o x X f F e E g G n % c`. `n` aliases `d` (no locale). `=` self-documenting form (`{expr=}`) emits a literal `expr=` prefix. Adjacent string literals concatenate at parse time. Spec parse failures -> `ValueError` at runtime.
 
 ## Limits
 
@@ -258,7 +258,7 @@ VM applies conversion first, then the spec mini-language `[[fill]align][sign][#]
 | `MAX_EXPR_DEPTH`     | 200       | Cap on recursive expression parsing    |
 | `MAX_INSTRUCTIONS`   | 65,535    | Cap on instructions per chunk          |
 
-`MAX_EXPR_DEPTH` → diagnostic ("expression too deeply nested"). `MAX_INSTRUCTIONS` → sets `chunk.overflow = true`, reported at end of parsing; instruction stream cleared rather than dispatched.
+`MAX_EXPR_DEPTH` -> diagnostic ("expression too deeply nested"). `MAX_INSTRUCTIONS` -> sets `chunk.overflow = true`, reported at end of parsing; instruction stream cleared rather than dispatched.
 
 ## References
 

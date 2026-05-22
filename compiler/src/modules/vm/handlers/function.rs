@@ -234,13 +234,11 @@ impl<'a> VM<'a> {
         }
 
         if let HeapObj::Extern(extern_fn) = self.heap.get(callee) {
-            if !kw_flat.is_empty() {
-                return Err(cold_type("extern function takes no keyword arguments"));
-            }
             let func = extern_fn.func.clone();
             let pure = extern_fn.pure;
             if !pure { self.mark_impure(); }
-            let result = func(&mut self.heap, positional)?;
+            let kwargs = crate::main::abi_bridge::pack_kw_dict(&mut self.heap, kw_flat)?;
+            let result = func(&mut self.heap, positional, kwargs)?;
             self.push(result);
             return Ok(true);
         }
@@ -543,16 +541,19 @@ impl<'a> VM<'a> {
     }
 
 
-    /* CallExtern: operand = (extern_idx<<8)|argc. Pure externs leave the impurity flag alone — bodies whose only side-effects are pure externs stay memoizable. */
+    /* CallExtern: operand packs `(extern_idx<<8)|(kw<<4)|pos`. Pop kw `name,val` pairs then `pos` positional vals, pack pairs into a heap dict via `pack_kw_dict` and hand it off as the explicit `Option<Val>` kwargs slot. Pure externs leave the impurity flag alone — bodies whose only side-effects are pure externs stay memoizable. */
     pub(crate) fn call_extern(&mut self, operand: u16, chunk: &SSAChunk) -> Result<(), VmErr> {
         let extern_idx = (operand >> 8) as usize;
-        let argc = (operand & 0xFF) as usize;
+        let kw = ((operand >> 4) & 0xF) as usize;
+        let pos = (operand & 0xF) as usize;
         let extern_fn = chunk.extern_table.get(extern_idx).ok_or(cold_runtime("CallExtern: extern index out of bounds"))?;
         let func = extern_fn.func.clone(); // Arc clone — refcount bump only
         let pure = extern_fn.pure;
-        let args = self.pop_n(argc)?;
+        let kw_flat = if kw > 0 { self.pop_n(kw * 2)? } else { Vec::new() };
+        let positional = self.pop_n(pos)?;
+        let kwargs = crate::main::abi_bridge::pack_kw_dict(&mut self.heap, &kw_flat)?;
         if !pure { self.mark_impure(); }
-        match func(&mut self.heap, &args) {
+        match func(&mut self.heap, &positional, kwargs) {
             Ok(result) => { self.push(result); Ok(()) }
             // Native deferred; park with a `None` placeholder that `set_host_result` overwrites before resume.
             Err(VmErr::HostCallDeferred) => {

@@ -5,7 +5,7 @@ description: "Compiler architecture, dispatch model, and runtime layout."
 
 ## Overview
 
-Release build ~170 KB on `wasm32-unknown-unknown` (`panic=abort`, `opt-level=z`, `lto=true`, `codegen-units=1`). Pipeline: LUT-driven lexer → single-pass Pratt parser emitting SSA-versioned bytecode directly → peephole constant-folding optimiser → token-threaded interpreter with two layers of adaptive specialisation.
+Release build ~170 KB on `wasm32-unknown-unknown` (`panic=abort`, `opt-level=z`, `lto=true`, `codegen-units=1`). Pipeline: LUT-driven lexer -> single-pass Pratt parser emitting SSA-versioned bytecode directly -> peephole constant-folding optimiser -> token-threaded interpreter with two layers of adaptive specialisation.
 
 No AST, no IR — bytecode is the only intermediate representation. ~13,000 lines of Rust; production deps are `hashbrown` and `itoa` (SHA-256 in-tree). WASM build adds `lol_alloc` for a single-threaded leaking bump allocator.
 

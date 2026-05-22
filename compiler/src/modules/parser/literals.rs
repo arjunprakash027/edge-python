@@ -302,10 +302,10 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             return leaves_value;
         }
 
-        // Native: emit CallExtern with `operand=(extern_idx<<8)|argc`, skipping LoadName heap alloc.
+        // Native: emit CallExtern. Operand packs `extern_idx<<8 | kw<<4 | pos`: 8 bits index, 4 bits kw (<=15), 4 bits pos (<=15). Kw values sit just above pos on the stack as `name,val` pairs, same layout as Call.
         if let Some(&extern_idx) = self.chunk.extern_index.get(&name) {
-            let (pos, _kw) = self.parse_args();
-            let encoded = (extern_idx << 8) | (pos & 0xFF);
+            let (pos, kw) = self.parse_args();
+            let encoded = (extern_idx << 8) | ((kw & 0xF) << 4) | (pos & 0xF);
             self.chunk.emit(OpCode::CallExtern, encoded);
             self.chunk.record_call_pos(call_pos);
             return true;

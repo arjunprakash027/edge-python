@@ -43,7 +43,7 @@ overflow
 
 - **`pow(a, b, m)` modular**: modulus must be `< 2^63` (larger overflows i128 in the multiply). Hard cap without arbitrary-precision arithmetic.
 - **No CPython-style unbounded ints**: by design — edge workloads don't need wider than 128 bits; crypto-scale math is out of scope.
-- **Float vs LongInt mixing**: `==` works (LongInt → f64), but dict/set hashing follows raw `Val` bits — `{long_int: x}` indexed by a same-magnitude float misses. Coerce explicitly.
+- **Float vs LongInt mixing**: `==` works (LongInt -> f64), but dict/set hashing follows raw `Val` bits — `{long_int: x}` indexed by a same-magnitude float misses. Coerce explicitly.
 
 ### Triggering limits
 
@@ -136,7 +136,7 @@ Raised as `VmErr`; most catchable with `try` / `except`.
 
 #### Exception hierarchy
 
-Flat tree rooted at `BaseException → Exception`. `except` walks parent links — `except Exception` catches `RuntimeError`, `ValueError`, `KeyError`, etc.; `except RuntimeError` catches `RecursionError`, `NotImplementedError`.
+Flat tree rooted at `BaseException -> Exception`. `except` walks parent links — `except Exception` catches `RuntimeError`, `ValueError`, `KeyError`, etc.; `except RuntimeError` catches `RecursionError`, `NotImplementedError`.
 
 ```python
 try:
@@ -236,4 +236,4 @@ Exist for syntactic compatibility. For code reuse, use higher-order functions.
 
 ## Determinism
 
-Same source + input → same output across runs and architectures (`x86_64`, `aarch64`, `wasm32`). No time, randomness, threading, or OS interaction. Heap-pool slot reuse is the only nondeterminism, observable through `id(x)` only — never `==`, `repr`, or any other operation.
+Same source + input -> same output across runs and architectures (`x86_64`, `aarch64`, `wasm32`). No time, randomness, threading, or OS interaction. Heap-pool slot reuse is the only nondeterminism, observable through `id(x)` only — never `==`, `repr`, or any other operation.

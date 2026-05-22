@@ -186,10 +186,10 @@ impl TestResolver {
     }
 }
 
-// Fixture functions
+// Fixture functions. Third arg is the kwargs slot (`None` for plain positional calls); these fixtures don't accept kwargs so they ignore it.
 
 /* Pure: a + b — exercises CallExtern dispatch, arg marshalling, and template memo. */
-fn add(_: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
+fn add(_: &mut HeapPool, args: &[Val], _kw: Option<Val>) -> Result<Val, VmErr> {
     if args.len() != 2 { return Err(VmErr::Type("add: expected 2 args")); }
     let a = if args[0].is_int() { args[0].as_int() } else { return Err(VmErr::Type("add: arg 0 not int")); };
     let b = if args[1].is_int() { args[1].as_int() } else { return Err(VmErr::Type("add: arg 1 not int")); };
@@ -197,14 +197,14 @@ fn add(_: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
 }
 
 /* Pure: x * x. Used to verify nested calls (square(add(1,2))). */
-fn square(_: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
+fn square(_: &mut HeapPool, args: &[Val], _kw: Option<Val>) -> Result<Val, VmErr> {
     if args.len() != 1 { return Err(VmErr::Type("square: expected 1 arg")); }
     let x = if args[0].is_int() { args[0].as_int() } else { return Err(VmErr::Type("square: arg not int")); };
     Ok(Val::int(x * x))
 }
 
 /* Pure-but-allocs: heap string of length n; exercises HeapPool::alloc from extern context. */
-fn make_str(heap: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
+fn make_str(heap: &mut HeapPool, args: &[Val], _kw: Option<Val>) -> Result<Val, VmErr> {
     if args.len() != 1 { return Err(VmErr::Type("make_str: expected 1 arg")); }
     let n = if args[0].is_int() { args[0].as_int() } else { return Err(VmErr::Type("make_str: arg not int")); };
     let s: String = "x".repeat(n.max(0) as usize);
@@ -212,24 +212,24 @@ fn make_str(heap: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
 }
 
 /* Impure counter; verifies impurity taints the caller and skips memo. */
-fn counter(_: &mut HeapPool, _args: &[Val]) -> Result<Val, VmErr> {
+fn counter(_: &mut HeapPool, _args: &[Val], _kw: Option<Val>) -> Result<Val, VmErr> {
     use std::sync::atomic::{AtomicI64, Ordering};
     static N: AtomicI64 = AtomicI64::new(0);
     Ok(Val::int(N.fetch_add(1, Ordering::SeqCst)))
 }
 
 /* Pure constant 42; for tests that only care extern was called. */
-fn const_42(_: &mut HeapPool, _args: &[Val]) -> Result<Val, VmErr> {
+fn const_42(_: &mut HeapPool, _args: &[Val], _kw: Option<Val>) -> Result<Val, VmErr> {
     Ok(Val::int(42))
 }
 
 /* Always errors; exercises extern-error propagation through dispatch. */
-fn boom(_: &mut HeapPool, _args: &[Val]) -> Result<Val, VmErr> {
+fn boom(_: &mut HeapPool, _args: &[Val], _kw: Option<Val>) -> Result<Val, VmErr> {
     Err(VmErr::Runtime("boom from extern"))
 }
 
 /* f64 round-trip through an extern call (no int coercion). */
-fn double_f(_: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
+fn double_f(_: &mut HeapPool, args: &[Val], _kw: Option<Val>) -> Result<Val, VmErr> {
     if args.len() != 1 || !args[0].is_float() {
         return Err(VmErr::Type("double_f: expected one float arg"));
     }
@@ -237,7 +237,7 @@ fn double_f(_: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
 }
 
 /* Pure: bool -> bool. Asserts that bool tags survive the extern dispatch. */
-fn negate(_: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
+fn negate(_: &mut HeapPool, args: &[Val], _kw: Option<Val>) -> Result<Val, VmErr> {
     if args.len() != 1 || !args[0].is_bool() {
         return Err(VmErr::Type("negate: expected one bool arg"));
     }
@@ -245,12 +245,12 @@ fn negate(_: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
 }
 
 /* Returns HostCallDeferred; exercises the PendingHostCall yield path through call_extern. */
-fn host_defer(_: &mut HeapPool, _args: &[Val]) -> Result<Val, VmErr> {
+fn host_defer(_: &mut HeapPool, _args: &[Val], _kw: Option<Val>) -> Result<Val, VmErr> {
     Err(VmErr::HostCallDeferred)
 }
 
 /* Pure: bool, int -> int. Mixes types to confirm per-arg decode is correct. */
-fn pick(_: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
+fn pick(_: &mut HeapPool, args: &[Val], _kw: Option<Val>) -> Result<Val, VmErr> {
     if args.len() != 3 || !args[0].is_bool() || !args[1].is_int() || !args[2].is_int() {
         return Err(VmErr::Type("pick: expected (bool, int, int)"));
     }
@@ -258,7 +258,7 @@ fn pick(_: &mut HeapPool, args: &[Val]) -> Result<Val, VmErr> {
 }
 
 /* Fixture-name -> (fn ptr, purity); the runner turns each into a NativeBinding. */
-type NativeFn = fn(&mut HeapPool, &[Val]) -> Result<Val, VmErr>;
+type NativeFn = fn(&mut HeapPool, &[Val], Option<Val>) -> Result<Val, VmErr>;
 
 pub fn test_native(name: &str) -> Option<NativeBinding> {
     let (func, pure): (NativeFn, bool) = match name {

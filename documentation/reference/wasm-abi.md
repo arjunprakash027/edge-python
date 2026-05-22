@@ -325,6 +325,8 @@ For `from "<url>" import <names>` with a `.wasm` URL: the host fetches bytes (ve
 
 * **Refcounted handles.** Guest releases every handle it creates via `edge_encode` / `edge_op` except the one returned through `*out`. Host releases argv.
 * **`edge_decode` is primitives-only.** For `list`, `dict`, `set`, instances, use `edge_op` (e.g. `Call recv "items"`, `GetItem recv idx`).
+* **Trailing kwargs slot.** Every plugin call carries one extra `u32` after the user's positional argv: handle `0` when the caller passed no `name=value` arguments, otherwise a `dict` handle holding the pairs. The `#[plugin_fn]` macro folds it into a `Kwargs` parameter if declared (`fn foo(a: Handle, kw: Kwargs)`); otherwise it is silently absorbed and the function sees only its positional args.
+* **Invoking a caller-supplied callable.** From the guest, `edge_op Call recv "__call__" argv` invokes `recv` directly — lambdas, builtins, classes, bound methods all route through the same dispatch the language uses. Use this to wire Python hooks like `default`, `object_hook`, `parse_int`.
 * **Reentrance supported.** A guest's `edge_op` runs while the VM is paused on the script's `CallExtern`. Method dispatch routes through the same `vm/handlers/builtin_methods/` descriptor table the language uses internally — adding a method there makes it visible to existing modules with no recompile.
 * **Error-as-status, not panic.** Returning `1` does NOT abort the host — the host pulls the error and raises it as a typed Python exception.
 * **Memory ownership.** Host only reads guest linear memory at well-defined copy points. Guest-internal allocations stay private.
@@ -333,11 +335,12 @@ For `from "<url>" import <names>` with a `.wasm` URL: the host fetches bytes (ve
 
 The `wasm-pdk` crate (Plugin Development Kit) — bundled in this repo, publishable independently of `compiler.wasm` — provides:
 
-* `#[plugin_fn]` — typed Rust function → wire-conformant export.
+* `#[plugin_fn]` — typed Rust function -> wire-conformant export.
 * `#[plugin_class]` / `#[plugin_methods]` / `#[plugin_ctor]` — expose a Rust struct as a Python class via the `__class_<Name>_<method>` export convention.
 * `module!()` — expands to `#[global_allocator]` + `#[panic_handler]`.
 * `FromValue` / `IntoValue` with primitive impls (`i64`, `i128`, `f64`, `bool`, `String`, `&str`, `Option<T>`, `Handle`). `i64` rejects out-of-range values with `ValueError`; use `i128` for the full range.
 * `Handle` with `Drop`-driven release plus `call`, `get_attr` / `set_attr`, `get_item` / `set_item`, `len`, `iter` / `iter_next`, `new_dict` / `new_list`, `type_of`.
+* `Kwargs` — thin wrapper around the trailing kwargs handle with `get::<T>(name)` for primitive kwargs and `get_handle(name)` for callables, tuples, dicts.
 * `PluginCell<T>` — single-threaded interior mutability cell for static plugin state.
 * `__edge_alloc` + `__edge_abi_version` emitted automatically.
 

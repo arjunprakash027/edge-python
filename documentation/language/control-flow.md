@@ -318,7 +318,7 @@ print(reciprocal(4))
 0.25
 ```
 
-Failed assertion → `RuntimeError`; catchable with `except RuntimeError`, `except Exception`, or bare `except`.
+Failed assertion -> `RuntimeError`; catchable with `except RuntimeError`, `except Exception`, or bare `except`.
 
 ## del
 

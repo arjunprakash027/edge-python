@@ -225,7 +225,7 @@ pub fn classify_encode(tag: u32, bytes: &[u8]) -> EncodeRequest<'_> {
             let mut buf = [0u8; 16];
             buf.copy_from_slice(bytes);
             let i = i128::from_le_bytes(buf);
-            // Fits in 47-bit inline range → emit as Val::int directly; else heap-alloc LongInt.
+            // Fits in 47-bit inline range -> emit as Val::int directly; else heap-alloc LongInt.
             if (INLINE_INT_MIN..=INLINE_INT_MAX).contains(&i) {
                 EncodeRequest::Direct(TAG_INT | ((i as i64) as u64 & INT_PAYLOAD_MASK))
             } else {

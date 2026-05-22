@@ -82,7 +82,7 @@ print(1_000_000)
 1000000
 ```
 
-Underscores are validated — `1_`, `1__2`, `0x_1`, `1e_5` → `SyntaxError`. Must sit between two digits.
+Underscores are validated — `1_`, `1__2`, `0x_1`, `1e_5` -> `SyntaxError`. Must sit between two digits.
 
 ```python
 # Floats — IEEE-754 doubles

@@ -10,8 +10,8 @@ use crate::modules::vm::types::{HeapPool, Val, VmErr};
 pub mod manifest;
 pub use manifest::{Manifest, parse_manifest, walk_up_dirs, dir_of, join_relative};
 
-/* Arc-wrapped callable for EdgePython natives; supports stateful loaders like wasmtime stores. */
-pub type ExternFnPtr = Arc<dyn Fn(&mut HeapPool, &[Val]) -> Result<Val, VmErr> + Send + Sync>;
+/* Arc-wrapped callable for EdgePython natives; supports stateful loaders like wasmtime stores. The third argument is the kwargs slot: `None` when no kwargs were passed at the call site, `Some(dict_val)` when the caller used `name=value` syntax. Implementors that don't accept kwargs may ignore it. */
+pub type ExternFnPtr = Arc<dyn Fn(&mut HeapPool, &[Val], Option<Val>) -> Result<Val, VmErr> + Send + Sync>;
 
 /* Named native binding with purity flag; pure=true enables VM memoization, false for I/O or side-effects. */
 #[derive(Clone)]
@@ -23,7 +23,7 @@ pub struct NativeBinding {
 
 impl NativeBinding {
     /* Convenience constructor wrapping a plain fn pointer into an Arc for hand-written Rust natives. */
-    pub fn from_fn(name: impl Into<String>, func: fn(&mut HeapPool, &[Val]) -> Result<Val, VmErr>, pure: bool) -> Self {
+    pub fn from_fn(name: impl Into<String>, func: fn(&mut HeapPool, &[Val], Option<Val>) -> Result<Val, VmErr>, pure: bool) -> Self {
         Self { name: name.into(), func: Arc::new(func), pure }
     }
 }

@@ -150,7 +150,7 @@ print("ñ".center(5, "*"))
 
 ### Encoding
 
-`s.encode([encoding])` → bytes. Supports `"utf-8"`, `"utf8"`, `"ascii"` (errors on non-ASCII). Else `ValueError`. Default `"utf-8"`.
+`s.encode([encoding])` -> bytes. Supports `"utf-8"`, `"utf8"`, `"ascii"` (errors on non-ASCII). Else `ValueError`. Default `"utf-8"`.
 
 ```python
 print("café".encode())
@@ -317,7 +317,7 @@ None
 
 ### Mutation
 
-`update` accepts a `dict` or iterable of length-2 sequences. Kwargs form (`d.update(a=1)`) not supported. `popitem` returns the last-inserted entry; empty → `ValueError`. No `clear` / `fromkeys` — use `d = {}` / a comprehension.
+`update` accepts a `dict` or iterable of length-2 sequences. Kwargs form (`d.update(a=1)`) not supported. `popitem` returns the last-inserted entry; empty -> `ValueError`. No `clear` / `fromkeys` — use `d = {}` / a comprehension.
 
 ```python
 d = {"a": 1}
@@ -357,7 +357,7 @@ print(d)
 
 ### Mutation
 
-`remove` raises `KeyError` if absent; `discard` is silent. `pop` removes arbitrary element; empty → `ValueError`. `update` accepts any iterable.
+`remove` raises `KeyError` if absent; `discard` is silent. `pop` removes arbitrary element; empty -> `ValueError`. `update` accepts any iterable.
 
 ```python
 s = {1, 2, 3}
