@@ -16,6 +16,10 @@
       {
         "label": "Demo",
         "href": "https://demo.edgepython.com/"
+      },
+      {
+        "label": "Host",
+        "href": "https://github.com/dylan-sutton-chavez/edge-python-host"
       }
     ]
   },
