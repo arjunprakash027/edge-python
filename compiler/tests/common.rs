@@ -54,7 +54,7 @@ impl TestResolver {
     pub fn with_native(self, spec: &str, bindings: Vec<NativeBinding>) -> Self {
         self.state.borrow_mut().modules.insert(
             spec.to_string(),
-            Resolved::Native { bindings, canonical: spec.to_string() },
+            Resolved::Native { bindings, classes: Vec::new(), canonical: spec.to_string() },
         );
         self
     }

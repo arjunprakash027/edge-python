@@ -1,5 +1,5 @@
 use crate::abi::{classify_decode, classify_encode, DecodeBits, EncodeRequest, ErrorKind, Op, PrimitiveBytes, TAG_INVALID};
-use crate::modules::vm::types::{HeapObj, Val, VmErr};
+use crate::modules::vm::types::{DictMap, HeapObj, Val, VmErr};
 use crate::modules::vm::handlers::methods::{lookup_method, dispatch_method};
 use crate::modules::packages::NativeBinding;
 use alloc::{rc::Rc, string::{String, ToString}, sync::Arc, vec::Vec};
@@ -24,6 +24,9 @@ pub unsafe extern "C" fn host_edge_op(op: u32, recv: u32, name_ptr: *const u8, n
         Some(Op::Len) => dispatch_len(recv),
         Some(Op::Iter) => dispatch_iter(recv),
         Some(Op::IterNext) => dispatch_iter_next(recv),
+        Some(Op::NewDict) => dispatch_new_dict(),
+        Some(Op::NewList) => dispatch_new_list(),
+        Some(Op::TypeOf) => dispatch_type_of(recv),
         None => Err(VmErr::Raised(s!("edge_op: unsupported op ", int op as i64))),
     };
 
@@ -191,6 +194,23 @@ fn dispatch_iter_next(recv_h: u32) -> Result<Val, VmErr> {
         } else {
             Err(VmErr::TypeMsg(s!("iter_next expects a List iterator (produced by Op::Iter), got '", str vm.type_name(recv), "'")))
         }
+    })
+}
+
+fn dispatch_new_dict() -> Result<Val, VmErr> {
+    with_vm(|vm| vm.heap.alloc(HeapObj::Dict(Rc::new(RefCell::new(DictMap::new())))))
+        .ok_or(VmErr::Runtime("edge_op new_dict called outside run()"))?
+}
+
+fn dispatch_new_list() -> Result<Val, VmErr> {
+    with_vm(|vm| vm.heap.alloc(HeapObj::List(Rc::new(RefCell::new(Vec::new())))))
+        .ok_or(VmErr::Runtime("edge_op new_list called outside run()"))?
+}
+
+fn dispatch_type_of(recv_h: u32) -> Result<Val, VmErr> {
+    with_recv("edge_op type_of: invalid receiver handle", recv_h, |vm, recv| {
+        let name = vm.type_name(recv).to_string();
+        vm.heap.alloc(HeapObj::Str(name))
     })
 }
 

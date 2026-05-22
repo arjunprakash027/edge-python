@@ -408,9 +408,9 @@ impl Handle {
         Ok(Handle::from_raw(out))
     }
 
-    /// `recv[index]`.
-    pub fn get_item(&self, index: u32) -> Result<Handle> {
-        let argv = [index];
+    /// `recv[key]`; key passed as handle (encode an int for list indexing, str for dict lookup).
+    pub fn get_item(&self, key: &Handle) -> Result<Handle> {
+        let argv = [key.raw];
         let mut out: u32 = 0;
         let r = unsafe {
             edge_op(
@@ -422,6 +422,23 @@ impl Handle {
         };
         if r != 0 { return Err(last_error()); }
         Ok(Handle::from_raw(out))
+    }
+
+    /// `recv[key] = value`; key/value passed as handles. Returns None which is released immediately.
+    pub fn set_item(&self, key: &Handle, value: &Handle) -> Result<()> {
+        let argv = [key.raw, value.raw];
+        let mut out: u32 = 0;
+        let r = unsafe {
+            edge_op(
+                op::SET_ITEM, self.raw,
+                core::ptr::null(), 0,
+                argv.as_ptr(), 2,
+                &mut out as *mut u32,
+            )
+        };
+        if r != 0 { return Err(last_error()); }
+        let _ = Handle::from_raw(out);
+        Ok(())
     }
 
     /// `len(recv)`.
@@ -457,6 +474,60 @@ impl Handle {
         if r != 0 { return Err(last_error()); }
         let _ = Handle::from_raw(out);
         Ok(())
+    }
+
+    /// Returns a fresh empty dict handle owned by the guest.
+    pub fn new_dict() -> Result<Handle> {
+        let mut out: u32 = 0;
+        let r = unsafe {
+            edge_op(op::NEW_DICT, 0, core::ptr::null(), 0, core::ptr::null(), 0, &mut out as *mut u32)
+        };
+        if r != 0 { return Err(last_error()); }
+        Ok(Handle::from_raw(out))
+    }
+
+    /// Returns a fresh empty list handle owned by the guest.
+    pub fn new_list() -> Result<Handle> {
+        let mut out: u32 = 0;
+        let r = unsafe {
+            edge_op(op::NEW_LIST, 0, core::ptr::null(), 0, core::ptr::null(), 0, &mut out as *mut u32)
+        };
+        if r != 0 { return Err(last_error()); }
+        Ok(Handle::from_raw(out))
+    }
+
+    /// `type(recv).__name__`; returns a fresh str handle naming the runtime type.
+    pub fn type_of(&self) -> Result<Handle> {
+        let mut out: u32 = 0;
+        let r = unsafe {
+            edge_op(op::TYPE_OF, self.raw, core::ptr::null(), 0, core::ptr::null(), 0, &mut out as *mut u32)
+        };
+        if r != 0 { return Err(last_error()); }
+        Ok(Handle::from_raw(out))
+    }
+
+    /// `iter(recv)`; materialises the receiver as a List iterator handle.
+    pub fn iter(&self) -> Result<Handle> {
+        let mut out: u32 = 0;
+        let r = unsafe {
+            edge_op(op::ITER, self.raw, core::ptr::null(), 0, core::ptr::null(), 0, &mut out as *mut u32)
+        };
+        if r != 0 { return Err(last_error()); }
+        Ok(Handle::from_raw(out))
+    }
+
+    /// `next(recv)`; returns `Ok(None)` at end-of-iteration, propagates other errors.
+    pub fn iter_next(&self) -> Result<Option<Handle>> {
+        let mut out: u32 = 0;
+        let r = unsafe {
+            edge_op(op::ITER_NEXT, self.raw, core::ptr::null(), 0, core::ptr::null(), 0, &mut out as *mut u32)
+        };
+        if r != 0 {
+            let e = last_error();
+            if e.message().starts_with("StopIteration") { return Ok(None); }
+            return Err(e);
+        }
+        Ok(Some(Handle::from_raw(out)))
     }
 }
 

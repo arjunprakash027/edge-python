@@ -23,6 +23,9 @@ pub enum Op {
     Len = wasm_abi::op::LEN,
     Iter = wasm_abi::op::ITER,
     IterNext = wasm_abi::op::ITER_NEXT,
+    NewDict = wasm_abi::op::NEW_DICT,
+    NewList = wasm_abi::op::NEW_LIST,
+    TypeOf = wasm_abi::op::TYPE_OF,
 }
 
 impl Op {
@@ -36,6 +39,9 @@ impl Op {
             wasm_abi::op::LEN => Some(Self::Len),
             wasm_abi::op::ITER => Some(Self::Iter),
             wasm_abi::op::ITER_NEXT => Some(Self::IterNext),
+            wasm_abi::op::NEW_DICT => Some(Self::NewDict),
+            wasm_abi::op::NEW_LIST => Some(Self::NewList),
+            wasm_abi::op::TYPE_OF => Some(Self::TypeOf),
             _ => None,
         }
     }

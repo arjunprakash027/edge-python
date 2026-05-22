@@ -31,6 +31,9 @@ pub mod op {
     pub const LEN: u32 = 5;
     pub const ITER: u32 = 6;
     pub const ITER_NEXT: u32 = 7;
+    pub const NEW_DICT: u32 = 8;
+    pub const NEW_LIST: u32 = 9;
+    pub const TYPE_OF: u32 = 10;
 }
 
 /* Tags for `edge_encode` / `edge_decode` primitive transit. */

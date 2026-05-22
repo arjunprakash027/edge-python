@@ -109,8 +109,11 @@ Stash an error visible after the guest returns `1` — used when an error did no
 | `Len` | 5 | `len(recv)` -> handle (Int) |
 | `Iter` | 6 | `iter(recv)` -> handle (iterator List) |
 | `IterNext` | 7 | `next(iter)` -> handle, or `1`+`StopIteration` on end |
+| `NewDict` | 8 | construct empty dict; recv and name ignored, argc=0 -> handle |
+| `NewList` | 9 | construct empty list; recv and name ignored, argc=0 -> handle |
+| `TypeOf` | 10 | runtime type of recv -> handle (Str with the type name) |
 
-All eight ops wired in v1. `Op::Iter` materialises the receiver into a List handle (set sorted via `vm.sort_set_items`; dict yields keys; str splits to single-char strings); `Op::IterNext` advances it. Values `8..u32::MAX` reserved — old hosts return `1` with `kind=Runtime`.
+`Op::Iter` materialises the receiver into a List handle (set sorted via `vm.sort_set_items`; dict yields keys; str splits to single-char strings); `Op::IterNext` advances it. `NewDict` and `NewList` let plugins construct fresh composites without obtaining a type handle. `TypeOf` returns names matching the Python builtin: `"int"`, `"float"`, `"str"`, `"bytes"`, `"list"`, `"dict"`, `"set"`, `"tuple"`, `"NoneType"`, `"bool"`, `"object"` (user instance), etc. Values `11..u32::MAX` reserved — old hosts return `1` with `kind=Runtime`.
 
 ## Tags (for `edge_encode` / `edge_decode`)
 
@@ -163,10 +166,10 @@ fn repeat_n(s: String, n: i64) -> Result<String> {
 
 #[plugin_fn]
 fn sum_ints(items: Handle) -> Result<i64> {
-    let n = items.len()?;
+    let it = items.iter()?;
     let mut total: i64 = 0;
-    for i in 0..n as u32 {
-        total += i64::from_handle(items.get_item(i)?.raw())?;
+    while let Some(item) = it.iter_next()? {
+        total += i64::from_handle(item.raw())?;
     }
     Ok(total)
 }
@@ -190,8 +193,41 @@ wasm-pdk = { path = "../../wasm-pdk" }   # in-repo example; external authors use
 Build:
 
 ```bash
-cargo build --release --target wasm32-unknown-unknown -p slugify-mod # -> target/wasm32-unknown-unknown/release/slugify_mod.wasm   (around 74 KB stripped)
+cargo build --release --target wasm32-unknown-unknown -p slugify-mod # -> target/wasm32-unknown-unknown/release/slugify_mod.wasm   (around 80 KB stripped)
 ```
+
+### Exposing Rust structs as Python classes
+
+`#[plugin_class]` + `#[plugin_methods]` expand to `__class_<Name>_<method>` exports the host detects by naming convention and synthesises into a `HeapObj::Class`. State lives in a guest-side `BTreeMap<id, T>`; each instance carries an `__rust_id` attribute the methods use to look itself up.
+
+```rust
+#[plugin_class]
+pub struct Slugger { parts: Vec<String> }
+
+#[plugin_methods]
+impl Slugger {
+    #[plugin_ctor]
+    pub fn new() -> Self { Self { parts: Vec::new() } }
+    pub fn add(&mut self, s: String) { self.parts.push(s.to_lowercase()); }
+    pub fn build(&self) -> String { self.parts.join("-") }
+    pub fn pop(&mut self) -> Option<String> { self.parts.pop() }
+    pub fn repeat(&self, n: i64) -> Result<String> {
+        if n < 0 { return Err(Error::Value("n must be non-negative".into())); }
+        Ok(self.parts.join("-").repeat(n as usize))
+    }
+}
+```
+
+From Edge Python:
+
+```python
+from "./slugify_mod.wasm" import Slugger
+s = Slugger()
+s.add("Hello")
+print(s.build()) # -> hello
+```
+
+Method returns of `T`, `Option<T>`, and `Result<T>` are all supported. Instances live until the worker run ends; no `__del__` dispatch.
 
 ### Consuming `wasm-pdk` from your own crate
 
@@ -298,9 +334,11 @@ For `from "<url>" import <names>` with a `.wasm` URL: the host fetches bytes (ve
 The `wasm-pdk` crate (Plugin Development Kit) — bundled in this repo, publishable independently of `compiler.wasm` — provides:
 
 * `#[plugin_fn]` — typed Rust function → wire-conformant export.
+* `#[plugin_class]` / `#[plugin_methods]` / `#[plugin_ctor]` — expose a Rust struct as a Python class via the `__class_<Name>_<method>` export convention.
 * `module!()` — expands to `#[global_allocator]` + `#[panic_handler]`.
 * `FromValue` / `IntoValue` with primitive impls (`i64`, `i128`, `f64`, `bool`, `String`, `&str`, `Option<T>`, `Handle`). `i64` rejects out-of-range values with `ValueError`; use `i128` for the full range.
-* `Handle` / `Value` / `Error` with `Drop`-driven release.
+* `Handle` with `Drop`-driven release plus `call`, `get_attr` / `set_attr`, `get_item` / `set_item`, `len`, `iter` / `iter_next`, `new_dict` / `new_list`, `type_of`.
+* `PluginCell<T>` — single-threaded interior mutability cell for static plugin state.
 * `__edge_alloc` + `__edge_abi_version` emitted automatically.
 
 The macro emits the worked-example boilerplate; manual is ~25 lines for the first function, ~5 per additional.

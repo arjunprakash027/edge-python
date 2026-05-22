@@ -1,5 +1,5 @@
 /*
-`#[plugin_fn]` proc macro; wraps a typed Rust fn in the wasm-abi export shape.
+Plugin authoring proc macros. `#[plugin_fn]` wraps a free fn as a wasm-abi export. `#[plugin_class]` synthesises per-class state plumbing. `#[plugin_methods]` lowers an impl block into `__class_<Name>_<method>` exports. `#[plugin_ctor]` tags the constructor inside a `#[plugin_methods]` block.
 */
 
 use proc_macro::TokenStream;
@@ -97,7 +97,6 @@ pub fn plugin_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-/* Tags a struct as a plugin class; generates static state map and id counter under reserved __<Name>_* idents. */
 #[proc_macro_attribute]
 pub fn plugin_class(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemStruct);
@@ -136,13 +135,11 @@ pub fn plugin_class(_attr: TokenStream, item: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-/* Marks the constructor inside #[plugin_methods]; consumed by plugin_methods, no expansion on its own. */
 #[proc_macro_attribute]
 pub fn plugin_ctor(_attr: TokenStream, item: TokenStream) -> TokenStream {
     item
 }
 
-/* Expands an impl block into __class_<Name>_<method> plugin_fn exports plus the __init__ wrapper for #[plugin_ctor]. */
 #[proc_macro_attribute]
 pub fn plugin_methods(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemImpl);

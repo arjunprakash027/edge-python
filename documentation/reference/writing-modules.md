@@ -15,7 +15,7 @@ Edge Python has no bundled stdlib. Three ways to add native functionality:
 
 ## Path A: `.wasm` module by URL
 
-Contract: the [WASM module ABI](/reference/wasm-abi) — language-agnostic, three scalar types. Rust authors use the bundled [`wasm-pdk`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) (`#[plugin_fn]`, typed `Handle` / `Value` / `Error`); other languages use community PDKs or hand-roll the boilerplate.
+Contract: the [WASM module ABI](/reference/wasm-abi) — language-agnostic, three scalar types. Rust authors use the bundled [`wasm-pdk`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) (`#[plugin_fn]` for free functions, `#[plugin_class]` + `#[plugin_methods]` for Python-visible classes, typed `Handle` / `Value` / `Error`); other languages use community PDKs or hand-roll the boilerplate.
 
 Worked examples (with and without the SDK), encoding tables, and language-specific snippets: [WASM module ABI](/reference/wasm-abi). Script side:
 
