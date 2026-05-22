@@ -5,11 +5,11 @@ description: "Tokenization, indentation, f-strings, and source-level limits."
 
 ## Overview
 
-Edge Python uses a hand-written, LUT-driven scanner that walks the source as raw bytes and produces a stream of `Token { kind, line, start, end }`. The scanner is offset-based: tokens carry byte indices into the source buffer, never their own copies of the text. This is enough for diagnostics, debug output, and the parser's lazy slicing of identifier and string content.
+Hand-written LUT-driven scanner: walks source as raw bytes, produces `Token { kind, line, start, end }`. Offset-based — tokens carry byte indices, never text copies. The parser slices lazily for identifier and string content.
 
-Lexing runs in linear time *O(n)* with constant-time per-byte branchless dispatch through two lookup tables. Lex-time diagnostics (unterminated strings, bad indent, unknown bytes, malformed numeric underscores, oversized f-string nesting) are collected in a `Vec<LexError>` returned alongside the token stream — the parser folds them into its own diagnostic stream so the user sees one coherent report.
+Linear time *O(n)*, branchless per-byte dispatch through two lookup tables. Lex-time diagnostics (unterminated strings, bad indent, unknown bytes, malformed underscores, oversized f-string nesting) collect in `Vec<LexError>` returned alongside the token stream; the parser folds them in for a single coherent report.
 
-A leading UTF-8 BOM (`EF BB BF`) is stripped before tokenisation so the first identifier on the file does not fuse with the marker.
+A leading UTF-8 BOM (`EF BB BF`) is stripped before tokenisation so the first identifier doesn't fuse with the marker.
 
 ## Token kinds
 
@@ -26,20 +26,18 @@ The token set tracks Python 3.13.12 closely. Categories implemented:
 
 ## Dispatch tables
 
-The lexer hot loop avoids per-byte branching through two compile-time tables in `lexer/tables.rs`:
+Two compile-time tables in `lexer/tables.rs`:
 
 ```rust
-// Bit flags per byte: ID_START, ID_CONT, DIGIT, SPACE. Indexed lookup replaces a chain of comparisons.
+// Bit flags per byte: ID_START, ID_CONT, DIGIT, SPACE.
 pub static BYTE_CLASS: [u8; 256] = { /* ... */ };
 
-// Single-char operator dispatch: byte -> small index -> TokenType.
+// Single-char operator dispatch.
 pub static SINGLE_TOK: [u8; 128] = { /* ... */ };
 pub const SINGLE_MAP: [TokenType; 24] = { /* ... */ };
 ```
 
-Identifiers, digits, and whitespace are scanned with a `scan_while(pred)` driver that loops over `BYTE_CLASS[b] & FLAG`. Single-character operators do `b -> SINGLE_TOK[b] -> SINGLE_MAP[i]` — two indexed loads, no branches.
-
-The keyword lookup is routed by `(length, first_byte)` to skip most `memcmp`s. Most keyword candidates terminate after a single match arm.
+Identifiers, digits, and whitespace use a `scan_while(pred)` driver looping over `BYTE_CLASS[b] & FLAG`. Single-char operators do `b -> SINGLE_TOK[b] -> SINGLE_MAP[i]` — two indexed loads. Keyword lookup is routed by `(length, first_byte)` to skip most `memcmp`s.
 
 ## Numeric literals
 
@@ -54,11 +52,11 @@ The keyword lookup is routed by `(length, first_byte)` to skip most `memcmp`s. M
 1e-5 # exponent
 ```
 
-The number scanner handles base prefixes (`0x` / `0o` / `0b`, case-insensitive), underscore separators, optional exponents, and the leading-dot form. `Int` and `Float` are the only numeric token kinds.
+The scanner handles base prefixes (`0x` / `0o` / `0b`, case-insensitive), underscore separators, optional exponents, and leading-dot form. `Int` and `Float` are the only numeric token kinds.
 
-Underscores must sit **between** digits — leading, trailing, or doubled underscores raise `invalid '_' in numeric literal` or `consecutive '_' in numeric literal` at lex time. An empty radix body (`0x`, `0o`, `0b`) raises `missing digits in numeric literal`. A trailing dot (`5.`) is valid; an empty exponent body (`1e`) is left to the float parser since format specs reuse the `e` / `E` characters and a stricter check would false-positive on spec contexts.
+Underscores must sit between digits — leading/trailing/doubled raise `invalid '_' in numeric literal` or `consecutive '_' in numeric literal`. Empty radix body (`0x`, `0o`, `0b`) raises `missing digits in numeric literal`. Trailing dot (`5.`) is valid; empty exponent body (`1e`) is left to the float parser to avoid false-positives in format specs.
 
-Complex literals are unsupported: `1j` lexes as two tokens (`Int(1)`, `Name("j")`).
+Complex literals unsupported: `1j` lexes as `Int(1)` + `Name("j")`.
 
 ## String prefixes
 
@@ -74,9 +72,9 @@ fr'raw fstring' # raw f-string
 """triple""" # triple-quoted, single or double
 ```
 
-A leading prefix is recognised before the opening quote by the identifier scanner and verified against `is_string_prefix`, `is_fstring_prefix`, or `is_bytes_prefix`. Triple-quoted strings span newlines and bump `line` for each `\n` inside. Backslash escapes are consumed at lex time but **decoded** by the parser, so escape semantics live alongside the literal type. Recognised escapes: `\n \t \r \a \b \f \v \\ \' \" \xHH \uHHHH \UHHHHHHHH` plus 1- to 3-digit octal escapes (`\012` -> `\n`, `\101` -> `A`). `\N{NAME}` Unicode-name escapes are not implemented and pass through as literal text — embedding the 200 KB Unicode-name database is rejected as too costly for the WASM artifact.
+A leading prefix is recognised before the opening quote by the identifier scanner, verified against `is_string_prefix` / `is_fstring_prefix` / `is_bytes_prefix`. Triple-quoted strings span newlines (bumping `line` per `\n`). Backslash escapes are consumed at lex time but decoded by the parser. Recognised escapes: `\n \t \r \a \b \f \v \\ \' \" \xHH \uHHHH \UHHHHHHHH` plus 1–3 digit octal (`\012` -> `\n`, `\101` -> `A`). `\N{NAME}` is unimplemented — the 200 KB Unicode-name database is too costly for the WASM artifact.
 
-Lex-time errors anchor on the opening quote so the user's `^` marker points at the offender, not at end-of-line:
+Errors anchor on the opening quote so the `^` marker points at the offender, not at end-of-line:
 
 * `unterminated string literal`
 * `unterminated triple-quoted string literal`
@@ -84,7 +82,7 @@ Lex-time errors anchor on the opening quote so the user's `^` marker points at t
 
 ## F-strings
 
-F-strings are decomposed into a sequence of tokens rather than being represented by a single `String` token. The parser consumes the sequence directly:
+F-strings decompose into a token sequence rather than a single `String` token; the parser consumes it directly:
 
 ```text
 f'a {x} b {y + 1}!'
@@ -102,11 +100,11 @@ FstringMiddle("!")
 FstringEnd
 ```
 
-Expression tokens between `{` and `}` are emitted by the **main lexer**, not the f-string scanner, which means the full expression grammar is available inside interpolations without special casing.
+Expression tokens between `{` and `}` are emitted by the main lexer, not the f-string scanner — full expression grammar inside interpolations without special casing.
 
-`{{` and `}}` are treated as escaped literal braces and produce no `Lbrace` / `Rbrace`. They survive into the `FstringMiddle` text and are unescaped by the parser.
+`{{` and `}}` are escaped literal braces, no `Lbrace` / `Rbrace`; they survive into `FstringMiddle` text and are unescaped by the parser.
 
-Triple-quoted f-strings (`f"""..."""`) follow the same structure with newlines embedded in the middle segments. Nested f-strings are tracked via a `fstring_stack` so each `}` resumes the right outer template; nesting deeper than `MAX_FSTRING_DEPTH = 200` raises `f-string nesting depth exceeds maximum (200)`. Reaching EOF inside an open f-string raises `unterminated f-string literal` and synthesises a closing `FstringEnd` so the parser still sees a balanced sequence.
+Triple-quoted f-strings follow the same structure with newlines embedded in middle segments. Nested f-strings tracked via `fstring_stack` so each `}` resumes the right outer template; deeper than `MAX_FSTRING_DEPTH = 200` raises `f-string nesting depth exceeds maximum (200)`. EOF inside an open f-string raises `unterminated f-string literal` and synthesises a closing `FstringEnd` for a balanced sequence.
 
 ## Indentation
 
@@ -122,15 +120,15 @@ Edge Python uses an INDENT/DEDENT model. The scanner tracks a stack of column co
 | Dedent doesn't match an outer level | diagnostic `unindent does not match any outer indentation level` |
 | Mixed tabs and spaces in indent     | `Endmarker` (lex halt) + diagnostic               |
 
-The `nesting` counter is bumped by `(`, `[`, `{` and decremented by `)`, `]`. While `nesting > 0`, line breaks emit `Nl` and the indent stack is frozen; this is what allows multi-line expressions inside brackets without spurious INDENT/DEDENT.
+The `nesting` counter is bumped by `(`, `[`, `{` and decremented by `)`, `]`. While `nesting > 0` line breaks emit `Nl` and the indent stack is frozen — multi-line expressions inside brackets without spurious INDENT/DEDENT.
 
-At end-of-file the lexer drains any remaining levels off `indent_stack` so every block closes cleanly, then emits a final `Endmarker`. Without this drain, callers would have to tolerate dangling open blocks. There is **no** support for backslash line continuation (`\` followed by `\n`) outside brackets; wrap multi-line expressions in parentheses instead. ASCII bytes that have no operator slot (`$`, `?`, `` ` ``, stray `\`) raise `unexpected character` and are skipped rather than truncating the token stream.
+At EOF the lexer drains remaining levels off `indent_stack` for clean block closure, then emits `Endmarker`. No support for backslash line continuation (`\` + `\n`) outside brackets — wrap in parens. ASCII bytes with no operator slot (`$`, `?`, `` ` ``, stray `\`) raise `unexpected character` and are skipped.
 
 ## Soft-keyword disambiguation
 
-Only `type` is a true soft keyword. `match` and `case` are emitted as **hard** keywords because in Edge Python they only appear at statement start, so the syntactic ambiguity that motivates soft-keyword treatment does not arise here.
+Only `type` is a true soft keyword. `match` and `case` are emitted as hard keywords (they only appear at statement start, so no ambiguity).
 
-The `type` keyword would collide with the `type()` builtin and with attributes named `type`, so it stays soft. The lexer resolves the ambiguity by peeking at the *next* token:
+`type` collides with the `type()` builtin and `type` attribute names — the lexer disambiguates by peeking the next token:
 
 ```python
 type X = int # 'type' is a keyword (alias declaration)
@@ -138,17 +136,17 @@ type = None # 'type' is an identifier
 obj.type # 'type' is an identifier (attribute)
 ```
 
-If the token following `type` is one of `(`, `:`, `=`, `,`, `)`, `]`, `Newline`, or `EOF`, it is downgraded to `Name`. Otherwise it stays a `Type` keyword token.
+If the token following `type` is one of `(`, `:`, `=`, `,`, `)`, `]`, `Newline`, or `EOF`, it downgrades to `Name`. Otherwise it stays a `Type` keyword.
 
-`_` always emits as `Underscore`; the parser distinguishes wildcard from name use at the grammar level.
+`_` always emits as `Underscore`; the parser distinguishes wildcard from name use grammatically.
 
 ## Comments
 
-`#` to end-of-line. Comments are emitted as a `Comment` token rather than discarded — this is what allows tools to round-trip source. The parser ignores `Comment` and `Nl` tokens during `peek()`.
+`#` to end-of-line. Emitted as a `Comment` token (not discarded) so tools can round-trip source. The parser ignores `Comment` and `Nl` during `peek()`.
 
 ## Limits
 
-To prevent asymmetric DoS attacks (small input that exhausts memory or time), the lexer enforces hard caps. Going past any of these halts lexing with `Endmarker`:
+Hard caps to prevent asymmetric DoS (small input exhausting memory/time). Hitting any halts lexing with `Endmarker`:
 
 | Constant            | Value     | Purpose                                  |
 |---------------------|-----------|------------------------------------------|
@@ -160,22 +158,22 @@ These match the OWASP A04:2021 advice on resource exhaustion in interpreters.
 
 ## Why offset-based tokens
 
-A `Token` carries a kind tag plus three byte offsets into the source buffer:
+A `Token` carries a kind tag plus three byte offsets:
 
 ```rust
 pub struct Token {
-    pub kind: TokenType, // 1 byte + padding
+    pub kind: TokenType,
     pub line: usize,
     pub start: usize,
     pub end: usize,
 }
 ```
 
-The parser slices `&source[t.start..t.end]` lazily when it needs the lexeme; for identifier names, string content, or numeric literals. This means:
+The parser slices `&source[t.start..t.end]` lazily for identifier names, string content, or numeric literals. Result:
 
-- The lexer never allocates a `String` per identifier.
-- The parser's `lexeme(&t)` is a zero-copy `&str` that lives as long as the source buffer.
-- Diagnostics get exact byte offsets for free, which makes error column computation a single `rfind('\n')`.
+- Lexer never allocates a `String` per identifier.
+- `lexeme(&t)` is a zero-copy `&str` that lives as long as the source buffer.
+- Diagnostics get exact byte offsets for free; error column is a single `rfind('\n')`.
 
 ## References
 

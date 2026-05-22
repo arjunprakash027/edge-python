@@ -3,9 +3,9 @@ title: "Methods"
 description: "Built-in methods on strings, bytes, lists, dicts, and sets."
 ---
 
-Edge Python provides built-in methods on `str`, `bytes`, `list`, `dict`, and `set`. The set is curated to cover common operations; rarely used variants are omitted. Methods that aren't here are intentional omissions documented under each section.
+Built-in methods on `str`, `bytes`, `list`, `dict`, `set`. Curated to cover common operations; rarely used variants are omitted (documented per section).
 
-There are **no methods on `int`, `float`, or `tuple`** — primitive types stay dispatch-free. `(5).bit_length()`, `(255).to_bytes(...)`, `(3.14).is_integer()`, `(1, 2).count(1)`, `(1, 2).index(2)` all raise `AttributeError`. For ints, use the [`int_from_bytes` / `int_to_bytes`](/reference/builtins#bytes_fromhex-int_from_bytes-int_to_bytes) free functions; for tuple element counting, use `sum(1 for x in t if x == v)` or convert to a list first.
+No methods on `int`, `float`, or `tuple` — primitive types stay dispatch-free. `(5).bit_length()`, `(255).to_bytes(...)`, `(3.14).is_integer()`, `(1, 2).count(1)` all raise `AttributeError`. For ints use [`int_from_bytes` / `int_to_bytes`](/reference/builtins#bytes_fromhex-int_from_bytes-int_to_bytes); for tuple counting use `sum(1 for x in t if x == v)`.
 
 ```python
 # Methods are accessed with dot notation
@@ -58,7 +58,7 @@ hello
 
 ### Predicates
 
-Three predicates are supported: `isdigit` (ASCII digits only), `isalpha` (Unicode alphabetic), `isalnum` (Unicode alphanumeric). All three return `False` on the empty string.
+Three predicates: `isdigit` (ASCII), `isalpha` (Unicode), `isalnum` (Unicode). All return `False` on empty string.
 
 ```python
 print("123".isdigit())
@@ -80,11 +80,11 @@ True
 False
 ```
 
-`casefold`, `swapcase`, `isspace`, `isascii`, `isidentifier`, `isnumeric`, `isdecimal`, `islower`, `isupper`, `istitle`, `isprintable` are not provided — write the predicate explicitly when you need it.
+Not provided: `casefold`, `swapcase`, `isspace`, `isascii`, `isidentifier`, `isnumeric`, `isdecimal`, `islower`, `isupper`, `istitle`, `isprintable`. Write the predicate explicitly.
 
 ### Search and count
 
-`startswith`, `endswith`, `find`, and `count` take a single string argument — there are no `start` / `end` slice positions. `find` returns a code-point index (not byte offset) and `-1` when the substring is missing. `rfind`, `index`, and `rindex` are not provided; combine `find` with reversal or write the loop explicitly.
+`startswith`, `endswith`, `find`, `count` take a single string arg — no `start` / `end` slice positions. `find` returns a code-point index (not byte offset), `-1` if missing. No `rfind`, `index`, `rindex` — combine `find` with reversal.
 
 ```python
 print("hello".startswith("he"))
@@ -104,7 +104,7 @@ True
 
 ### Split, join, replace
 
-`split` with no argument splits on runs of whitespace; with an explicit separator it splits on every occurrence. There is no `maxsplit` argument, no `rsplit`. `replace` always replaces every occurrence — there is no `count` cap. `splitlines` does **not** accept a `keepends` flag; line separators are dropped.
+`split` no-arg splits on whitespace runs; explicit separator splits on every occurrence. No `maxsplit`, no `rsplit`. `replace` always replaces all (no `count` cap). `splitlines` drops separators (no `keepends`).
 
 ```python
 print("a,b,c".split(","))
@@ -132,7 +132,7 @@ foo
 
 ### Padding
 
-`center(width[, fill])` and `zfill(width)` measure padding in **code points**, not bytes — `'ñ'.center(5, '*')` produces `**ñ**` (5 visible characters). `ljust`, `rjust`, `expandtabs`, `translate`, `maketrans`, and `format` / `format_map` are not provided.
+`center(width[, fill])` and `zfill(width)` measure in code points, not bytes — `'ñ'.center(5, '*')` produces `**ñ**` (5 visible chars). Not provided: `ljust`, `rjust`, `expandtabs`, `translate`, `maketrans`, `format`, `format_map`.
 
 ```python
 print("abc".center(7, "-"))
@@ -150,7 +150,7 @@ print("ñ".center(5, "*"))
 
 ### Encoding
 
-`s.encode([encoding])` produces `bytes`. Supported encoding names are `"utf-8"`, `"utf8"`, and `"ascii"` (which errors on non-ASCII content). Anything else raises `ValueError`. Default is `"utf-8"`.
+`s.encode([encoding])` → bytes. Supports `"utf-8"`, `"utf8"`, `"ascii"` (errors on non-ASCII). Else `ValueError`. Default `"utf-8"`.
 
 ```python
 print("café".encode())
@@ -164,7 +164,7 @@ b'hi'
 
 ## Bytes methods
 
-`bytes` has its own small set of methods. `bytes.find` returns a **byte** offset (not a code-point index). `bytes.index` raises `ValueError` ("subsection not found") when the subsection is absent. `split` requires an explicit separator — there is no whitespace-split mode. `bytearray` and `memoryview` are not implemented.
+Small method set. `bytes.find` returns a byte offset (not a code-point index). `bytes.index` raises `ValueError` ("subsection not found") if absent. `split` needs an explicit separator (no whitespace-split mode). `bytearray` / `memoryview` unimplemented.
 
 ```python
 b = b"\x48\x65\x6c\x6c\x6f"
@@ -215,7 +215,7 @@ print(ys)
 
 ### Mutating
 
-These return `None` and modify the list in place. `extend` accepts any iterable (list, tuple, set, frozenset, dict (yields keys), range, bytes, str, generator, coroutine). `sort` has no `key=` or `reverse=` keyword — sort by a derived key by precomputing tuples.
+Return `None`, mutate in place. `extend` accepts any iterable. `sort` has no `key=` / `reverse=` — sort by derived key via precomputed tuples.
 
 ```python
 xs = [1, 2, 3]
@@ -277,7 +277,7 @@ print(xs)
 
 ### Views
 
-`keys`, `values`, and `items` return **concrete `list` snapshots**, not live views. Mutating the dict afterwards does not affect a previously captured snapshot — and that is intentional. Live views constitute shared mutable state, which conflicts with the functional paradigm; an immutable snapshot guarantees the captured collection cannot mutate underneath the consumer.
+`keys`, `values`, `items` return concrete `list` snapshots, not live views. Dict mutations don't affect captured snapshots — intentional: live views are shared mutable state, conflicting with the functional paradigm.
 
 ```python
 d = {"a": 1, "b": 2, "c": 3}
@@ -317,7 +317,7 @@ None
 
 ### Mutation
 
-`update` accepts either a `dict` **or** an iterable of length-2 sequences (`[(key, value), ...]`). The kwargs form `d.update(a=1)` is **not** supported. `popitem` removes and returns the last-inserted entry (insertion order); on an empty dict it raises `ValueError`. `clear` and `fromkeys` are not provided — use `d = {}` and a comprehension respectively.
+`update` accepts a `dict` or iterable of length-2 sequences. Kwargs form (`d.update(a=1)`) not supported. `popitem` returns the last-inserted entry; empty → `ValueError`. No `clear` / `fromkeys` — use `d = {}` / a comprehension.
 
 ```python
 d = {"a": 1}
@@ -357,7 +357,7 @@ print(d)
 
 ### Mutation
 
-`remove` raises `KeyError` when the element is absent; `discard` is the silent variant. `pop` removes an arbitrary element and raises `ValueError` on an empty set. `update` accepts any iterable.
+`remove` raises `KeyError` if absent; `discard` is silent. `pop` removes arbitrary element; empty → `ValueError`. `update` accepts any iterable.
 
 ```python
 s = {1, 2, 3}
@@ -389,7 +389,7 @@ set()
 
 ### Algebra
 
-`union`, `intersection`, `difference`, and `symmetric_difference` return a fresh set; their operator forms (`|`, `&`, `-`, `^`) work the same way and accept augmented assignment (`|=`, `&=`, `-=`, `^=`). The in-place variants `intersection_update`, `difference_update`, and `symmetric_difference_update` are **not** provided — assign the augmented form back (`s &= other`).
+`union`, `intersection`, `difference`, `symmetric_difference` return fresh sets; operator forms (`|`, `&`, `-`, `^`) and augmented assignment (`|=`, `&=`, `-=`, `^=`) work the same. In-place `*_update` variants not provided — use augmented form (`s &= other`).
 
 ```python
 a = {1, 2, 3}

@@ -3,18 +3,18 @@ title: "Imports"
 description: "Importing modules in Edge Python: syntax, resolution, and the two module flavors."
 ---
 
-Edge Python supports `import`, `from <spec> import <names>`, and `from <spec> import *`. **Module resolution happens at compile time, not at runtime**: the VM never learns what a module is; by the time bytecode runs, every import has been flattened into a sequence of bytecode that materialises the module's exports.
+Supports `import`, `from <spec> import <names>`, `from <spec> import *`. Resolution is compile-time — the VM never learns what a module is; bytecode flattens every import into the sequence that materialises the exports.
 
 ## The two flavors
 
 | Flavor | What it is | How it dispatches |
 |---|---|---|
-| **Code module** | A `.py` file written in Edge Python | The module's top level runs once at VM init in its own slot frame; the resulting bindings live in a `HeapObj::Module` value shared by every importer via `OpCode::LoadModule`. |
-| **Native module** | A `.wasm` binary following the [WASM module ABI](/reference/wasm-abi) (loaded by URL or path) **or** Rust closures provided in-process by an embedder via the `Resolver` trait. See [Writing modules](/reference/writing-modules). | Dispatched through the `CallExtern` opcode (named import) or via a `HeapObj::Module` carrying `HeapObj::Extern` callables (`import X`). |
+| **Code module** | A `.py` file | Top level runs once at VM init in its own slot frame; bindings live in a `HeapObj::Module` shared by every importer via `OpCode::LoadModule`. |
+| **Native module** | A `.wasm` binary following the [WASM module ABI](/reference/wasm-abi) (URL/path), or Rust closures via the `Resolver` trait. See [Writing modules](/reference/writing-modules). | `CallExtern` (named import) or `HeapObj::Module` carrying `HeapObj::Extern` callables (`import X`). |
 
-The same `import` syntax covers both. The host's resolver decides which flavor a given spec maps to.
+Same `import` syntax for both. The host's resolver decides flavor per spec.
 
-Native modules also cover **host packages**: bindings the embedder ships as part of its runtime (DOM in a browser distribution, FS in a WASI distribution) — same dispatch path as ordinary in-process Rust bindings, just shipped together with the host runtime instead of as a separate crate. See [Writing modules / Path C](/reference/writing-modules#path-c-host-capability) for the custom-embedder variant and [Path D](/reference/writing-modules#path-d-js-host-module) for the plain-JS variant that runs on the page's main thread without a custom embedder.
+Native modules also cover host packages — bindings shipped by the embedder (DOM in browser, FS in WASI). See [Writing modules / Path B](/reference/writing-modules#path-b-host-capability) for the custom-embedder variant and [Path C](/reference/writing-modules#path-c-js-host-module) for the plain-JS variant that runs on the page's main thread without a custom embedder.
 
 ## Syntax
 
@@ -50,19 +50,19 @@ print(slugify("Hello world"))
 
 ## How resolution works
 
-1. The compiler scans your source for every `from <spec> ...` statement.
-2. For each spec, it asks the **host's `Resolver`** to materialise the module as either `Resolved::Native { bindings, canonical }` (function-pointer tuples + canonical spec) or `Resolved::Code { src, canonical }` (raw `.py` source + canonical spec).
-3. Natives become direct-dispatch entries; code modules are parsed into a fresh `SSAChunk`. Both register under the canonical spec so first-class references and `import_module()` lookups resolve uniformly. See [Syntax — Imports](/implementation/syntax) for the codegen details.
+1. Compiler scans the source for every `from <spec> ...`.
+2. For each spec, asks the host `Resolver` to materialise as `Resolved::Native { bindings, canonical }` or `Resolved::Code { src, canonical }`.
+3. Natives become direct-dispatch entries; code modules parse to a fresh `SSAChunk`. Both register under the canonical spec so first-class references and `import_module()` lookups resolve uniformly. See [Syntax — Imports](/implementation/syntax).
 
-Modules are **singletons across the compilation unit**: the same canonical spec compiles to one `SSAChunk`, runs its top level once, and lives as one `HeapObj::Module` value shared by every importer. Two files importing `./util.py` see literally the same module value — `mod is mod_alias` is true and mutations to module attributes are observed by every consumer. Inside the module's top level, `__name__` is bound to the canonical spec, so the `if __name__ == "__main__":` guard skips when the file is imported.
+Modules are singletons across the compilation unit: same canonical spec → one `SSAChunk`, top level runs once, one `HeapObj::Module` shared by every importer. Two files importing `./util.py` see the same module — `mod is mod_alias` is true; module-attr mutations are observed by every consumer. Inside the module's top level, `__name__` is bound to the canonical spec so `if __name__ == "__main__":` skips when imported.
 
-Helpers and constants stay private to their defining module: they live in the module's own slot frame and are reached via attribute access on the `HeapObj::Module` Val, not through the parent chunk's name table. Two modules with same-named helpers (`a.helper` vs. `b.helper`) keep their own bindings — `a.f`'s call to `helper` resolves through `a`'s attrs, not the importer's globals.
+Helpers and constants stay private: they live in the module's slot frame, reached via attribute access on the `HeapObj::Module` Val, not through the parent chunk's name table. `a.f` calling `helper` resolves through `a`'s attrs, not the importer's globals.
 
-The runtime never fetches anything. The host (browser JS, WASI runtime, embedded Rust app) is responsible for bringing the bytes; the compiler accepts them through the `Resolver` trait.
+The runtime never fetches. The host (browser, WASI, embedded Rust) brings the bytes; the compiler accepts them through `Resolver`.
 
 ## packages.json
 
-Bare-name imports resolve through an import map declared in your project's `packages.json` (sitting next to the entry script). The manifest is always called `packages.json`; there is no `edge.json` or other variant.
+Bare-name imports resolve through an import map in `packages.json` (next to the entry script). The manifest is always `packages.json` — no `edge.json` or other variants.
 
 ```json
 {
@@ -74,22 +74,22 @@ Bare-name imports resolve through an import map declared in your project's `pack
 }
 ```
 
-The schema is small and strict:
+Schema:
 
-- The top-level value must be a JSON object. Empty `{}` is valid.
-- `imports` (optional): object mapping alias -> spec string.
-- `extends` (optional): string naming a directory whose `packages.json` is consulted when an alias isn't found locally.
-- Unknown top-level keys are silently ignored (forward-compatible).
-- Booleans, numbers, and arrays at any level are rejected.
-- String escapes accepted: `\"`, `\\`, `\/`, `\n`, `\t`, `\r`. **`\uXXXX` is not supported**, paste the character literally (the file must be UTF-8).
+- Top-level value is a JSON object. Empty `{}` is valid.
+- `imports` (optional): alias → spec string.
+- `extends` (optional): directory whose `packages.json` is consulted when an alias isn't found locally.
+- Unknown top-level keys silently ignored (forward-compatible).
+- Booleans, numbers, arrays at any level are rejected.
+- String escapes: `\"`, `\\`, `\/`, `\n`, `\t`, `\r`. `\uXXXX` not supported — paste UTF-8 literally.
 
-After this, `from utils import x` resolves to `./lib/utils.py` relative to the entry script's directory; `from math import add` loads the `.wasm` per the [wire format](/reference/wasm-abi).
+`from utils import x` resolves to `./lib/utils.py` relative to the entry script; `from math import add` loads `.wasm` per the [wire format](/reference/wasm-abi).
 
-The `packages.json` file is **optional**. Scripts can use string-form paths directly without any project config — useful for one-off scripts and playground demos.
+`packages.json` is optional — scripts can use string-form paths directly without project config.
 
 ### Walk-up resolution
 
-Bare-name imports resolve against the **nearest `packages.json` walking up** from the importing file's directory. Each `packages.json` defines a *package boundary*: every file under its directory belongs to that package, and the manifest is the sole authority for what bare names mean inside it. Sub-directories may carry their own `packages.json` to scope their own aliases — exactly the way `node_modules` discovery works in Node and the way each crate has its own `Cargo.toml` in Rust.
+Bare-name imports resolve against the nearest `packages.json` walking up from the importing file's directory. Each `packages.json` defines a package boundary: files under its directory belong to that package, and the manifest is the sole authority for what bare names mean inside. Sub-directories may carry their own `packages.json` — same pattern as Node's `node_modules` discovery or Rust's per-crate `Cargo.toml`.
 
 ```
 my_app/
@@ -101,11 +101,10 @@ my_app/
 └── ...
 ```
 
-Concretely:
-- **Bare-name imports** (`from utils import x`) walk up from the importing file's directory looking for `packages.json`. The first one found decides. The walk is capped (currently **32 hops**) — exceeding it raises `packages.json walk-up exceeded <cap> hops resolving '<name>'`.
-- **Hermetic by default**: if the nearest manifest doesn't declare the alias, compilation fails (`alias '<name>' not declared in '<manifest>'`). There is no silent fall-through to outer manifests — that prevents a deep transitive dep from accidentally borrowing aliases the parent declared.
-- **`extends` opts in to inheritance**: a sub-manifest with `"extends": ".."` (or any directory expression) re-runs the search from the extended directory if it doesn't declare the alias locally. Cycles in the extends chain are detected at compile time (`circular extends chain in packages.json`).
-- **Quoted relative paths** (`from "./helpers.py" import f`) resolve against the importing file's directory — a transitively-imported `lib/a.py` doing `from "./b.py" import g` correctly finds `lib/b.py`.
+- **Bare-name imports** (`from utils import x`) walk up looking for `packages.json`. First one decides. Capped at 32 hops; over: `packages.json walk-up exceeded <cap> hops resolving '<name>'`.
+- **Hermetic by default**: if the nearest manifest doesn't declare the alias, compilation fails (`alias '<name>' not declared in '<manifest>'`). No silent fall-through — prevents a deep transitive dep from borrowing parent aliases.
+- **`extends` opts in to inheritance**: `"extends": ".."` re-runs the search from the extended directory when the alias isn't local. Cycles detected at compile time (`circular extends chain in packages.json`).
+- **Quoted relative paths** (`from "./helpers.py" import f`) resolve against the importing file — transitively-imported `lib/a.py` doing `from "./b.py" import g` finds `lib/b.py`.
 
 Spec classification (handled by the resolver):
 
@@ -126,21 +125,20 @@ Spec classification (handled by the resolver):
 }
 ```
 
-`db` is local to `lib/`. Anything else falls through to `../packages.json`. Use it for monorepo-style sub-packages that share a common pool of upstream deps with the parent; omit it for hermetic libraries that should not be affected by what the consumer declares.
+`db` is local to `lib/`; anything else falls through to `../packages.json`. Use for monorepo sub-packages that share upstream deps with the parent; omit for hermetic libraries that should be unaffected by consumer declarations.
 
 ### Diamond imports and cycles
 
-When multiple paths import the same module, it's fetched, parsed, and initialised exactly once. The parser caches the parsed `SSAChunk` per canonical spec and the VM's `init_modules` walk dedupes by spec, so the module's top-level body runs once even if a hundred files import it. Direct or indirect cycles (`a.py` imports `b.py`, `b.py` imports `a.py`) surface as a runtime `circular import` error during init.
+When multiple paths import the same module, it's fetched, parsed, and initialised once. The parser caches `SSAChunk` per canonical spec; the VM's `init_modules` walk dedupes by spec. Cycles (`a.py` → `b.py` → `a.py`) surface as runtime `circular import`.
 
 ## Host responsibilities
 
-Edge Python's compiler is a WebAssembly module. Fetching bytes — from disk, from `https://`, from your build artifact pipeline — is the host's job. The browser runtime ([`runtime/`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime)) does it via `fetch()` inside a Web Worker. WASI hosts use their runtime's filesystem and network APIs. Embedders pre-stage modules and feed them to the `Resolver`.
+The compiler is a WebAssembly module; fetching bytes is the host's job. Browser runtime ([`runtime/`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime)) uses `fetch()` in a Web Worker; WASI hosts use their FS/network APIs; embedders pre-stage modules for `Resolver`.
 
 | Scenario | Who fetches |
 |---|---|
 | Browser playground | `runtime/` package — pre-fetches every spec the script imports. `.py` files register via `register_code_module`; `.wasm` files instantiate via `WebAssembly.instantiate` and register exports via `register_native_module`. |
 | WASI runtime | Host program reads `.py` files from disk / network using `wasi_snapshot_preview1`. `.wasm` modules can be loaded via the runtime's WebAssembly engine. |
-| Embedded Rust app | Caller links `compiler_lib`, implements `Resolver`, returns either `Resolved::Code(src)` or `Resolved::Native(bindings)`. In-process bindings have full VM heap access (full type coverage); see [Writing modules](/reference/writing-modules). |
 | Production deploy | `edge compile` (planned) will seal all imports into a single `.epy` artifact. |
 
 URL imports work for both `.py` and `.wasm` modules as long as your host supports them:
@@ -168,7 +166,7 @@ Append `#sha256-<64 hex chars>` to any URL spec to require a content match:
 from "https://example.com/utils.py#sha256-deadbeef0123456789abcdef0123456789abcdef0123456789abcdef01234567" import normalize
 ```
 
-The compiler asks the host for the raw bytes (via the `Resolver::fetch_bytes` trait method), computes the SHA-256, and refuses to compile if the hash doesn't match — with a diagnostic that surfaces both expected and computed digests:
+The compiler asks the host for raw bytes (`Resolver::fetch_bytes`), computes SHA-256, refuses to compile on mismatch — diagnostic surfaces both digests:
 
 ```text
 error: integrity check failed for 'https://example.com/utils.py'
@@ -176,13 +174,13 @@ error: integrity check failed for 'https://example.com/utils.py'
   got      sha256-feedface9876543210fedcba9876543210fedcba9876543210fedcba98765432
 ```
 
-Verification lives in the compiler itself, not the host — so any host (browser shim, WASI runtime, embedder) inherits the guarantee uniformly. Hosts that don't implement `fetch_bytes` surface a clean "not supported" error instead of silently bypassing the check, so a script asking for integrity never runs unverified.
+Verification lives in the compiler, not the host — every host inherits it uniformly. Hosts without `fetch_bytes` surface a clean "not supported" error rather than silently bypassing.
 
-Only `sha256` is supported today. A spec with any other prefix (`md5-...`, `sha384-...`) fails with `unrecognized integrity fragment`. The fragment's hex body must be **exactly 64 characters**; any other length raises `sha256 fragment must be 64 hex chars`.
+Only `sha256` supported. Other prefixes (`md5-...`, `sha384-...`) fail with `unrecognized integrity fragment`. The hex body must be exactly 64 chars.
 
 ## Lockfile and content-addressed cache
 
-The browser worker auto-generates a **lockfile** and a **content-addressed cache** as a side-effect of running scripts that import URLs. Both live in IndexedDB; together they reduce repeat runs to zero network round-trips and detect upstream content drift on demand.
+The browser worker auto-generates a lockfile and a content-addressed cache (both in IndexedDB) as a side-effect of running scripts that import URLs — repeat runs go to zero network round-trips and upstream drift is detected on demand.
 
 | File | Who writes it | Purpose |
 |---|---|---|
@@ -192,13 +190,13 @@ The browser worker auto-generates a **lockfile** and a **content-addressed cache
 
 ### What runs do
 
-* **First run, cold**: every URL in the dependency graph is fetched, hashed, written to the CAS, and recorded in the lockfile.
-* **Subsequent runs**: each spec is looked up in the lockfile; if the hash is known and the corresponding blob is in the CAS, the bytes are served without touching the network. Identical content under different URLs deduplicates automatically (the hash is the key).
-* **`clearCache()`**: wipes the in-memory map, the CAS, and the lockfile. The next run treats everything as fresh.
+* **First run, cold**: every URL fetched, hashed, written to CAS, recorded in lockfile.
+* **Subsequent runs**: each spec looked up in lockfile; bytes served from CAS without touching the network. Identical content under different URLs deduplicates (hash is the key).
+* **`clearCache()`**: wipes map, CAS, lockfile.
 
 ### Drift detection
 
-If a previously-locked URL serves different bytes than its recorded hash (because the upstream changed, or the cache was partially evicted and a re-fetch happened), the worker fails with both digests visible:
+If a previously-locked URL serves different bytes than its recorded hash (upstream changed, or partial cache eviction triggered re-fetch), the worker fails with both digests visible:
 
 ```text
 integrity drift for 'https://cdn.foo/kit/index.py'
@@ -206,25 +204,25 @@ integrity drift for 'https://cdn.foo/kit/index.py'
   remote: sha256-zzz999...
 ```
 
-This is the same primitive as inline `#sha256-...` integrity, applied automatically to every URL the user imports — explicit hashes in the source are still honoured and fail at compile time before any code runs.
+Same primitive as inline `#sha256-...` integrity, applied automatically to every imported URL. Explicit hashes in source are still honoured and fail at compile time before any code runs.
 
-Non-browser hosts make their own caching choices — the `Resolver` trait sees only `(spec -> Resolved)` and `(spec -> bytes)`.
+Non-browser hosts make their own caching choices — `Resolver` sees only `(spec -> Resolved)` and `(spec -> bytes)`.
 
 ## Sandbox
 
 | Module type | Sandbox |
 |---|---|
-| Code modules (`.py`) | Full sandbox — code only calls host packages it imports |
-| Native modules (`.wasm`) | Full sandbox — WASM isolates by construction; the imported `.wasm` runs in its own linear memory |
-| Native modules (in-process Rust closures) | Trust boundary is the host process — closures run with the embedder's privileges |
+| Code modules (`.py`) | Full — code only calls host packages it imports |
+| Native modules (`.wasm`) | Full — WASM isolates by construction; runs in its own linear memory |
+| Host capabilities (custom embedder) | Trust boundary is the host process — runs with embedder privileges |
 
-Edge Python runs as a WebAssembly module; scripts execute inside that sandbox unconditionally. `.wasm` native modules add their own WASM sandbox layer. In-process Rust bindings come from code the embedder controls, so trust extends only to whatever the embedder chose to expose.
+Scripts always execute inside the compiler's WASM sandbox. `.wasm` native modules add their own WASM layer. Host capabilities are part of the embedder's distribution.
 
 ## What doesn't work
 
-- **Dynamic imports** — no `__import__`, no `importlib`. The module set is fixed per compilation. Use `import_module(name)` to *dispatch* among modules already statically imported elsewhere in the program.
-- **Relative imports** — `from . import x` and `from .pkg import y` are **not** supported. Use quoted relative specs (`from "./foo.py" import x`) or declare an alias in `packages.json`.
-- **Dotted submodule auto-discovery** — `import a.b.c` parses, but the dotted form is not auto-walked across the filesystem. Each importable spec must either be declared in `packages.json` or supplied as a quoted path/URL.
+- **Dynamic imports** — no `__import__`, no `importlib`. Module set is fixed per compilation. Use `import_module(name)` to dispatch among modules already statically imported.
+- **Relative imports** — `from . import x` not supported. Use quoted relative specs (`from "./foo.py" import x`) or aliases in `packages.json`.
+- **Dotted submodule auto-discovery** — `import a.b.c` parses but isn't auto-walked. Each spec must be declared in `packages.json` or supplied as a quoted path/URL.
 
 ## Errors
 

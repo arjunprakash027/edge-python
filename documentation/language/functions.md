@@ -3,7 +3,7 @@ title: "Functions"
 description: "First-class functions, lambdas, closures, generators."
 ---
 
-Functions are the central abstraction in Edge Python. They're values: pass them around, return them, store them, compose them.
+Functions are the central abstraction — values that can be passed, returned, stored, composed.
 
 ## def
 
@@ -78,7 +78,7 @@ print(opts(host="api", port=443))
 
 ### Keyword-only parameters
 
-A bare `*` in the parameter list marks every following parameter as keyword-only. They can never be filled by positional arguments.
+A bare `*` marks every following parameter as keyword-only — positional args never reach them.
 
 ```python
 def connect(host, *, port=80, secure=False):
@@ -120,7 +120,7 @@ print(f(1, **{"b": 2, "c": 3}))
 
 ## lambda
 
-Anonymous function. The body is a single expression.
+Anonymous function; body is a single expression.
 
 ```python
 double = lambda x: x * 2
@@ -142,7 +142,7 @@ Hi, world
 
 ## First-class functions
 
-Functions are values. Store them, pass them, return them.
+Functions are values — store, pass, return.
 
 ```python
 ops = [abs, len, str]
@@ -339,7 +339,7 @@ Naive recursion runs at memoized cost without source-level changes.
 
 ## Generators
 
-Functions with `yield` produce a sequence lazily. Use `next()` to pull values one at a time, or iterate with `for`.
+`yield`-bearing functions produce sequences lazily. Pull with `next()` or iterate with `for`.
 
 ```python
 def squares(n):
@@ -409,7 +409,7 @@ print(max(i for i in [3, 1, 4, 1, 5]))
 
 ## Decorators
 
-A decorator is a function that wraps another callable. Edge Python applies decorators to both functions and classes (see [Classes](/language/classes#class-decorators)):
+A decorator wraps another callable. Applies to both functions and classes (see [Classes](/language/classes#class-decorators)):
 
 ```python
 def trace(f):
@@ -452,7 +452,7 @@ print(base(5))
 12
 ```
 
-Parameterized decorators are factories: a function that takes the decorator's arguments and returns the actual decorator. The wrapped function captures values from both the inner and outer scope.
+Parameterised decorators are factories — a function taking decorator args and returning the actual decorator. The wrapped function captures both scopes.
 
 ```python
 def repeat(n):

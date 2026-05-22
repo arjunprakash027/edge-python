@@ -3,9 +3,9 @@ title: "Async"
 description: "Cooperative coroutines: run, sleep, frame, gather, with_timeout, cancel, receive."
 ---
 
-Edge Python supports cooperative concurrency via `async def` coroutines and the `await` / `yield` keywords. There is **no preemption**: a coroutine runs until it explicitly yields, sleeps, awaits, or returns. The scheduler runs on a single OS thread; concurrency is by interleaving, not parallelism.
+Cooperative concurrency via `async def` coroutines and `await` / `yield`. No preemption — a coroutine runs until it yields, sleeps, awaits, or returns. Single-threaded scheduler; concurrency by interleaving, not parallelism.
 
-There is **no `asyncio` module**. The async primitives; `run`, `sleep`, `frame`, `gather`, `with_timeout`, `cancel`, `receive`, are top-level builtins. The scheduler is direct enough that wrapping it in a module-shaped namespace would add no semantic value.
+No `asyncio` module. Primitives — `run`, `sleep`, `frame`, `gather`, `with_timeout`, `cancel`, `receive` — are top-level builtins.
 
 ```python
 import asyncio   # ModuleNotFoundError — there is no asyncio
@@ -26,9 +26,9 @@ ok
 
 ## Two kinds of callables
 
-A `def` body executes immediately when called. An `async def` body returns a coroutine value that does nothing until you drive it with `run` / `gather`. Only coroutines are cancellable (`cancel`) and can suspend on real time (`sleep`).
+A `def` body executes immediately. An `async def` body returns a coroutine value that does nothing until driven with `run` / `gather`. Only coroutines are cancellable (`cancel`) and can suspend on real time (`sleep`).
 
-A plain `def` invoked from inside a coroutine — or directly at module top-level — may still call yielding builtins (`sleep`, `receive`, deferred host calls); the scheduler snapshots the helper's frame, suspends the whole call chain, and re-enters the helper on resume so its return value reaches the original call site. The module body itself runs as an implicit coroutine, so top-level statements suspend the same way. From the caller's perspective, a sync helper that internally sleeps behaves the same as one that does not — the suspend is transparent.
+A plain `def` inside a coroutine (or at module top-level) can still call yielding builtins (`sleep`, `receive`, deferred host calls) — the scheduler snapshots the helper's frame, suspends the call chain, re-enters the helper on resume so its return value lands at the original call site. The module body runs as an implicit coroutine, so top-level statements suspend the same way. From the caller, a sync helper that internally sleeps is indistinguishable from one that doesn't.
 
 ```python
 def routine():
@@ -61,7 +61,7 @@ print(run(square(5)))
 
 ## Sleeping
 
-`sleep(seconds)` suspends the current coroutine until `seconds` of wall-clock time pass. With no host time hook installed, a virtual clock advances logically — coroutines still interleave deterministically, but no real wait happens (useful for tests).
+`sleep(seconds)` suspends until `seconds` of wall time pass. Without a host time hook, a virtual clock advances logically — coroutines interleave deterministically with no real wait (useful for tests).
 
 ```python
 async def task(name):
@@ -81,7 +81,7 @@ b step 2
 
 ## gather
 
-`gather(*coros)` runs every argument concurrently and returns a list of their results in argument order. If any coroutine raises, the first error (in argument order) propagates after all peers reach a terminal state — surviving peers are **not** auto-cancelled.
+`gather(*coros)` runs each concurrently, returns a list of results in argument order. If any raises, the first error (in argument order) propagates after all peers terminate. Survivors not auto-cancelled.
 
 ```python
 async def fetch(name, delay):
@@ -115,7 +115,7 @@ caught
 
 ## with_timeout
 
-`with_timeout(seconds, coro)` runs `coro` to completion or raises `TimeoutError` if it doesn't finish in time. The coroutine is cancelled on timeout.
+`with_timeout(seconds, coro)` runs `coro` or raises `TimeoutError` on deadline; coro cancelled on timeout.
 
 ```python
 async def slow():
@@ -132,13 +132,13 @@ except TimeoutError:
 timed out
 ```
 
-`with_timeout` evaluates the coroutine eagerly — it's a function call, not an awaitable.
+`with_timeout` evaluates the coroutine eagerly — it's a call, not an awaitable.
 
 ## cancel
 
-`cancel(coro)` flags a coroutine registered with the scheduler for cancellation. On its next scheduler tick the coroutine transitions to `Cancelled` and stops running. The coroutine's body does **not** observe a `CancelledError` raised inside it — cancellation is cooperative and silent.
+`cancel(coro)` flags a registered coroutine for cancellation. On its next scheduler tick it transitions to `Cancelled` and stops. The body does not observe a `CancelledError` — cancellation is cooperative and silent.
 
-A coroutine in a tight synchronous loop without any `await`/`sleep` cannot be cancelled until it yields:
+A coroutine in a tight synchronous loop without `await`/`sleep` cannot be cancelled until it yields:
 
 ```python
 async def loop_forever():
@@ -151,26 +151,24 @@ For deadline-driven cancellation use `with_timeout`.
 
 ## Exception types
 
-The async primitives can raise:
-
 | Exception | When |
 |---|---|
 | `TimeoutError` | `with_timeout` deadline expired |
-| `CancelledError` | reserved for user-thrown cancellation; not auto-raised by `cancel()` |
+| `CancelledError` | reserved for user-thrown; not auto-raised by `cancel()` |
 
-Both are in the built-in exception namespace and match `except` clauses normally.
+Both live in the built-in exception namespace and match `except` clauses normally.
 
 ## Limitations
 
-* **No preemption.** A `while True: pass` inside a coroutine blocks the scheduler.
-* **Cancellation is silent.** `cancel(coro)` stops the coroutine; the body does not see `CancelledError`. Use `with_timeout` if you need deadline semantics that propagate as exceptions.
-* **Cooperative host loop.** The scheduler suspends back to the host when it cannot make synchronous progress (pending timer, frame, or event); the embedder resumes it through the `run_start` / `run_resume` / `run_push_event` exports. The legacy non-suspending `run` entry **cannot resume** — code that uses `sleep(n>0)`, `frame()`, or an empty `receive()` must run via the driver loop, and statements after a top-level `run()` do not execute after a yield.
-* **`async for`** works against any iterable accepted by `for`, *plus* coroutines and async generators (functions defined with both `async def` and `yield`). Each iteration resumes the coroutine to its next yield. There is no `__aiter__` / `__anext__` dispatch on user-defined classes — define an `async def` generator instead. Behavior over plain lists/tuples/dicts is identical to a regular `for`.
-* **`async with`** reuses the sync `with` dispatch path, invoking `__enter__` / `__exit__` on the context manager. `__aenter__` / `__aexit__` are not consulted (the async dunder forms are not dispatched). For async setup/teardown that needs `await`, use `try` / `finally` with explicit `await` calls.
-* **No async comprehensions.** `[x async for x in it]` is not supported.
-* **No `gen.send` / `.throw` / `.close`.** Generators and coroutines are one-way producers. For bidirectional flow, structure the work with `run` / `gather` and pass messages through call arguments.
-* **`receive()` blocks indefinitely.** With an empty queue and no host `run_push_event` arriving, the coroutine stays parked in `WaitingEvent`. Pair with `with_timeout` if you need a deadline.
+* **No preemption** — `while True: pass` inside a coroutine blocks the scheduler.
+* **Silent cancellation** — `cancel(coro)` stops the coro; the body doesn't see `CancelledError`. Use `with_timeout` for deadline-as-exception.
+* **Cooperative host loop** — scheduler suspends to the host when it can't progress synchronously (pending timer/frame/event); embedder resumes via `run_start` / `run_resume` / `run_push_event`. The legacy non-suspending `run` cannot resume — code using `sleep(n>0)`, `frame()`, or an empty `receive()` must run via the driver loop; statements after a top-level `run()` don't execute after a yield.
+* **`async for`** works against any `for`-iterable plus coroutines and async generators (`async def` with `yield`). Each iteration resumes to the next yield. No `__aiter__` / `__anext__` dispatch on user classes — write an `async def` generator. Behaviour over lists/tuples/dicts is identical to regular `for`.
+* **`async with`** reuses sync dispatch (`__enter__` / `__exit__`); `__aenter__` / `__aexit__` aren't consulted. For async setup/teardown, use `try` / `finally` with explicit `await`.
+* **No async comprehensions** — `[x async for x in it]` unsupported.
+* **No `gen.send` / `throw` / `close`** — generators and coroutines are one-way producers. For bidirectional flow, use `run` / `gather` and pass messages via args.
+* **`receive()` blocks indefinitely** — empty queue + no `run_push_event` leaves the coro parked in `WaitingEvent`. Pair with `with_timeout` for a deadline.
 
 ## Time capability
 
-The scheduler reads time from `vm.time_hook`. WASM hosts wire it to `Date.now() * 1e6` via the `host_now_ns` import; native hosts can use `std::time::Instant`. Without a hook installed, `sleep` advances a virtual clock so deterministic tests still interleave coroutines correctly.
+Scheduler reads from `vm.time_hook`. WASM hosts wire it to `Date.now() * 1e6` via the `host_now_ns` import; native hosts use `std::time::Instant`. Without a hook, `sleep` advances a virtual clock so deterministic tests interleave correctly.

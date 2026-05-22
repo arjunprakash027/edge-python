@@ -3,9 +3,9 @@ title: "Classes"
 description: "User-defined classes as state machines and library namespaces."
 ---
 
-Edge Python is **functional-first**: classes are state containers and library namespaces, not the primary abstraction. They cover two patterns: **state machines** (a small number of methods that mutate the receiver) and **namespaces** (a bundle of related functions and constants).
+Edge Python is functional-first — classes are state containers and namespaces, not the primary abstraction. Two patterns: state machines (a few methods that mutate the receiver) and namespaces (a bundle of related functions and constants).
 
-Classes support single-level inheritance with `super()`, `@property` / `@x.setter` for managed attributes, and the full dunder protocol for operators, indexing, iteration, context managers, and the rest (see [Dunder methods](/language/dunders) for the matrix). Multi-base inheritance with C3 MRO, descriptors, metaclasses, and `__slots__` remain out of scope.
+Single-level inheritance with `super()`, `@property` / `@x.setter`, full dunder protocol for operators, indexing, iteration, context managers (see [Dunder methods](/language/dunders)). Multi-base C3 MRO, descriptors, metaclasses, `__slots__` are out of scope.
 
 ## State-machine pattern
 
@@ -31,7 +31,7 @@ print(c.value())
 
 ## Namespace pattern
 
-A class with no `__init__` and no per-instance state is a namespace of functions and constants. Methods called on the class object are unbound; no `self` is prepended.
+A class with no `__init__` and no per-instance state is a namespace. Methods called on the class are unbound — no `self` prepended.
 
 ```python
 class Status:
@@ -61,9 +61,9 @@ print(Math.cube(3))
 
 ## Inheritance and super()
 
-A class can declare a single base with `class Sub(Base):`. Methods not defined on the subclass are looked up on the base, and the lookup walks the chain linearly; there is no C3 MRO. `isinstance(x, Base)` walks the same chain, so an instance of `Sub` is also an instance of every ancestor.
+Single base via `class Sub(Base):`. Methods not on the subclass are looked up linearly on the base — no C3 MRO. `isinstance(x, Base)` walks the same chain, so `Sub` instances are also instances of every ancestor.
 
-`super()` in zero-argument form delegates to the next class up the chain, bound to the current `self`. It is most commonly used in `__init__` to extend a base constructor.
+`super()` (zero-arg) delegates to the next class up the chain, bound to current `self`. Most common in `__init__` to extend a base constructor.
 
 ```python
 class Animal:
@@ -102,7 +102,7 @@ True
 
 ## Class decorators
 
-A decorator on a class wraps the class object the same way it wraps a function: the decorator is called with the class and its return value is bound to the name.
+A class decorator wraps the class object the same way it wraps a function — the decorator is called with the class; its return binds to the name.
 
 ```python
 def tag(cls):
@@ -125,7 +125,7 @@ tagged
 
 ## Properties
 
-`@property` turns a method into a read-only attribute. `@x.setter` (built via the `property.setter` factory on the existing property) makes the same attribute writable. Properties are looked up on the class, so subclasses inherit them and may override either side.
+`@property` turns a method into a read-only attribute. `@x.setter` (via `property.setter`) makes it writable. Properties live on the class — subclasses inherit and can override either side.
 
 ```python
 class Temp:
@@ -154,11 +154,11 @@ print(t.fahrenheit)
 212.0
 ```
 
-The two-argument form `property(fget, fset)` is also available for building properties without decorator syntax.
+Two-arg form `property(fget, fset)` also works without decorator syntax.
 
 ## Operator overloading and protocols
 
-Operators, indexing, iteration, context managers, hashing, and `repr` / `str` / `format` all dispatch through dunder methods defined on the class. Define `__add__` for `+`, `__eq__` for `==`, `__getitem__` for `x[i]`, `__iter__` / `__next__` for `for`, `__enter__` / `__exit__` for `with`, and so on.
+Operators, indexing, iteration, context managers, hashing, `repr` / `str` / `format` all dispatch through dunders: `__add__` for `+`, `__eq__` for `==`, `__getitem__` for `x[i]`, `__iter__` / `__next__` for `for`, `__enter__` / `__exit__` for `with`, etc.
 
 ```python
 class Vec:
@@ -170,11 +170,11 @@ class Vec:
 
 See [Dunder methods](/language/dunders) for the full matrix.
 
-## What is *not* supported
+## What is not supported
 
-* Multi-base inheritance with proper C3 MRO. `class C(A, B):` is parsed and both bases are stored, but resolution is a linear depth-first walk, not Python's C3 algorithm. Prefer single inheritance.
-* Metaclasses, descriptors (`__get__` / `__set__`), `__slots__`, abstract base classes, `__init_subclass__`.
-* `@staticmethod` and `@classmethod`. Use the namespace pattern above or free functions instead.
+* Multi-base inheritance with proper C3 MRO. `class C(A, B):` parses and both bases are stored, but resolution is a linear depth-first walk, not C3. Prefer single inheritance.
+* Metaclasses, descriptors (`__get__` / `__set__`), `__slots__`, ABCs, `__init_subclass__`.
+* `@staticmethod` / `@classmethod` — use the namespace pattern or free functions.
 * Async dunders — see [Dunders — What's not dispatched](/language/dunders#whats-not-dispatched).
 
-Behaviour reuse via free functions and composition is still the preferred default — it keeps dispatch fast and aligns with the functional-first identity. Reach for operator overloading and inheritance when the abstraction genuinely calls for them.
+Behaviour reuse via free functions and composition remains the default — fast dispatch, aligned with the functional-first identity. Reach for inheritance and operator overloading when the abstraction genuinely calls for them.

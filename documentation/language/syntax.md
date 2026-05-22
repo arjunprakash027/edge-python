@@ -66,7 +66,7 @@ if (n := len(data)) > 0:
 
 ## Numbers
 
-Integer literals accept hex (`0x`), octal (`0o`), and binary (`0b`) prefixes, with `_` digit separators between digits. Runtime range and promotion rules live in [Data types — Integer](/language/data-types#integer).
+Integer literals: hex (`0x`), octal (`0o`), binary (`0b`); `_` digit separators between digits. Range and promotion: [Data types — Integer](/language/data-types#integer).
 
 ```python
 print(0xDEAD_BEEF)
@@ -82,7 +82,7 @@ print(1_000_000)
 1000000
 ```
 
-Underscores are validated: `1_`, `1__2`, `0x_1`, and `1e_5` are rejected as `SyntaxError`. They must sit between two digits.
+Underscores are validated — `1_`, `1__2`, `0x_1`, `1e_5` → `SyntaxError`. Must sit between two digits.
 
 ```python
 # Floats — IEEE-754 doubles
@@ -125,7 +125,7 @@ hello world
 
 ### Escape sequences
 
-Supported: `\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\0`, `\xHH` (2-digit hex), `\uHHHH` (4-digit Unicode), `\UHHHHHHHH` (8-digit Unicode), and `\NNN` (1-3 octal digits). Named-character escapes (`\N{GREEK SMALL LETTER ALPHA}`) are not supported \u2014 use `\u` instead.
+Supported: `\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\0`, `\xHH`, `\uHHHH`, `\UHHHHHHHH`, `\NNN` (1\u20133 octal digits). Named-char escapes (`\N{GREEK SMALL LETTER ALPHA}`) not supported \u2014 use `\u`.
 
 ```python
 print('\n line break')
@@ -169,7 +169,7 @@ answer is 43
 {literal braces}
 ```
 
-The full f-string format mini-language is supported: `[[fill]align][sign][#][0][width][,][.precision][type]`, with `!r` / `!s` / `!a` conversions before the spec. Type chars: `b o c d e E f F g G n s x X %`.
+Full format mini-language: `[[fill]align][sign][#][0][width][,][.precision][type]`, with `!r` / `!s` / `!a` conversions before the spec. Type chars: `b o c d e E f F g G n s x X %`.
 
 ## Booleans and None
 
@@ -217,7 +217,7 @@ True
 
 ### Logical
 
-Short-circuiting `and` / `or` return the operand, not a coerced bool.
+Short-circuiting `and` / `or` return the operand, not a coerced bool:
 
 ```python
 print(True and "second")
@@ -287,7 +287,7 @@ big
 
 ## Containers
 
-Container literals: `[1, 2, 3]` (list), `(1, 2, 3)` and `(1,)` / `()` (tuple), `{"a": 1}` (dict), `{1, 2, 3}` (set — empty is `set()`, since `{}` is a dict). Full semantics, mutation, and methods live in [Data types](/language/data-types).
+Literals: `[1, 2, 3]` (list), `(1, 2, 3)` / `(1,)` / `()` (tuple), `{"a": 1}` (dict), `{1, 2, 3}` (set — empty is `set()` since `{}` is a dict). See [Data types](/language/data-types) for semantics, mutation, methods.
 
 ### Slicing
 
@@ -340,7 +340,7 @@ print(max(x for x in [3, 1, 4, 1, 5]))
 
 ## Type annotations
 
-Annotations parse on variables, parameters, and return positions but have no runtime effect: they are drained by the parser and never reach the VM. There is no `__annotations__` attribute, and no runtime type check is performed. Treat annotations as documentation for human readers and external static-analysis tools.
+Annotations parse on variables, parameters, and return positions but have no runtime effect — drained by the parser, never reach the VM. No `__annotations__`, no runtime check. Treat them as docs for humans and static analysers.
 
 ```python
 counter: int = 0

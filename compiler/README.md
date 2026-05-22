@@ -1,164 +1,77 @@
 # Edge Python
 
-A compact, single-pass SSA-style bytecode compiler and stack VM for a sandboxed Python subset. Hand-written lexer, Pratt-precedence parser that emits bytecode directly (no AST), and a threaded-code interpreter with dual inline caching (scalar + instance-dunder), super-instruction fusion, and pure-function template memoization. Built for deterministic execution in sandboxed and embedded environments (around 170 KB WASM release).
+A compact single-pass SSA bytecode compiler and stack VM for a sandboxed Python subset. Hand-written lexer, Pratt parser that emits bytecode directly (no AST), and a threaded-code interpreter with dual inline caching (scalar + instance-dunder), super-instruction fusion, and pure-function template memoization. Deterministic execution; ~170 KB WASM release.
 
 * **Demo:** [demo.edgepython.com](https://demo.edgepython.com/)
 * **Docs:** [edgepython.com](https://edgepython.com/)
 
----
-
 ## Architecture
 
-The compiler is a single-pass pipeline that emits bytecode directly into an SSA chunk; the VM is a stack interpreter with adaptive inline caching and pure-function memoization.
+Single-pass pipeline: source → bytecode in an SSA chunk; stack interpreter with adaptive inline caching and pure-function memoization.
 
-* **Lexer** (`modules/lexer/`) — hand-written LUT-driven scanner; offset-based tokens. See [Lexical](https://edgepython.com/implementation/lexical).
-* **Parser** (`modules/parser/`) — Pratt precedence climbing; emits SSA-versioned bytecode with `Phi` opcodes at control-flow joins; no AST. See [Syntax (impl)](https://edgepython.com/implementation/syntax).
-* **Optimizer** (`modules/vm/optimizer.rs`) — constant folding, Phi-noop elimination, dead-instruction compaction. Preserves `LoadName` to keep the IC slot live.
-* **VM** (`modules/vm/`) — flat-match dispatch on `(opcode: OpCode, operand: u16)`; hot path split across `handlers/` and a per-type method package in `handlers/builtin_methods/`. `LoadAttr + Call(0)` fuses into `CallMethod` super-instruction.
-* **Inline caching** (`modules/vm/cache.rs`) — scalar IC promotes arithmetic/comparison sites to typed `FastOp` after 4 hits; instance-dunder IC caches `(class_idx, method)` for monomorphic dispatch.
+* **Lexer** (`modules/lexer/`) — LUT-driven, offset-based tokens. See [Lexical](https://edgepython.com/implementation/lexical).
+* **Parser** (`modules/parser/`) — Pratt precedence; SSA-versioned bytecode with `Phi` at control-flow joins; no AST. See [Syntax (impl)](https://edgepython.com/implementation/syntax).
+* **Optimizer** (`modules/vm/optimizer.rs`) — constant folding, Phi-noop elimination, dead-instruction compaction. Preserves `LoadName` for IC.
+* **VM** (`modules/vm/`) — flat-match dispatch on `(opcode, operand: u16)`; `handlers/` + `handlers/builtin_methods/`. `LoadAttr + Call(0)` fuses into `CallMethod`.
+* **Inline caching** (`modules/vm/cache.rs`) — scalar IC promotes arith/compare to typed `FastOp` after 4 hits; instance-dunder IC caches `(class_idx, method)`.
 * **Template memoization** — pure-function results cached after 2 hits; impurity tagged on `StoreItem` / `StoreAttr` / I/O / `raise` / `yield`.
-* **Memory** — NaN-boxed 64-bit `Val` (47-bit inline int, IEEE-754 float, bool, None, 28-bit heap index); mark-and-sweep arena heap with interned strings/bytes ≤ 128 B; integers auto-promote to i128 `LongInt` on overflow, capped at ±2^127.
-* **Resolver** (`modules/packages/`) — host-injected; `packages.json` walk-up; native imports register in `chunk.extern_table` for `CallExtern` dispatch.
+* **Memory** — NaN-boxed 64-bit `Val` (47-bit inline int, IEEE-754 float, bool, None, 28-bit heap index); mark-and-sweep arena; interned strings/bytes ≤ 128 B; auto-promote to i128 `LongInt`, capped at ±2¹²⁷.
+* **Resolver** (`modules/packages/`) — host-injected; `packages.json` walk-up; native imports register for `CallExtern` dispatch.
 
-Full design rationale, NaN-box bit patterns, IC thresholds, GC root list, and the "what the compiler intentionally does *not* do" list: [Design](https://edgepython.com/implementation/design).
+Full rationale, NaN-box patterns, IC thresholds, GC roots, and intentional omissions: [Design](https://edgepython.com/implementation/design).
 
----
-
-## Project Structure
+## Layout
 
 ```text
-├── Cargo.toml
-├── README.md
-├── src
-│   ├── abi.rs
-│   ├── lib.rs
-│   ├── main
-│   │   ├── abi_bridge.rs
-│   │   ├── errors.rs
-│   │   ├── exports.rs
-│   │   ├── mod.rs
-│   │   └── resolver.rs
-│   ├── modules
-│   │   ├── lexer
-│   │   │   ├── mod.rs
-│   │   │   ├── scan.rs
-│   │   │   └── tables.rs
-│   │   ├── packages
-│   │   │   ├── manifest.rs
-│   │   │   └── mod.rs
-│   │   ├── parser
-│   │   │   ├── control.rs
-│   │   │   ├── expr.rs
-│   │   │   ├── imports.rs
-│   │   │   ├── literals.rs
-│   │   │   ├── mod.rs
-│   │   │   ├── stmt.rs
-│   │   │   └── types.rs
-│   │   └── vm
-│   │       ├── builtins
-│   │       │   ├── async_ops.rs
-│   │       │   ├── attr.rs
-│   │       │   ├── bytes_helpers.rs
-│   │       │   ├── container.rs
-│   │       │   ├── conversion.rs
-│   │       │   ├── identity.rs
-│   │       │   ├── index.rs
-│   │       │   ├── io.rs
-│   │       │   ├── mod.rs
-│   │       │   ├── numeric.rs
-│   │       │   └── sequence.rs
-│   │       ├── cache.rs
-│   │       ├── dispatch.rs
-│   │       ├── gc.rs
-│   │       ├── handlers
-│   │       │   ├── arith.rs
-│   │       │   ├── builtin_methods
-│   │       │   │   ├── bytes.rs
-│   │       │   │   ├── dict.rs
-│   │       │   │   ├── list.rs
-│   │       │   │   ├── mod.rs
-│   │       │   │   ├── prelude.rs
-│   │       │   │   ├── set.rs
-│   │       │   │   └── string.rs
-│   │       │   ├── data.rs
-│   │       │   ├── dunder.rs
-│   │       │   ├── format.rs
-│   │       │   ├── function.rs
-│   │       │   ├── methods.rs
-│   │       │   ├── methods_helpers.rs
-│   │       │   └── mod.rs
-│   │       ├── helpers.rs
-│   │       ├── init.rs
-│   │       ├── mod.rs
-│   │       ├── ops.rs
-│   │       ├── optimizer.rs
-│   │       └── types
-│   │           ├── coro.rs
-│   │           ├── eq.rs
-│   │           ├── err.rs
-│   │           ├── math.rs
-│   │           └── mod.rs
-│   └── util
-│       ├── fstr.rs
-│       ├── fx.rs
-│       └── sha256.rs
-└── tests
-    ├── cases
-    │   ├── lexer.json
-    │   ├── packages.json
-    │   ├── parser.json
-    │   └── vm.json
-    ├── common.rs
-    ├── lexer.rs
-    ├── main.rs
-    ├── packages.rs
-    ├── parser.rs
-    └── vm.rs
+src/
+  abi.rs, lib.rs
+  main/        — abi_bridge, errors, exports, resolver
+  modules/
+    lexer/     — scan.rs, tables.rs
+    parser/    — control, expr, imports, literals, stmt, types
+    packages/  — manifest, mod
+    vm/
+      builtins/         — async_ops, attr, container, conversion, …
+      handlers/         — arith, dunder, format, function, methods, …
+        builtin_methods/  — bytes, dict, list, set, string
+      cache.rs, dispatch.rs, gc.rs, optimizer.rs, ops.rs
+      types/            — coro, eq, err, math
+  util/        — fstr, fx, sha256
+tests/         — cases/*.json + lexer.rs, parser.rs, vm.rs, packages.rs, main.rs
 ```
 
----
-
-## Quick Start
+## Quick start
 
 ```bash
-# Build the release WebAssembly module, the only artifact this crate distributes.
-cargo wasm # -> target/wasm32-unknown-unknown/release/compiler_lib.wasm
-
-# Run the host-side test suite (lexer, parser, VM, packages JSON cases).
-cargo test --release
+cargo wasm           # release WASM artifact -> target/wasm32-unknown-unknown/release/compiler_lib.wasm
+cargo test --release # host-side test suite
 ```
 
-`cargo wasm` is a workspace alias (`.cargo/config.toml` at the repo root) for `cargo build --release --target wasm32-unknown-unknown -p edge-python`. Plain `cargo build --release` produces host-side library artifacts (`.rlib` + host cdylib) for embedders linking `compiler_lib` directly. To extend Edge Python with native modules from your own Rust app, depend on `compiler_lib` and implement the `Resolver` trait — see [Writing modules](https://edgepython.com/reference/writing-modules).
+`cargo wasm` is a workspace alias (`.cargo/config.toml`) for `cargo build --release --target wasm32-unknown-unknown -p edge-python`. Plain `cargo build --release` produces host artifacts (`.rlib` + cdylib) for embedders linking `compiler_lib`. To add native modules from your own crate, implement the `Resolver` trait — see [Writing modules](https://edgepython.com/reference/writing-modules).
 
-Edge Python is loaded by a host runtime, browser via the [`runtime/`](../runtime/) JS package, server / edge via wasmtime / wasmer / Cloudflare Workers / Fastly Compute / Spin. There is no native CLI binary; the host owns I/O, network, and module fetching.
+The host runtime owns I/O, network, and module fetching; there is no native CLI. Browser hosts use the [`runtime/`](../runtime/) JS package; server/edge runtimes use wasmtime, wasmer, Cloudflare Workers, Fastly Compute, Spin.
 
 ### Consuming the release from another Rust crate
 
-The crate declares `links = "compiler_lib"` and its `build.rs` downloads the matching `compiler_lib.wasm` from the GitHub Release for `CARGO_PKG_VERSION` into `OUT_DIR`. Any downstream crate that depends on this one receives the absolute path through `DEP_COMPILER_LIB_WASM` — cargo's standard `links` metadata channel. No need to invoke `cargo wasm` in the consumer build.
-
-Downstream `Cargo.toml`:
+This crate declares `links = "compiler_lib"` and its `build.rs` downloads the matching `compiler_lib.wasm` from the GitHub Release for `CARGO_PKG_VERSION` into `OUT_DIR`. Downstream crates read the absolute path through `DEP_COMPILER_LIB_WASM`.
 
 ```toml
+# Downstream Cargo.toml
 [dependencies]
 edge-python = { git = "https://github.com/dylan-sutton-chavez/edge-python", tag = "v0.1.0" }
 ```
 
-Downstream `build.rs`:
-
 ```rust
+// Downstream build.rs
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");
-
     let wasm = std::env::var("DEP_COMPILER_LIB_WASM")
         .expect("`DEP_COMPILER_LIB_WASM` unset — upstream `edge-python` must declare `links = \"compiler_lib\"`");
-
     std::fs::copy(&wasm, "runtime/compiler_lib.wasm").expect("copy failed");
 }
 ```
 
-URL is derived entirely from this crate's `Cargo.toml` (`<repository>/releases/download/v<version>/compiler_lib.wasm`), so a tag bump is the only thing a consumer ever needs to retarget. `branch = "main"` is also valid for unreleased work; pin to a `tag` for reproducible builds. Requires `curl` on the host PATH. The fetch is gated by the default-on `prebuilt` feature; producer-side workspace commands pass `--no-default-features` to skip it.
-
----
+URL is derived from `<repository>/releases/download/v<version>/compiler_lib.wasm` — a tag bump is the only retarget needed. Use `branch = "main"` for unreleased work. Requires `curl` on PATH. Gated by the default-on `prebuilt` feature; producer-side commands pass `--no-default-features` to skip.
 
 ## References
 

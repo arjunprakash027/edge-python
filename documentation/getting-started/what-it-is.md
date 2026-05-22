@@ -3,9 +3,9 @@ title: "What Edge Python is"
 description: "A subset of Python, compiled to bytecode and run on a sandboxed VM."
 ---
 
-Edge Python is a sandboxed Python subset with classes, async/await, structural pattern matching, and `packages.json` imports — compiled to bytecode and run on a stack VM with adaptive inline caching and pure-function memoisation. See [Design](/implementation/design) for the compiler internals.
+A sandboxed Python subset with classes, async/await, structural pattern matching, and `packages.json` imports — compiled to bytecode and run on a stack VM with adaptive inline caching and pure-function memoisation. See [Design](/implementation/design) for internals.
 
-The language reads like Python because it parses Python syntax. It runs differently because what it executes is curated.
+Reads like Python (parses Python syntax). Runs differently — what it executes is curated.
 
 ## What it supports
 
@@ -39,26 +39,26 @@ These parse for syntactic compatibility but raise at runtime, or simply don't ex
 
 ## Design philosophy
 
-Edge Python is **multi-paradigm sandboxed compiler**. Edge Python gives:
+Multi-paradigm sandboxed compiler:
 
-- **A smaller binary**: the entire compiler and VM fit in 170 KB of WebAssembly release.
-- **A faster interpreter**: no method-resolution overhead; hot opcodes promote to type-specialised fast paths via inline caching.
-- **Aggressive memoisation**: pure functions get their results cached automatically — most functional code is pure by construction.
-- **Easier sandboxing**: with no protocol dispatch and no stdlib, the attack surface is the fixed built-in set.
+- **Smaller binary** — compiler + VM in 170 KB WebAssembly release.
+- **Faster interpreter** — no method-resolution overhead; hot opcodes promote to type-specialised fast paths via IC.
+- **Aggressive memoisation** — pure functions auto-cached; most functional code is pure by construction.
+- **Easier sandboxing** — no protocol dispatch, no stdlib; attack surface is the fixed built-in set.
 
 ## Sandbox guarantees
 
-The whole Edge Python runtime is a WebAssembly module, so it inherits the sandbox guarantees of the WASM host (no syscalls, no FS, no network, isolated linear memory). On top of that, the embedder can enforce per-VM resource caps via `Limits::sandbox()` — hitting any of them raises a recoverable `RuntimeError` / `MemoryError` / `RecursionError` rather than crashing the host process. See [Limits and errors](/reference/limits-and-errors#sandbox-limits) for the full table.
+Inherits WASM-host guarantees (no syscalls, no FS, no network, isolated linear memory). On top, embedders enforce per-VM caps via `Limits::sandbox()` — hits raise recoverable `RuntimeError` / `MemoryError` / `RecursionError` rather than crashing the host. See [Limits and errors](/reference/limits-and-errors#sandbox-limits).
 
 ## Where it runs
 
-Edge Python is distributed as a single `.wasm` artifact (`compiler_lib.wasm`, 170 KB). It runs anywhere WebAssembly does:
+Single `.wasm` artifact (`compiler_lib.wasm`, 170 KB), runs anywhere WebAssembly does:
 
 - **Browser**: served alongside the [`runtime/`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) JS package, which bridges `print()` and module imports across the WASM ↔ JS boundary.
-- **Server / edge runtimes**: Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute, Spin, etc. The host runtime owns I/O, fetching, and module loading.
-- **Embedded Rust apps**: load `compiler_lib.wasm` via your runtime of choice or, when `cargo`-linked, use the `compiler_lib` rlib directly.
+- **Server / edge runtimes**: Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute, Spin. The host runtime owns I/O, fetching, and module loading.
+- **Embedded Rust apps**: load `compiler_lib.wasm` via your runtime of choice or use the `compiler_lib` rlib when cargo-linked.
 
-The same compiler and the same VM run everywhere. Two ABIs sit on top:
+Two ABIs sit on top:
 
-- **Compiler↔host imports** — declared by the embedder against the host runtime, covering output, module fetching, native dispatch, and wall-clock time. Custom embedders that ship [host packages](/reference/writing-modules#path-c-host-capability) declare additional imports (e.g. DOM in the browser shim, FS in WASI) without touching the plugin ABI below.
-- **Plugin ABI (sealed v1)** — the contract a CDN-distributed `.wasm` plugin module follows when imported via `from "<url>" import`. Exactly 6 `env.*` imports, never extended. See the [WASM module ABI](/reference/wasm-abi).
+- **Compiler↔host imports** — embedder-declared, covering output, module fetching, native dispatch, wall-clock time. Custom embedders that ship [host packages](/reference/writing-modules#path-c-host-capability) declare additional imports (DOM, FS) without touching the plugin ABI.
+- **Plugin ABI (sealed v1)** — contract for CDN-distributed `.wasm` plugin modules. Exactly 6 `env.*` imports, never extended. See the [WASM module ABI](/reference/wasm-abi).
