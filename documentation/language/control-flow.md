@@ -126,9 +126,9 @@ done
 
 ## match / case
 
-Edge Python supports a useful subset of structural pattern matching: literal patterns, capture variables, the `_` wildcard, OR patterns (`|`), guards (`if`), and sequence patterns including the `*rest` star.
+Subset supported: literal patterns, capture variables, `_` wildcard, OR (`|`), guards (`if`), sequence patterns with `*rest`.
 
-Inside a sequence pattern each item must be a literal (`int` / `float` / `str` / `True` / `False` / `None`), a capture name, or `_`. Nested sequences (`case [[a, b], c]:`) are not parsed, flatten them or fall back to guards. Mapping patterns (`{"key": x}`), class patterns (`Point(x=0)`), and value-shape captures via `as` are also unsupported. For those, use chained `if` / `elif`.
+Sequence-pattern items must be literals (`int` / `float` / `str` / `True` / `False` / `None`), capture names, or `_`. Nested sequences (`case [[a, b], c]:`), mapping patterns (`{"key": x}`), class patterns (`Point(x=0)`), and `as` captures are unsupported — use chained `if` / `elif`.
 
 ```python
 def classify(p):
@@ -246,7 +246,7 @@ except ValueError:
 rejected
 ```
 
-`raise X from Y` raises `X`. The `from` clause is parsed and the cause expression is evaluated, but `__cause__` / `__context__` chaining is not preserved on the propagated exception; only the primary `X` reaches the handler.
+`raise X from Y` raises `X`. The `from` clause parses and the cause evaluates, but `__cause__` / `__context__` aren't preserved — only `X` reaches the handler.
 
 ```python
 try:
@@ -259,7 +259,7 @@ except ValueError:
 caught the ValueError
 ```
 
-Handlers match on the exception's class **and** its declared parents. `except Exception` catches `ValueError`, `RuntimeError`, `KeyError`, and so on:
+Handlers match on class and declared parents. `except Exception` catches `ValueError`, `RuntimeError`, `KeyError`, etc:
 
 ```python
 try:
@@ -278,7 +278,7 @@ Pre-bound exception classes (with their parent links so `except <Parent>:` match
 
 ## with
 
-`with` drives the context-manager protocol: the expression is evaluated, its `__enter__` is called, and the return value is bound to the `as` name before the body runs. On exit, `__exit__(exc_type, exc_value, traceback)` is invoked — with `(None, None, None)` on normal completion, or the live exception info if the body raised. A truthy return from `__exit__` suppresses the exception; otherwise it propagates. See [`/language/dunders`](/language/dunders) for the full protocol.
+`with` drives the context-manager protocol: evaluate the expression, call `__enter__`, bind the result to `as`. On exit, `__exit__(exc_type, exc_value, traceback)` runs — `(None, None, None)` on normal completion, live exception info on raise. Truthy return suppresses; falsy propagates. See [`/language/dunders`](/language/dunders).
 
 ```python
 x = [1, 2]
@@ -318,7 +318,7 @@ print(reciprocal(4))
 0.25
 ```
 
-A failed assertion raises `RuntimeError` — catch it with `except RuntimeError:`, `except Exception:`, or a bare `except:`.
+Failed assertion → `RuntimeError`; catchable with `except RuntimeError`, `except Exception`, or bare `except`.
 
 ## del
 

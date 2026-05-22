@@ -33,7 +33,7 @@ For runtime membership in a type, use [`isinstance`](/reference/builtins#isinsta
 
 ## Integer
 
-Two-tier representation. **Inline** (fast path) is 47-bit signed packed in a NaN-boxed `Val` — one ALU instruction per arithmetic op, zero allocation. **LongInt** (slow path) is i128 in a heap slot, used automatically when a literal or arithmetic result exceeds 47-bit. The boundary is invisible: same `int` type, same operators. The hard cap is `±2¹²⁷`; anything wider raises `OverflowError`. Edge Python does **not** offer CPython unbounded ints, and complex literals (`1j`, `2+3j`) are unsupported.
+Two-tier. **Inline (fast)**: 47-bit signed in a NaN-boxed `Val`, one ALU op per arithmetic, zero alloc. **LongInt (slow)**: i128 in a heap slot, auto when literal/result exceeds 47-bit. Boundary invisible — same `int` type, same operators. Hard cap ±2¹²⁷; wider → `OverflowError`. No CPython unbounded ints; no complex (`1j`, `2+3j`).
 
 ```python
 # Inline range
@@ -126,7 +126,7 @@ b
 c
 ```
 
-`len(s)` and the padding methods `str.center` / `str.zfill` measure in Unicode code points, not raw bytes — `'ñ'.center(5, '*')` produces `'**ñ**'`, five visual characters wide.
+`len(s)` and padding (`str.center` / `str.zfill`) measure in code points, not bytes — `'ñ'.center(5, '*')` → `'**ñ**'` (5 visual chars).
 
 ## Bytes
 
@@ -200,7 +200,7 @@ print(encoded, decoded)
 b'Edge Python' Edge Python
 ```
 
-`bytes` is hashable (works as dict key, set member) and comparable to other `bytes` values; `bytes == str` is always `False`, even when the bytes are valid UTF-8 of the string. Supported methods: `decode`, `hex`, `startswith`, `endswith`. Encoding names recognised by `encode`/`decode`/`bytes(s, ...)`: `"utf-8"` (default) and `"ascii"`.
+`bytes` is hashable and comparable to other `bytes`; `bytes == str` is always `False` (even for valid UTF-8). Methods: `decode`, `hex`, `startswith`, `endswith`. Encodings: `"utf-8"` (default), `"ascii"`.
 
 ## List
 
@@ -259,7 +259,7 @@ print(xs)
 
 ## Tuple
 
-Immutable sequence. The fastest container for fixed-size data and the only one usable as a dict key in mixed-type cases.
+Immutable sequence. Fastest container for fixed-size data; the only one usable as a dict key in mixed-type cases.
 
 ```python
 t = (1, 2, 3)
@@ -278,7 +278,7 @@ print(()) # empty
 
 ## Dict
 
-Insertion-ordered mapping. Keys must be hashable: numbers, strings, bytes, booleans, `None`, frozensets, and tuples whose elements are themselves hashable. Mutable containers (`list`, `dict`, `set`) raise `TypeError: unhashable type` if used as a key. Numerically equal keys (`1` and `1.0`, or `True` and `1`) collapse to a single slot — the second insertion overwrites the first.
+Insertion-ordered mapping. Keys must be hashable: numbers, strings, bytes, bools, `None`, frozensets, tuples of hashables. Mutable containers as keys → `TypeError: unhashable type`. Numerically equal keys (`1`/`1.0`, `True`/`1`) collapse — second insertion overwrites.
 
 ```python
 d = {"a": 1, "b": 2}
@@ -311,7 +311,7 @@ y
 
 ## Set
 
-Unordered collection of hashable values, no duplicates. Supports the standard mutators (`add`, `remove`, `discard`, `pop`, `clear`, `update`) and algebraic operators / methods (`|` `&` `-` `^` and `union`, `intersection`, `difference`, `symmetric_difference`); see [Methods](/reference/methods) for the full list.
+Unordered, no duplicates, hashable values. Mutators (`add`, `remove`, `discard`, `pop`, `clear`, `update`) and algebraic operators (`|`, `&`, `-`, `^` and named methods); see [Methods](/reference/methods).
 
 ```python
 s = {1, 2, 2, 3}
@@ -375,7 +375,7 @@ True
 
 ## Ellipsis
 
-`...` is a true singleton of type `ellipsis`. It compares equal only to itself and is distinct from the string `'...'`.
+`...` is a singleton of type `ellipsis`. Compares equal only to itself; distinct from `'...'`.
 
 ```python
 print(...)
@@ -423,7 +423,7 @@ True
 
 ## Truthy and falsy
 
-These values are falsy. Everything else is truthy.
+Falsy values (everything else is truthy):
 
 | Falsy values        |
 |---------------------|

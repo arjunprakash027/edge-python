@@ -3,7 +3,7 @@ title: "Built-in functions"
 description: "Every built-in function in Edge Python with examples and outputs."
 ---
 
-Edge Python provides 60 built-in functions. They are first-class values: pass them as arguments, store them in containers, alias them.
+60 built-in functions, all first-class values — pass as arguments, store in containers, alias.
 
 ```python
 # All built-ins are real values
@@ -19,13 +19,13 @@ p("aliased")
 aliased
 ```
 
-Edge Python is functional-first. Introspection helpers (`eval`, `exec`, `compile`, `dir`, `ascii`, `help`, `__import__`, `breakpoint`, `open`, `issubclass`) are intentionally absent, the static-import contract and the lack of a writable global module table make them either impossible to implement or inconsistent with the paradigm. `staticmethod` and `classmethod` are omitted (use the namespace pattern or free functions); `super` and `property` are supported; see [`/language/classes`](/language/classes) and [`/language/dunders`](/language/dunders).
+Edge Python is functional-first. Introspection helpers (`eval`, `exec`, `compile`, `dir`, `ascii`, `help`, `__import__`, `breakpoint`, `open`, `issubclass`) are intentionally absent — the static-import contract and lack of a writable global module table make them either impossible or inconsistent with the paradigm. `staticmethod` / `classmethod` are omitted (use the namespace pattern or free functions); `super` and `property` are supported. See [`/language/classes`](/language/classes), [`/language/dunders`](/language/dunders).
 
 ## Output
 
 ### print
 
-`print(*args)` — write space-separated values to stdout, followed by a newline. No `sep`, `end`, `file`, or `flush` keyword arguments — pass a pre-joined string if you need a custom separator.
+`print(*args)` — space-separated values to stdout, trailing newline. No `sep` / `end` / `file` / `flush` kwargs — pre-join for custom separators.
 
 ```python
 print(1, 2, 3)
@@ -41,13 +41,13 @@ hello world
 
 ### input
 
-`input()` — read one line from the host's input buffer. Native build: reads stdin. WASM build: drains a buffer the host wrote via `set_input`. Returns the empty string if the buffer is empty. There is no prompt argument.
+`input()` — one line from the host buffer. Native: stdin. WASM: drains the buffer the host wrote via `set_input`. Empty buffer → empty string. No prompt argument.
 
 ## Numeric
 
 ### abs
 
-`abs(x)` — absolute value of an int or float. `abs("hello")` raises `TypeError` ("abs() requires a number"). Works on both inline ints and `LongInt`-promoted i128 values; literals beyond ±2¹²⁷ are rejected at parse time before `abs` sees them.
+`abs(x)` — absolute value of int or float. Non-numeric → `TypeError`. Works on inline and `LongInt` i128; literals beyond ±2¹²⁷ are rejected at parse time.
 
 ```python
 print(abs(-7))
@@ -79,7 +79,7 @@ print(round(1.55, 1))
 
 ### min, max
 
-Variadic, or accepting a single iterable. Empty input raises `ValueError`. There is no `key=` or `default=` keyword.
+Variadic or single iterable. Empty → `ValueError`. No `key=` / `default=`.
 
 ```python
 print(min(3, 1, 4))
@@ -111,7 +111,7 @@ print(sum(x * x for x in range(5)))
 
 ### pow
 
-`pow(base, exp)` or `pow(base, exp, mod)` for modular exponentiation. The 3-arg form requires int operands and a non-negative exponent (`pow(a, b, 0)` raises `ZeroDivisionError`; `pow(a, -1, m)` raises `ValueError`). The modulus must be `< 2^63` — larger moduli would overflow i128 during the internal `(result * base) % m` step and raise `ValueError("pow() modulus too large; must be < 2^63")`.
+`pow(base, exp)` or `pow(base, exp, mod)` for modular exp. 3-arg requires int operands and non-negative exp (`pow(a, b, 0)` → `ZeroDivisionError`; `pow(a, -1, m)` → `ValueError`). Modulus must be `< 2^63` (larger overflows i128 in `(result * base) % m`) — raises `ValueError("pow() modulus too large; must be < 2^63")`.
 
 ```python
 print(pow(2, 10))
@@ -161,7 +161,7 @@ print(hex(-256))
 
 ### int
 
-`int(x)` — single-argument constructor. Accepts `int`, `bool`, `float` (truncates toward zero), or a numeric string. Strings outside that shape raise `ValueError` ("int(): invalid literal"). Integers up to ±2¹²⁷ are supported (inline 47-bit + `LongInt` i128); values beyond that raise `OverflowError`. **There is no `int(x, base)` form** — parse hex/oct/bin strings yourself or use the `0x`/`0o`/`0b` literal syntax.
+`int(x)` — single-arg. Accepts `int`, `bool`, `float` (truncates toward zero), numeric string. Bad strings → `ValueError`. Supports ±2¹²⁷ (inline 47-bit + `LongInt` i128); wider → `OverflowError`. No `int(x, base)` form — parse hex/oct/bin yourself or use `0x` / `0o` / `0b` literals.
 
 ```python
 print(int(3.9))
@@ -177,7 +177,7 @@ print(int(True))
 
 ### float
 
-`float(x)` — accepts `int`, `bool`, `float`, or a string. Strings recognise `inf`, `-inf`, `nan` (case-insensitive) in addition to numeric forms.
+`float(x)` — `int`, `bool`, `float`, or string. Strings recognise `inf`, `-inf`, `nan` (case-insensitive).
 
 ```python
 print(float(2))
@@ -193,7 +193,7 @@ inf
 
 ### str
 
-`str(x)` — display form. `str()` with no argument returns the empty string.
+`str(x)` — display form. No arg → empty string.
 
 ```python
 print(str(42))
@@ -223,7 +223,7 @@ False True
 
 ### list, tuple, set, frozenset, dict
 
-`list`, `tuple`, `set`, and `frozenset` accept any iterable — `list`, `tuple`, `set`, `frozenset`, `dict` (yields keys), `range`, `bytes`, `str`, generator, coroutine. They share a single `extract_iter` helper, so the constructors are interchangeable for any iterable input.
+`list`, `tuple`, `set`, `frozenset` accept any iterable — list, tuple, set, frozenset, dict (keys), range, bytes, str, generator, coroutine. Share an `extract_iter` helper, so all constructors are interchangeable.
 
 ```python
 print(list("abc"))
@@ -241,11 +241,11 @@ frozenset({1, 2, 3})
 {'a': 1, 'b': 2}
 ```
 
-`dict` also accepts a single mapping or kwargs; it does not currently accept the iterable-of-pairs constructor form (`dict([('a', 1)])`) — use a literal or `dict.update` with the pair list instead.
+`dict` also accepts a mapping or kwargs; iterable-of-pairs (`dict([('a', 1)])`) is not supported — use a literal or `dict.update`.
 
 ### chr, ord
 
-Convert between integer code points and single-character strings. `chr` accepts the full Unicode range (`chr(0x1F600)` returns `"😀"`); negative inputs raise `ValueError`. `ord` requires a length-1 string; `ord(b'A')` is **not** accepted.
+Convert between code points and single-char strings. `chr` accepts full Unicode (`chr(0x1F600)` → `"😀"`); negative → `ValueError`. `ord` requires a length-1 string; `ord(b'A')` not accepted.
 
 ```python
 print(chr(65))
@@ -263,7 +263,7 @@ A
 
 ### len
 
-Element count for `str` (Unicode code points), `bytes`, `list`, `tuple`, `dict`, `set`, `frozenset`, `range`. Anything else raises `TypeError`.
+Element count for `str` (code points), `bytes`, `list`, `tuple`, `dict`, `set`, `frozenset`, `range`. Else `TypeError`.
 
 ```python
 print(len("hello"))
@@ -281,7 +281,7 @@ print(len(range(100)))
 
 ### range
 
-`range(stop)`, `range(start, stop)`, `range(start, stop, step)`. Lazy. `step` of zero raises `ValueError`; non-int arguments raise `TypeError`.
+`range(stop)`, `range(start, stop)`, `range(start, stop, step)`. Lazy. `step=0` → `ValueError`; non-int args → `TypeError`.
 
 ```python
 print(list(range(5)))
@@ -297,7 +297,7 @@ print(list(range(10, 0, -2)))
 
 ### sorted
 
-Returns a new sorted list. Currently no `key=` or `reverse=` keyword — sort by a derived value via a precomputed list of `(key, value)` tuples.
+New sorted list. No `key=` / `reverse=` — sort by derived value via a precomputed list of `(key, value)` tuples.
 
 ```python
 print(sorted([3, 1, 4, 1, 5]))
@@ -311,7 +311,7 @@ print(sorted("hello"))
 
 ### reversed
 
-Returns a **list** of elements in reverse order — eager, not a lazy iterator. For strings, the result is a list of length-1 strings; for finite inputs this is operationally equivalent to a lazy iterator.
+Returns a list (eager, not a lazy iterator). For strings: list of length-1 strings. Operationally equivalent to a lazy iterator for finite inputs.
 
 ```python
 print(reversed([1, 2, 3]))
@@ -325,7 +325,7 @@ print(reversed("abc"))
 
 ### enumerate
 
-Pairs each element with its index, returning a list of `(i, value)` tuples. There is no `start=` keyword — add the offset yourself.
+Pairs each element with its index → list of `(i, value)` tuples. No `start=` — add the offset yourself.
 
 ```python
 for i, v in enumerate(["a", "b", "c"]):
@@ -340,7 +340,7 @@ for i, v in enumerate(["a", "b", "c"]):
 
 ### zip
 
-Pairs elements from N iterables, truncating to the shortest. No `strict=` keyword — pre-validate lengths if needed.
+Pairs N iterables, truncating to shortest. No `strict=` — pre-validate lengths if needed.
 
 ```python
 for a, b in zip([1, 2, 3], ["x", "y", "z"]):
@@ -358,7 +358,7 @@ print(list(zip([1, 2], [3, 4], [5, 6])))
 
 ### next
 
-`next(iterator)` retrieves the next item from an iterator. Raises `StopIteration` when exhausted. The two-argument `next(it, default)` form is **not** supported.
+`next(iterator)` → next item. Exhausted → `StopIteration`. Two-arg `next(it, default)` not supported.
 
 ```python
 it = iter([10, 20, 30])
@@ -375,7 +375,7 @@ print(next(it))
 
 ### iter
 
-`iter(x)` returns a fresh iterator over any iterable (list, tuple, set, dict, range, str, bytes, frozenset). The original collection is never mutated — `iter()` materialises a snapshot that `next()` drains front-to-back. The two-argument `iter(callable, sentinel)` form is **not** supported.
+`iter(x)` returns a fresh iterator over any iterable (list, tuple, set, dict, range, str, bytes, frozenset). Materialises a snapshot — original never mutated. Two-arg `iter(callable, sentinel)` not supported.
 
 ```python
 it = iter([1, 2, 3])
@@ -395,7 +395,7 @@ a
 
 ### map
 
-`map(fn, iterable)` applies `fn` to each item and returns a list. Eager — the full list materialises immediately, suitable for pipelines into `sum`, `list`, `max`, etc.
+`map(fn, iterable)` → list of `fn(item)`. Eager — full list materialises immediately; pipelines into `sum`, `list`, `max`.
 
 ```python
 print(list(map(lambda x: x * 2, [1, 2, 3])))
@@ -415,7 +415,7 @@ print(list(map(normalize, ["  Hi ", "WORLD"])))
 
 ### filter
 
-`filter(pred, iterable)` keeps items where `pred(item)` is truthy. Returns a list. A `None` predicate filters by truthiness directly (equivalent to `lambda x: x`).
+`filter(pred, iterable)` → list of items where `pred(item)` is truthy. `None` predicate filters by truthiness (equivalent to `lambda x: x`).
 
 ```python
 print(list(filter(lambda x: x > 2, [1, 2, 3, 4])))
@@ -431,7 +431,7 @@ print(list(filter(None, [0, 1, "", "hi", [], [1]])))
 
 ### import_module
 
-`import_module(name)` returns a module value previously brought into scope via a static `import` or `from ... import` statement. Lets the script choose at runtime which of several pre-imported modules to use, without keeping a manual dispatch dict.
+`import_module(name)` returns a module previously imported statically. Runtime dispatch among pre-imported modules without a manual dict.
 
 ```python
 import prod_handler
@@ -444,18 +444,18 @@ handle("prod", req)
 handle("dev",  req)
 ```
 
-The candidate modules **must be imported statically** somewhere — `import_module` is a runtime *lookup*, not a runtime *fetch*. This preserves the lockfile and integrity guarantees: every module the script can ever reach is known and verified at compile time. Calling `import_module(name)` where `name` was never imported raises `NameError`; calling it on a non-module global (e.g. a builtin function) raises `TypeError`.
+Candidates must be imported statically somewhere — `import_module` is a runtime *lookup*, not a *fetch*. Preserves lockfile and integrity: every reachable module is verified at compile time. Unknown name → `NameError`; non-module global → `TypeError`.
 
-Truly dynamic loading patterns (`importlib.import_module`, `__import__`) do not exist here by design — the static-import + runtime-dispatch shape above replaces them.
+Dynamic loading (`importlib.import_module`, `__import__`) doesn't exist by design — static-import + runtime-dispatch replaces it.
 
 ### bytes
 
 Four forms:
 
-- `bytes()` -> empty `bytes`
-- `bytes(n)` where `n` is an int -> `n` zero bytes
-- `bytes(iterable)` of ints in `0..=255` -> bytes with those values
-- `bytes(s, encoding)` where `s` is a `str` -> encoded bytes (`"utf-8"`, `"utf8"`, or `"ascii"` only — anything else raises `ValueError`)
+- `bytes()` → empty
+- `bytes(n)` → `n` zero bytes
+- `bytes(iterable)` of ints in `0..=255` → those values
+- `bytes(s, encoding)` → encoded (`"utf-8"`, `"utf8"`, `"ascii"` only; else `ValueError`)
 
 ```python
 print(bytes())
@@ -471,15 +471,15 @@ b'Hello'
 b'caf\xc3\xa9'
 ```
 
-See [Bytes](/language/data-types#bytes) in the data-types reference for the literal syntax (`b"..."`), indexing, slicing, and methods.
+See [Bytes](/language/data-types#bytes) for literal syntax (`b"..."`), indexing, slicing, methods.
 
 ### bytes_fromhex, int_from_bytes, int_to_bytes
 
-Edge Python exposes these as **free functions** rather than int/bytes methods. The functional-first paradigm prefers free functions over bound methods on primitive types — there are no `int` or `float` methods at all (no `(5).bit_length()`, no `(255).to_bytes(2, 'big')`).
+Free functions, not int/bytes methods — primitives have no bound methods (`(5).bit_length()`, `(255).to_bytes(...)` don't exist).
 
-- `bytes_fromhex(s)` — parse a hex string into bytes. Whitespace inside is ignored; non-hex characters raise `ValueError`.
-- `int_from_bytes(b, order)` — `order` is `"big"` or `"little"`. Unsigned only — the high bit is **never** treated as a sign bit.
-- `int_to_bytes(n, length, order)` — `n` must be non-negative, `length` ≤ 8. Accepts inline ints or `LongInt`-promoted values; raises `OverflowError` if `n` doesn't fit in `length` bytes.
+- `bytes_fromhex(s)` — hex string → bytes. Inner whitespace ignored; non-hex → `ValueError`.
+- `int_from_bytes(b, order)` — `order` is `"big"` or `"little"`. Unsigned (high bit never sign).
+- `int_to_bytes(n, length, order)` — `n ≥ 0`, `length ≤ 8`. Accepts inline ints or `LongInt`; doesn't fit → `OverflowError`.
 
 ```python
 print(bytes_fromhex("48656c6c6f"))
@@ -520,7 +520,7 @@ False
 
 ### type
 
-`type(x)` returns the class-name string `"<class 'name'>"`. It is **not** a class object — there is no `type(...)` constructor form, no metaclass, no introspection. Use it for display and equality checks.
+`type(x)` returns the class-name string `"<class 'name'>"` — not a class object. No `type(...)` constructor form, no metaclass, no introspection. For display and equality checks.
 
 ```python
 print(type(42))
@@ -538,7 +538,7 @@ print(type(print))
 
 ### isinstance
 
-`isinstance(obj, X)` accepts built-in types, exception classes, user-defined `Class` objects, and tuples of any of those. The second argument must be one of those — passing a string (`isinstance(x, "str")`) raises `TypeError`. `bool` is a subtype of `int`. For exception classes, the standard subclass hierarchy is consulted (e.g. `isinstance(e, Exception)` is true for any built-in exception). For user classes, it walks the inheritance chain — `isinstance(sub_instance, Base)` is `True` when `Sub` derives from `Base`.
+`isinstance(obj, X)` — `X` is a built-in type, exception class, user-defined `Class`, or tuple of any of those. String `X` (`isinstance(x, "str")`) → `TypeError`. `bool` is a subtype of `int`. Exception classes walk the standard hierarchy (`isinstance(e, Exception)` matches any built-in exception). User classes walk the inheritance chain.
 
 ```python
 print(isinstance(42, int))
@@ -552,11 +552,11 @@ True
 True
 ```
 
-There is no `issubclass` builtin — flat class layout means there's nothing to walk.
+No `issubclass` builtin — flat class layout has nothing to walk.
 
 ### callable
 
-True for user functions, lambdas, bound methods, type objects (callable as constructors), and native built-ins. False for everything else, including instances — there is no `__call__` dispatch.
+True for user functions, lambdas, bound methods, type objects, native builtins. False for everything else, including instances — no `__call__` dispatch.
 
 ```python
 print(callable(print))
@@ -574,7 +574,7 @@ False
 
 ### id, hash
 
-`id(x)` returns a stable identifier (the NaN-box bit pattern masked to int range). `hash(x)` returns a hash for hashable values; `hash(1) == hash(1.0)` so int and float keys collapse to the same dict slot.
+`id(x)` — stable identifier (NaN-box bit pattern masked to int range). `hash(x)` — hash for hashable values; `hash(1) == hash(1.0)` so int/float keys collapse to one dict slot.
 
 ```python
 x = 42
@@ -601,13 +601,13 @@ except TypeError:
 unhashable
 ```
 
-Mutable containers used as dict keys or set members raise `TypeError("unhashable type")` at insertion — caught at `store_item`, `BuildDict`, and `build_set`.
+Mutable containers used as dict keys / set members → `TypeError("unhashable type")` at insertion (caught in `store_item`, `BuildDict`, `build_set`).
 
 ## Representation
 
 ### repr
 
-The "developer-readable" form. Quotes strings; renders containers with their elements as `repr`.
+Developer-readable form. Quotes strings; renders containers with element `repr`s.
 
 ```python
 print(repr("hello"))
@@ -623,7 +623,7 @@ print(repr([1, "two", 3]))
 
 ### format
 
-`format(value)` returns the display form. `format(value, spec)` applies the same format-spec mini-language as f-strings (`[[fill]align][sign][#][0][width][,][.precision][type]`).
+`format(value)` → display form. `format(value, spec)` applies the f-string spec mini-language (`[[fill]align][sign][#][0][width][,][.precision][type]`).
 
 ```python
 print(format(42))
@@ -643,7 +643,7 @@ print(format("hi", ">10"))
 
 ## Attribute access
 
-`getattr` and `hasattr` consult the built-in method table for primitive types (str/list/dict/set/bytes) and the instance `__dict__` on user-class instances. They do **not** walk user-class method definitions — `hasattr(MyClass(), 'my_method')` returns `False`. The functional pattern is to call functions with values, not look up methods reflectively.
+`getattr` / `hasattr` consult the built-in method table for primitives (str/list/dict/set/bytes) and the instance `__dict__` for user-class instances. They don't walk user-class method definitions — `hasattr(MyClass(), 'my_method')` is `False`. Functional pattern: call functions with values, don't look up methods reflectively.
 
 ### getattr
 
@@ -674,7 +674,7 @@ False
 
 ### globals, locals
 
-`globals()` returns a fresh dict snapshot of the module-level bindings: every name registered as a builtin or type, plus every top-level user assignment. `locals()` returns a fresh dict of the current frame's bindings — function locals when called inside a function, the same set as `globals()` when called at module level (with builtins filtered).
+`globals()` — fresh dict snapshot of module-level bindings (builtins, types, top-level assignments). `locals()` — fresh dict of the current frame: function locals inside a function, same as `globals()` minus builtins at module level.
 
 ```python
 x = 100
@@ -703,11 +703,11 @@ print(f())
 {'a': 1, 'b': 2}
 ```
 
-The dicts are copies — mutating them does not change the VM's bindings.
+Dicts are copies — mutation doesn't change VM bindings.
 
 ### setattr, delattr
 
-`setattr(obj, name, value)` stores an attribute on a user instance. `delattr(obj, name)` removes one. Both target instances of user-defined classes; builtin types do not have a writable attribute table.
+`setattr(obj, name, value)` / `delattr(obj, name)` store/remove on user instances. Builtin types have no writable attribute table.
 
 ```python
 class Box:
@@ -728,7 +728,7 @@ False
 
 ### slice
 
-`slice(stop)`, `slice(start, stop)`, or `slice(start, stop, step)` builds a reusable slice value that can be used as a sequence index.
+`slice(stop)`, `slice(start, stop)`, `slice(start, stop, step)` — reusable slice value usable as a sequence index.
 
 ```python
 xs = [10, 20, 30, 40, 50]
@@ -744,7 +744,7 @@ print(xs[slice(0, 5, 2)])
 
 ### vars
 
-`vars(instance)` returns a snapshot of the instance's attribute dict. `vars(module)` returns a dict of the module's exported names. **Only instances and modules are accepted** — there is no no-arg form returning the local frame; use `locals()` instead.
+`vars(instance)` → attr-dict snapshot. `vars(module)` → exported-names dict. Only instances and modules — no no-arg form (use `locals()`).
 
 ```python
 class P:
@@ -764,7 +764,7 @@ print(vars(p))
 
 ### super
 
-`super()` — zero-arg form only. Returns a proxy that resolves attribute access against the bases of the currently-running method's class, starting one step up the MRO. Calling it outside a method raises `TypeError`.
+`super()` — zero-arg only. Proxy resolving attribute access against the bases of the current method's class, starting one step up the MRO. Outside a method → `TypeError`.
 
 ```python
 class A:
@@ -784,7 +784,7 @@ ab
 
 ### property
 
-`property(fget, fset=None)` — builds a descriptor for use as a class member. Usually applied via the `@property` decorator, with an optional `@<name>.setter` decorator to attach the setter.
+`property(fget, fset=None)` — descriptor for class members. Usually applied via `@property` with optional `@<name>.setter`.
 
 ```python
 class C:
@@ -808,19 +808,19 @@ print(c.x)
 
 ## Async
 
-These primitives are top-level builtins, not under `asyncio` — there is no `asyncio` module to import.
+Top-level builtins, no `asyncio` module.
 
 ### run
 
-`run(*coros)` — adds every argument to the scheduler, drains until **every** coroutine reaches a terminal state, and returns the **first** argument's result. Errors raised by peers other than the first are discarded; for fan-out semantics that collect every result, use `gather`.
+`run(*coros)` — schedules every arg, drains until each reaches a terminal state, returns the first arg's result. Errors from peers other than the first are discarded — for fan-out collecting every result, use `gather`.
 
 ### sleep
 
-`sleep(seconds)` — yield and resume after the given duration. Negative values clamp to zero. With no host time hook the virtual clock advances; with one wired, the scheduler signals `PendingTimer(deadline_ns)` and the embedder resumes via `run_resume`.
+`sleep(seconds)` — yield and resume after the duration. Negative clamps to zero. Without a host time hook, a virtual clock advances; with one, scheduler signals `PendingTimer(deadline_ns)` and the embedder resumes via `run_resume`.
 
 ### frame
 
-`frame()` — yield until the host's next render frame. The coro transitions to `WaitingFrame` and the scheduler signals `PendingFrame`; browser embedders hook `requestAnimationFrame`. Use for animation loops driven at the display refresh rate.
+`frame()` — yield until the host's next render frame. Coro → `WaitingFrame`, scheduler signals `PendingFrame`; browser embedders hook `requestAnimationFrame`. Use for animation loops at display refresh rate.
 
 ```python
 async def animate(node):
@@ -831,11 +831,11 @@ async def animate(node):
 
 ### receive
 
-`receive()` — pop the oldest message from the scheduler's event queue. Parks the coro in `WaitingEvent` when empty; the scheduler signals `PendingEvent` and the embedder resumes once `run_push_event(bytes)` injects a message. Messages are arbitrary strings (e.g. DOM event names from `bind_event`).
+`receive()` — pop the oldest message from the scheduler queue. Empty → parks in `WaitingEvent`, scheduler signals `PendingEvent`; embedder resumes via `run_push_event(bytes)`. Messages are arbitrary strings (e.g. DOM event names from `bind_event`).
 
 ### gather
 
-`gather(*coros)` — concurrent fan-out. Adds every argument to the scheduler, drains until each is terminal, returns a list of their results in argument order. If any coroutine raised, the first error (in argument order) propagates after all peers reach a terminal state.
+`gather(*coros)` — concurrent fan-out. Schedules every arg, drains until each terminal, returns a list of results in argument order. First-error propagates after all peers terminal.
 
 ```python
 async def task(n):
@@ -850,7 +850,7 @@ print(gather(task(1), task(2), task(3)))
 
 ### with_timeout
 
-`with_timeout(seconds, coro)` — runs `coro` to completion or raises `TimeoutError` if the deadline elapses first. The coroutine is cancelled on timeout.
+`with_timeout(seconds, coro)` — runs `coro` to completion or raises `TimeoutError` on deadline. Coro cancelled on timeout.
 
 ```python
 async def slow():
@@ -869,5 +869,5 @@ timed out
 
 ### cancel
 
-`cancel(coro)` — flag a coroutine registered with the scheduler for cancellation. The next scheduler tick stops it. Cancellation is cooperative and silent: the coroutine body does not observe a raised `CancelledError`. For deadline-driven cancellation that propagates as an exception, use `with_timeout`.
+`cancel(coro)` — flag a registered coroutine for cancellation; next tick stops it. Cooperative and silent — body doesn't observe `CancelledError`. For deadline-driven exception-style cancellation, use `with_timeout`.
 

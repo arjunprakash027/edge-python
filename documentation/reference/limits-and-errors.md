@@ -5,7 +5,7 @@ description: "Sandbox limits, error types, and runtime guarantees."
 
 ## Sandbox limits
 
-Edge Python supports two limit profiles. Pick one when constructing the VM via `VM::with_limits` — the host chooses, so the same `compiler.wasm` runs unsandboxed in trusted contexts and clamped in untrusted ones.
+Two profiles via `VM::with_limits` — same `compiler.wasm` runs unsandboxed in trusted contexts, clamped in untrusted.
 
 | Limit          | `none()` (default) | `sandbox()`   | What hitting it raises |
 |----------------|--------------------|---------------|------------------------|
@@ -15,12 +15,12 @@ Edge Python supports two limit profiles. Pick one when constructing the VM via `
 
 ## Integer width
 
-Edge Python integers have a two-tier representation:
+Two-tier:
 
-* **Inline (fast path)**: 47-bit signed values stored directly in a NaN-boxed `Val`. Range `±140_737_488_355_327` (`±2^47`). One ALU op per arithmetic, no heap allocation.
-* **Wide (slow path)**: i128 values stored as `HeapObj::LongInt`. Range `±170_141_183_460_469_231_731_687_303_715_884_105_727` (`±2^127 - 1`). Used automatically when a literal exceeds 47-bit, or when arithmetic overflows the inline path.
+* **Inline (fast)**: 47-bit signed in a NaN-boxed `Val`. Range `±2^47` (`±140_737_488_355_327`). One ALU op per arithmetic, no allocation.
+* **Wide (slow)**: i128 in `HeapObj::LongInt`. Range `±2^127 - 1`. Auto-used when a literal exceeds 47-bit or inline arithmetic overflows.
 
-Anything outside `±2^127` raises `OverflowError`. The promotion is automatic — user code doesn't see the boundary except for the error class.
+Outside `±2^127` raises `OverflowError`. Promotion is automatic — user code doesn't see the boundary.
 
 ```python
 print(140737488355327) # inline, fast path
@@ -41,9 +41,9 @@ overflow
 
 ### Caveats
 
-- **`pow(a, b, m)` modular**: the modulus must be `< 2^63`. Larger moduli raise `ValueError` because `(a * b) % m` would overflow i128 during the multiply. This is a hard cap unless arbitrary-precision arithmetic is reintroduced.
-- **No CPython-style unbounded ints**: this is by design. Edge workloads (validation, transformation, routing) don't need wider than 128 bits. Crypto-scale integer math is out of scope.
-- **Float vs LongInt mixing**: `==` works (LongInt to f64), but dict/set hashing follows Val raw bits, so `{long_int: x}` indexed by a float value of the same magnitude misses. Coerce explicitly when needed.
+- **`pow(a, b, m)` modular**: modulus must be `< 2^63` (larger overflows i128 in the multiply). Hard cap without arbitrary-precision arithmetic.
+- **No CPython-style unbounded ints**: by design — edge workloads don't need wider than 128 bits; crypto-scale math is out of scope.
+- **Float vs LongInt mixing**: `==` works (LongInt → f64), but dict/set hashing follows raw `Val` bits — `{long_int: x}` indexed by a same-magnitude float misses. Coerce explicitly.
 
 ### Triggering limits
 
@@ -74,7 +74,7 @@ except MemoryError:
 
 ## Source size
 
-The source file must be under **10 MiB**. Larger inputs are rejected at lex time.
+Source must be < 10 MiB; larger rejected at lex time.
 
 ## Token limits
 
@@ -85,13 +85,13 @@ The source file must be under **10 MiB**. Larger inputs are rejected at lex time
 | Max expression depth | 200   |
 | Max instructions per chunk | 65,535 |
 
-These prevent pathological asymmetric DoS — a small input that produces an exponentially large parse tree or instruction stream.
+Prevent asymmetric DoS — small input producing an exponentially large parse tree.
 
 ## Error types
 
 ### Compile-time
 
-Reported as `Diagnostic { start, end, msg }` — `start`/`end` are byte offsets into the source; line and column are computed lazily by `render()` for human-facing output. Caught before any code runs.
+Reported as `Diagnostic { start, end, msg }` — byte offsets into source; line/column computed lazily by `render()`. Caught before any code runs.
 
 | Diagnostic                                | Cause                                  |
 |-------------------------------------------|----------------------------------------|
@@ -112,7 +112,7 @@ Reported as `Diagnostic { start, end, msg }` — `start`/`end` are byte offsets 
 
 ### Runtime
 
-Raised as `VmErr`. Most are catchable with `try` / `except`.
+Raised as `VmErr`; most catchable with `try` / `except`.
 
 | Variant         | Class name           | When                               |
 |-----------------|----------------------|------------------------------------|
@@ -136,7 +136,7 @@ Raised as `VmErr`. Most are catchable with `try` / `except`.
 
 #### Exception hierarchy
 
-The standard exception classes form a flat tree rooted at `BaseException -> Exception`. `except` clauses walk parent links, so `except Exception` catches `RuntimeError`, `ValueError`, `KeyError`, etc., and `except RuntimeError` catches `RecursionError` and `NotImplementedError`.
+Flat tree rooted at `BaseException → Exception`. `except` walks parent links — `except Exception` catches `RuntimeError`, `ValueError`, `KeyError`, etc.; `except RuntimeError` catches `RecursionError`, `NotImplementedError`.
 
 ```python
 try:
@@ -155,11 +155,11 @@ caught via parent: oops
 caught IndexError as Exception
 ```
 
-User-defined classes do not auto-extend the built-in `BaseException` / `Exception` tree, but they support single-level inheritance among themselves — so `except UserBase` catches a raised `UserSub` instance when `UserSub` inherits from `UserBase`, alongside catches by exact name or a bare `except`. `raise X from Y` raises `X`; the cause is currently discarded (no `__cause__` / `__context__` chaining).
+User-defined classes don't auto-extend the built-in `BaseException` tree but support single-level inheritance among themselves — `except UserBase` catches a raised `UserSub` when `UserSub` inherits from `UserBase`. `raise X from Y` raises `X`; the cause is discarded (no `__cause__` / `__context__` chaining).
 
 ### Exception arguments
 
-Caught exceptions expose their constructor arguments as `e.args`, a tuple. Both user-raised and runtime-raised exceptions populate it: `raise X("msg")` and `raise X(a, b)` carry their arguments through to the handler, runtime-raised errors (division by zero, attribute miss, ...) carry their message as the single arg, and bare `raise X` produces an empty tuple.
+Caught exceptions expose constructor args as `e.args` (tuple). `raise X("msg")` and `raise X(a, b)` carry through; runtime-raised errors carry their message as a single arg; bare `raise X` produces an empty tuple.
 
 ```python
 try:
@@ -212,29 +212,28 @@ type
 
 ### Environmental errors
 
-A small set of failures are surfaced **before** the source reaches the compiler, so they carry no line/column preview — there is no parsed code to anchor to. They are emitted as plain text and cannot be caught from Python.
+Failures surfaced before the source reaches the compiler — no line/column preview, no parsed code to anchor to. Emitted as plain text, uncatchable from Python.
 
 | Error                                       | When                                          | Resolution                            |
 |---------------------------------------------|-----------------------------------------------|---------------------------------------|
-| `input rejected: invalid utf-8 at byte N`   | Input bytes from the host are not valid UTF-8 | Re-encode the source as UTF-8         |
-| `source file exceeds maximum size (10 MiB)` | Source larger than the 10 MiB lex-time cap    | Split or trim the input               |
+| `input rejected: invalid utf-8 at byte N`   | Host input bytes not valid UTF-8              | Re-encode as UTF-8                    |
+| `source file exceeds maximum size (10 MiB)` | Source over the 10 MiB lex-time cap           | Split or trim the input               |
 
-These describe a problem with the runtime input, not with your code. Handle them at the embedder layer (file path validation, encoding, size check) before invoking the compiler.
+Handle at the embedder layer (path validation, encoding, size check) before invoking the compiler.
 
 ## Unsupported features at runtime
 
-These parse but raise `RuntimeError` when executed.
+Parse but raise `RuntimeError` when executed:
 
 ```python
-# Imports
 try:
     import os
 except RuntimeError as e:
     print("import:", e)
 ```
 
-These exist for syntactic compatibility — Python source can be loaded without parse errors — but the VM rejects them when reached. For code reuse, use higher-order functions.
+Exist for syntactic compatibility. For code reuse, use higher-order functions.
 
 ## Determinism
 
-For a given source program and input, Edge Python produces the same output across runs and across architectures (`x86_64`, `aarch64`, `wasm32`). There is no time, no randomness, no thread scheduling, no OS interaction. The only source of nondeterminism is the heap pool's slot reuse, which is observable through `id(x)` only — never through `==`, `repr`, or any other operation.
+Same source + input → same output across runs and architectures (`x86_64`, `aarch64`, `wasm32`). No time, randomness, threading, or OS interaction. Heap-pool slot reuse is the only nondeterminism, observable through `id(x)` only — never `==`, `repr`, or any other operation.

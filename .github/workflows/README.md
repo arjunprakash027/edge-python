@@ -15,41 +15,36 @@ check -> wasm -> runtime -> demo
 
 ## Cloudflare Pages
 
-Two projects, both in **Direct Upload** mode, where actions pushes prebuilt directories via `wrangler pages deploy`; Cloudflare does not clone or build the repo.
+Two **Direct Upload** projects — Actions pushes prebuilt directories via `wrangler pages deploy`; Cloudflare doesn't clone or build.
 
 | Project | Source | Production URL |
 |---------|--------|----------------|
-| `edge-python-demo` | `demo/` (wasm downloaded only to hash for `version.json` cache-busting; not bundled) | `https://edge-python-demo.pages.dev` |
+| `edge-python-demo` | `demo/` (wasm hashed for `version.json`, not bundled) | `https://edge-python-demo.pages.dev` |
 | `edge-python-runtime` | `runtime/` + bundled `compiler_lib.wasm` | `https://edge-python-runtime.pages.dev` |
 
-Both deploys are pinned to the `main` (production) branch in `_runtime.yml` / `_demo.yml`. Without that pin, a tag push would land at a per-tag preview URL (`v0-1-0.edge-python-runtime.pages.dev`) and the custom domain would never update.
+Both deploys pinned to `main` in `_runtime.yml` / `_demo.yml` — without the pin, tag pushes would land at preview URLs (`v0-1-0.edge-python-runtime.pages.dev`) and never update the custom domain.
 
-### Cloudflare and GitHub Setup
+### Cloudflare and GitHub setup
 
 ```bash
-# Wrangler CLI (requires Node 22+)
+# Wrangler CLI (Node 22+)
 npx wrangler login
 npx wrangler pages project create edge-python-demo --production-branch=main
-npx wrangler pages project create edge-python-runtime  --production-branch=main
+npx wrangler pages project create edge-python-runtime --production-branch=main
 ```
 
-Then add the secrets at *Settings -> Secrets and variables -> Actions*:
+Repo secrets (*Settings → Secrets and variables → Actions*):
 
-- `CLOUDFLARE_API_TOKEN` — token with `Account -> Cloudflare Pages -> Edit` permission. **Must be created via dashboard** at <https://dash.cloudflare.com/profile/api-tokens>.
-- `CLOUDFLARE_ACCOUNT_ID` — printed by `npx wrangler whoami`, or shown in the right sidebar of any Cloudflare dashboard page.
+- `CLOUDFLARE_API_TOKEN` — `Account → Cloudflare Pages → Edit`. Create via dashboard: <https://dash.cloudflare.com/profile/api-tokens>.
+- `CLOUDFLARE_ACCOUNT_ID` — from `npx wrangler whoami` or any dashboard sidebar.
 
-### Rotate the API token
-
-1. Create a new token at <https://dash.cloudflare.com/profile/api-tokens>.
-2. Update `CLOUDFLARE_API_TOKEN` in repo secrets.
-3. Revoke the old token on the same Cloudflare page.
+Rotate: create new token → update secret → revoke old token.
 
 ## Releases
 
-Pushing a `v*` tag triggers the pipeline and `_wasm.yml` uploads `compiler_lib.wasm` to the matching GitHub Release. Tag name must match the workspace version.
+Pushing a `v*` tag triggers the pipeline; `_wasm.yml` uploads `compiler_lib.wasm` to the matching Release. Tag must match workspace version.
 
-1. Bump `version` under `[workspace.package]` in the root `Cargo.toml`. Every crate inherits via `version.workspace = true`, so this single line covers `edge-python`, `wasm-abi`, `wasm-pdk`, and `wasm-pdk-macros` at once. Run `cargo check` to refresh `Cargo.lock`, then commit.
-
+1. Bump `version` under `[workspace.package]` in root `Cargo.toml` (every crate inherits via `version.workspace = true`). Run `cargo check` to refresh `Cargo.lock`, commit.
 2. Tag and push:
 
 ```bash
@@ -57,10 +52,10 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-**On a tag push, `_check` lints, `_wasm` builds and optimizes `compiler_lib.wasm` then attaches it to a fresh GitHub Release with auto-generated notes from commits since the previous tag, and `_runtime` + `_demo` redeploy the CDN and the playground with the new binary.**
+On tag push: `_check` lints, `_wasm` builds and optimizes the artifact, attaches it to a fresh Release with auto-generated notes, `_runtime` + `_demo` redeploy.
 
-Nothing is published to crates.io — distribution is the `.wasm` artifact attached to the Release. The `starter-module` example carries its own `version` and is intentionally not bumped with the workspace.
+Nothing is published to crates.io — distribution is the `.wasm` on the Release. `starter-module` carries its own version and isn't bumped with the workspace.
 
-Rust crates that consume the release pick it up automatically: `compiler/Cargo.toml` declares `links = "compiler_lib"` and `compiler/build.rs` downloads `<repository>/releases/download/v<version>/compiler_lib.wasm` into `OUT_DIR`. A downstream that depends on `edge-python` reads the resulting path from `DEP_COMPILER_LIB_WASM` in its own `build.rs` — see the consumer pattern in the [root README](../../README.md#consume-the-release-from-a-rust-host). Tag bumps in this repo flow through to consumers via `cargo update`.
+Consumer crates pick up the release automatically: `compiler/Cargo.toml` declares `links = "compiler_lib"` and `compiler/build.rs` downloads `<repository>/releases/download/v<version>/compiler_lib.wasm` into `OUT_DIR`. Downstreams read `DEP_COMPILER_LIB_WASM` in their own `build.rs` — see [root README](../../README.md#consume-the-release-from-a-rust-host). Tag bumps flow via `cargo update`.
 
-The download is gated behind the default-on `prebuilt` feature. Producer-side steps in this pipeline (host clippy in `_check.yml`, host tests in `_wasm.yml`) pass `--no-default-features` so they don't try to fetch a release asset that, on a first-tag publish, only gets uploaded later in this same pipeline.
+Gated behind the default-on `prebuilt` feature. Producer-side steps (`_check`, `_wasm`) pass `--no-default-features` to avoid fetching the asset that this same pipeline uploads later.

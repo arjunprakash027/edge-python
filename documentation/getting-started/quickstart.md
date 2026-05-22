@@ -5,18 +5,18 @@ description: "Run your first Edge Python program in under a minute."
 
 ## Run it
 
-Edge Python is distributed as a WebAssembly module with a 170 KB size. The fastest way to try it is the playground; no install, runs entirely client-side via WebAssembly.
+Edge Python ships as a 170 KB WebAssembly module. Fastest way to try it — the playground, no install, fully client-side.
 
 [Open the playground ->](https://demo.edgepython.com)
 
 ## Embed it
 
-To run Edge Python in your own host (browser app, server, edge runtime), you need two artifacts:
+Two artifacts:
 
-1. The compiler module: `compiler_lib.wasm` (170 KB, contains lexer, parser, and stack VM).
-2. A loader for your platform — the canonical browser loader is the [`runtime/`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) package; WASI hosts wire it up via their runtime's import API.
+1. `compiler_lib.wasm` (170 KB — lexer, parser, stack VM).
+2. A loader. Browser: the [`runtime/`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) package; WASI: your runtime's import API.
 
-Build the WASM yourself:
+Build yourself:
 
 ```bash
 git clone https://github.com/dylan-sutton-chavez/edge-python
@@ -24,7 +24,7 @@ cd edge-python/compiler
 cargo wasm # -> target/wasm32-unknown-unknown/release/compiler_lib.wasm
 ```
 
-Rust crate consumers can let cargo fetch the release artifact via `DEP_COMPILER_LIB_WASM` (see the repo README). There is no native CLI binary — `compiler_lib.wasm` is the release artifact, and the host owns I/O, network, time, and module fetching. The full compiler↔host ABI is documented under [What it is — Where it runs](/getting-started/what-it-is#where-it-runs).
+Rust consumers can let cargo fetch the release artifact via `DEP_COMPILER_LIB_WASM` (see the repo README). No native CLI — `compiler_lib.wasm` is the artifact and the host owns I/O, network, time, module fetching. Full ABI: [What it is — Where it runs](/getting-started/what-it-is#where-it-runs).
 
 ## Your first program
 

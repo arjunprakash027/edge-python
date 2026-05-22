@@ -3,9 +3,9 @@ title: "WASM module ABI"
 description: "The wire format a `.wasm` module must follow to be importable by Edge Python."
 ---
 
-> **Sealed contract — plugin ABI v1.** Every signature, op code, tag, and error kind on this page is part of the public contract for CDN-distributed `.wasm` plugin modules (Path A). New host packages arrive as new `Op` values, never as new imports; a future wire-level break would ship as `env_v2.*` without removing v1. This is **distinct** from the compiler↔host interface that embedders declare (see [host packages](/reference/writing-modules#path-c-host-capability)) — embedders are not bound by the 6-import limit here.
+> **Sealed contract — plugin ABI v1.** Every signature, op code, tag, and error kind here is the public contract for CDN-distributed `.wasm` plugin modules (Path A). New host packages arrive as new `Op` values, never new imports; a future wire-level break would ship as `env_v2.*` without removing v1. Distinct from the compiler↔host interface embedders declare (see [host packages](/reference/writing-modules#path-c-host-capability)) — embedders aren't bound by the 6-import limit here.
 
-A `.wasm` module that an Edge Python script imports via `from "<url>" import <names>` follows the contract below. The shape is a small **handle-based** API: the host owns all values, the guest sees only opaque `u32` handles, and one universal dispatch primitive (`edge_op`) covers every operation on those values. This means new types, methods, and language features added to Edge Python become available to existing modules with **no ABI change**.
+A `.wasm` module imported via `from "<url>" import <names>` follows the contract below. Handle-based API: the host owns all values, the guest sees only opaque `u32` handles, and one universal dispatch primitive (`edge_op`) covers every operation. New types, methods, and language features become available to existing modules with no ABI change.
 
 ## Guest export shape
 
@@ -22,11 +22,11 @@ extern "C" fn <name>(argv: *const u32, argc: u32, out: *mut u32) -> i32;
 | `out`  | Pointer (in **guest** linear memory) where the guest writes ONE handle for the return value. |
 | return | `0` = success, `1` = error (host pulls the error via `edge_take_error` immediately). |
 
-Handles in `argv` are owned by the host and live for the duration of the call. Handles the guest creates via `edge_encode` or `edge_op` are owned by the guest until released — the guest must call `edge_release` on each before returning, **except** for the one written into `*out`.
+`argv` handles are host-owned and live for the call. Handles the guest creates via `edge_encode` or `edge_op` are guest-owned until released — the guest must `edge_release` each before returning, except the one written into `*out`.
 
 ## Required guest exports
 
-In addition to the user functions, every guest module MUST export:
+Every guest module MUST export, in addition to its user functions:
 
 ```rust
 #[unsafe(no_mangle)]
@@ -36,15 +36,15 @@ pub extern "C" fn __edge_alloc(size: u32) -> *mut u8;
 pub extern "C" fn __edge_abi_version() -> u32;
 ```
 
-`__edge_alloc` lets the host stage `argv` arrays in the guest's linear memory before invoking each export.
+`__edge_alloc` lets the host stage `argv` arrays in guest linear memory before invoking each export.
 
-`__edge_abi_version` returns the wire-format version this module targets (currently `1`). The host MUST read this symbol once at instantiation and refuse modules whose version it does not understand. Without the handshake, a host that has evolved beyond v1 would load a v1 module and decode garbage silently. (At v1 every loader targets version 1 so the bundled `compiler.wasm` shim does not yet read the symbol; the check becomes load-bearing only when a v2 ships.)
+`__edge_abi_version` returns the wire-format version (currently `1`). The host MUST read this once at instantiation and refuse unknown versions — otherwise a v2 host would silently decode garbage from a v1 module. (At v1 every loader targets 1 so the bundled `compiler.wasm` shim does not yet read the symbol; the check becomes load-bearing when v2 ships.)
 
-The reference `wasm-pdk` crate emits both symbols automatically. `EDGE_ABI_VERSION` itself lives in the shared `wasm-abi` crate (no_std, zero deps) so the host and every PDK read the same value; `wasm-pdk` re-exports it.
+The reference `wasm-pdk` crate emits both symbols automatically. `EDGE_ABI_VERSION` lives in the shared `wasm-abi` crate (no_std, zero deps) so host and every PDK read the same value.
 
 ## Host imports (6 functions)
 
-A guest module declares these from the `env` module:
+Guest declares from `env`:
 
 ```rust
 fn edge_op(
@@ -79,23 +79,23 @@ Universal dispatch. Returns `0` with a fresh handle in `*out` on success, `1` on
 
 ### `edge_encode`
 
-Bootstrap encoder. Wraps a primitive in a fresh handle (rc=1; release when done). The `ptr`/`len` describe bytes in **guest** memory; the host copies as needed.
+Wraps a primitive in a fresh handle (rc=1; release when done). `ptr`/`len` describe bytes in guest memory; the host copies.
 
 ### `edge_decode`
 
-Bootstrap decoder. Writes the value's tag at `*out_tag` and copies its bytes into the guest-provided buffer `dst[..dst_max]`. Returns the number of bytes copied (`>= 0`), or `-bytes_needed` (`< 0`) if the buffer was too small — re-allocate and retry. On invalid handle or non-primitive type, returns `0` with `*out_tag = 0xFFFFFFFF` (composites must be operated on via `edge_op`).
+Writes the value's tag at `*out_tag` and copies bytes into `dst[..dst_max]`. Returns bytes copied (`>= 0`), or `-bytes_needed` if the buffer was too small (re-allocate and retry). On invalid handle or non-primitive, returns `0` with `*out_tag = 0xFFFFFFFF` (composites go through `edge_op`).
 
 ### `edge_release`
 
-Decrement refcount on a handle. No-op for handle `0` or already-released handles.
+Decrement refcount. No-op for handle `0` or already-released.
 
 ### `edge_take_error`
 
-Drain the most recent error stashed by a `1`-returning `edge_op`. Writes the kind at `*out_kind` and copies the UTF-8 message into `dst[..dst_max]`. Returns the byte count copied (`>= 0`), `-bytes_needed` if the buffer was too small (the error stays pending — retry with a bigger buffer), or `-1` if no error was pending.
+Drain the most recent error from a `1`-returning `edge_op`. Writes kind at `*out_kind`, copies the UTF-8 message into `dst[..dst_max]`. Returns bytes copied (`>= 0`), `-bytes_needed` if the buffer was too small (error stays pending), or `-1` if no error pending.
 
 ### `edge_throw`
 
-Stash an error so the host sees it after the guest returns `1` from its export. Used when the guest produces an error that did NOT originate from a `1`-returning `edge_op` (e.g., a typed `Result::Err` from user code). Calling this overwrites any pending error; the guest must immediately return `1`.
+Stash an error visible after the guest returns `1` — used when an error did not originate from a `1`-returning `edge_op` (e.g., a typed `Result::Err` from user code). Overwrites any pending error; the guest must immediately return `1`.
 
 ## Op codes
 
@@ -110,7 +110,7 @@ Stash an error so the host sees it after the guest returns `1` from its export. 
 | `Iter` | 6 | `iter(recv)` -> handle (iterator List) |
 | `IterNext` | 7 | `next(iter)` -> handle, or `1`+`StopIteration` on end |
 
-All eight ops are wired in v1. The host's `Op::Iter` materialises the receiver into a List handle (set is sorted via `vm.sort_set_items`; dict yields keys; str splits to single-char strings); `Op::IterNext` advances that handle. Values `8..u32::MAX` are reserved for future ops — old hosts return `1` with `kind=Runtime` for unknown ops.
+All eight ops wired in v1. `Op::Iter` materialises the receiver into a List handle (set sorted via `vm.sort_set_items`; dict yields keys; str splits to single-char strings); `Op::IterNext` advances it. Values `8..u32::MAX` reserved — old hosts return `1` with `kind=Runtime`.
 
 ## Tags (for `edge_encode` / `edge_decode`)
 
@@ -122,7 +122,7 @@ All eight ops are wired in v1. The host's `Op::Iter` materialises the receiver i
 | Float | 3 | 8 bytes IEEE 754 little-endian |
 | Bytes | 4 | UTF-8 -> `str`; non-UTF-8 -> `bytes` |
 
-Composite values (list, dict, set, instance, callable, iterator) are **not** encodable. Construct them through `edge_op(Call, type_handle, ...)` and operate via the indexing ops.
+Composites (list, dict, set, instance, callable, iterator) are not encodable. Construct via `edge_op(Call, type_handle, ...)` and operate via indexing ops.
 
 ## Error kinds (for `edge_take_error`)
 
@@ -138,9 +138,7 @@ Composite values (list, dict, set, instance, callable, iterator) are **not** enc
 
 ## Worked example — recommended Rust path with `wasm-pdk`
 
-The `wasm-pdk` crate (in this repo at `wasm-pdk/`) provides the
-`#[plugin_fn]` proc macro that expands to wire-conformant exports.
-Authors write normal Rust:
+The `wasm-pdk` crate provides the `#[plugin_fn]` proc macro that expands to wire-conformant exports. Authors write normal Rust:
 
 ```rust
 // starter-module/src/lib.rs
@@ -197,16 +195,14 @@ cargo build --release --target wasm32-unknown-unknown -p slugify-mod # -> target
 
 ### Consuming `wasm-pdk` from your own crate
 
-`wasm-pdk` is not published to crates.io. For external development, depend on it directly from GitHub, pinned to a release tag:
+Not on crates.io — depend from GitHub, pinned to a release tag:
 
 ```toml
 [dependencies]
 wasm-pdk = { git = "https://github.com/dylan-sutton-chavez/edge-python", tag = "v0.1.0" }
 ```
 
-Cargo resolves `wasm-abi` and `wasm-pdk-macros` transitively — no other workspace deps to declare. Pinning to a tag (instead of `branch = "main"`) gives reproducible builds and a known wire-ABI version: your module compiled against `wasm-pdk` from `vX.Y.Z` is binary-compatible with the `compiler_lib.wasm` attached to that same release. To upgrade, bump the `tag` value and run `cargo update -p wasm-pdk`.
-
-Use `branch = "main"` only when iterating against unreleased changes — the tag form is the default for shipping modules.
+Cargo resolves `wasm-abi` and `wasm-pdk-macros` transitively. Pinning to a tag (vs `branch = "main"`) gives reproducible builds and a known wire-ABI version — your module compiled against `wasm-pdk vX.Y.Z` is binary-compatible with the `compiler_lib.wasm` of the same release. Bump `tag` + `cargo update -p wasm-pdk` to upgrade. Use `branch = "main"` only for unreleased iteration.
 
 Use it from a script:
 
@@ -225,9 +221,9 @@ except ValueError as e:
 
 ## Worked example — raw, no SDK
 
-For Zig / C / hand-written Rust, the same module without the macro:
+Same module without the macro (for Zig / C / hand-written Rust):
 
-### The Rust source (`src/lib.rs`)
+### Rust source (`src/lib.rs`)
 
 ```rust
 #![no_std] #![no_main]
@@ -283,33 +279,33 @@ pub extern "C" fn slugify(argv: *const u32, argc: u32, out: *mut u32) -> i32 {
 }
 ```
 
-Build with the same `Cargo.toml` shape as the `wasm-pdk` example (drop the `wasm-pdk` dependency, add `lol_alloc = "0.4"`); import from a script the same way.
+Same `Cargo.toml` as the `wasm-pdk` example (drop `wasm-pdk`, add `lol_alloc = "0.4"`); imported from scripts the same way.
 
 ## How the host loads it
 
-When the host sees `from "<url>" import <names>` and the URL ends in `.wasm`, it fetches the bytes (verifying any `#sha256-...` fragment), instantiates the module with the 6 host imports wired up, walks the export table, and at each call site marshals args as handles and propagates the result. The reference browser shim is [`runtime/worker/worker.js`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/runtime/worker/worker.js); WASI hosts and Rust embedders mirror the same shape.
+For `from "<url>" import <names>` with a `.wasm` URL: the host fetches bytes (verifying any `#sha256-...` fragment), instantiates with the 6 host imports, walks the export table, marshals args as handles, propagates results. Reference browser shim: [`runtime/worker/worker.js`](https://github.com/dylan-sutton-chavez/edge-python/blob/main/runtime/worker/worker.js); WASI hosts and Rust embedders mirror the shape.
 
 ## Constraints and caveats
 
-* **Refcounted handles.** The guest must release every handle it creates via `edge_encode` or `edge_op` except the one it returns through `*out`. Argv handles are released by the host.
-* **`edge_decode` only handles primitives.** For `list`, `dict`, `set`, instances, etc., use `edge_op` (e.g. `Call recv "items"`, `GetItem recv idx`).
-* **Reentrance is supported.** A guest's `edge_op` runs while the Edge Python VM is paused on the script's `CallExtern`. Method dispatch routes through the same `vm/handlers/builtin_methods/` descriptor table the language uses internally — adding a method there makes it visible to existing modules without recompiling them.
-* **Error-as-status, not panic.** Returning `1` from a guest function does NOT abort the host. The host pulls the error and raises it as a typed Python exception in the script.
-* **Memory ownership.** The host doesn't read the guest's linear memory except to copy in/out at well-defined points. Anything the guest allocates internally (its own pools, caches, embedded blobs) is private; the host never touches it.
+* **Refcounted handles.** Guest releases every handle it creates via `edge_encode` / `edge_op` except the one returned through `*out`. Host releases argv.
+* **`edge_decode` is primitives-only.** For `list`, `dict`, `set`, instances, use `edge_op` (e.g. `Call recv "items"`, `GetItem recv idx`).
+* **Reentrance supported.** A guest's `edge_op` runs while the VM is paused on the script's `CallExtern`. Method dispatch routes through the same `vm/handlers/builtin_methods/` descriptor table the language uses internally — adding a method there makes it visible to existing modules with no recompile.
+* **Error-as-status, not panic.** Returning `1` does NOT abort the host — the host pulls the error and raises it as a typed Python exception.
+* **Memory ownership.** Host only reads guest linear memory at well-defined copy points. Guest-internal allocations stay private.
 
 ## Author conveniences
 
-The reference Rust author layer is the **`wasm-pdk`** crate (Plugin Development Kit), bundled in this repo at `wasm-pdk/` and intended to be published independently of `compiler.wasm`. It provides:
+The `wasm-pdk` crate (Plugin Development Kit) — bundled in this repo, publishable independently of `compiler.wasm` — provides:
 
-* `#[plugin_fn]` proc macro that turns a typed Rust function into a wire-conformant export.
-* `module!()` macro that expands to the `#[global_allocator]` and `#[panic_handler]` every plugin needs.
-* `FromValue` / `IntoValue` traits with primitive impls (`i64`, `f64`, `bool`, `String`, `&str`, `Option<T>`, `Handle`).
-* `Handle` / `Value` / `Error` types wrapping handles with `Drop`-driven release.
-* The required `__edge_alloc` and `__edge_abi_version` exports emitted automatically.
+* `#[plugin_fn]` — typed Rust function → wire-conformant export.
+* `module!()` — expands to `#[global_allocator]` + `#[panic_handler]`.
+* `FromValue` / `IntoValue` with primitive impls (`i64`, `f64`, `bool`, `String`, `&str`, `Option<T>`, `Handle`).
+* `Handle` / `Value` / `Error` with `Drop`-driven release.
+* `__edge_alloc` + `__edge_abi_version` emitted automatically.
 
-The macro emits the boilerplate seen in the worked example above; authors who don't want a toolchain write it manually (~25 lines for the first function, ~5 lines per additional).
+The macro emits the worked-example boilerplate; manual is ~25 lines for the first function, ~5 per additional.
 
-Per the project's policy, similar community PDKs exist for Zig (`wasm-pdk-zig`), AssemblyScript (`wasm-pdk-as`), and C (`wasm-pdk.h`) without coordinated releases — each tracks the sealed wire spec on its own cadence.
+Community PDKs (uncoordinated releases, each tracking the sealed wire spec): Zig (`wasm-pdk-zig`), AssemblyScript (`wasm-pdk-as`), C (`wasm-pdk.h`).
 
 ## See also
 

@@ -3,7 +3,7 @@ title: "Dunder methods"
 description: "Protocol methods Edge Python invokes on user classes; operators, indexing, iteration, hashing, context managers, attribute fallback."
 ---
 
-Dunders ("double-underscore" methods like `__add__`, `__eq__`, `__getitem__`) are how a class plugs into the language's protocols. Define them on the class body and the VM calls them when the corresponding operator, builtin, or syntax form runs.
+Dunders (`__add__`, `__eq__`, `__getitem__`, ...) plug a class into language protocols. Define them in the class body; the VM calls them when the corresponding operator, builtin, or syntax form runs.
 
 ```python
 class V:
@@ -23,7 +23,7 @@ print(V(3) == V(3))
 True
 ```
 
-Dunders are looked up on the class chain (instance dict is skipped). A subclass inherits every dunder defined on its bases and can override any of them — operator overloading composes naturally with [single-level inheritance](/language/classes#inheritance-and-super). A monomorphic site — same class for both operands across iterations; promotes through the inline cache after four hits and bypasses the lookup entirely on subsequent calls.
+Dunders are looked up on the class chain (instance dict skipped). Subclasses inherit and may override — operator overloading composes with [single-level inheritance](/language/classes#inheritance-and-super). Monomorphic sites (same class for both operands) promote through the IC after 4 hits and bypass lookup entirely.
 
 ## Arithmetic
 
@@ -38,9 +38,9 @@ Dunders are looked up on the class chain (instance dict is skipped). A subclass 
 | `a ** b` | `__pow__`       | `__rpow__`       |
 | `-a`     | `__neg__`       | —                |
 
-Returning `NotImplemented` from the forward op tells the VM to try the reflected op on the other operand. If both return `NotImplemented` (or neither is defined), the VM raises `TypeError`.
+Returning `NotImplemented` from the forward op tells the VM to try the reflected op on the other operand. Both `NotImplemented` (or neither defined) → `TypeError`.
 
-Subclass-first ordering: when `type(b)` is a strict subclass of `type(a)`, `b.__radd__` runs **before** `a.__add__`. This is the standard and lets a subclass override an inherited reflected op without touching the base.
+Subclass-first: when `type(b)` is a strict subclass of `type(a)`, `b.__radd__` runs before `a.__add__` — lets a subclass override an inherited reflected op without touching the base.
 
 ```python
 class Money:
@@ -70,17 +70,17 @@ print((3 + Money(7)).n)
 | `a > b`    | `__gt__`    | `__lt__`   |
 | `a >= b`   | `__ge__`    | `__le__`   |
 
-`!=` falls back to `not __eq__` when `__ne__` is absent. Comparison results are coerced to `bool`; returning `'A.lt'` from `__lt__` yields `True` in `a < b`, not the string.
+`!=` falls back to `not __eq__` when `__ne__` is absent. Results coerce to `bool` — `__lt__` returning `'A.lt'` yields `True`, not the string.
 
 ## Truth and length
 
-`bool(x)` (and any boolean context like `if x:`) consults:
+`bool(x)` (and any boolean context) consults:
 
-1. `__bool__` if defined -> cast to bool.
-2. `__len__` if defined -> `False` when length is 0, `True` otherwise.
+1. `__bool__` if defined → cast to bool.
+2. `__len__` if defined → `False` when length is 0, else `True`.
 3. Default `True`.
 
-`len(x)` calls `__len__` directly; the return must be a non-negative integer.
+`len(x)` calls `__len__` directly; must return a non-negative int.
 
 ```python
 class Empty:
@@ -112,9 +112,9 @@ False True
 | `del obj[i]`        | `__delitem__`    | `(self, i)`            |
 | `v in obj`          | `__contains__`   | `(self, value)`        |
 
-Slices are passed as a single `slice` object: `obj[1:3]` calls `__getitem__(self, slice(1, 3, None))`.
+Slices pass as a `slice` object: `obj[1:3]` calls `__getitem__(self, slice(1, 3, None))`.
 
-When `__contains__` is absent, `v in obj` falls back to iterating `obj` and comparing each item with `__eq__`.
+Absent `__contains__`: `v in obj` falls back to iterating `obj` with `__eq__`.
 
 ## Iteration
 
@@ -166,9 +166,9 @@ True
 
 ## Hashing
 
-`hash(x)` calls `__hash__`. The result must be an `int`; the VM masks it to fit `INT_MAX`.
+`hash(x)` calls `__hash__`; must return `int` (masked to `INT_MAX`).
 
-Eq/hash invariant: a class that defines `__eq__` **without** `__hash__` is unhashable; `hash(x)` and `{x: 1}` raise `TypeError`. This prevents inconsistent dict keys.
+Eq/hash invariant: a class defining `__eq__` without `__hash__` is unhashable — `hash(x)` and `{x: 1}` raise `TypeError`. Prevents inconsistent dict keys.
 
 ```python
 class K:
@@ -187,7 +187,7 @@ print({K(1): 'one'}[K(1)] if K(1).__hash__() == K(1).__hash__() else 'unhashable
 one
 ```
 
-Built-in dict and set still compare instance keys by identity (`Val` bit pattern); the user `__hash__` is returned by `hash()` but doesn't change containment semantics in built-in containers. Use the same instance reference as the key to look up reliably.
+Built-in dict/set still compare instance keys by identity (`Val` bits); user `__hash__` is returned by `hash()` but doesn't change containment in built-in containers. Use the same instance reference to look up reliably.
 
 ## Representation
 
@@ -199,11 +199,11 @@ Built-in dict and set still compare instance keys by identity (`Val` bit pattern
 | `f"{x:spec}"`       | `__format__`  | built-in format spec engine |
 | `f"{x!r}"`          | `__repr__`    | —                           |
 
-`__format__(spec)` receives the format spec string and must return a `str`.
+`__format__(spec)` receives the spec string and must return `str`.
 
 ## Attribute access fallback
 
-`__getattr__(self, name)` runs only when the normal lookup (instance dict -> class chain) misses. It receives the attribute name as a string and returns the value to use, or raises `AttributeError` to surface a real miss.
+`__getattr__(self, name)` runs only when normal lookup (instance dict → class chain) misses. Receives the name as a string; returns the value or raises `AttributeError` to surface a real miss.
 
 ```python
 class Proxy:
@@ -224,7 +224,7 @@ Existing attributes bypass `__getattr__`; only misses trigger it.
 
 ## Context managers
 
-`with cm() as x:` invokes `__enter__` on entry; its return value binds to the `as` target. On exit, `__exit__(exc_type, exc_value, traceback)` runs — receiving `(None, None, None)` for normal exit, or the live exception info if the body raised. Returning truthy from `__exit__` suppresses the exception; falsy (or no return) propagates it.
+`with cm() as x:` invokes `__enter__`; its return binds to `as`. On exit, `__exit__(exc_type, exc_value, traceback)` runs — `(None, None, None)` for normal exit, live exception info on raise. Truthy return suppresses; falsy propagates.
 
 ```python
 class Suppress:
@@ -242,17 +242,17 @@ print("after")
 after
 ```
 
-Multiple managers in one `with` (`with a(), b() as x:`) nest LIFO: `b` enters last and exits first. Each manager has its own implicit exception handler, so an inner suppression still lets outer managers run their normal `__exit__(None, None, None)`.
+Multiple managers (`with a(), b() as x:`) nest LIFO — `b` enters last, exits first. Each has its own implicit handler, so inner suppression still lets outer managers run their normal `__exit__(None, None, None)`.
 
-If `__exit__` itself raises a new exception, the new exception replaces the original.
+If `__exit__` itself raises, the new exception replaces the original.
 
 ## What's not dispatched
 
-These dunders are parsed for syntactic compatibility but the VM doesn't invoke them on user classes:
+Parsed for compatibility but never invoked on user classes:
 
-- `__init_subclass__`, `__set_name__`, descriptor protocol (`__get__` / `__set__` / `__delete__`)
-- `__new__` (instances are constructed by the VM; `__init__` runs the user logic)
-- Augmented assignment dunders (`__iadd__`, `__imul__`, ...) — `a += b` desugars to `a = a + b`, so `__add__` covers it
-- Async dunders (`__aenter__` / `__aexit__` / `__aiter__` / `__anext__`) — `async with` and `async for` use the sync `__enter__` / `__iter__` paths
+- `__init_subclass__`, `__set_name__`, descriptors (`__get__` / `__set__` / `__delete__`)
+- `__new__` — VM constructs the instance; `__init__` runs user logic
+- Augmented-assignment dunders (`__iadd__`, ...) — `a += b` desugars to `a = a + b`, so `__add__` covers it
+- Async dunders (`__aenter__` / `__aexit__` / `__aiter__` / `__anext__`) — `async with` / `async for` use the sync paths
 
 For class basics (constructors, inheritance, properties), see [Classes](/language/classes).

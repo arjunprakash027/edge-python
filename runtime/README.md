@@ -1,19 +1,14 @@
 # Edge Python Runtime
 
-The JavaScript half of Edge Python: hosts `compiler_lib.wasm` in a Web Worker, resolves and registers `.py` / `.wasm` modules, dispatches native calls. The Rust half is the `compiler_lib.wasm` artifact published with each release.
+JS half of Edge Python: hosts `compiler_lib.wasm` in a Web Worker, resolves and registers `.py` / `.wasm` modules, dispatches native calls.
 
 ## Install
 
-No install. The official CDN serves the runtime and the matching `compiler_lib.wasm` from a single origin, tracking `main`:
+No install — the official CDN serves both the runtime and matching `compiler_lib.wasm`:
 
 ```js
 import { createWorker } from "https://runtime.edgepython.com/js/src/index.js";
-```
-
-For local development against a checkout of this repo, import the relative path:
-
-```js
-import { createWorker } from "../../runtime/src/index.js";
+// Local checkout: import { createWorker } from "../../runtime/src/index.js";
 ```
 
 ## Usage
@@ -104,9 +99,9 @@ The built-in Path A wasm-pdk loader is always tried last as fallback; custom loa
 
 ## Main-thread modules
 
-The engine runs in a Web Worker, so handlers don't have access to `document`, `window`, or other main-thread-only globals. `mainThreadModules` solves that: a pure-JS module declares its handlers, the runtime synthesizes the native registration so Python can `from <name> import ...`, and each call defers to the main thread transparently. Python sees a regular synchronous call — no `await`, no event-loop juggling.
+Engine runs in a Web Worker, so handlers can't reach `document` / `window`. `mainThreadModules`: a pure-JS module declares its handlers, the runtime synthesises the native registration so Python can `from <name> import ...`, each call defers to main transparently. Python sees a regular synchronous call.
 
-A module is a factory `(ctx) => handlers` or a plain `{name: handler}` object. The factory form receives `{ pushEvent }` so async callbacks (events, observers, file reads) can wake a paused `receive()` in the script.
+Factory `(ctx) => handlers` or `{name: handler}`. Factory form receives `{ pushEvent }` so async callbacks (events, observers, file reads) can wake a paused `receive()`.
 
 ```js
 const dom = ({ pushEvent }) => {
@@ -141,21 +136,17 @@ async def main():
         set_text(query("#btn"), "clicked")
 ```
 
-Supported handle tags for shuttle: `None`, `bool`, `int` (i64, range-limited by JS Number), `float`, and string bytes. Opaque object references (DOM nodes, file objects, observers) should be modelled as integer IDs into a main-thread registry that your handlers own — the `alloc` / `node` pattern above.
+Supported tags: `None`, `bool`, `int` (i64, range-limited by JS Number), `float`, string bytes. Opaque references (DOM nodes, files, observers) → integer IDs in a main-thread registry (the `alloc` / `node` pattern).
 
-Per-call overhead is a single `postMessage` round-trip (~0.1–0.4 ms in modern browsers). Suitable for UI-rate workloads (events, mutations, layout). For tight per-frame loops over thousands of fine-grained ops, prefer a Worker-side capability (Path A `.wasm`).
+Per-call overhead: one `postMessage` round-trip (~0.1–0.4 ms in modern browsers). Fine for UI-rate workloads. For tight per-frame loops over thousands of fine-grained ops, prefer a Worker-side capability (Path A `.wasm`).
 
 ## Worker bootstrap
 
-When the runtime is served from a different origin than the page (the common case: page on `demo.edgepython.com`, runtime on `runtime.edgepython.com`), Chromium rejects `new Worker(crossOriginUrl)` even with `type: 'module'`. `createWorker` works around this by spawning the Worker from a same-origin **Blob URL** that dynamically `import()`s the real cross-origin module. Same-origin imports use the direct path. No flag, no opt-in — `createWorker` picks the right strategy from `import.meta.url`.
-
-The Blob bootstrap also buffers any `postMessage` that arrives before the imported `worker.js` installs its `onmessage` handler, so the initial `load` request can never be lost to a race.
+When the runtime is cross-origin (page on `demo.edgepython.com`, runtime on `runtime.edgepython.com`), Chromium rejects `new Worker(crossOriginUrl)` even with `type: 'module'`. `createWorker` spawns from a same-origin **Blob URL** that dynamically `import()`s the cross-origin module. Same-origin imports use the direct path; `createWorker` auto-selects from `import.meta.url`. The Blob bootstrap buffers any `postMessage` arriving before `worker.js` installs its handler.
 
 ## Module fetch lifecycle
 
-`load` is called once per Worker; `run` can be called many times. The `compiler_lib.wasm` module is compiled once at `load` time and a **fresh instance** is created on each `run`, so VM state cannot leak between runs.
-
-Module **source bytes** (`.py` / `.wasm` / `packages.json`) are cached across runs in the same Worker — the BFS prefetch skips specs it already fetched, and 404'd `packages.json` paths are remembered in a known-missing set so they aren't re-probed on every Run-button press. Use `clearCache()` to drop both caches and force a clean re-fetch.
+`load` runs once per Worker; `run` can be called many times. `compiler_lib.wasm` is compiled once at `load`; a fresh instance is created per `run` so VM state cannot leak. Module bytes (`.py` / `.wasm` / `packages.json`) are cached across runs in the same Worker — BFS prefetch skips fetched specs, 404'd manifests are remembered. Use `clearCache()` to drop both caches.
 
 ## Layout
 
