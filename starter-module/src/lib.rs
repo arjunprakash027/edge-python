@@ -64,3 +64,9 @@ impl Slugger {
         self.parts.pop()
     }
 }
+
+impl Default for Slugger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
