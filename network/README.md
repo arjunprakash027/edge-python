@@ -36,8 +36,8 @@ async def main():
 ## Quick start
 
 ```bash
-git clone https://github.com/dylan-sutton-chavez/edge-python-capabilities
-cd edge-python-capabilities
+git clone https://github.com/dylan-sutton-chavez/edge-python-host
+cd edge-python-host
 python3 -m http.server 8080
 ```
 

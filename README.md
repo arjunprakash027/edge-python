@@ -1,11 +1,11 @@
-# Edge Python Capabilities
+# Edge Python Host
 
 Official JS modules for [Edge Python](https://edgepython.com) that expose host APIs (DOM, …) to Python scripts. Each capability is a plain ESM that registers with `createWorker` via `mainThreadModules` — no `.wasm`, no Rust, no custom embedder.
 
 ## Layout
 
 ```
-edge-python-capabilities/
+edge-python-host/
 ├── dom/
 │   ├── src/
 │   ├── web/
@@ -41,7 +41,7 @@ Each top-level folder is one capability.
 </script>
 ```
 
-## Capabilities
+## Packages
 
 | Folder | Description |
 |--------|-------------|

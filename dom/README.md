@@ -34,8 +34,8 @@ The engine runs in a Web Worker; `dom` handlers run on the page's main thread (w
 ## Quick start
 
 ```bash
-git clone https://github.com/dylan-sutton-chavez/edge-python-capabilities
-cd edge-python-capabilities
+git clone https://github.com/dylan-sutton-chavez/edge-python-host
+cd edge-python-host
 python3 -m http.server 8080
 ```
 
@@ -54,7 +54,7 @@ source ~/.bashrc
 deno run -A npm:playwright install chromium
 
 # Run
-cd edge-python-capabilities/dom
+cd edge-python-host/dom
 deno test --allow-all tests/dom.test.js
 ```
 

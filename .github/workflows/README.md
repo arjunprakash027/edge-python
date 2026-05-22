@@ -1,4 +1,4 @@
-# Edge Python Capabilities CI/CD
+# Edge Python Host CI/CD
 
 ```
 lint -> test   (matrix-fanned per capability)
