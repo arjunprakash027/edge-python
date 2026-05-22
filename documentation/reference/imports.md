@@ -14,7 +14,7 @@ Supports `import`, `from <spec> import <names>`, `from <spec> import *`. Resolut
 
 Same `import` syntax for both. The host's resolver decides flavor per spec.
 
-Native modules also cover host packages — bindings shipped by the embedder (DOM in browser, FS in WASI). Same dispatch as in-process Rust bindings, just bundled with the runtime. See [Writing modules / Path C](/reference/writing-modules#path-c-host-capability) and [Path D](/reference/writing-modules#path-d-js-host-module).
+Native modules also cover host packages — bindings shipped by the embedder (DOM in browser, FS in WASI). See [Writing modules / Path B](/reference/writing-modules#path-b-host-capability) for the custom-embedder variant and [Path C](/reference/writing-modules#path-c-js-host-module) for the plain-JS variant that runs on the page's main thread without a custom embedder.
 
 ## Syntax
 
@@ -139,7 +139,6 @@ The compiler is a WebAssembly module; fetching bytes is the host's job. Browser 
 |---|---|
 | Browser playground | `runtime/` package — pre-fetches every spec the script imports. `.py` files register via `register_code_module`; `.wasm` files instantiate via `WebAssembly.instantiate` and register exports via `register_native_module`. |
 | WASI runtime | Host program reads `.py` files from disk / network using `wasi_snapshot_preview1`. `.wasm` modules can be loaded via the runtime's WebAssembly engine. |
-| Embedded Rust app | Caller links `compiler_lib`, implements `Resolver`, returns either `Resolved::Code(src)` or `Resolved::Native(bindings)`. In-process bindings have full VM heap access (full type coverage); see [Writing modules](/reference/writing-modules). |
 | Production deploy | `edge compile` (planned) will seal all imports into a single `.epy` artifact. |
 
 URL imports work for both `.py` and `.wasm` modules as long as your host supports them:
@@ -215,9 +214,9 @@ Non-browser hosts make their own caching choices — `Resolver` sees only `(spec
 |---|---|
 | Code modules (`.py`) | Full — code only calls host packages it imports |
 | Native modules (`.wasm`) | Full — WASM isolates by construction; runs in its own linear memory |
-| Native modules (in-process Rust) | Trust boundary is the host process — runs with embedder privileges |
+| Host capabilities (custom embedder) | Trust boundary is the host process — runs with embedder privileges |
 
-Scripts always execute inside the compiler's WASM sandbox. `.wasm` native modules add their own WASM layer. In-process Rust bindings come from code the embedder controls.
+Scripts always execute inside the compiler's WASM sandbox. `.wasm` native modules add their own WASM layer. Host capabilities are part of the embedder's distribution.
 
 ## What doesn't work
 

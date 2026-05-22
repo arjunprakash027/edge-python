@@ -310,4 +310,4 @@ Community PDKs (uncoordinated releases, each tracking the sealed wire spec): Zig
 ## See also
 
 - [Imports](/reference/imports) — how `from "..." import` resolves on the script side, including walk-up packages.json and integrity verification.
-- [Writing modules](/reference/writing-modules) — the in-process Rust embedder path (full type coverage, no wire format).
+- [Writing modules](/reference/writing-modules) — overview of the three module delivery paths.
