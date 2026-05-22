@@ -211,9 +211,9 @@ pub fn decode(h: u32) -> Result<Value> {
                 0 => Value::None,
                 1 => Value::Bool(buf[0] != 0),
                 2 => {
-                    let mut a = [0u8; 8];
-                    a.copy_from_slice(&buf[..8]);
-                    Value::Int(i64::from_le_bytes(a))
+                    let mut a = [0u8; 16];
+                    a.copy_from_slice(&buf[..16]);
+                    Value::Int(i128::from_le_bytes(a))
                 }
                 3 => {
                     let mut a = [0u8; 8];
@@ -239,7 +239,7 @@ pub fn encode(v: Value) -> Result<Handle> {
         }
         Value::Int(i) => {
             let buf = i.to_le_bytes();
-            unsafe { edge_encode(tag::INT, buf.as_ptr(), 8) }
+            unsafe { edge_encode(tag::INT, buf.as_ptr(), 16) }
         }
         Value::Float(f) => {
             let buf = f.to_le_bytes();
@@ -256,7 +256,7 @@ pub fn encode(v: Value) -> Result<Handle> {
 pub enum Value {
     None,
     Bool(bool),
-    Int(i64),
+    Int(i128),
     Float(f64),
     /// UTF-8 when produced from a `str`; raw bytes otherwise.
     Bytes(Vec<u8>),
@@ -299,12 +299,26 @@ impl IntoValue for bool {
 impl FromValue for i64 {
     fn from_handle(h: u32) -> Result<Self> {
         match decode(h)? {
-            Value::Int(i) => Ok(i),
+            Value::Int(i) => i64::try_from(i).map_err(|_| Error::Value(
+                alloc::format!("int {} out of range for i64 (use i128)", i)
+            )),
             v => Err(Error::Type(alloc::format!("expected int, got {:?}", v))),
         }
     }
 }
 impl IntoValue for i64 {
+    fn into_handle(self) -> Result<Handle> { encode(Value::Int(self as i128)) }
+}
+
+impl FromValue for i128 {
+    fn from_handle(h: u32) -> Result<Self> {
+        match decode(h)? {
+            Value::Int(i) => Ok(i),
+            v => Err(Error::Type(alloc::format!("expected int, got {:?}", v))),
+        }
+    }
+}
+impl IntoValue for i128 {
     fn into_handle(self) -> Result<Handle> { encode(Value::Int(self)) }
 }
 

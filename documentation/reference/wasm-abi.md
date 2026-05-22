@@ -118,7 +118,7 @@ All eight ops wired in v1. `Op::Iter` materialises the receiver into a List hand
 |---|---|---|
 | None  | 0 | payload ignored |
 | Bool  | 1 | 1 byte (0/1) |
-| Int   | 2 | 8 bytes little-endian i64 |
+| Int   | 2 | 16 bytes little-endian i128 |
 | Float | 3 | 8 bytes IEEE 754 little-endian |
 | Bytes | 4 | UTF-8 -> `str`; non-UTF-8 -> `bytes` |
 
@@ -299,7 +299,7 @@ The `wasm-pdk` crate (Plugin Development Kit) — bundled in this repo, publisha
 
 * `#[plugin_fn]` — typed Rust function → wire-conformant export.
 * `module!()` — expands to `#[global_allocator]` + `#[panic_handler]`.
-* `FromValue` / `IntoValue` with primitive impls (`i64`, `f64`, `bool`, `String`, `&str`, `Option<T>`, `Handle`).
+* `FromValue` / `IntoValue` with primitive impls (`i64`, `i128`, `f64`, `bool`, `String`, `&str`, `Option<T>`, `Handle`). `i64` rejects out-of-range values with `ValueError`; use `i128` for the full range.
 * `Handle` / `Value` / `Error` with `Drop`-driven release.
 * `__edge_alloc` + `__edge_abi_version` emitted automatically.
 

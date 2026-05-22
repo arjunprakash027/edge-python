@@ -191,12 +191,17 @@ impl ErrorStash {
 
 /* Primitive codec helpers */
 
-// edge_encode outcome: Direct (Val bits), AllocStr (host alloc), or Invalid.
+// edge_encode outcome: Direct (Val bits), AllocStr / AllocLongInt (host alloc), or Invalid.
 pub enum EncodeRequest<'a> {
     Direct(u64),
     AllocStr(&'a str),
+    AllocLongInt(i128),
     Invalid,
 }
+
+// Inline range for Val::int (47-bit signed); values outside go to HeapObj::LongInt.
+const INLINE_INT_MIN: i128 = -0x0000_8000_0000_0000i64 as i128;
+const INLINE_INT_MAX: i128 =  0x0000_7FFF_FFFF_FFFFi64 as i128;
 
 // Maps (tag, bytes) to EncodeRequest using the sealed `nan_box` layout.
 pub fn classify_encode(tag: u32, bytes: &[u8]) -> EncodeRequest<'_> {
@@ -209,11 +214,17 @@ pub fn classify_encode(tag: u32, bytes: &[u8]) -> EncodeRequest<'_> {
             EncodeRequest::Direct(if b { TAG_TRUE } else { TAG_FALSE })
         }
         Some(Tag::Int) => {
-            if bytes.len() != 8 { return EncodeRequest::Invalid; }
-            let mut buf = [0u8; 8];
+            // Wire format is 16 bytes (i128) covering Edge Python's full int range.
+            if bytes.len() != 16 { return EncodeRequest::Invalid; }
+            let mut buf = [0u8; 16];
             buf.copy_from_slice(bytes);
-            let i = i64::from_le_bytes(buf);
-            EncodeRequest::Direct(TAG_INT | (i as u64 & INT_PAYLOAD_MASK))
+            let i = i128::from_le_bytes(buf);
+            // Fits in 47-bit inline range → emit as Val::int directly; else heap-alloc LongInt.
+            if (INLINE_INT_MIN..=INLINE_INT_MAX).contains(&i) {
+                EncodeRequest::Direct(TAG_INT | ((i as i64) as u64 & INT_PAYLOAD_MASK))
+            } else {
+                EncodeRequest::AllocLongInt(i)
+            }
         }
         Some(Tag::Float) => {
             if bytes.len() != 8 { return EncodeRequest::Invalid; }
@@ -240,6 +251,7 @@ pub enum PrimitiveBytes {
     None,
     Bool(u8),
     Eight([u8; 8]),
+    Sixteen([u8; 16]),
 }
 
 impl PrimitiveBytes {
@@ -248,6 +260,7 @@ impl PrimitiveBytes {
             Self::None => &[],
             Self::Bool(b) => core::slice::from_ref(b),
             Self::Eight(a) => a.as_slice(),
+            Self::Sixteen(a) => a.as_slice(),
         }
     }
 }
@@ -263,13 +276,14 @@ pub fn classify_decode(val_bits: u64) -> DecodeBits {
             bytes: PrimitiveBytes::Eight(f64::from_bits(val_bits).to_le_bytes()),
         };
     }
-    // Int: QNAN|SIGN with payload.
+    // Int: QNAN|SIGN with payload. Sign-extend the 47-bit payload to i128 (wire width).
     if (val_bits & (QNAN | SIGN)) == TAG_INT {
         let raw = (val_bits & INT_PAYLOAD_MASK) as i64;
-        let sign_extended = (raw << 16) >> 16;
+        let sign_extended_i64 = (raw << 16) >> 16;
+        let as_i128 = sign_extended_i64 as i128;
         return DecodeBits::Primitive {
             tag: Tag::Int as u32,
-            bytes: PrimitiveBytes::Eight(sign_extended.to_le_bytes()),
+            bytes: PrimitiveBytes::Sixteen(as_i128.to_le_bytes()),
         };
     }
     // Singletons and heap handles.

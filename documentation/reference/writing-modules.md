@@ -7,7 +7,7 @@ Edge Python has no bundled stdlib. Three ways to add native functionality:
 
 | Path | Distribution | Type coverage | Maintenance |
 |---|---|---|---|
-| **`.wasm` module via URL** ([WASM ABI](/reference/wasm-abi)) | Publish `.wasm` to a CDN; any host loads dynamically | Primitives only (None, bool, i64 truncated to 47-bit, f64, bytes/str) | Reference [`wasm-pdk`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) (Rust), community PDKs, or hand-written wire boilerplate |
+| **`.wasm` module via URL** ([WASM ABI](/reference/wasm-abi)) | Publish `.wasm` to a CDN; any host loads dynamically | Primitives only (None, bool, i128, f64, bytes/str) | Reference [`wasm-pdk`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) (Rust), community PDKs, or hand-written wire boilerplate |
 | **Host capability** | Custom `compiler.wasm` (additional host imports declared) + host runtime they bridge to | Primitives + access to host services (DOM, FS, fetch) through embedder host imports | You own embedder + host runtime; bindings travel together |
 | **JS host module** | Plain ESM registered via `createWorker({ mainThreadModules })` | Primitives only (same as Path A) | Pure JS; no Rust, no `.wasm`, no build step |
 

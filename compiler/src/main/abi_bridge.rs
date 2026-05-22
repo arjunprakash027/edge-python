@@ -208,6 +208,13 @@ pub unsafe extern "C" fn host_edge_encode(tag: u32, ptr: *const u8, len: u32) ->
                 None => 0,
             }
         }
+        EncodeRequest::AllocLongInt(i) => {
+            let v = with_vm(|vm| vm.heap.alloc(HeapObj::LongInt(i)).ok()).flatten();
+            match v {
+                Some(val) => put_val(val),
+                None => 0,
+            }
+        }
         EncodeRequest::Invalid => 0,
     }
 }
@@ -236,17 +243,20 @@ pub unsafe extern "C" fn host_edge_decode(h: u32, out_tag: *mut u32, dst: *mut u
             PrimitiveBytes::None => copy_into(tag, &[]),
             PrimitiveBytes::Bool(b) => copy_into(tag, &[b]),
             PrimitiveBytes::Eight(a) => copy_into(tag, &a),
+            PrimitiveBytes::Sixteen(a) => copy_into(tag, &a),
         },
         DecodeBits::Heap => {
-            // Only Str decodes; composites must go through `edge_op`.
-            let result = with_vm(|vm| {
-                if let HeapObj::Str(s) = vm.heap.get(v) {
-                    Some(s.clone())
-                } else { None }
-            }).flatten();
-            match result {
-                Some(s) => copy_into(crate::abi::Tag::Bytes as u32, s.as_bytes()),
-                None => { unsafe { *out_tag = TAG_INVALID; } 0 }
+            // Str and LongInt decode to primitives; other composites must go through `edge_op`.
+            enum Decoded { Str(alloc::string::String), LongInt(i128), Other }
+            let decoded = with_vm(|vm| match vm.heap.get(v) {
+                HeapObj::Str(s) => Decoded::Str(s.clone()),
+                HeapObj::LongInt(i) => Decoded::LongInt(*i),
+                _ => Decoded::Other,
+            }).unwrap_or(Decoded::Other);
+            match decoded {
+                Decoded::Str(s) => copy_into(crate::abi::Tag::Bytes as u32, s.as_bytes()),
+                Decoded::LongInt(i) => copy_into(crate::abi::Tag::Int as u32, &i.to_le_bytes()),
+                Decoded::Other => { unsafe { *out_tag = TAG_INVALID; } 0 }
             }
         }
         DecodeBits::Invalid => { unsafe { *out_tag = TAG_INVALID; } 0 }
