@@ -1,7 +1,7 @@
 /* 
 Sealed module contract: op codes / tags / error kinds / HandleTable / ErrorStash / primitive codec.
 Wire-level constants live in `wasm-abi`; the enums below mirror them byte-for-byte.
-Add capabilities via new Op values, never new imports or signature changes.
+Add host modules via new Op values, never new imports or signature changes.
 See documentation/reference/wasm-abi.md for the spec. 
 */
 

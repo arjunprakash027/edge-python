@@ -14,7 +14,7 @@ Edge Python supports `import`, `from <spec> import <names>`, and `from <spec> im
 
 The same `import` syntax covers both. The host's resolver decides which flavor a given spec maps to.
 
-Native modules also cover **host capabilities**: bindings the embedder ships as part of its runtime (DOM in a browser distribution, FS in a WASI distribution) — same dispatch path as ordinary in-process Rust bindings, just shipped together with the host runtime instead of as a separate crate. See [Writing modules / Path C](/reference/writing-modules#path-c-host-capability) for the custom-embedder variant and [Path D](/reference/writing-modules#path-d-js-host-module) for the plain-JS variant that runs on the page's main thread without a custom embedder.
+Native modules also cover **host packages**: bindings the embedder ships as part of its runtime (DOM in a browser distribution, FS in a WASI distribution) — same dispatch path as ordinary in-process Rust bindings, just shipped together with the host runtime instead of as a separate crate. See [Writing modules / Path C](/reference/writing-modules#path-c-host-capability) for the custom-embedder variant and [Path D](/reference/writing-modules#path-d-js-host-module) for the plain-JS variant that runs on the page's main thread without a custom embedder.
 
 ## Syntax
 
@@ -214,7 +214,7 @@ Non-browser hosts make their own caching choices — the `Resolver` trait sees o
 
 | Module type | Sandbox |
 |---|---|
-| Code modules (`.py`) | Full sandbox — code only calls capabilities it imports |
+| Code modules (`.py`) | Full sandbox — code only calls host packages it imports |
 | Native modules (`.wasm`) | Full sandbox — WASM isolates by construction; the imported `.wasm` runs in its own linear memory |
 | Native modules (in-process Rust closures) | Trust boundary is the host process — closures run with the embedder's privileges |
 

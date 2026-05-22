@@ -1,6 +1,6 @@
 ---
 title: "Writing modules"
-description: "Four paths to extend Edge Python: a `.wasm` module loaded by URL, in-process Rust closures via the Resolver trait, host capabilities bundled in a custom compiler, or a plain JS module that runs on the page's main thread."
+description: "Four paths to extend Edge Python: a `.wasm` module loaded by URL, in-process Rust closures via the Resolver trait, host packages bundled in a custom compiler, or a plain JS module that runs on the page's main thread."
 ---
 
 Edge Python has no bundled stdlib. There are **four ways** to add native functionality. Pick the one that fits your distribution model.
@@ -276,7 +276,7 @@ Handlers take **decoded JS values** and return **plain JS values**. Supported ta
 
 Path D is the right pick when the capability needs main-thread browser surface (DOM, dialogs, observers, FileReader) and the per-op latency is acceptable — invisible for UI-rate workloads (~50–200 ops/frame). Reach for Path C when tight per-frame loops dominate or you need full `HeapObj` access.
 
-A reference implementation lives in [`edge-python-capabilities`](https://github.com/dylan-sutton-chavez/edge-python-capabilities) — currently exposing `dom`.
+A reference implementation lives in [`edge-python-host`](https://github.com/dylan-sutton-chavez/edge-python-host) — currently exposing `dom`.
 
 ## Choosing between the four paths
 

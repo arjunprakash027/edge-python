@@ -30,7 +30,7 @@ The language reads like Python because it parses Python syntax. It runs differen
 These parse for syntactic compatibility but raise at runtime, or simply don't exist:
 
 - **Standard library**: no bundled stdlib; every module is external (see **Modules** above).
-- **I/O**: `input()` reads from a host-provided buffer. There is no file system, no network, no `os`, no `sys` — those surface only when the host runtime registers them as [host capabilities](/reference/writing-modules#path-c-host-capability) (the same mechanism behind `print` and `input` themselves).
+- **I/O**: `input()` reads from a host-provided buffer. There is no file system, no network, no `os`, no `sys` — those surface only when the host runtime registers them as [host packages](/reference/writing-modules#path-c-host-capability) (the same mechanism behind `print` and `input` themselves).
 - **Async surface**: `async def` creates real coroutines and the VM runs a cooperative scheduler, but there is no `asyncio` module; primitives are top-level builtins (`run`, `sleep`, `gather`, `with_timeout`, `cancel`, `receive`). Coroutines do not expose `.send()` / `.throw()` / `.close()`.
 - **Metaclasses, descriptor protocol, `__slots__`**: not modeled.
 - **Dynamic code**: no `exec`, no `eval`, no `compile`, no `__import__` (use the `import_module(name)` builtin to look up an already-imported module by alias).
@@ -60,5 +60,5 @@ Edge Python is distributed as a single `.wasm` artifact (`compiler_lib.wasm`, 17
 
 The same compiler and the same VM run everywhere. Two ABIs sit on top:
 
-- **Compiler↔host imports** — declared by the embedder against the host runtime, covering output, module fetching, native dispatch, and wall-clock time. Custom embedders that ship [host capabilities](/reference/writing-modules#path-c-host-capability) declare additional imports (e.g. DOM in the browser shim, FS in WASI) without touching the plugin ABI below.
+- **Compiler↔host imports** — declared by the embedder against the host runtime, covering output, module fetching, native dispatch, and wall-clock time. Custom embedders that ship [host packages](/reference/writing-modules#path-c-host-capability) declare additional imports (e.g. DOM in the browser shim, FS in WASI) without touching the plugin ABI below.
 - **Plugin ABI (sealed v1)** — the contract a CDN-distributed `.wasm` plugin module follows when imported via `from "<url>" import`. Exactly 6 `env.*` imports, never extended. See the [WASM module ABI](/reference/wasm-abi).

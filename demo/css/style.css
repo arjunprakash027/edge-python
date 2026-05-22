@@ -31,3 +31,17 @@
 .tk-com { color: #6a9955; font-style: italic }
 .tk-var, .tk-fexpr { color: #9cdcfe }
 .tk-func { color: #dcdcaa }
+
+/* Custom Font */
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('../static/Satoshi-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+.satoshi {
+  font-family: 'Satoshi', sans-serif;
+}

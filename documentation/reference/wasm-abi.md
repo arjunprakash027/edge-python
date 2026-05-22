@@ -3,7 +3,7 @@ title: "WASM module ABI"
 description: "The wire format a `.wasm` module must follow to be importable by Edge Python."
 ---
 
-> **Sealed contract — plugin ABI v1.** Every signature, op code, tag, and error kind on this page is part of the public contract for CDN-distributed `.wasm` plugin modules (Path A). New capabilities arrive as new `Op` values, never as new imports; a future wire-level break would ship as `env_v2.*` without removing v1. This is **distinct** from the compiler↔host interface that embedders declare (see [host capabilities](/reference/writing-modules#path-c-host-capability)) — embedders are not bound by the 6-import limit here.
+> **Sealed contract — plugin ABI v1.** Every signature, op code, tag, and error kind on this page is part of the public contract for CDN-distributed `.wasm` plugin modules (Path A). New host packages arrive as new `Op` values, never as new imports; a future wire-level break would ship as `env_v2.*` without removing v1. This is **distinct** from the compiler↔host interface that embedders declare (see [host packages](/reference/writing-modules#path-c-host-capability)) — embedders are not bound by the 6-import limit here.
 
 A `.wasm` module that an Edge Python script imports via `from "<url>" import <names>` follows the contract below. The shape is a small **handle-based** API: the host owns all values, the guest sees only opaque `u32` handles, and one universal dispatch primitive (`edge_op`) covers every operation on those values. This means new types, methods, and language features added to Edge Python become available to existing modules with **no ABI change**.
 
