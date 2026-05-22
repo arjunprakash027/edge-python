@@ -22,6 +22,9 @@ impl Limits {
     pub fn sandbox() -> Self { Self { calls: 256, ops: 100_000_000, heap: 100_000 } }
 }
 
+/* Plain fn-pointer alias for `ExternFn::from_fn`; the `Arc<dyn Fn ...>` form lives in `ExternCallable`. */
+pub type ExternFnPlain = fn(&mut HeapPool, &[Val], Option<Val>) -> Result<Val, VmErr>;
+
 /* Host-provided callable, resolved at compile time and dispatched by `CallExtern`. `Arc<dyn Fn>` lets loaders capture stateful handles; `pure` enables memoization. Third arg is the kwargs slot — `None` for plain positional calls, `Some(dict_val)` when the caller used `name=value` syntax. */
 pub type ExternCallable =
     alloc::sync::Arc<dyn Fn(&mut HeapPool, &[Val], Option<Val>) -> Result<Val, VmErr> + Send + Sync>;
@@ -41,7 +44,7 @@ impl core::fmt::Debug for ExternFn {
 
 impl ExternFn {
     /* Build from a plain `fn` pointer (stateless Rust natives). */
-    pub fn from_fn(name: impl Into<String>, func: fn(&mut HeapPool, &[Val], Option<Val>) -> Result<Val, VmErr>, pure: bool) -> Self {
+    pub fn from_fn(name: impl Into<String>, func: ExternFnPlain, pure: bool) -> Self {
         Self { name: name.into(), func: alloc::sync::Arc::new(func), pure }
     }
 }

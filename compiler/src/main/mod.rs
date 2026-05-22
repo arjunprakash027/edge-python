@@ -11,7 +11,7 @@ use crate::modules::packages::Manifest;
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::ptr::NonNull;
 
-pub(crate) mod abi_bridge;
+mod abi_bridge;
 mod errors;
 mod exports;
 mod resolver;

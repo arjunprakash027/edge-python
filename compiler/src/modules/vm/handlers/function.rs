@@ -218,6 +218,13 @@ impl<'a> VM<'a> {
         Ok((stack_items, kw_flat, num_pos, num_kw))
     }
 
+    /* Pack a flat `[name, val, name, val, …]` slice into a heap dict for the trailing kwargs slot. `None` when there are no kwargs so the FFI layer can serialize handle 0 on the wire. */
+    pub(crate) fn pack_kw_dict(heap: &mut super::super::types::HeapPool, kw_flat: &[Val]) -> Result<Option<Val>, VmErr> {
+        if kw_flat.is_empty() { return Ok(None); }
+        let dm = super::super::types::DictMap::from_pairs(kw_flat.chunks_exact(2).map(|p| (p[0], p[1])).collect());
+        Ok(Some(heap.alloc(super::super::types::HeapObj::Dict(Rc::new(RefCell::new(dm))))?))
+    }
+
     /* Dispatch non-Func callees. Returns Ok(true) when handled here; Ok(false) means the caller falls through to the Func path. */
     fn try_dispatch_non_func_callable(&mut self, callee: Val, positional: &[Val], kw_flat: &[Val], num_kw: usize, chunk: &SSAChunk, slots: &mut [Val]) -> Result<bool, VmErr> {
         if let HeapObj::BoundMethod(recv, id) = self.heap.get(callee) {
@@ -237,7 +244,7 @@ impl<'a> VM<'a> {
             let func = extern_fn.func.clone();
             let pure = extern_fn.pure;
             if !pure { self.mark_impure(); }
-            let kwargs = crate::main::abi_bridge::pack_kw_dict(&mut self.heap, kw_flat)?;
+            let kwargs = Self::pack_kw_dict(&mut self.heap, kw_flat)?;
             let result = func(&mut self.heap, positional, kwargs)?;
             self.push(result);
             return Ok(true);
@@ -551,7 +558,7 @@ impl<'a> VM<'a> {
         let pure = extern_fn.pure;
         let kw_flat = if kw > 0 { self.pop_n(kw * 2)? } else { Vec::new() };
         let positional = self.pop_n(pos)?;
-        let kwargs = crate::main::abi_bridge::pack_kw_dict(&mut self.heap, &kw_flat)?;
+        let kwargs = Self::pack_kw_dict(&mut self.heap, &kw_flat)?;
         if !pure { self.mark_impure(); }
         match func(&mut self.heap, &positional, kwargs) {
             Ok(result) => { self.push(result); Ok(()) }

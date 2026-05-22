@@ -332,13 +332,6 @@ pub unsafe extern "C" fn host_edge_take_error(out_kind: *mut u32, dst: *mut u8, 
     bytes.len() as i32
 }
 
-/* Pack a flat `[name, val, name, val, …]` slice into a heap dict for the trailing-kwargs slot. `None` when there are no kwargs so callers serialize handle 0 on the wire. */
-pub(crate) fn pack_kw_dict(heap: &mut crate::modules::vm::types::HeapPool, kw_flat: &[Val]) -> Result<Option<Val>, VmErr> {
-    if kw_flat.is_empty() { return Ok(None); }
-    let dm = DictMap::from_pairs(kw_flat.chunks_exact(2).map(|p| (p[0], p[1])).collect());
-    Ok(Some(heap.alloc(HeapObj::Dict(Rc::new(RefCell::new(dm))))?))
-}
-
 /* Builds a NativeBinding that marshals handles around `host_call_native`. Kept out of resolver.rs so the resolver stays ABI-agnostic. */
 pub(super) fn make_native_binding(name: String, id: u32) -> NativeBinding {
     let closure = move |_: &mut crate::modules::vm::types::HeapPool, args: &[Val], kwargs: Option<Val>| -> Result<Val, VmErr> {
