@@ -1,5 +1,5 @@
 /*
-Streaming JSON tokenizer. `next` advances one token at a time, tracking byte offset for error reporting.
+Streaming JSON tokenizer. `next` advances one token at a time, tracking byte offset for error reporting. `Int` / `Float` carry the source slice so `loads` can hand it to `parse_int` / `parse_float` hooks. `Constant("NaN" | "Infinity" | "-Infinity")` is emitted for the non-standard tokens CPython accepts by default — `parse_constant` decides their value.
 */
 
 use alloc::string::{String, ToString};
@@ -8,8 +8,9 @@ pub enum Token {
     LBrace, RBrace, LBracket, RBracket, Comma, Colon,
     Null, True, False,
     Str(String),
-    Int(i128),
-    Float(f64),
+    Int(i128, String),
+    Float(f64, String),
+    Constant(String),
     Eof,
 }
 
@@ -55,10 +56,13 @@ impl<'a> Tokenizer<'a> {
             b',' => { self.pos += 1; Ok(Token::Comma) }
             b':' => { self.pos += 1; Ok(Token::Colon) }
             b'"' => self.read_string(),
-            b'-' | b'0'..=b'9' => self.read_number(),
+            b'-' => self.read_number_or_neg_infinity(),
+            b'0'..=b'9' => self.read_number(),
             b't' => self.read_keyword(b"true", Token::True),
             b'f' => self.read_keyword(b"false", Token::False),
             b'n' => self.read_keyword(b"null", Token::Null),
+            b'N' => self.read_keyword(b"NaN", Token::Constant("NaN".to_string())),
+            b'I' => self.read_keyword(b"Infinity", Token::Constant("Infinity".to_string())),
             _ => Err(self.err("unexpected character")),
         }
     }
@@ -69,6 +73,15 @@ impl<'a> Tokenizer<'a> {
         }
         self.pos += kw.len();
         Ok(tok)
+    }
+
+    fn read_number_or_neg_infinity(&mut self) -> Result<Token, JsonError> {
+        // `-Infinity` is the only number-like token that starts with `-` but isn't a digit sequence.
+        if self.src.len() >= self.pos + 9 && &self.src[self.pos..self.pos + 9] == b"-Infinity" {
+            self.pos += 9;
+            return Ok(Token::Constant("-Infinity".to_string()));
+        }
+        self.read_number()
     }
 
     fn read_string(&mut self) -> Result<Token, JsonError> {
@@ -152,11 +165,11 @@ impl<'a> Tokenizer<'a> {
             if self.pos < self.src.len() && matches!(self.src[self.pos], b'+' | b'-') { self.pos += 1; }
             while self.pos < self.src.len() && self.src[self.pos].is_ascii_digit() { self.pos += 1; }
         }
-        let text = core::str::from_utf8(&self.src[start..self.pos]).map_err(|_| self.err("non-utf8 number"))?;
+        let text = core::str::from_utf8(&self.src[start..self.pos]).map_err(|_| self.err("non-utf8 number"))?.to_string();
         if is_float {
-            text.parse::<f64>().map(Token::Float).map_err(|_| JsonError { msg: "invalid float".to_string(), pos: start })
+            text.parse::<f64>().map(|f| Token::Float(f, text.clone())).map_err(|_| JsonError { msg: "invalid float".to_string(), pos: start })
         } else {
-            text.parse::<i128>().map(Token::Int).map_err(|_| JsonError { msg: "integer overflow".to_string(), pos: start })
+            text.parse::<i128>().map(|i| Token::Int(i, text.clone())).map_err(|_| JsonError { msg: "integer overflow".to_string(), pos: start })
         }
     }
 }

@@ -9,7 +9,7 @@ sandbox/      — shared browser shell + agnostic Deno + Playwright runner
 <name>/       — one folder per stdpkg crate, with src/, README.md, and <name>.json corpus
 ```
 
-The folder name IS the package name IS the wasm artifact name (e.g. `json/` → `json/target/wasm32-unknown-unknown/release/json.wasm`). Each package's `<name>.json` sits alongside `Cargo.toml`; cases in it are automatically prefixed with `from <name> import *\n` before dispatch, so the corpus only contains the code being tested.
+The folder name IS the package name IS the wasm artifact name (e.g. `json/` -> `json/target/wasm32-unknown-unknown/release/json.wasm`). Each package's `<name>.json` sits alongside `Cargo.toml`; cases in it are automatically prefixed with `from <name> import *\n` before dispatch, so the corpus only contains the code being tested.
 
 ## Packages
 

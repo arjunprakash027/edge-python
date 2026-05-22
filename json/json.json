@@ -110,5 +110,97 @@
   {
     "src": "big = '[' + ('1,' * 500) + '1]'\nfor i in range(2000):\n    loads(big)\nprint('ok')",
     "output": ["ok"]
+  },
+  {
+    "src": "print(dumps({'b':2,'a':1}, sort_keys=True))",
+    "output": ["{\"a\":1,\"b\":2}"]
+  },
+  {
+    "src": "print(dumps([1,2,3], indent=2))",
+    "output": ["[\n  1,\n  2,\n  3\n]"]
+  },
+  {
+    "src": "print(dumps({'k':'v','n':1}, indent=2, sort_keys=True))",
+    "output": ["{\n  \"k\": \"v\",\n  \"n\": 1\n}"]
+  },
+  {
+    "src": "print(dumps('héllo'))",
+    "output": ["\"h\\u00e9llo\""]
+  },
+  {
+    "src": "print(dumps('héllo', ensure_ascii=False))",
+    "output": ["\"héllo\""]
+  },
+  {
+    "src": "print(dumps({1:2,'k':3}, skipkeys=True))",
+    "output": ["{\"k\":3}"]
+  },
+  {
+    "src": "dumps({1:2})",
+    "error": "keys must be str"
+  },
+  {
+    "src": "print(dumps(float('nan')))",
+    "output": ["NaN"]
+  },
+  {
+    "src": "print(dumps(float('inf')))",
+    "output": ["Infinity"]
+  },
+  {
+    "src": "dumps(float('nan'), allow_nan=False)",
+    "error": "Out of range"
+  },
+  {
+    "src": "print(dumps([1,2], separators=(' | ', ' = ')))",
+    "output": ["[1 | 2]"]
+  },
+  {
+    "src": "print(dumps({'a':1,'b':2}, separators=(', ', '=')))",
+    "output": ["{\"a\"=1, \"b\"=2}"]
+  },
+  {
+    "src": "a = []\nfor _ in range(300):\n    b = []\n    b.append(a)\n    a = b\ndumps(a)",
+    "error": "Circular reference"
+  },
+  {
+    "src": "print(dumps([1,2,3], default=str))",
+    "output": ["[1,2,3]"]
+  },
+  {
+    "src": "class X: pass\nprint(dumps(X(), default=lambda o: 'obj'))",
+    "output": ["\"obj\""]
+  },
+  {
+    "src": "print(loads('NaN') != loads('NaN'))",
+    "output": ["True"]
+  },
+  {
+    "src": "print(loads('Infinity'))",
+    "output": ["inf"]
+  },
+  {
+    "src": "print(loads('-Infinity'))",
+    "output": ["-inf"]
+  },
+  {
+    "src": "print(loads('42', parse_int=lambda s: 'int:' + s))",
+    "output": ["int:42"]
+  },
+  {
+    "src": "print(loads('1.5', parse_float=lambda s: 'flt:' + s))",
+    "output": ["flt:1.5"]
+  },
+  {
+    "src": "print(loads('{\"x\":1}', object_hook=lambda d: d['x']))",
+    "output": ["1"]
+  },
+  {
+    "src": "print(loads('{\"a\":1,\"b\":2}', object_pairs_hook=lambda p: len(p)))",
+    "output": ["2"]
+  },
+  {
+    "src": "print(loads('NaN', parse_constant=lambda s: 'CONST:' + s))",
+    "output": ["CONST:NaN"]
   }
 ]
