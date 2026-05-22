@@ -1,6 +1,6 @@
 # Edge Python DOM
 
-DOM access for Edge Python, shipped as a plain ESM module. Python scripts see `dom` as an ordinary module — full surface coverage: queries, mutation, events, forms, files, observers, animations, layout, media, SVG, and modern platform APIs (dialog, fullscreen, pointer lock).
+DOM access shipped as a plain ESM module. Scripts see `dom` as ordinary — full surface: queries, mutation, events, forms, files, observers, animations, layout, media, SVG, dialog, fullscreen, pointer lock.
 
 ```python
 from dom import query, set_text, bind_event
@@ -29,7 +29,7 @@ async def main():
 </script>
 ```
 
-The engine runs in a Web Worker; `dom` handlers run on the page's main thread (where `document` lives) via the runtime's deferred host-call mechanism. Python sees every call as synchronous.
+Engine runs in a Web Worker; `dom` handlers run on the page's main thread (where `document` lives) via the runtime's deferred host-call mechanism. Python sees every call as synchronous.
 
 ## Quick start
 
@@ -43,14 +43,11 @@ Open <http://127.0.0.1:8080/dom/web/>. No build step.
 
 ## Testing
 
-A smoke test loads the demo in headless Chromium, clicks through a few interactions, and fails if any console error fires.
+Headless Chromium smoke test — loads the demo, clicks through, fails on console error:
 
 ```bash
-# Deno setup
-curl -fsSL https://deno.land/install.sh | sh
-source ~/.bashrc
-
-#Cache the browser binary
+# Setup
+curl -fsSL https://deno.land/install.sh | sh && source ~/.bashrc
 deno run -A npm:playwright install chromium
 
 # Run
@@ -60,14 +57,14 @@ deno test --allow-all tests/dom.test.js
 
 ## API
 
-**Conventions.**
+**Conventions:**
 
-- Handles are opaque integers — store them, pass them, never compute on them.
+- Handles are opaque integers — store, pass, never compute on them.
 - Multi-result queries (`query_all`, `children`) return CSV strings of handles.
 - Structured returns (`rect`, `validity`, `form_data`, `bbox`, event payloads) are JSON strings.
-- All async results (events, FileReader, animation finishes, observer entries) arrive through `receive()`.
+- Async results (events, FileReader, animation finishes, observer entries) arrive via `receive()`.
 
-**Parsing JSON returns.** Edge Python has no stdlib `json` — declare one in your `packages.json` (e.g. `{ "imports": { "json": "https://runtime.edgepython.com/lib/json.py" } }`) to get `json.loads`. For simple dispatch by event tag you can skip it and substring-match the raw payload (`'"msg":"click"' in ev`) as shown in `web/palette.py`. Examples below assume `json` is mapped where they use it.
+**Parsing JSON returns.** The runtime auto-registers `json` — `from json import loads, dumps` works with zero setup. Examples below assume it.
 
 ### Selection and traversal
 
@@ -245,19 +242,19 @@ append_child(query("svg"), circle)
 
 ## How it works
 
-The module is a factory `(ctx) => handlers`. `src/state.js` opens a fresh closure per `createWorker` with the handle tables (`nodes`, `bindings`, `files`, observers, animations) and the `alloc` / `node` / `allocList` helpers. Eight handler slices (`tree`, `style`, `events`, `forms`, `observers`, `animations`, `media`, `platform`) each return an object literal of named handlers that close over the shared state; `src/index.js` composes them with `Object.assign`. Async callbacks (event listeners, `FileReader`, animation `finished`, observer entries) call `ctx.pushEvent(jsonDetail)` to wake a paused `receive()` in the script.
+Factory `(ctx) => handlers`. `src/state.js` opens a fresh closure per `createWorker` with handle tables (`nodes`, `bindings`, `files`, observers, animations) and `alloc` / `node` / `allocList` helpers. Eight handler slices (`tree`, `style`, `events`, `forms`, `observers`, `animations`, `media`, `platform`) each return an object literal of named handlers closing over the shared state; `src/index.js` composes them with `Object.assign`. Async callbacks call `ctx.pushEvent(jsonDetail)` to wake a paused `receive()`.
 
 Adding a handler is one entry in one slice. Nothing else changes.
 
 ## Performance
 
-Per-handler cost is one `postMessage` round-trip between the Worker (engine) and the main thread (handlers): ~0.1–0.4 ms in modern browsers. Plenty of headroom for UI-rate workloads — events, mutations, layout — at hundreds of ops per frame.
+Per-handler cost is one `postMessage` round-trip (~0.1–0.4 ms in modern browsers) — plenty for UI-rate workloads (events, mutations, layout) at hundreds of ops/frame.
 
 Bad fit: tight per-frame loops with thousands of fine-grained ops, or pixel-precise renders. Pair with a `<canvas>` capability for the framebuffer path.
 
 ## Distribution
 
-This repo serves only the JS sources. `compiler_lib.wasm` and the Edge Python runtime both come from `runtime.edgepython.com` at page load — no vendored copy here, no build step.
+JS sources only — `compiler_lib.wasm` and the runtime load from `runtime.edgepython.com` at page load. No vendored copy, no build step.
 
 ## License
 
