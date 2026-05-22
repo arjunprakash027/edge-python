@@ -1,30 +1,17 @@
 # Edge Python Host
 
-Official JS modules for [Edge Python](https://edgepython.com) that expose host APIs (DOM, …) to Python scripts. Each capability is a plain ESM that registers with `createWorker` via `mainThreadModules` — no `.wasm`, no Rust, no custom embedder.
+Official JS modules for [Edge Python](https://edgepython.com) exposing host APIs (DOM, network, storage) to Python scripts. Each capability is a plain ESM registered with `createWorker` via `mainThreadModules` — no `.wasm`, no Rust, no custom embedder.
 
 ## Layout
 
 ```
-edge-python-host/
-├── dom/
-│   ├── src/
-│   ├── web/
-│   ├── tests/
-│   └── README.md
-├── network/
-│   ├── src/
-│   ├── web/
-│   ├── tests/
-│   └── README.md
-├── storage/
-│   ├── src/
-│   ├── web/
-│   ├── tests/
-│   └── README.md
-└── static/
+dom/      — src/, web/, tests/, README.md
+network/  — src/, web/, tests/, README.md
+storage/  — src/, web/, tests/, README.md
+static/
 ```
 
-Each top-level folder is one capability.
+One folder per capability.
 
 ## Usage
 

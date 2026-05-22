@@ -1,6 +1,6 @@
 # Edge Python Storage
 
-Persistent client-side storage for Edge Python — `localStorage`, `sessionStorage`, and `IndexedDB`. Shipped as a plain ESM module that registers with `createWorker`.
+Persistent client-side storage — `localStorage`, `sessionStorage`, `IndexedDB`. Plain ESM module registered with `createWorker`.
 
 ```python
 from storage import local_set, local_get, idb_open, idb_put, idb_get
@@ -44,11 +44,11 @@ Open <http://127.0.0.1:8080/storage/web/>. No build step.
 
 ### Conventions
 
-- **Key-value handlers are sync.** `localStorage` and `sessionStorage` are blocking by spec; handlers return strings or `None`. No `await`, no `receive()`.
-- **IndexedDB handlers are async (yielding host calls).** They return a Promise on the JS side; the runtime parks the calling coro in `WaitingHostCall` until it resolves. Python sees a sync-looking call that suspends, identical to `fetch()` in [`network/`](../network/README.md).
-- **Values cross as JSON strings.** For `idb_put` / `idb_get`, encode/decode with `json.dumps` / `json.loads`. Storing structured objects directly would require crossing arbitrary types over the worker boundary — JSON is the same trade-off `dom`'s `animate` and `bind_event` make for options.
-- **Key listings are JSON arrays, not CSV.** `local_keys()` / `session_keys()` / `idb_keys(...)` return a JSON-array string (because keys can contain commas). Parse with `json.loads`.
-- **Handles are integer IDs** for IndexedDB; `local_*` / `session_*` need no handle (the global stores are addressed directly).
+- **KV handlers are sync.** `localStorage` / `sessionStorage` are blocking by spec; handlers return strings or `None`. No `await`, no `receive()`.
+- **IndexedDB handlers yield.** They return a Promise on the JS side; the runtime parks the coro in `WaitingHostCall` until resolved — same shape as `fetch()` in [`network/`](../network/README.md).
+- **Values cross as JSON strings.** Encode with `json.dumps`, decode with `json.loads`. Same trade-off `dom`'s `animate` and `bind_event` make for options.
+- **Key listings are JSON arrays** (keys can contain commas). Parse with `json.loads`.
+- **Handles are integer IDs** for IndexedDB; `local_*` / `session_*` address global stores directly (no handle).
 
 ### localStorage / sessionStorage
 
@@ -105,9 +105,9 @@ except TimeoutError:
 
 ## How it works
 
-`storage/src/index.js` is a factory `() => handlers`, the same shape `dom` and `network` use. Two handler slices (`kv`, `idb`) close over a shared `state` (just a handle table for open IDBDatabase instances) and are merged with `Object.assign`.
+`src/index.js` is a factory `() => handlers` (same shape as `dom`, `network`). Two slices (`kv`, `idb`) close over a shared `state` (a handle table for open `IDBDatabase` instances) and merge with `Object.assign`.
 
-The KV slice returns **synchronous handlers** that call `localStorage` / `sessionStorage` directly. The IDB slice returns **async handlers** that promisify each native `IDBRequest`; the runtime detects the Promise return and parks the coro until it resolves.
+KV slice returns sync handlers calling `localStorage` / `sessionStorage` directly. IDB slice returns async handlers that promisify native `IDBRequest`s; runtime detects the Promise and parks until resolved.
 
 ## License
 
