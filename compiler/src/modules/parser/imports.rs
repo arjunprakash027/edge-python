@@ -5,7 +5,7 @@ Compile-time import: Native binds to extern_table (CallExtern); Code inlines Mak
 use crate::s;
 
 use super::Parser;
-use super::types::{Diagnostic, ImportEntry, ImportKind, OpCode, SSAChunk, parse_string, ssa_strip};
+use super::types::{Diagnostic, ImportEntry, ImportKind, NativeClassEntry, OpCode, SSAChunk, parse_string, ssa_strip};
 use crate::modules::lexer::{Token, TokenType, lex};
 use crate::modules::packages::{Resolved, binding_to_extern, parse_integrity};
 use crate::util::sha256::{sha256, hex_encode};
@@ -163,7 +163,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         exports
     }
 
-    /* Named import: registers module, emits LoadModule+LoadAttr+StoreName; Native also populates extern_table. */
+    /* Named import: registers module, emits LoadModule+LoadAttr+StoreName; Native also populates extern_table for functions. */
     fn resolve_and_bind_named(&mut self, spec: &str, span: (usize, usize), names: Vec<(String, String)>) {
         let (_url, resolved) = match self.resolve_with_integrity(spec) {
             Ok(r) => r,
@@ -174,9 +174,25 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             Resolved::Native { canonical, .. } => canonical.clone(),
         };
         match resolved {
-            Resolved::Native { bindings, .. } => {
-                // Validate names exist and push into extern_table for CallExtern.
+            Resolved::Native { bindings, classes, .. } => {
+                // Register module first so LoadModule can target it for class imports.
+                let externs: Vec<crate::modules::vm::types::ExternFn> = bindings.iter().map(binding_to_extern).collect();
+                let class_entries: Vec<NativeClassEntry> = classes.iter().map(|c| NativeClassEntry {
+                    name: c.name.clone(),
+                    methods: c.methods.iter().map(binding_to_extern).collect(),
+                }).collect();
+                let import_idx = self.register_import(&url, ImportKind::Native { funcs: externs, classes: class_entries });
+                // Resolve each name: classes go via LoadModule+LoadAttr; functions take the extern_table fast path.
                 for (name, alias) in &names {
+                    if classes.iter().any(|c| c.name == *name) {
+                        self.chunk.emit(OpCode::LoadModule, import_idx);
+                        let attr_idx = self.chunk.push_name(name);
+                        self.chunk.emit(OpCode::LoadAttr, attr_idx);
+                        let alias_ver = self.increment_version(alias);
+                        let alias_slot = self.push_ssa_name(alias, alias_ver);
+                        self.chunk.emit(OpCode::StoreName, alias_slot);
+                        continue;
+                    }
                     let Some(b) = bindings.iter().find(|b| b.name == *name) else {
                         self.error_at(span.0, span.1,
                             &s!("module '", str &url, "' has no export '", str name, "'"));
@@ -186,9 +202,6 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     self.chunk.extern_table.push(binding_to_extern(b));
                     self.chunk.extern_index.insert(alias.clone(), idx);
                 }
-                // Register module for first-class module-value resolution.
-                let externs: Vec<crate::modules::vm::types::ExternFn> = bindings.iter().map(binding_to_extern).collect();
-                let _ = self.register_import(&url, ImportKind::Native(externs));
             }
             Resolved::Code { src, canonical } => {
                 let Some(sub) = self.parse_or_get_cached(&canonical, &src, span) else { return; };
@@ -219,10 +232,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             Err(msg) => { self.error_at(span.0, span.1, &msg); return; }
         };
         let import_idx = match resolved {
-            Resolved::Native { bindings, canonical } => {
+            Resolved::Native { bindings, classes, canonical } => {
                 let externs: Vec<crate::modules::vm::types::ExternFn> =
                     bindings.iter().map(binding_to_extern).collect();
-                self.register_import(&canonical, ImportKind::Native(externs))
+                let class_entries: Vec<NativeClassEntry> = classes.iter().map(|c| NativeClassEntry {
+                    name: c.name.clone(),
+                    methods: c.methods.iter().map(binding_to_extern).collect(),
+                }).collect();
+                self.register_import(&canonical, ImportKind::Native { funcs: externs, classes: class_entries })
             }
             Resolved::Code { src, canonical } => {
                 let Some(sub) = self.parse_or_get_cached(&canonical, &src, span) else { return; };
@@ -242,7 +259,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             Err(msg) => { self.error_at(span.0, span.1, &msg); return; }
         };
         match resolved {
-            Resolved::Native { bindings, canonical } => {
+            Resolved::Native { bindings, classes, canonical } => {
                 for b in &bindings {
                     let idx = self.chunk.extern_table.len() as u16;
                     self.chunk.extern_table.push(binding_to_extern(b));
@@ -250,7 +267,20 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 }
                 let externs: Vec<crate::modules::vm::types::ExternFn> =
                     bindings.iter().map(binding_to_extern).collect();
-                let _ = self.register_import(&canonical, ImportKind::Native(externs));
+                let class_entries: Vec<NativeClassEntry> = classes.iter().map(|c| NativeClassEntry {
+                    name: c.name.clone(),
+                    methods: c.methods.iter().map(binding_to_extern).collect(),
+                }).collect();
+                let import_idx = self.register_import(&canonical, ImportKind::Native { funcs: externs, classes: class_entries });
+                // Star import binds each class via LoadModule+LoadAttr+StoreName under its own name.
+                for c in &classes {
+                    self.chunk.emit(OpCode::LoadModule, import_idx);
+                    let attr_idx = self.chunk.push_name(&c.name);
+                    self.chunk.emit(OpCode::LoadAttr, attr_idx);
+                    let alias_ver = self.increment_version(&c.name);
+                    let alias_slot = self.push_ssa_name(&c.name, alias_ver);
+                    self.chunk.emit(OpCode::StoreName, alias_slot);
+                }
             }
             Resolved::Code { src, canonical } => {
                 let Some(sub) = self.parse_or_get_cached(&canonical, &src, span) else { return; };

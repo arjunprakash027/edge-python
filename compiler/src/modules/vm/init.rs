@@ -164,11 +164,21 @@ impl<'a> VM<'a> {
                 return Err(VmErr::Runtime("circular import"));
             }
             match &entry.kind {
-                ImportKind::Native(bindings) => {
-                    let mut attrs: Vec<(String, Val)> = Vec::with_capacity(bindings.len());
-                    for b in bindings {
+                ImportKind::Native { funcs, classes } => {
+                    let mut attrs: Vec<(String, Val)> = Vec::with_capacity(funcs.len() + classes.len());
+                    for b in funcs {
                         let val = self.heap.alloc(HeapObj::Extern(b.clone()))?;
                         attrs.push((b.name.clone(), val));
+                    }
+                    // Synthesise a HeapObj::Class per native class; each method becomes an Extern Val on the class.
+                    for c in classes {
+                        let mut methods: Vec<(String, Val)> = Vec::with_capacity(c.methods.len());
+                        for m in &c.methods {
+                            let mval = self.heap.alloc(HeapObj::Extern(m.clone()))?;
+                            methods.push((m.name.clone(), mval));
+                        }
+                        let cls_val = self.heap.alloc(HeapObj::Class(c.name.clone(), Vec::new(), methods))?;
+                        attrs.push((c.name.clone(), cls_val));
                     }
                     let val = self.heap.alloc(HeapObj::Module(entry.spec.clone(), attrs))?;
                     self.module_table.insert(entry.spec.clone(), val);

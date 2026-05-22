@@ -1,18 +1,26 @@
 """
-Importing a wasm-pdk module from Edge Python.
+Importing a #[plugin_class] from Edge Python.
     Build slugify_mod.wasm `cargo build --release --target wasm32-unknown-unknown -p slugify-mod`
 """
 
-from "./slugify_mod.wasm" import slugify, shout, repeat_n, sum_ints
+from "./slugify_mod.wasm" import Slugger
 
-print(slugify("Hello World"))
-print(slugify("ABC 123 def!"))
-print(shout("ok"))
-print(repeat_n("ha", 3))
-print(sum_ints([1, 2, 3, 4]))
+s = Slugger()
+s.add("Hello World")
+s.add("From Edge Python")
 
-# Errors raised inside the module surface as typed Python exceptions.
+print(s.build()) # hello-world-from-edge-python
+print(s.shout()) # HELLO-WORLD-FROM-EDGE-PYTHON!
+print(s.total_len()) # 27
+print(s.repeat(2)) # hello-world-from-edge-python hello-world-from-edge-python
+
+# Mutating state via pop; demonstrates Option<String> -> Python value.
+print(s.pop()) # python
+print(s.pop()) # edge
+print(s.build()) # hello-world-from
+
+# Result<String> error propagation surfaces as ValueError.
 try:
-    print(repeat_n("nope", -1))
+    print(s.repeat(-1))
 except ValueError as e:
     print("caught:", e)

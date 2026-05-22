@@ -4,8 +4,8 @@
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::quote;
-use syn::{parse_macro_input, FnArg, ItemFn, Pat, ReturnType};
+use quote::{quote, format_ident};
+use syn::{parse_macro_input, FnArg, ImplItem, ItemFn, ItemImpl, ItemStruct, Pat, ReturnType, Type};
 
 #[proc_macro_attribute]
 pub fn plugin_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -94,5 +94,127 @@ pub fn plugin_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
+    expanded.into()
+}
+
+/* Tags a struct as a plugin class; generates static state map and id counter under reserved __<Name>_* idents. */
+#[proc_macro_attribute]
+pub fn plugin_class(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as ItemStruct);
+    let name = input.ident.clone();
+    let upper = name.to_string().to_uppercase();
+    let state_ident = format_ident!("__{}_STATE", upper);
+    let id_ident = format_ident!("__{}_NEXT_ID", upper);
+
+    let expanded = quote! {
+        #input
+
+        #[doc(hidden)]
+        static #state_ident: ::wasm_pdk::PluginCell<::alloc::collections::BTreeMap<i64, #name>> = ::wasm_pdk::PluginCell::new();
+        #[doc(hidden)]
+        static #id_ident: ::core::sync::atomic::AtomicI64 = ::core::sync::atomic::AtomicI64::new(1);
+
+        impl #name {
+            #[doc(hidden)]
+            pub fn __edge_alloc_id() -> i64 {
+                #id_ident.fetch_add(1, ::core::sync::atomic::Ordering::Relaxed)
+            }
+
+            #[doc(hidden)]
+            pub fn __edge_state() -> &'static mut ::alloc::collections::BTreeMap<i64, #name> {
+                #state_ident.get_or_init(::alloc::collections::BTreeMap::new)
+            }
+
+            #[doc(hidden)]
+            pub fn __edge_insert(value: #name) -> i64 {
+                let id = Self::__edge_alloc_id();
+                Self::__edge_state().insert(id, value);
+                id
+            }
+        }
+    };
+    expanded.into()
+}
+
+/* Marks the constructor inside #[plugin_methods]; consumed by plugin_methods, no expansion on its own. */
+#[proc_macro_attribute]
+pub fn plugin_ctor(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
+/* Expands an impl block into __class_<Name>_<method> plugin_fn exports plus the __init__ wrapper for #[plugin_ctor]. */
+#[proc_macro_attribute]
+pub fn plugin_methods(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as ItemImpl);
+    let self_ty = match &*input.self_ty {
+        Type::Path(p) => p.path.segments.last().expect("plugin_methods: empty path").ident.clone(),
+        _ => return quote! { compile_error!("#[plugin_methods] requires a simple type path"); }.into(),
+    };
+    let class_name = self_ty.to_string();
+
+    let mut emitted: Vec<TokenStream2> = Vec::new();
+
+    for item in &input.items {
+        let ImplItem::Fn(method) = item else { continue; };
+        let is_ctor = method.attrs.iter().any(|a| a.path().is_ident("plugin_ctor"));
+        let method_name = method.sig.ident.to_string();
+        let method_ident = &method.sig.ident;
+
+        if is_ctor {
+            let export_ident = format_ident!("__class_{}___init__", class_name);
+            emitted.push(quote! {
+                #[::wasm_pdk::plugin_fn]
+                fn #export_ident(self_h: ::wasm_pdk::Handle) -> ::wasm_pdk::Result<()> {
+                    let instance = #self_ty::#method_ident();
+                    let id = #self_ty::__edge_insert(instance);
+                    let id_handle = <i64 as ::wasm_pdk::IntoValue>::into_handle(id)?;
+                    self_h.set_attr("__rust_id", &id_handle)?;
+                    Ok(())
+                }
+            });
+            continue;
+        }
+
+        let export_ident = format_ident!("__class_{}_{}", class_name, method_name);
+        let user_args: Vec<_> = method.sig.inputs.iter().skip(1).collect();
+        let user_arg_names: Vec<_> = user_args.iter().filter_map(|a| match a {
+            FnArg::Typed(pt) => match &*pt.pat { Pat::Ident(id) => Some(id.ident.clone()), _ => None },
+            _ => None,
+        }).collect();
+        let user_arg_types: Vec<_> = user_args.iter().filter_map(|a| match a {
+            FnArg::Typed(pt) => Some((*pt.ty).clone()),
+            _ => None,
+        }).collect();
+        let user_ret_ty: syn::Type = match &method.sig.output {
+            ReturnType::Default => syn::parse_quote!(()),
+            ReturnType::Type(_, t) => (**t).clone(),
+        };
+        // Detect if user method already returns Result; avoids generating Result<Result<T>>.
+        let is_user_result = matches!(&user_ret_ty, Type::Path(p)
+            if p.path.segments.last().map(|s| s.ident == "Result").unwrap_or(false));
+        let (wrapper_ret, call_expr) = if is_user_result {
+            (quote! { #user_ret_ty },
+             quote! { instance.#method_ident(#(#user_arg_names),*) })
+        } else {
+            (quote! { ::wasm_pdk::Result<#user_ret_ty> },
+             quote! { Ok(instance.#method_ident(#(#user_arg_names),*)) })
+        };
+
+        emitted.push(quote! {
+            #[::wasm_pdk::plugin_fn]
+            fn #export_ident(self_h: ::wasm_pdk::Handle #(, #user_arg_names: #user_arg_types)*) -> #wrapper_ret {
+                let id_handle = self_h.get_attr("__rust_id")?;
+                let id = <i64 as ::wasm_pdk::FromValue>::from_handle(id_handle.raw())?;
+                let state = #self_ty::__edge_state();
+                let instance = state.get_mut(&id).ok_or_else(|| ::wasm_pdk::Error::Runtime(::alloc::string::String::from("instance state missing")))?;
+                #call_expr
+            }
+        });
+    }
+
+    let expanded = quote! {
+        #input
+        #(#emitted)*
+    };
     expanded.into()
 }

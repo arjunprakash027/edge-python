@@ -15,11 +15,11 @@ fn slugify(s: String) -> String {
 
 extern crate alloc;
 
-pub use wasm_pdk_macros::plugin_fn;
+pub use wasm_pdk_macros::{plugin_fn, plugin_class, plugin_methods, plugin_ctor};
 
 /// Curated import surface; hides `__internals` / `__edge_alloc` from glob users.
 pub mod prelude {
-    pub use crate::{plugin_fn, Handle, Value, Error, Result, FromValue, IntoValue};
+    pub use crate::{plugin_fn, plugin_class, plugin_methods, plugin_ctor, Handle, Value, Error, Result, FromValue, IntoValue, PluginCell};
 }
 
 /* Plugin bootstrap */
@@ -441,4 +441,47 @@ impl Handle {
         let h = Handle::from_raw(out);
         i64::from_handle(h.raw())
     }
+
+    /// `recv.<name> = value`; SET_ATTR returns None which we release immediately.
+    pub fn set_attr(&self, name: &str, value: &Handle) -> Result<()> {
+        let argv = [value.raw];
+        let mut out: u32 = 0;
+        let r = unsafe {
+            edge_op(
+                op::SET_ATTR, self.raw,
+                name.as_ptr(), name.len() as u32,
+                argv.as_ptr(), 1,
+                &mut out as *mut u32,
+            )
+        };
+        if r != 0 { return Err(last_error()); }
+        let _ = Handle::from_raw(out);
+        Ok(())
+    }
+}
+
+/* Plugin-class state helpers */
+
+/// Single-threaded interior-mutable cell for static plugin state; Sync because WASM has no threads.
+pub struct PluginCell<T>(core::cell::UnsafeCell<Option<T>>);
+
+unsafe impl<T> Sync for PluginCell<T> {}
+
+impl<T> PluginCell<T> {
+    /// Const constructor for static initialization.
+    pub const fn new() -> Self { Self(core::cell::UnsafeCell::new(None)) }
+
+    /// Unsafe getter; caller must ensure no overlapping &mut borrows across reentrant edge_op calls.
+    #[allow(clippy::mut_from_ref)]
+    pub fn get_or_init<F: FnOnce() -> T>(&self, init: F) -> &mut T {
+        unsafe {
+            let ptr = self.0.get();
+            if (*ptr).is_none() { *ptr = Some(init()); }
+            (*ptr).as_mut().unwrap()
+        }
+    }
+}
+
+impl<T> Default for PluginCell<T> {
+    fn default() -> Self { Self::new() }
 }

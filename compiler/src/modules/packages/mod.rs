@@ -28,11 +28,18 @@ impl NativeBinding {
     }
 }
 
-/* Resolver result: Code splices .py defs; Native registers extern bindings. canonical dedupes diamond imports by resolved path. */
+/* Native class definition; methods become Extern values inside a HeapObj::Class built at init time. */
+#[derive(Clone)]
+pub struct NativeClass {
+    pub name: String,
+    pub methods: Vec<NativeBinding>,
+}
+
+/* Resolver result: Code splices .py defs; Native registers extern bindings and classes. canonical dedupes diamond imports by resolved path. */
 #[derive(Clone)]
 pub enum Resolved {
     Code { src: alloc::string::String, canonical: alloc::string::String },
-    Native { bindings: Vec<NativeBinding>, canonical: alloc::string::String },
+    Native { bindings: Vec<NativeBinding>, classes: Vec<NativeClass>, canonical: alloc::string::String },
 }
 
 /* Host-injected trait; resolve called once per import statement. &mut self allows internal caching. */

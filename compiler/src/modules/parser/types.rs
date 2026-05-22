@@ -99,10 +99,17 @@ pub struct ImportEntry {
     pub kind: ImportKind,
 }
 
+/* Synthesised class spec: name + method externs; init.rs builds a HeapObj::Class from this. */
+#[derive(Clone)]
+pub struct NativeClassEntry {
+    pub name: String,
+    pub methods: Vec<crate::modules::vm::types::ExternFn>,
+}
+
 #[derive(Clone)]
 pub enum ImportKind {
     Code(alloc::rc::Rc<SSAChunk>),
-    Native(Vec<crate::modules::vm::types::ExternFn>),
+    Native { funcs: Vec<crate::modules::vm::types::ExternFn>, classes: Vec<NativeClassEntry> },
 }
 
 // SSA chunk: instructions, constant/name pools, Phi metadata, nested functions/classes.
