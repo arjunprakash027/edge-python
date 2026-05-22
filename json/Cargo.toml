@@ -1,7 +1,18 @@
 [package]
-name = "edge-python-stdpkg"
+name = "json"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+crate-type = ["cdylib"]
+
 [dependencies]
-compiler-lib = { git = "https://github.com/dylan-sutton-chavez/edge-python", branch = "main" }
+wasm-pdk = { git = "https://github.com/dylan-sutton-chavez/edge-python", tag = "v0.1.0" }
+linked_list_allocator = { version = "0.10", default-features = false }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

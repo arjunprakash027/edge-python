@@ -1,0 +1,114 @@
+[
+  {
+    "src": "print(loads('null'))",
+    "output": ["None"]
+  },
+  {
+    "src": "print(loads('true'))\nprint(loads('false'))",
+    "output": ["True", "False"]
+  },
+  {
+    "src": "print(loads('42'))\nprint(loads('-17'))",
+    "output": ["42", "-17"]
+  },
+  {
+    "src": "print(loads('1.5'))",
+    "output": ["1.5"]
+  },
+  {
+    "src": "print(loads('\"hello\"'))",
+    "output": ["hello"]
+  },
+  {
+    "src": "print(loads('[1,2,3]'))",
+    "output": ["[1, 2, 3]"]
+  },
+  {
+    "src": "d = loads('{\"a\":1,\"b\":2}')\nprint(d['a'])\nprint(d['b'])",
+    "output": ["1", "2"]
+  },
+  {
+    "src": "v = loads('{\"nested\":{\"x\":[1,2]}}')\nprint(v['nested']['x'][0])\nprint(v['nested']['x'][1])",
+    "output": ["1", "2"]
+  },
+  {
+    "src": "print(loads('\"a\\\\nb\"'))",
+    "output": ["a\nb"]
+  },
+  {
+    "src": "print(dumps(None))",
+    "output": ["null"]
+  },
+  {
+    "src": "print(dumps(True))\nprint(dumps(False))",
+    "output": ["true", "false"]
+  },
+  {
+    "src": "print(dumps(42))\nprint(dumps(-17))",
+    "output": ["42", "-17"]
+  },
+  {
+    "src": "print(dumps(1.5))",
+    "output": ["1.5"]
+  },
+  {
+    "src": "print(dumps('hello'))",
+    "output": ["\"hello\""]
+  },
+  {
+    "src": "print(dumps('a\"b'))",
+    "output": ["\"a\\\"b\""]
+  },
+  {
+    "src": "print(dumps([1,2,3]))",
+    "output": ["[1,2,3]"]
+  },
+  {
+    "src": "print(dumps((1,2,3)))",
+    "output": ["[1,2,3]"]
+  },
+  {
+    "src": "print(dumps({'a':1}))",
+    "output": ["{\"a\":1}"]
+  },
+  {
+    "src": "print(dumps({'a':[1,2],'b':None}))",
+    "output": ["{\"a\":[1,2],\"b\":null}"]
+  },
+  {
+    "src": "print(dumps(loads('[1,2,3]')))",
+    "output": ["[1,2,3]"]
+  },
+  {
+    "src": "print(dumps(loads('{\"k\":\"v\"}')))",
+    "output": ["{\"k\":\"v\"}"]
+  },
+  {
+    "src": "loads('tru')",
+    "error": "unknown literal"
+  },
+  {
+    "src": "loads('\"abc')",
+    "error": "unterminated string"
+  },
+  {
+    "src": "loads('1 2')",
+    "error": "trailing data"
+  },
+  {
+    "src": "loads('[1,]')",
+    "error": "unexpected"
+  },
+  {
+    "src": "loads('{1:2}')",
+    "error": "object key must be a string"
+  },
+  {
+    "src": "for i in range(200):\n    loads('[1,2,3]')\nprint('ok')",
+    "output": ["ok"]
+  },
+  {
+    "src": "big = '[' + ('1,' * 500) + '1]'\nfor i in range(2000):\n    loads(big)\nprint('ok')",
+    "output": ["ok"]
+  }
+]
