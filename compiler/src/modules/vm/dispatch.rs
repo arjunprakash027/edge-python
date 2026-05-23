@@ -170,7 +170,7 @@ impl<'a> VM<'a> {
                 match self.dispatch(chunk, slots, &mut cache, insns, consts, &mut ip) {
                     Ok(None) => {
                         if self.yielded {
-                            // Event yields keep the None placeholder (overwritten by `run_push_event` before resume). Sync sub-call yields pushed nothing — the helper's return lands on the stack when its frame completes — so don't pop and don't skip the next PopTop. Child-wait yields keep the placeholder (wake-loop overwrites it with the target's result). Host-call yields keep the placeholder (overwritten by `set_host_result`).
+                            // Event yields keep the None placeholder (overwritten by `run_push_event` before resume). Sync sub-call yields pushed nothing, the helper's return lands on the stack when its frame completes, so don't pop and don't skip the next PopTop. Child-wait yields keep the placeholder (wake-loop overwrites it with the target's result). Host-call yields keep the placeholder (overwritten by `set_host_result`).
                             let event_yield = self.pending.event_wait_request;
                             let sub_call_yield = !self.pending_sync_frames.is_empty();
                             let child_yield = self.pending.waiting_for_children.is_some();
@@ -178,7 +178,7 @@ impl<'a> VM<'a> {
                             let val = if event_yield || sub_call_yield || child_yield || host_yield { Val::none() } else { self.pop().unwrap_or(Val::none()) };
                             self.resume_ip = if !event_yield && !sub_call_yield && !child_yield && !host_yield && ip < n && matches!(insns.get(ip), Some(ins) if ins.opcode == OpCode::PopTop) { ip + 1 } else { ip };
                             self.live_slots.truncate(slots_base);
-                            // DON'T truncate exception_stack here — frames pushed in this exec belong to active try/except blocks; the enclosing `resume_coroutine` drains them into the coroutine's saved state so `try` survives the yield.
+                            // DON'T truncate exception_stack here, frames pushed in this exec belong to active try/except blocks; the enclosing `resume_coroutine` drains them into the coroutine's saved state so `try` survives the yield.
                             return Ok(val);
                         }
                     }
@@ -188,7 +188,7 @@ impl<'a> VM<'a> {
                         return Ok(v);
                     }
                     Err(e) => {
-                        // HostYield is a control-flow signal, not a Python exception — bypass try/except.
+                        // HostYield is a control-flow signal, not a Python exception, bypass try/except.
                         if matches!(e, VmErr::HostYield(_)) {
                             return Err(e);
                         }
@@ -301,7 +301,7 @@ impl<'a> VM<'a> {
                 Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")))
             }
             handlers::methods::AttrLookup::PropertyGet { recv, getter } => {
-                // Materialise the value first, then call it with the user's args — `foo.prop(arg)` where `prop` returns a callable.
+                // Materialise the value first, then call it with the user's args, `foo.prop(arg)` where `prop` returns a callable.
                 if self.depth >= self.max_calls { return Err(cold_depth()); }
                 self.push(getter);
                 self.push(recv);
@@ -350,7 +350,7 @@ impl<'a> VM<'a> {
 
             // Hot opcodes.
             OpCode::LoadName => {
-                // Single u64 compare for unbound-slot detection — no Option.
+                // Single u64 compare for unbound-slot detection, no Option.
                 let v = slots[op as usize];
                 if v.is_undef() {
                     return Err(VmErr::Name(ssa_strip(&chunk.names[op as usize]).into()));
@@ -417,7 +417,7 @@ impl<'a> VM<'a> {
 
             // Warm opcodes.
             OpCode::GetItem => {
-                // `Series[i]`-style hot loop — bypass `resolve_attr_silent("__getitem__")` once the site is monomorphic.
+                // `Series[i]`-style hot loop, bypass `resolve_attr_silent("__getitem__")` once the site is monomorphic.
                 if let Some(inst) = cache.get_inst(rip) {
                     match self.exec_inst(inst, chunk, slots)? {
                         FastOutcome::Done => return Ok(None),
@@ -623,7 +623,7 @@ impl<'a> VM<'a> {
 
     #[inline(never)]
     fn exec_arith_or_compare(&mut self, opcode: OpCode, rip: usize, cache: &mut OpcodeCache, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
-        // Scalar IC fast-path (Div/Pow/Minus skip — Float-only / overflow-prone).
+        // Scalar IC fast-path (Div/Pow/Minus skip, Float-only / overflow-prone).
         if !matches!(opcode, OpCode::Div | OpCode::Pow | OpCode::Minus)
             && let Some(fast) = cache.get_fast(rip)
         {

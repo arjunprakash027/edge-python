@@ -4,7 +4,7 @@ Built-in methods for `str` receivers. Arity is checked by the dispatcher.
 
 use super::prelude::*;
 
-// `str.encode([encoding])` — UTF-8/ASCII only; other names error to block silent mismatches.
+// `str.encode([encoding])`, UTF-8/ASCII only; other names error to block silent mismatches.
 pub fn encode(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let s = recv_str(vm, recv)?;
     if let Some(arg) = pos.first() {
@@ -168,7 +168,7 @@ pub fn replace(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     vm.push(v); Ok(())
 }
 
-// `str.removeprefix` / `removesuffix` — strip if present, else return unchanged.
+// `str.removeprefix` / `removesuffix`, strip if present, else return unchanged.
 pub fn removeprefix(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let s = recv_str(vm, recv)?;
     let p = val_to_str(vm, pos[0])?;
@@ -185,7 +185,7 @@ pub fn removesuffix(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     vm.push(v); Ok(())
 }
 
-// `str.splitlines()` — split on \n / \r / \r\n, dropping the separator (keepends=False).
+// `str.splitlines()`, split on \n / \r / \r\n, dropping the separator (keepends=False).
 pub fn splitlines(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
     let s = recv_str(vm, recv)?;
     let mut parts: Vec<Val> = Vec::new();
@@ -202,7 +202,7 @@ pub fn splitlines(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
     vm.alloc_and_push_list(parts)
 }
 
-// `str.partition` / `rpartition` — (head, sep, tail); on miss returns (s,"","") / ("","",s).
+// `str.partition` / `rpartition`, (head, sep, tail); on miss returns (s,"","") / ("","",s).
 pub fn partition(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let s = recv_str(vm, recv)?;
     let sep = val_to_str(vm, pos[0])?;

@@ -7,7 +7,7 @@ use super::super::types::*;
 
 impl<'a> VM<'a> {
 
-    /* `bytes_fromhex(s)` — hex string -> bytes; tolerates whitespace, errors on odd length / non-hex. */
+    /* `bytes_fromhex(s)`, hex string -> bytes; tolerates whitespace, errors on odd length / non-hex. */
     pub fn call_bytes_fromhex(&mut self) -> Result<(), VmErr> {
         let v = self.pop()?;
         let s = match self.heap.get(v) {
@@ -31,7 +31,7 @@ impl<'a> VM<'a> {
         self.push(v); Ok(())
     }
 
-    /* `int_from_bytes(b, byteorder)` — unsigned bytes -> int ("big"/"little"). Up to 8 bytes (u64); values above 47-bit Val auto-promote to LongInt. */
+    /* `int_from_bytes(b, byteorder)`, unsigned bytes -> int ("big"/"little"). Up to 8 bytes (u64); values above 47-bit Val auto-promote to LongInt. */
     pub fn call_int_from_bytes(&mut self) -> Result<(), VmErr> {
         let order = self.pop()?;
         let v = self.pop()?;
@@ -61,7 +61,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    // `int_to_bytes(n, length, byteorder)` — non-negative int -> bytes of `length`; errors if it overflows.
+    // `int_to_bytes(n, length, byteorder)`, non-negative int -> bytes of `length`; errors if it overflows.
     pub fn call_int_to_bytes(&mut self) -> Result<(), VmErr> {
         let order = self.pop()?;
         let length = self.pop()?;
@@ -95,7 +95,7 @@ impl<'a> VM<'a> {
         self.push(v); Ok(())
     }
 
-    // `import_module(name)` — fetch an already-imported module by alias; returns its `HeapObj::Module` Val.
+    // `import_module(name)`, fetch an already-imported module by alias; returns its `HeapObj::Module` Val.
     pub fn call_import_module(&mut self) -> Result<(), VmErr> {
         let spec = self.pop()?;
         if !spec.is_heap() {
@@ -105,7 +105,7 @@ impl<'a> VM<'a> {
             HeapObj::Str(s) => s.clone(),
             _ => return Err(cold_type("import_module() argument must be a string")),
         };
-        // Parser stores top-level bindings as both `name` and `name_0` — try both so the user's alias matches.
+        // Parser stores top-level bindings as both `name` and `name_0`, try both so the user's alias matches.
         let val = self.globals.get(&name)
             .or_else(|| self.globals.get(&s!(str &name, "_0")))
             .copied()

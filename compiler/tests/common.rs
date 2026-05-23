@@ -1,5 +1,5 @@
 /*
-Test infra for the `packages` system: TestResolver (modules + nested manifests, walk-up parity with the WASM bridge), `test_native(name)` lookup, and fixture functions covering pure/impure, alloc, error, and primitive round-trip paths. Test-only. 
+Test infra for `packages`: TestResolver (modules + nested manifests, walk-up parity), `test_native(name)`, fixtures for pure/impure/alloc/error/primitive paths.
 */
 
 #![allow(dead_code)]
@@ -186,9 +186,9 @@ impl TestResolver {
     }
 }
 
-// Fixture functions. Third arg is the kwargs slot (`None` for plain positional calls); these fixtures don't accept kwargs so they ignore it.
+// Fixture functions. Third arg is the kwargs slot (`None` for positional calls); these fixtures ignore it.
 
-/* Pure: a + b — exercises CallExtern dispatch, arg marshalling, and template memo. */
+/* Pure: a + b, exercises CallExtern dispatch, arg marshalling, and template memo. */
 fn add(_: &mut HeapPool, args: &[Val], _kw: Option<Val>) -> Result<Val, VmErr> {
     if args.len() != 2 { return Err(VmErr::Type("add: expected 2 args")); }
     let a = if args[0].is_int() { args[0].as_int() } else { return Err(VmErr::Type("add: arg 0 not int")); };

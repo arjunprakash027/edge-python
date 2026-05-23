@@ -13,7 +13,7 @@ pub mod io;
 pub mod numeric;
 pub mod sequence;
 
-/* Parent map for built-in exception types, walked by `matches_exc_class`. Only the standard tree is encoded — user classes stay flat. */
+/* Parent map for built-in exception types, walked by `matches_exc_class`. Only the standard tree is encoded, user classes stay flat. */
 const EXC_PARENTS: &[(&str, &str)] = &[
     ("RuntimeError", "Exception"),
     ("ValueError", "Exception"),

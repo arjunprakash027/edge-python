@@ -569,7 +569,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.chunk.instructions[skip_cleanup_jump].operand = end_label as u16;
     }
 
-    /* Delegates to imports.rs; compile-time only — no import opcodes reach the VM. */
+    /* Delegates to imports.rs; compile-time only, no import opcodes reach the VM. */
 
     pub(super) fn import_stmt(&mut self) {
         self.do_import_stmt();

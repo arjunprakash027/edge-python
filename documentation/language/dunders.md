@@ -23,24 +23,24 @@ print(V(3) == V(3))
 True
 ```
 
-Dunders are looked up on the class chain (instance dict skipped). Subclasses inherit and may override — operator overloading composes with [single-level inheritance](/language/classes#inheritance-and-super). Monomorphic sites (same class for both operands) promote through the IC after 4 hits and bypass lookup entirely.
+Dunders are looked up on the class chain (instance dict skipped). Subclasses inherit and may override, operator overloading composes with [single-level inheritance](/language/classes#inheritance-and-super). Monomorphic sites (same class for both operands) promote through the IC after 4 hits and bypass lookup entirely.
 
 ## Arithmetic
 
-| Operator | Forward         | Reflected        |
+| Operator | Forward | Reflected |
 |----------|-----------------|------------------|
-| `a + b`  | `__add__`       | `__radd__`       |
-| `a - b`  | `__sub__`       | `__rsub__`       |
-| `a * b`  | `__mul__`       | `__rmul__`       |
-| `a / b`  | `__truediv__`   | `__rtruediv__`   |
-| `a // b` | `__floordiv__`  | `__rfloordiv__`  |
-| `a % b`  | `__mod__`       | `__rmod__`       |
-| `a ** b` | `__pow__`       | `__rpow__`       |
-| `-a`     | `__neg__`       | —                |
+| `a + b` | `__add__` | `__radd__` |
+| `a - b` | `__sub__` | `__rsub__` |
+| `a * b` | `__mul__` | `__rmul__` |
+| `a / b` | `__truediv__` | `__rtruediv__` |
+| `a // b` | `__floordiv__` | `__rfloordiv__` |
+| `a % b` | `__mod__` | `__rmod__` |
+| `a ** b` | `__pow__` | `__rpow__` |
+| `-a` | `__neg__` |, |
 
 Returning `NotImplemented` from the forward op tells the VM to try the reflected op on the other operand. Both `NotImplemented` (or neither defined) -> `TypeError`.
 
-Subclass-first: when `type(b)` is a strict subclass of `type(a)`, `b.__radd__` runs before `a.__add__` — lets a subclass override an inherited reflected op without touching the base.
+Subclass-first: when `type(b)` is a strict subclass of `type(a)`, `b.__radd__` runs before `a.__add__`, lets a subclass override an inherited reflected op without touching the base.
 
 ```python
 class Money:
@@ -61,16 +61,16 @@ print((3 + Money(7)).n)
 
 ## Comparison
 
-| Operator   | Forward     | Reflected  |
+| Operator | Forward | Reflected |
 |------------|-------------|------------|
-| `a == b`   | `__eq__`    | `__eq__`   |
-| `a != b`   | `__eq__`    | `__eq__`   |
-| `a < b`    | `__lt__`    | `__gt__`   |
-| `a <= b`   | `__le__`    | `__ge__`   |
-| `a > b`    | `__gt__`    | `__lt__`   |
-| `a >= b`   | `__ge__`    | `__le__`   |
+| `a == b` | `__eq__` | `__eq__` |
+| `a != b` | `__eq__` | `__eq__` |
+| `a < b` | `__lt__` | `__gt__` |
+| `a <= b` | `__le__` | `__ge__` |
+| `a > b` | `__gt__` | `__lt__` |
+| `a >= b` | `__ge__` | `__le__` |
 
-`!=` falls back to `not __eq__` when `__ne__` is absent. Results coerce to `bool` — `__lt__` returning `'A.lt'` yields `True`, not the string.
+`!=` falls back to `not __eq__` when `__ne__` is absent. Results coerce to `bool`, `__lt__` returning `'A.lt'` yields `True`, not the string.
 
 ## Truth and length
 
@@ -105,12 +105,12 @@ False True
 
 ## Indexing and containment
 
-| Form                | Dunder           | Arguments              |
+| Form | Dunder | Arguments |
 |---------------------|------------------|------------------------|
-| `obj[i]`            | `__getitem__`    | `(self, i)`            |
-| `obj[i] = v`        | `__setitem__`    | `(self, i, value)`     |
-| `del obj[i]`        | `__delitem__`    | `(self, i)`            |
-| `v in obj`          | `__contains__`   | `(self, value)`        |
+| `obj[i]` | `__getitem__` | `(self, i)` |
+| `obj[i] = v` | `__setitem__` | `(self, i, value)` |
+| `del obj[i]` | `__delitem__` | `(self, i)` |
+| `v in obj` | `__contains__` | `(self, value)` |
 
 Slices pass as a `slice` object: `obj[1:3]` calls `__getitem__(self, slice(1, 3, None))`.
 
@@ -118,10 +118,10 @@ Absent `__contains__`: `v in obj` falls back to iterating `obj` with `__eq__`.
 
 ## Iteration
 
-| Method        | Role                                                                 |
+| Method | Role |
 |---------------|----------------------------------------------------------------------|
-| `__iter__`    | Returns an iterator (often `self`).                                  |
-| `__next__`    | Returns the next item, or raises `StopIteration` to end the loop.    |
+| `__iter__` | Returns an iterator (often `self`). |
+| `__next__` | Returns the next item, or raises `StopIteration` to end the loop. |
 
 ```python
 class Up:
@@ -168,7 +168,7 @@ True
 
 `hash(x)` calls `__hash__`; must return `int` (masked to `INT_MAX`).
 
-Eq/hash invariant: a class defining `__eq__` without `__hash__` is unhashable — `hash(x)` and `{x: 1}` raise `TypeError`. Prevents inconsistent dict keys.
+Eq/hash invariant: a class defining `__eq__` without `__hash__` is unhashable, `hash(x)` and `{x: 1}` raise `TypeError`. Prevents inconsistent dict keys.
 
 ```python
 class K:
@@ -191,13 +191,13 @@ Built-in dict/set still compare instance keys by identity (`Val` bits); user `__
 
 ## Representation
 
-| Function / form     | Dunder        | Fallback                    |
+| Function / form | Dunder | Fallback |
 |---------------------|---------------|-----------------------------|
-| `repr(x)`           | `__repr__`    | `<ClassName instance>`      |
-| `str(x)`, `print(x)`| `__str__`     | `__repr__`, then default    |
-| `f"{x}"` (no spec)  | `__str__`     | same as `str(x)`            |
-| `f"{x:spec}"`       | `__format__`  | built-in format spec engine |
-| `f"{x!r}"`          | `__repr__`    | —                           |
+| `repr(x)` | `__repr__` | `<ClassName instance>` |
+| `str(x)`, `print(x)`| `__str__` | `__repr__`, then default |
+| `f"{x}"` (no spec) | `__str__` | same as `str(x)` |
+| `f"{x:spec}"` | `__format__` | built-in format spec engine |
+| `f"{x!r}"` | `__repr__` |, |
 
 `__format__(spec)` receives the spec string and must return `str`.
 
@@ -224,7 +224,7 @@ Existing attributes bypass `__getattr__`; only misses trigger it.
 
 ## Context managers
 
-`with cm() as x:` invokes `__enter__`; its return binds to `as`. On exit, `__exit__(exc_type, exc_value, traceback)` runs — `(None, None, None)` for normal exit, live exception info on raise. Truthy return suppresses; falsy propagates.
+`with cm() as x:` invokes `__enter__`; its return binds to `as`. On exit, `__exit__(exc_type, exc_value, traceback)` runs, `(None, None, None)` for normal exit, live exception info on raise. Truthy return suppresses; falsy propagates.
 
 ```python
 class Suppress:
@@ -242,7 +242,7 @@ print("after")
 after
 ```
 
-Multiple managers (`with a(), b() as x:`) nest LIFO — `b` enters last, exits first. Each has its own implicit handler, so inner suppression still lets outer managers run their normal `__exit__(None, None, None)`.
+Multiple managers (`with a(), b() as x:`) nest LIFO, `b` enters last, exits first. Each has its own implicit handler, so inner suppression still lets outer managers run their normal `__exit__(None, None, None)`.
 
 If `__exit__` itself raises, the new exception replaces the original.
 
@@ -251,8 +251,8 @@ If `__exit__` itself raises, the new exception replaces the original.
 Parsed for compatibility but never invoked on user classes:
 
 - `__init_subclass__`, `__set_name__`, descriptors (`__get__` / `__set__` / `__delete__`)
-- `__new__` — VM constructs the instance; `__init__` runs user logic
-- Augmented-assignment dunders (`__iadd__`, ...) — `a += b` desugars to `a = a + b`, so `__add__` covers it
-- Async dunders (`__aenter__` / `__aexit__` / `__aiter__` / `__anext__`) — `async with` / `async for` use the sync paths
+- `__new__`, VM constructs the instance; `__init__` runs user logic
+- Augmented-assignment dunders (`__iadd__`, ...), `a += b` desugars to `a = a + b`, so `__add__` covers it
+- Async dunders (`__aenter__` / `__aexit__` / `__aiter__` / `__anext__`), `async with` / `async for` use the sync paths
 
 For class basics (constructors, inheritance, properties), see [Classes](/language/classes).

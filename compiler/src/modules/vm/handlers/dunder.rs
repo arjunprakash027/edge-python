@@ -1,5 +1,5 @@
-/* 
-Dunder dispatch protocol: probe an instance method, invoke with `self` prepended, treat `NotImplemented` as a miss so reflected ops / generic fallbacks take over. 
+/*
+Dunder dispatch: probe instance method, invoke with `self` prepended; `NotImplemented` triggers reflected/fallback dispatch.
 */
 
 use super::*;

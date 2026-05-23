@@ -3,7 +3,7 @@ title: "Functions"
 description: "First-class functions, lambdas, closures, generators."
 ---
 
-Functions are the central abstraction — values that can be passed, returned, stored, composed.
+Functions are the central abstraction, values that can be passed, returned, stored, composed.
 
 ## def
 
@@ -78,7 +78,7 @@ print(opts(host="api", port=443))
 
 ### Keyword-only parameters
 
-A bare `*` marks every following parameter as keyword-only — positional args never reach them.
+A bare `*` marks every following parameter as keyword-only, positional args never reach them.
 
 ```python
 def connect(host, *, port=80, secure=False):
@@ -142,7 +142,7 @@ Hi, world
 
 ## First-class functions
 
-Functions are values — store, pass, return.
+Functions are values, store, pass, return.
 
 ```python
 ops = [abs, len, str]
@@ -452,7 +452,7 @@ print(base(5))
 12
 ```
 
-Parameterised decorators are factories — a function taking decorator args and returning the actual decorator. The wrapped function captures both scopes.
+Parameterised decorators are factories, a function taking decorator args and returning the actual decorator. The wrapped function captures both scopes.
 
 ```python
 def repeat(n):

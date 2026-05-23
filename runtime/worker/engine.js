@@ -1,5 +1,6 @@
 /*
-Engine orchestrator. Internal to the Worker — consumers go through `createWorker` in `src/index.js`. Lifecycle: `load` once -> many `run` cycles -> `dispose`. Each run instantiates compiler_lib fresh so prior-run state cannot leak.
+Engine orchestrator. Internal to the Worker; consumers use `createWorker` in `src/index.js`.
+Lifecycle: `load` once -> many `run` cycles -> `dispose`. Each run instantiates compiler_lib fresh, no state leak.
 */
 
 import { MemoryCache } from '../src/cache/memory.js';
@@ -37,7 +38,7 @@ const pendingEvents = [];
 let pendingHostCall = null;
 /* (name, args) => Promise<value>. Set by worker.js (postMessage round-trip) or by a main-thread embedder. */
 let hostCallDelegate = null;
-// Source/missing caches persist across runs so the BFS doesn't re-fetch every module — and especially doesn't re-probe 404'd `packages.json` paths — on every Run-button press. Wiped by `clearCache()`.
+// Source/missing caches persist across runs so the BFS skips refetching modules and re-probing 404'd `packages.json` paths on every Run press. Wiped by `clearCache()`.
 const fetchedSources = new Map();
 const knownMissing = new Set();
 /* Synthetic native modules (handlers live on main thread). Re-applied at every `run` since `resetNativeTable` clears them. */
@@ -167,7 +168,7 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
         } else if (kind === STATUS_PENDING_FRAME) {
             await new Promise(r => requestAnimationFrame(r));
         } else if (kind === STATUS_PENDING_EVENT) {
-            // Drain any events buffered before the VM became ready. `inject_event` wakes the waiter on the first one and queues the rest for subsequent `receive()` calls; either way no `await` is needed.
+            // Drain events buffered before VM was ready. `inject_event` wakes the waiter on the first and queues the rest for later `receive()` calls, no `await` needed.
             let injected = 0;
             while (pendingEvents.length > 0 && injectEvent(pendingEvents[0])) {
                 pendingEvents.shift();
@@ -186,7 +187,7 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
             const rv = exports.set_host_result(handle);
             if (rv !== 0) throw new Error(`set_host_result returned ${rv} for '${call.module}.${call.name}'`);
         } else {
-            // Unknown kind — bail out instead of looping forever.
+            // Unknown kind, bail out instead of looping forever.
             break;
         }
 
@@ -217,7 +218,7 @@ function injectEvent(message) {
     return status === 0;
 }
 
-/* Push a string into the VM's event queue; wakes `receive()`. Buffers if the VM isn't paused on PENDING_EVENT yet — the driver loop drains the buffer at the next yield, so callers never need to know about the VM's readiness window. */
+/* Push a string into the VM's event queue; wakes `receive()`. Buffers if the VM isn't paused on PENDING_EVENT yet, the driver loop drains the buffer at the next yield, so callers never need to know about the VM's readiness window. */
 export function pushEvent(message) {
     const msg = String(message);
     if (!injectEvent(msg)) {

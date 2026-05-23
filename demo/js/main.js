@@ -11,7 +11,7 @@ const ENTRY_DIR = ENTRY_PATH.slice(0, ENTRY_PATH.lastIndexOf('/') + 1);
 const DEV = !['demo.edgepython.com'].includes(location.hostname);
 const FETCH_OPTS = DEV ? { cache: 'no-store' } : {};
 
-/* Dev/prod switch for the runtime JS — local checkout when developing, edge-python-runtime in production. Mirrors the Tailwind switch in index.html; keeps the same dev-edit-refresh loop without bundling. */
+/* Dev/prod switch for runtime JS: local checkout in dev, edge-python-runtime in prod. Mirrors index.html's Tailwind switch, preserves dev-edit-refresh loop without bundling. */
 const RUNTIME_URL = DEV
     ? '../../runtime/src/index.js'
     : 'https://runtime.edgepython.com/js/src/index.js';

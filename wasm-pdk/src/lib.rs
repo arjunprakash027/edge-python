@@ -71,7 +71,7 @@ pub extern "C" fn __edge_abi_version() -> u32 { EDGE_ABI_VERSION }
 
 pub use wasm_abi::{op, tag};
 
-/* Internals — macro contract surface, not user API */
+/* Internals, macro contract surface, not user API */
 
 /// Hidden module so `use wasm_pdk::*;` cannot leak the macro contract symbols.
 #[doc(hidden)]
@@ -206,7 +206,7 @@ impl Kwargs {
         }
     }
 
-    /// Borrow the value for `name` as a raw `Handle`. Returns `Ok(None)` if absent. Use for callables, tuples, lists, dicts — anything `get::<T>` can't decode.
+    /// Borrow the value for `name` as a raw `Handle`. Returns `Ok(None)` if absent. Use for callables, tuples, lists, dicts, anything `get::<T>` can't decode.
     pub fn get_handle(&self, name: &str) -> Result<Option<Handle>> {
         let Some(dict) = self.0.as_ref() else { return Ok(None); };
         let key = encode(Value::Bytes(name.as_bytes().to_vec()))?;
@@ -425,7 +425,7 @@ impl Handle {
         Ok(Handle::from_raw(out))
     }
 
-    /// `recv.<name>` — read attribute or bind builtin method.
+    /// `recv.<name>`, read attribute or bind builtin method.
     pub fn get_attr(&self, name: &str) -> Result<Handle> {
         let mut out: u32 = 0;
         let r = unsafe {

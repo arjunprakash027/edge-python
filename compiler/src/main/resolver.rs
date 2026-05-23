@@ -7,7 +7,7 @@ use super::{ModuleEntry, host_fetch_bytes, with_runtime};
 use super::abi_bridge::make_native_binding;
 use super::exports::wasm_free;
 
-// Cap on packages.json `extends` chain — bounds attacker-crafted loops; 32 dwarfs real workspace depth.
+// Cap on packages.json `extends` chain, bounds attacker-crafted loops; 32 dwarfs real workspace depth.
 const MAX_PACKAGES_HOPS: u32 = 32;
 
 pub(super) struct WasmHostResolver { pub(super) dir: String }
@@ -100,7 +100,7 @@ impl WasmHostResolver {
         }) {
             return Ok(Some(hit));
         }
-        // Walk-up fetch — manifests aren't pinned by URL fragment, so no hash.
+        // Walk-up fetch, manifests aren't pinned by URL fragment, so no hash.
         let bytes = match self.fetch_bytes(m_spec, None) {
             Ok(b) => b,
             Err(_) => return Ok(None),

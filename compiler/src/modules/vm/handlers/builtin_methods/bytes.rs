@@ -4,7 +4,7 @@ Built-in methods for `bytes` receivers. Arity is checked by the dispatcher.
 
 use super::prelude::*;
 
-// `bytes.decode([encoding])` — invalid UTF-8 errors as ValueError.
+// `bytes.decode([encoding])`, invalid UTF-8 errors as ValueError.
 pub fn decode(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let buf = recv_bytes(vm, recv)?;
     if let Some(arg) = pos.first() {
@@ -19,7 +19,7 @@ pub fn decode(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     vm.push(v); Ok(())
 }
 
-// `bytes.hex()` — lowercase hex of every byte. No separator.
+// `bytes.hex()`, lowercase hex of every byte. No separator.
 pub fn hex(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
     let buf = recv_bytes(vm, recv)?;
     let mut out = alloc::string::String::with_capacity(buf.len() * 2);

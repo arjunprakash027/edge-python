@@ -1,6 +1,6 @@
-/* 
-JSON-driven runner for the `packages` subsystem (imports, resolver, CallExtern, code-module inlining).
-See `cases/packages.json` for the case schema (src, output, error, input, modules, manifests, and optional chunk-shape assertions: expect_externs, expect_functions, error_span_covers). 
+/*
+JSON-driven runner for `packages` (imports, resolver, CallExtern, code-module inlining).
+Case schema in `cases/packages.json`: src, output, error, input, modules, manifests, optional expect_externs/expect_functions/error_span_covers.
 */
 
 #[cfg(test)]

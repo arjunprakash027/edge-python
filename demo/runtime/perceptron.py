@@ -1,6 +1,6 @@
 """
 Recreation of the simple perceptron algorithm maintaining the exact application of Rosenblatt (where could solve linear separable problems).
-Rosenblatt, F. (1958). The perceptron: A probabilistic model for information storage and organization in the brain. Psychological Review, 65(6), 386–408.
+Rosenblatt, F. (1958). The perceptron: A probabilistic model for information storage and organization in the brain. Psychological Review, 65(6), 386-408.
 """
 
 from "./lib/format.py" import Report, DictReport
@@ -44,7 +44,7 @@ class SimplePerceptron:
         return self._binary_step(self._net_input(values))
 
     def _net_input(self, values: tuple[float | int, ...]) -> float:
-        return sum(w_i * x_i for w_i, x_i in zip(self.weights, values)) + self.bias # The dot product of the vector of weights and values ​​plus the bias term.
+        return sum(w_i * x_i for w_i, x_i in zip(self.weights, values)) + self.bias # Dot product of weights and values plus bias.
 
     def _binary_step(self, pred: float) -> int:
         return 1 if pred >= 0.0 else 0

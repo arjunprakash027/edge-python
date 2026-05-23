@@ -25,7 +25,7 @@ impl Limits {
 /* Plain fn-pointer alias for `ExternFn::from_fn`; the `Arc<dyn Fn ...>` form lives in `ExternCallable`. */
 pub type ExternFnPlain = fn(&mut HeapPool, &[Val], Option<Val>) -> Result<Val, VmErr>;
 
-/* Host-provided callable, resolved at compile time and dispatched by `CallExtern`. `Arc<dyn Fn>` lets loaders capture stateful handles; `pure` enables memoization. Third arg is the kwargs slot — `None` for plain positional calls, `Some(dict_val)` when the caller used `name=value` syntax. */
+/* Host-provided callable, resolved at compile time and dispatched by `CallExtern`. `Arc<dyn Fn>` lets loaders capture stateful handles; `pure` enables memoization. Third arg is the kwargs slot, `None` for plain positional calls, `Some(dict_val)` when the caller used `name=value` syntax. */
 pub type ExternCallable =
     alloc::sync::Arc<dyn Fn(&mut HeapPool, &[Val], Option<Val>) -> Result<Val, VmErr> + Send + Sync>;
 
@@ -118,9 +118,7 @@ impl Val {
     #[inline(always)] pub fn as_float(&self) -> f64 { f64::from_bits(self.0) }
     /* Wire-format accessors (FFI / WASM loader / SDK). */
     #[inline(always)] pub fn raw(&self) -> u64 { self.0 }
-    /** # Safety
-     * `u` must come from `Val::raw()` on a live heap slot in the same VM. 
-     * */
+    /** # Safety: `u` must come from `Val::raw()` on a live heap slot in the same VM. */
     #[inline(always)] pub unsafe fn from_raw(u: u64) -> Self { Self(u) }
     #[inline(always)] pub fn as_int(&self) -> i64 {
         let raw = (self.0 & INT_PAYLOAD_MASK) as i64;
@@ -163,11 +161,11 @@ pub enum HeapObj {
     BoundUserMethod(Val, Val, Val),
     // `super()` proxy: attribute access walks the bases of `cls` (skipping `cls` itself); methods bind to `recv`.
     Super(Val, Val),
-    // `(getter, setter)`; `setter == none()` for getter-only properties — written via `@property` / `@x.setter`.
+    // `(getter, setter)`; `setter == none()` for getter-only properties, written via `@property` / `@x.setter`.
     Property(Val, Val),
     // Intermediate produced by `prop.setter`: callable that takes a function and returns a new `Property` with the setter attached.
     PropertySetter(Val),
-    // Trailing `Vec<SyncFrame>` stacks suspended sync sub-calls (innermost-last): plain user fns called from this coro that hit a yielding builtin before returning. Resume walks inside-out so each return lands on the next frame's stack at the Call site. `BodyRef` discriminates user-fn coroutines from the implicit module-body coro. The final `Vec<ExceptionFrame>` carries this coro's try/except frames across yields so cross-yield `try` works.
+    // Trailing `Vec<SyncFrame>` stacks suspended sync sub-calls (innermost-last); resume walks inside-out, each return lands on next frame's Call site. `BodyRef` discriminates user-fn coros from the implicit module-body coro. Final `Vec<ExceptionFrame>` carries try/except across yields.
     Coroutine(usize, Vec<Val>, Vec<Val>, BodyRef, Vec<IterFrame>, Vec<SyncFrame>, Vec<ExceptionFrame>),
     /* Produced by `import m`; attr access via LoadAttr, calls fuse through CallMethod. */
     Module(String, Vec<(String, Val)>),
@@ -338,14 +336,14 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
         }
         HeapObj::Module(_, attrs) => for (_, v) in attrs { f(*v); },
         HeapObj::ExcInstance(_, args) => for &v in args { f(v); },
-        // Variants without Val payloads — terminal, nothing to trace.
+        // Variants without Val payloads, terminal, nothing to trace.
         HeapObj::Str(_) | HeapObj::Bytes(_) | HeapObj::LongInt(_)
         | HeapObj::Type(_) | HeapObj::NativeFn(_) | HeapObj::Range(..)
         | HeapObj::Extern(_) | HeapObj::Ellipsis | HeapObj::NotImplemented => {}
     }
 }
 
-/* Arena allocator with mark-sweep GC and string interning (≤128 bytes). */
+/* Arena allocator with mark-sweep GC and string interning (<=128 bytes). */
 struct HeapSlot {
     obj: Option<HeapObj>,
     marked: bool,
@@ -404,7 +402,7 @@ impl HeapPool {
             && let Some(&idx) = self.longints.get(&i) {
                 return Ok(Val::heap(idx));
         }
-        // Ellipsis is a true singleton — every `...` literal returns the same Val.
+        // Ellipsis is a true singleton, every `...` literal returns the same Val.
         if matches!(obj, HeapObj::Ellipsis)
             && let Some(idx) = self.ellipsis_idx {
                 return Ok(Val::heap(idx));
@@ -574,7 +572,7 @@ impl HeapPool {
             && matches!(self.slots[v.as_heap() as usize].obj.as_ref(), Some(HeapObj::NotImplemented))
     }
 
-    /* `child` is `ancestor` or has it in its transitive bases. Identity on heap idx — classes are interned per-MakeClass and never mutated, so direct equality suffices. */
+    /* `child` is `ancestor` or has it in its transitive bases. Identity on heap idx, classes are interned per-MakeClass and never mutated, so direct equality suffices. */
     pub fn is_subclass(&self, child: Val, ancestor: Val) -> bool {
         if child.0 == ancestor.0 { return true; }
         if !child.is_heap() { return false; }

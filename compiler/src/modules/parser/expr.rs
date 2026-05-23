@@ -282,7 +282,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             self.emit_const(Value::Int(v));
             return;
         }
-        // Doesn't fit in i64 — try i128 for the wide-int path.
+        // Doesn't fit in i64, try i128 for the wide-int path.
         let parsed_i128 = if base == 10 {
             digits.parse::<i128>().ok()
         } else {

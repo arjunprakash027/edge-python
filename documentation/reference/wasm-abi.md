@@ -3,7 +3,7 @@ title: "WASM module ABI"
 description: "The wire format a `.wasm` module must follow to be importable by Edge Python."
 ---
 
-> **Sealed contract — plugin ABI v1.** Every signature, op code, tag, and error kind here is the public contract for CDN-distributed `.wasm` plugin modules (Path A). New host packages arrive as new `Op` values, never new imports; a future wire-level break would ship as `env_v2.*` without removing v1. Distinct from the compiler↔host interface embedders declare (see [host packages](/reference/writing-modules#path-c-host-capability)) — embedders aren't bound by the 6-import limit here.
+> **Sealed contract, plugin ABI v1.** Every signature, op code, tag, and error kind here is the public contract for CDN-distributed `.wasm` plugin modules (Path A). New host packages arrive as new `Op` values, never new imports; a future wire-level break would ship as `env_v2.*` without removing v1. Distinct from the compiler<->host interface embedders declare (see [host packages](/reference/writing-modules#path-c-host-capability)), embedders aren't bound by the 6-import limit here.
 
 A `.wasm` module imported via `from "<url>" import <names>` follows the contract below. Handle-based API: the host owns all values, the guest sees only opaque `u32` handles, and one universal dispatch primitive (`edge_op`) covers every operation. New types, methods, and language features become available to existing modules with no ABI change.
 
@@ -19,10 +19,10 @@ extern "C" fn <name>(argv: *const u32, argc: u32, out: *mut u32) -> i32;
 |---|---|
 | `argv` | Pointer (in **guest** linear memory) to an array of `argc` host-managed handles, one per positional argument. |
 | `argc` | Positional argument count. |
-| `out`  | Pointer (in **guest** linear memory) where the guest writes ONE handle for the return value. |
+| `out` | Pointer (in **guest** linear memory) where the guest writes ONE handle for the return value. |
 | return | `0` = success, `1` = error (host pulls the error via `edge_take_error` immediately). |
 
-`argv` handles are host-owned and live for the call. Handles the guest creates via `edge_encode` or `edge_op` are guest-owned until released — the guest must `edge_release` each before returning, except the one written into `*out`.
+`argv` handles are host-owned and live for the call. Handles the guest creates via `edge_encode` or `edge_op` are guest-owned until released, the guest must `edge_release` each before returning, except the one written into `*out`.
 
 ## Required guest exports
 
@@ -38,7 +38,7 @@ pub extern "C" fn __edge_abi_version() -> u32;
 
 `__edge_alloc` lets the host stage `argv` arrays in guest linear memory before invoking each export.
 
-`__edge_abi_version` returns the wire-format version (currently `1`). The host MUST read this once at instantiation and refuse unknown versions — otherwise a v2 host would silently decode garbage from a v1 module. (At v1 every loader targets 1 so the bundled `compiler.wasm` shim does not yet read the symbol; the check becomes load-bearing when v2 ships.)
+`__edge_abi_version` returns the wire-format version (currently `1`). The host MUST read this once at instantiation and refuse unknown versions, otherwise a v2 host would silently decode garbage from a v1 module. (At v1 every loader targets 1 so the bundled `compiler.wasm` shim does not yet read the symbol; the check becomes load-bearing when v2 ships.)
 
 The reference `wasm-pdk` crate emits both symbols automatically. `EDGE_ABI_VERSION` lives in the shared `wasm-abi` crate (no_std, zero deps) so host and every PDK read the same value.
 
@@ -95,7 +95,7 @@ Drain the most recent error from a `1`-returning `edge_op`. Writes kind at `*out
 
 ### `edge_throw`
 
-Stash an error visible after the guest returns `1` — used when an error did not originate from a `1`-returning `edge_op` (e.g., a typed `Result::Err` from user code). Overwrites any pending error; the guest must immediately return `1`.
+Stash an error visible after the guest returns `1`, used when an error did not originate from a `1`-returning `edge_op` (e.g., a typed `Result::Err` from user code). Overwrites any pending error; the guest must immediately return `1`.
 
 ## Op codes
 
@@ -113,15 +113,15 @@ Stash an error visible after the guest returns `1` — used when an error did no
 | `NewList` | 9 | construct empty list; recv and name ignored, argc=0 -> handle |
 | `TypeOf` | 10 | runtime type of recv -> handle (Str with the type name) |
 
-`Op::Iter` materialises the receiver into a List handle (set sorted via `vm.sort_set_items`; dict yields keys; str splits to single-char strings); `Op::IterNext` advances it. `NewDict` and `NewList` let plugins construct fresh composites without obtaining a type handle. `TypeOf` returns names matching the Python builtin: `"int"`, `"float"`, `"str"`, `"bytes"`, `"list"`, `"dict"`, `"set"`, `"tuple"`, `"NoneType"`, `"bool"`, `"object"` (user instance), etc. Values `11..u32::MAX` reserved — old hosts return `1` with `kind=Runtime`.
+`Op::Iter` materialises the receiver into a List handle (set sorted via `vm.sort_set_items`; dict yields keys; str splits to single-char strings); `Op::IterNext` advances it. `NewDict` and `NewList` let plugins construct fresh composites without obtaining a type handle. `TypeOf` returns names matching the Python builtin: `"int"`, `"float"`, `"str"`, `"bytes"`, `"list"`, `"dict"`, `"set"`, `"tuple"`, `"NoneType"`, `"bool"`, `"object"` (user instance), etc. Values `11..u32::MAX` reserved, old hosts return `1` with `kind=Runtime`.
 
 ## Tags (for `edge_encode` / `edge_decode`)
 
 | Tag | Value | Layout |
 |---|---|---|
-| None  | 0 | payload ignored |
-| Bool  | 1 | 1 byte (0/1) |
-| Int   | 2 | 16 bytes little-endian i128 |
+| None | 0 | payload ignored |
+| Bool | 1 | 1 byte (0/1) |
+| Int | 2 | 16 bytes little-endian i128 |
 | Float | 3 | 8 bytes IEEE 754 little-endian |
 | Bytes | 4 | UTF-8 -> `str`; non-UTF-8 -> `bytes` |
 
@@ -131,15 +131,15 @@ Composites (list, dict, set, instance, callable, iterator) are not encodable. Co
 
 | Kind | Value | Maps to |
 |---|---|---|
-| Type      | 0 | `TypeError` |
-| Value     | 1 | `ValueError` |
-| Runtime   | 2 | `RuntimeError` |
+| Type | 0 | `TypeError` |
+| Value | 1 | `ValueError` |
+| Runtime | 2 | `RuntimeError` |
 | Attribute | 3 | `AttributeError` |
-| Index     | 4 | `IndexError` |
-| Key       | 5 | `KeyError` |
-| Custom    | 6 | the message carries the user-defined kind name |
+| Index | 4 | `IndexError` |
+| Key | 5 | `KeyError` |
+| Custom | 6 | the message carries the user-defined kind name |
 
-## Worked example — recommended Rust path with `wasm-pdk`
+## Worked example, recommended Rust path with `wasm-pdk`
 
 The `wasm-pdk` crate provides the `#[plugin_fn]` proc macro that expands to wire-conformant exports. Authors write normal Rust:
 
@@ -231,14 +231,14 @@ Method returns of `T`, `Option<T>`, and `Result<T>` are all supported. Instances
 
 ### Consuming `wasm-pdk` from your own crate
 
-Not on crates.io — depend from GitHub, pinned to a release tag:
+Not on crates.io, depend from GitHub, pinned to a release tag:
 
 ```toml
 [dependencies]
 wasm-pdk = { git = "https://github.com/dylan-sutton-chavez/edge-python", tag = "v0.1.0" }
 ```
 
-Cargo resolves `wasm-abi` and `wasm-pdk-macros` transitively. Pinning to a tag (vs `branch = "main"`) gives reproducible builds and a known wire-ABI version — your module compiled against `wasm-pdk vX.Y.Z` is binary-compatible with the `compiler_lib.wasm` of the same release. Bump `tag` + `cargo update -p wasm-pdk` to upgrade. Use `branch = "main"` only for unreleased iteration.
+Cargo resolves `wasm-abi` and `wasm-pdk-macros` transitively. Pinning to a tag (vs `branch = "main"`) gives reproducible builds and a known wire-ABI version, your module compiled against `wasm-pdk vX.Y.Z` is binary-compatible with the `compiler_lib.wasm` of the same release. Bump `tag` + `cargo update -p wasm-pdk` to upgrade. Use `branch = "main"` only for unreleased iteration.
 
 Use it from a script:
 
@@ -255,7 +255,7 @@ except ValueError as e:
     print("caught:", e) # -> caught: repeat count must be non-negative
 ```
 
-## Worked example — raw, no SDK
+## Worked example, raw, no SDK
 
 Same module without the macro (for Zig / C / hand-written Rust):
 
@@ -326,29 +326,29 @@ For `from "<url>" import <names>` with a `.wasm` URL: the host fetches bytes (ve
 * **Refcounted handles.** Guest releases every handle it creates via `edge_encode` / `edge_op` except the one returned through `*out`. Host releases argv.
 * **`edge_decode` is primitives-only.** For `list`, `dict`, `set`, instances, use `edge_op` (e.g. `Call recv "items"`, `GetItem recv idx`).
 * **Trailing kwargs slot.** Every plugin call carries one extra `u32` after the user's positional argv: handle `0` when the caller passed no `name=value` arguments, otherwise a `dict` handle holding the pairs. The `#[plugin_fn]` macro folds it into a `Kwargs` parameter if declared (`fn foo(a: Handle, kw: Kwargs)`); otherwise it is silently absorbed and the function sees only its positional args.
-* **Invoking a caller-supplied callable.** From the guest, `edge_op Call recv "__call__" argv` invokes `recv` directly — lambdas, builtins, classes, bound methods all route through the same dispatch the language uses. Use this to wire Python hooks like `default`, `object_hook`, `parse_int`.
-* **Reentrance supported.** A guest's `edge_op` runs while the VM is paused on the script's `CallExtern`. Method dispatch routes through the same `vm/handlers/builtin_methods/` descriptor table the language uses internally — adding a method there makes it visible to existing modules with no recompile.
-* **Error-as-status, not panic.** Returning `1` does NOT abort the host — the host pulls the error and raises it as a typed Python exception.
+* **Invoking a caller-supplied callable.** From the guest, `edge_op Call recv "__call__" argv` invokes `recv` directly, lambdas, builtins, classes, bound methods all route through the same dispatch the language uses. Use this to wire Python hooks like `default`, `object_hook`, `parse_int`.
+* **Reentrance supported.** A guest's `edge_op` runs while the VM is paused on the script's `CallExtern`. Method dispatch routes through the same `vm/handlers/builtin_methods/` descriptor table the language uses internally, adding a method there makes it visible to existing modules with no recompile.
+* **Error-as-status, not panic.** Returning `1` does NOT abort the host, the host pulls the error and raises it as a typed Python exception.
 * **Memory ownership.** Host only reads guest linear memory at well-defined copy points. Guest-internal allocations stay private.
 
 ## Author conveniences
 
-The `wasm-pdk` crate (Plugin Development Kit) — bundled in this repo, publishable independently of `compiler.wasm` — provides:
+The `wasm-pdk` crate (Plugin Development Kit), bundled in this repo, publishable independently of `compiler.wasm`, provides:
 
-* `#[plugin_fn]` — typed Rust function -> wire-conformant export.
-* `#[plugin_class]` / `#[plugin_methods]` / `#[plugin_ctor]` — expose a Rust struct as a Python class via the `__class_<Name>_<method>` export convention.
-* `module!()` — expands to `#[global_allocator]` + `#[panic_handler]`.
+* `#[plugin_fn]`, typed Rust function -> wire-conformant export.
+* `#[plugin_class]` / `#[plugin_methods]` / `#[plugin_ctor]`, expose a Rust struct as a Python class via the `__class_<Name>_<method>` export convention.
+* `module!()`, expands to `#[global_allocator]` + `#[panic_handler]`.
 * `FromValue` / `IntoValue` with primitive impls (`i64`, `i128`, `f64`, `bool`, `String`, `&str`, `Option<T>`, `Handle`). `i64` rejects out-of-range values with `ValueError`; use `i128` for the full range.
 * `Handle` with `Drop`-driven release plus `call`, `get_attr` / `set_attr`, `get_item` / `set_item`, `len`, `iter` / `iter_next`, `new_dict` / `new_list`, `type_of`.
-* `Kwargs` — thin wrapper around the trailing kwargs handle with `get::<T>(name)` for primitive kwargs and `get_handle(name)` for callables, tuples, dicts.
-* `PluginCell<T>` — single-threaded interior mutability cell for static plugin state.
+* `Kwargs`, thin wrapper around the trailing kwargs handle with `get::<T>(name)` for primitive kwargs and `get_handle(name)` for callables, tuples, dicts.
+* `PluginCell<T>`, single-threaded interior mutability cell for static plugin state.
 * `__edge_alloc` + `__edge_abi_version` emitted automatically.
 
-The macro emits the worked-example boilerplate; manual is ~25 lines for the first function, ~5 per additional.
+The macro emits the worked-example boilerplate; manual is around 25 lines for the first function, around 5 per additional.
 
 Community PDKs (uncoordinated releases, each tracking the sealed wire spec): Zig (`wasm-pdk-zig`), AssemblyScript (`wasm-pdk-as`), C (`wasm-pdk.h`).
 
 ## See also
 
-- [Imports](/reference/imports) — how `from "..." import` resolves on the script side, including walk-up packages.json and integrity verification.
-- [Writing modules](/reference/writing-modules) — overview of the three module delivery paths.
+- [Imports](/reference/imports): how `from "..." import` resolves on the script side, including walk-up packages.json and integrity verification.
+- [Writing modules](/reference/writing-modules): overview of the three module delivery paths.

@@ -58,7 +58,7 @@ impl<'a> VM<'a> {
                 return Ok(true);
         }
 
-        // `bytes[i]` returns the byte as int (`0..=255`) — unlike `str[i]` (length-1 str).
+        // `bytes[i]` returns the byte as int (`0..=255`), unlike `str[i]` (length-1 str).
         if obj.is_heap() && idx.is_int()
             && let HeapObj::Bytes(b) = self.heap.get(obj) {
                 let i = idx.as_int();
@@ -218,7 +218,7 @@ impl<'a> VM<'a> {
         if self.try_call_dunder(cont, "__delitem__", &[idx_val], chunk, slots)?.is_some() {
             return Ok(());
         }
-        // Slice deletion: `del xs[a:b]` — same step=1 restriction as `store_slice`. Reuses `store_slice` with an empty replacement vec.
+        // Slice deletion: `del xs[a:b]`, same step=1 restriction as `store_slice`. Reuses `store_slice` with an empty replacement vec.
         if idx_val.is_heap()
             && let HeapObj::Slice(start, stop, step) = self.heap.get(idx_val).clone()
         {
@@ -243,7 +243,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Splice for `xs[a:b] = items` and `del xs[a:b]`. step=1 resizes; step≠1 demands exact-length RHS. Lists only — tuples/strings are immutable. */
+    /* Splice for `xs[a:b] = items` and `del xs[a:b]`. step=1 resizes; step≠1 demands exact-length RHS. Lists only, tuples/strings are immutable. */
     fn store_slice(&mut self, cont: Val,start: Val, stop: Val, step: Val, new_items: Vec<Val>) -> Result<(), VmErr> {
         let st = if step.is_none() { 1 }
             else if step.is_int() { step.as_int() }
@@ -290,7 +290,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    // `slice(stop)` | `slice(start, stop)` | `slice(start, stop, step)` — builtin; usable as a sequence index.
+    // `slice(stop)` | `slice(start, stop)` | `slice(start, stop, step)`, builtin; usable as a sequence index.
     pub fn call_slice(&mut self, argc: u16) -> Result<(), VmErr> {
         let args = self.pop_n(argc as usize)?;
         let (start, stop, step) = match args.as_slice() {

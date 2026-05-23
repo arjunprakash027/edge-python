@@ -15,7 +15,7 @@ Edge Python has no bundled stdlib. Three ways to add native functionality:
 
 ## Path A: `.wasm` module by URL
 
-Contract: the [WASM module ABI](/reference/wasm-abi) — language-agnostic, three scalar types. Rust authors use the bundled [`wasm-pdk`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) (`#[plugin_fn]` for free functions, `#[plugin_class]` + `#[plugin_methods]` for Python-visible classes, typed `Handle` / `Value` / `Error`); other languages use community PDKs or hand-roll the boilerplate.
+Contract: the [WASM module ABI](/reference/wasm-abi), language-agnostic, three scalar types. Rust authors use the bundled [`wasm-pdk`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) (`#[plugin_fn]` for free functions, `#[plugin_class]` + `#[plugin_methods]` for Python-visible classes, typed `Handle` / `Value` / `Error`); other languages use community PDKs or hand-roll the boilerplate.
 
 Worked examples (with and without the SDK), encoding tables, and language-specific snippets: [WASM module ABI](/reference/wasm-abi). Script side:
 
@@ -26,11 +26,11 @@ print(add(2, 3))   # -> 5
 
 ## Path B: host capability
 
-Some native functionality can't live in a CDN-distributed `.wasm` (Path A) because the work happens outside the WASM sandbox — DOM mutation, WASI filesystem I/O, native crypto. Path A modules see only the sealed 6 `env.*` imports; they have no channel to the host runtime. Path B closes that gap.
+Some native functionality can't live in a CDN-distributed `.wasm` (Path A) because the work happens outside the WASM sandbox, DOM mutation, WASI filesystem I/O, native crypto. Path A modules see only the sealed 6 `env.*` imports; they have no channel to the host runtime. Path B closes that gap.
 
-A host capability is shipped as part of a custom embedder. The embedder declares additional host imports beyond the sealed plugin ABI — these imports are the embedder's private contract with its host runtime, not part of the public plugin contract.
+A host capability is shipped as part of a custom embedder. The embedder declares additional host imports beyond the sealed plugin ABI, these imports are the embedder's private contract with its host runtime, not part of the public plugin contract.
 
-Precedent: `print(...)` calls the embedder's `host_print` import; `input()` drains a buffer the host fills via `set_input`. The same shape generalises — a browser-host distribution can register `dom` as a native module whose `query`, `set_text`, `append_child` operations bridge to JS through embedder-specific host imports. A WASI-host distribution can register `fs` against `wasi_snapshot_preview1`. Scripts see them as ordinary native modules:
+Precedent: `print(...)` calls the embedder's `host_print` import; `input()` drains a buffer the host fills via `set_input`. The same shape generalises, a browser-host distribution can register `dom` as a native module whose `query`, `set_text`, `append_child` operations bridge to JS through embedder-specific host imports. A WASI-host distribution can register `fs` against `wasi_snapshot_preview1`. Scripts see them as ordinary native modules:
 
 ```python
 from dom import document, query     # browser host
@@ -63,7 +63,7 @@ The custom `compiler.wasm` declares `env.host_dom_op` alongside the standard `en
 
 ### Why this is not a third module flavor
 
-Scripts still see two flavors (code and native — see [Imports](/reference/imports)). Path B is a distribution pattern that ships additional bridges through the embedder; the compiler dispatches them the same way as built-in operations. Keeps the public language surface and the [WASM module ABI](/reference/wasm-abi) untouched.
+Scripts still see two flavors (code and native, see [Imports](/reference/imports)). Path B is a distribution pattern that ships additional bridges through the embedder; the compiler dispatches them the same way as built-in operations. Keeps the public language surface and the [WASM module ABI](/reference/wasm-abi) untouched.
 
 ## Path C: JS host module
 
@@ -125,18 +125,18 @@ Handlers take decoded JS values and return plain JS values. Supported tags: `Non
 |---|---|---|
 | Compiler artifact | Custom per capability set | Vanilla upstream |
 | Composition | Embed-time | Load-time, by import |
-| Binding language | Rust (or C/Zig — any wasm32 target) compiled into the embedder | JavaScript, primitives only |
-| Per-op overhead | Native call through embedder host import | `postMessage` round-trip (~0.1–0.4 ms) |
+| Binding language | Rust (or C/Zig, any wasm32 target) compiled into the embedder | JavaScript, primitives only |
+| Per-op overhead | Native call through embedder host import | `postMessage` round-trip (around 0.1 to 0.4 ms) |
 | Threading model | Wherever the embedder runs | Main thread (handlers reach `document`) |
 | Build pipeline | `cargo` | None |
 
-Pick Path C when the capability needs main-thread browser surface (DOM, dialogs, observers, FileReader) and per-op latency is acceptable — invisible for UI-rate workloads (~50–200 ops/frame). Reach for Path B when tight per-frame loops dominate or the capability lives in a non-browser host (WASI, native).
+Pick Path C when the capability needs main-thread browser surface (DOM, dialogs, observers, FileReader) and per-op latency is acceptable, invisible for UI-rate workloads (around 50 to 200 ops/frame). Reach for Path B when tight per-frame loops dominate or the capability lives in a non-browser host (WASI, native).
 
 Reference implementation: [`edge-python-host`](https://github.com/dylan-sutton-chavez/edge-python-host).
 
 ## Choosing between the three paths
 
-| You want… | Use |
+| You want... | Use |
 |---|---|
 | Publish a module any Edge Python user can `from "<url>" import` without rebuilding | Path A (`.wasm` ABI) |
 | Wrap a C/Zig/AS library | Path A (any wasm32-targeting language works) |
@@ -145,5 +145,5 @@ Reference implementation: [`edge-python-host`](https://github.com/dylan-sutton-c
 
 ## See also
 
-- [WASM module ABI](/reference/wasm-abi) — the wire format spec for Path A.
-- [Imports](/reference/imports) — script-side semantics, packages.json, integrity verification.
+- [WASM module ABI](/reference/wasm-abi), the wire format spec for Path A.
+- [Imports](/reference/imports), script-side semantics, packages.json, integrity verification.

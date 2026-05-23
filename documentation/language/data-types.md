@@ -33,7 +33,7 @@ For runtime membership in a type, use [`isinstance`](/reference/builtins#isinsta
 
 ## Integer
 
-Two-tier. **Inline (fast)**: 47-bit signed in a NaN-boxed `Val`, one ALU op per arithmetic, zero alloc. **LongInt (slow)**: i128 in a heap slot, auto when literal/result exceeds 47-bit. Boundary invisible — same `int` type, same operators. Hard cap ±2¹²⁷; wider -> `OverflowError`. No CPython unbounded ints; no complex (`1j`, `2+3j`).
+Two-tier. **Inline (fast)**: 47-bit signed in a NaN-boxed `Val`, one ALU op per arithmetic, zero alloc. **LongInt (slow)**: i128 in a heap slot, auto when literal/result exceeds 47-bit. Boundary invisible, same `int` type, same operators. Hard cap ±2¹²⁷; wider -> `OverflowError`. No CPython unbounded ints; no complex (`1j`, `2+3j`).
 
 ```python
 # Inline range
@@ -126,11 +126,11 @@ b
 c
 ```
 
-`len(s)` and padding (`str.center` / `str.zfill`) measure in code points, not bytes — `'ñ'.center(5, '*')` -> `'**ñ**'` (5 visual chars).
+`len(s)` and padding (`str.center` / `str.zfill`) measure in code points, not bytes, `'ñ'.center(5, '*')` -> `'**ñ**'` (5 visual chars).
 
 ## Bytes
 
-Immutable sequence of bytes (each 0–255). Distinct from `str`: stores raw octets, not Unicode. Indexing returns an `int`, not a single-byte slice.
+Immutable sequence of bytes (each 0,255). Distinct from `str`: stores raw octets, not Unicode. Indexing returns an `int`, not a single-byte slice.
 
 ```python
 data = b"hello"
@@ -278,7 +278,7 @@ print(()) # empty
 
 ## Dict
 
-Insertion-ordered mapping. Keys must be hashable: numbers, strings, bytes, bools, `None`, frozensets, tuples of hashables. Mutable containers as keys -> `TypeError: unhashable type`. Numerically equal keys (`1`/`1.0`, `True`/`1`) collapse — second insertion overwrites.
+Insertion-ordered mapping. Keys must be hashable: numbers, strings, bytes, bools, `None`, frozensets, tuples of hashables. Mutable containers as keys -> `TypeError: unhashable type`. Numerically equal keys (`1`/`1.0`, `True`/`1`) collapse, second insertion overwrites.
 
 ```python
 d = {"a": 1, "b": 2}
@@ -425,12 +425,12 @@ True
 
 Falsy values (everything else is truthy):
 
-| Falsy values        |
+| Falsy values |
 |---------------------|
-| `None`              |
-| `False`             |
-| `0`, `0.0`          |
+| `None` |
+| `False` |
+| `0`, `0.0` |
 | `""` (empty string) |
-| `[]`, `()`          |
-| `{}`, `set()`       |
-| `range(0)`          |
+| `[]`, `()` |
+| `{}`, `set()` |
+| `range(0)` |

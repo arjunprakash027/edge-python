@@ -2,9 +2,7 @@ use alloc::string::String;
 
 use super::{CallFrame, SchedulerStatus};
 
-/* Runtime errors; static variants are alloc-free, dynamic variants carry user-facing text.
-   `HostYield` is a control-flow signal (not catchable by Python try/except), riding the
-   `Result` chain so propagation reuses `?` without a parallel signaling mechanism. */
+/* Runtime errors; static variants alloc-free, dynamic carry user text. `HostYield` is a control-flow signal (not catchable by Python try/except), riding the `Result` chain so `?` propagation reuses without parallel signaling. */
 #[derive(Debug, Clone)]
 pub enum VmErr {
     CallDepth, Heap, Budget, ZeroDiv, Overflow,

@@ -97,7 +97,7 @@ export async function createWorker(opts) {
     };
 }
 
-/* Runs inside the worker. Buffers messages arriving during the dynamic import — without this, the event loop dispatches `postMessage('load')` before worker.js installs `self.onmessage` and the first message is lost. */
+/* Runs inside the worker. Buffers messages during dynamic import, otherwise `postMessage('load')` dispatches before worker.js installs `self.onmessage` and the first message is lost. */
 function crossOriginBootstrap(workerUrl) {
     const buffered = [];
     const enqueue = (event) => buffered.push(event.data);

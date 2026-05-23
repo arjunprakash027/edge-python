@@ -161,7 +161,7 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /* Skip a string or string-keyed object — forgives future keys. Numeric, array, bool values surface as errors so typos don't pass silently. */
+    /* Skip a string or string-keyed object, forgives future keys. Numeric, array, bool values surface as errors so typos don't pass silently. */
     fn skip_value(&mut self) -> Result<(), String> {
         match self.peek() {
             Some(b'"') => { let _ = self.read_string()?; Ok(()) }

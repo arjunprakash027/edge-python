@@ -1,5 +1,6 @@
 /*
-Builtin-method descriptor table + dispatcher. Each method body lives in the per-type file (string.rs / bytes.rs / list.rs / dict.rs / set.rs) as a plain `pub fn`. The descriptor carries name + function pointer + mutating flag + arity range, so the dispatcher checks arity uniformly and the method bodies stay focused on logic.
+Builtin-method descriptor table + dispatcher. Bodies live in per-type files (string/bytes/list/dict/set) as `pub fn`.
+Descriptor: name + fn ptr + mutating flag + arity range; dispatcher checks arity uniformly.
 */
 
 mod prelude;

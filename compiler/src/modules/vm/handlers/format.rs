@@ -1,8 +1,7 @@
-/* 
-f-string format spec engine — PEP 3101 subset:
-`[[fill]align][sign][#][0][width][,][.precision][type]`.
+/*
+f-string format spec, PEP 3101 subset: `[[fill]align][sign][#][0][width][,][.precision][type]`.
 Types: d/b/o/x/X (ints), f/F/e/E/g/G (floats), % (percent), s (str), c (codepoint).
-Returns Err(message) so the caller can raise ValueError. 
+Returns Err(msg); caller raises ValueError.
 */
 
 use alloc::string::{String, ToString};
@@ -21,7 +20,7 @@ struct Spec {
     fill: char,
     align: Option<u8>, // b'<' b'>' b'^' b'='
     sign: u8, // 0, b'+', b'-', b' '
-    alt: bool, // '#' alternate form — emits base prefix for b/o/x/X
+    alt: bool, // '#' alternate form, emits base prefix for b/o/x/X
     zero_pad: bool,
     width: usize,
     thousands: bool,
@@ -49,7 +48,7 @@ fn parse_spec(spec: &str) -> Result<Spec, &'static str> {
         i += 1;
     }
 
-    // '#' alternate form — opt in to base prefix on b/o/x/X.
+    // '#' alternate form, opt in to base prefix on b/o/x/X.
     if i < bytes.len() && bytes[i] == b'#' { s.alt = true; i += 1; }
 
     if i < bytes.len() && bytes[i] == b'0' {
@@ -232,7 +231,7 @@ fn format_float(v: Val, s: &Spec, ty: u8, heap: &HeapPool) -> Result<String, &'s
 }
 
 fn format_with_e(mag: f64, prec: usize, upper: bool) -> String {
-    // Rust emits "3.14e0"; expects "e+00" — inject the sign and pad exponent to >=2 digits.
+    // Rust emits "3.14e0"; expects "e+00", inject the sign and pad exponent to >=2 digits.
     let raw = alloc::format!("{:.*e}", prec, mag);
     let (mant, exp_str) = raw.split_once('e').unwrap_or((raw.as_str(), "0"));
     let (esign, edigs) = if let Some(rest) = exp_str.strip_prefix('-') { ('-', rest) }
@@ -435,6 +434,6 @@ pub fn display_inline(v: Val, heap: &HeapPool) -> String {
             _ => {}
         }
     }
-    /* Fall back to nothing — caller should use VM::display for full coverage. */
+    /* Fall back to nothing, caller should use VM::display for full coverage. */
     String::new()
 }

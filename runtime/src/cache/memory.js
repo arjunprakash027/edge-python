@@ -1,5 +1,6 @@
 /*
-In-memory cache backend; same shape as `cache/idb.js`. Used when `integrity:false` or as fallback when IDB is unavailable. Methods are synchronous but callers `await` them uniformly — `await sync_value` resolves immediately, so the interface stays interchangeable with `IdbCache` without lying with `async` keywords.
+In-memory cache backend; same shape as `cache/idb.js`. Used when `integrity:false` or IDB unavailable.
+Methods are sync but callers `await` uniformly: stays interchangeable with `IdbCache`.
 */
 
 export class MemoryCache {

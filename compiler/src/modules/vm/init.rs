@@ -140,7 +140,7 @@ impl<'a> VM<'a> {
             matches!(self.heap.get(h.coro), HeapObj::Coroutine(_, _, _, crate::modules::vm::types::BodyRef::Module, _, _, _))
         }).map(|h| (h.coro, h.state.clone()));
         if let Some((_coro, state)) = module_coro {
-            // Clear the scheduler only once the module body is terminal — otherwise we're mid-yield and need to keep it for the next resume.
+            // Clear the scheduler only once the module body is terminal, otherwise we're mid-yield and need to keep it for the next resume.
             let terminal = matches!(state,
                 crate::modules::vm::types::CoroState::Done(_)
                 | crate::modules::vm::types::CoroState::Errored(_)

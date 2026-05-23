@@ -38,7 +38,7 @@ pub unsafe extern "C" fn host_edge_op(op: u32, recv: u32, name_ptr: *const u8, n
 
 fn dispatch_call(recv_h: u32, name: &str, args: &[Val]) -> Result<Val, VmErr> {
     with_recv("edge_op call: invalid receiver handle", recv_h, |vm, recv| {
-        // `__call__` means "invoke `recv` as a callable", letting plugins forward arbitrary Python hooks (lambdas, builtins, classes) through `Handle::call("__call__", args)`. Pushes args + callee then drives `exec_call` so every callable kind (`Extern`, `NativeFn`, `Func`, `BoundMethod`, `Class`, …) routes through the same dispatch path the VM uses normally. Empty caller-slots are fine because lambdas/hooks that escape a plugin call cannot reference caller-frame locals — they can still capture their own defining scope through the regular Func captures vector.
+        // `__call__` means "invoke `recv` as a callable", letting plugins forward arbitrary Python hooks (lambdas, builtins, classes) through `Handle::call("__call__", args)`. Pushes args + callee then drives `exec_call` so every callable kind (`Extern`, `NativeFn`, `Func`, `BoundMethod`, `Class`, ...) routes through the same dispatch path the VM uses normally. Empty caller-slots are fine because lambdas/hooks that escape a plugin call cannot reference caller-frame locals, they can still capture their own defining scope through the regular Func captures vector.
         if name == "__call__" {
             // Stack layout for `Call`: callee at the bottom, then positional args (top is the rightmost). `parse_call_args` pops args first, then `exec_call` pops the callee.
             let stack_before = vm.stack.len();
@@ -120,7 +120,7 @@ fn dispatch_set_attr(recv_h: u32, name: &str, args: &[Val]) -> Result<Val, VmErr
     })
 }
 
-/* GetItem: built-in indexing only — FFI has no bytecode frame to drive instance `__getitem__` dispatch. */
+/* GetItem: built-in indexing only, FFI has no bytecode frame to drive instance `__getitem__` dispatch. */
 fn dispatch_get_item(recv_h: u32, args: &[Val]) -> Result<Val, VmErr> {
     if args.len() != 1 {
         return Err(VmErr::TypeMsg(s!("get_item expects 1 index, got ", int args.len() as i64)));
@@ -136,7 +136,7 @@ fn dispatch_get_item(recv_h: u32, args: &[Val]) -> Result<Val, VmErr> {
     })
 }
 
-/* SetItem: built-in item-assignment only — same rationale as `dispatch_get_item`. */
+/* SetItem: built-in item-assignment only, same rationale as `dispatch_get_item`. */
 fn dispatch_set_item(recv_h: u32, args: &[Val]) -> Result<Val, VmErr> {
     if args.len() != 2 {
         return Err(VmErr::TypeMsg(s!("set_item expects (index, value), got ", int args.len() as i64, " args")));
@@ -320,7 +320,7 @@ pub unsafe extern "C" fn host_edge_take_error(out_kind: *mut u32, dst: *mut u8, 
         None => return -1,
     };
     if len > dst_max as usize { return -(len as i32); }
-    // Buffer fits — drain and copy. None on `take()` means a lost peek/take race; return no-pending-error instead of panicking across FFI.
+    // Buffer fits, drain and copy. None on `take()` means a lost peek/take race; return no-pending-error instead of panicking across FFI.
     let Some((_, msg)) = with_runtime(|rt| rt.error_stash.take()) else { return -1; };
     let bytes = msg.as_bytes();
     unsafe {

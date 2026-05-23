@@ -1,6 +1,6 @@
 /*
-WASM bridge — orchestration only. Wires the Edge Python parser/VM to the host through the universal handle ABI.
-Wire-level contract lives in `crate::abi` — extend it there, never here.
+WASM bridge: wires parser/VM to host via the handle ABI.
+Wire contract lives in `crate::abi`; extend there, never here.
 */
 
 use lol_alloc::{AssumeSingleThreaded, LeakingAllocator};
@@ -39,14 +39,11 @@ pub(super) fn now_ns_host() -> u64 {
     unsafe { host_now_ns() }
 }
 
-/*
-Bump-pointer allocator. Default `LeakingPageAllocator` calls memory.grow(1) per alloc — around 0.2 ms on HVCI/VBS hosts (e.g., Snapdragon X on V8).
-A 3,000-alloc perceptron run hit 600 ms; bumping cuts it to about 50 grows.
-*/
+/* Bump-pointer allocator. Default `LeakingPageAllocator` calls memory.grow(1) per alloc, around 0.2 ms on HVCI/VBS hosts (e.g., Snapdragon X on V8); 3,000-alloc perceptron run hit 600 ms, bumping cuts it to around 50 grows. */
 #[global_allocator]
 static A: AssumeSingleThreaded<LeakingAllocator> = unsafe { AssumeSingleThreaded::new(LeakingAllocator::new()) };
 
-/* Best-effort panic-to-stash so the host gets a typed message instead of an opaque trap. Re-entry during the format alloc falls through to unreachable() — same trap as before. */
+/* Best-effort panic-to-stash so the host gets a typed message instead of an opaque trap. Re-entry during the format alloc falls through to unreachable(), same trap as before. */
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     let msg = alloc::format!("internal panic: {}", info.message());
@@ -71,7 +68,7 @@ pub(super) struct PausedRun {
     pub last_yield_deadline_ns: u64,
 }
 
-/* All mutable WASM-bridge state in one struct so every accessor funnels through `with_runtime` — the sole `unsafe` point — instead of N independent statics. */
+/* All mutable WASM-bridge state in one struct so every accessor funnels through `with_runtime`, the sole `unsafe` point, instead of N independent statics. */
 pub(super) struct WasmRuntime {
     pub src: [u8; SZ],
     pub out: [u8; SZ],
@@ -81,7 +78,7 @@ pub(super) struct WasmRuntime {
     pub manifests: Vec<(String, Manifest)>,
     pub handles: HandleTable,
     pub error_stash: ErrorStash,
-    /* Set/cleared exclusively by `VmGuard`. The `'static` is storage-only — the pointer is dereferenced only inside the `run()` scope that built it. */
+    /* Set/cleared exclusively by `VmGuard`. The `'static` is storage-only, the pointer is dereferenced only inside the `run()` scope that built it. */
     pub current_vm: Option<NonNull<VM<'static>>>,
     /* Owned across `run_start` / `run_resume`; mutually exclusive with `current_vm`. */
     pub paused_run: Option<Box<PausedRun>>,
@@ -119,7 +116,7 @@ pub(super) struct VmGuard;
 
 impl VmGuard {
     pub(super) fn new(vm: &mut VM<'_>) -> Self {
-        // 'static is storage-only — deref only inside the `run()` frame holding the guard.
+        // 'static is storage-only, deref only inside the `run()` frame holding the guard.
         let ptr: NonNull<VM<'static>> = NonNull::from(vm).cast();
         with_runtime(|rt| rt.current_vm = Some(ptr));
         Self
@@ -133,12 +130,12 @@ impl Drop for VmGuard {
 }
 
 pub(super) fn with_vm<R>(f: impl FnOnce(&mut VM<'static>) -> R) -> Option<R> {
-    // Drop the runtime borrow before `f` — VM dispatch re-enters `with_runtime`.
+    // Drop the runtime borrow before `f`, VM dispatch re-enters `with_runtime`.
     let ptr = with_runtime(|rt| rt.current_vm)?;
     Some(f(unsafe { &mut *ptr.as_ptr() }))
 }
 
-/* Builds a `&[u8]` from an FFI `(ptr, len)`, empty on null or zero length — `from_raw_parts` would UB on either. */
+/* Builds a `&[u8]` from an FFI `(ptr, len)`, empty on null or zero length, `from_raw_parts` would UB on either. */
 pub(super) unsafe fn safe_bytes<'a>(ptr: *const u8, len: u32) -> &'a [u8] {
     if ptr.is_null() || len == 0 { return &[]; }
     unsafe { core::slice::from_raw_parts(ptr, len as usize) }

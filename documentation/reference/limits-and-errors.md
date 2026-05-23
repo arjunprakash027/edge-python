@@ -5,22 +5,22 @@ description: "Sandbox limits, error types, and runtime guarantees."
 
 ## Sandbox limits
 
-Two profiles via `VM::with_limits` — same `compiler.wasm` runs unsandboxed in trusted contexts, clamped in untrusted.
+Two profiles via `VM::with_limits`, same `compiler.wasm` runs unsandboxed in trusted contexts, clamped in untrusted.
 
-| Limit          | `none()` (default) | `sandbox()`   | What hitting it raises |
+| Limit | `none()` (default) | `sandbox()` | What hitting it raises |
 |----------------|--------------------|---------------|------------------------|
-| Max call depth | 1,000              | 256           | `RecursionError`       |
-| Max operations | unbounded          | 100,000,000   | `RuntimeError`         |
-| Max heap bytes | 10,000,000         | 100,000       | `MemoryError`          |
+| Max call depth | 1,000 | 256 | `RecursionError` |
+| Max operations | unbounded | 100,000,000 | `RuntimeError` |
+| Max heap bytes | 10,000,000 | 100,000 | `MemoryError` |
 
 ## Integer width
 
 Two-tier:
 
-* **Inline (fast)**: 47-bit signed in a NaN-boxed `Val`. Range `±2^47` (`±140_737_488_355_327`). One ALU op per arithmetic, no allocation.
-* **Wide (slow)**: i128 in `HeapObj::LongInt`. Range `±2^127 - 1`. Auto-used when a literal exceeds 47-bit or inline arithmetic overflows.
+* **Inline (fast)**: 47-bit signed in a NaN-boxed `Val`. Range `+/-2^47` (`+/-140_737_488_355_327`). One ALU op per arithmetic, no allocation.
+* **Wide (slow)**: i128 in `HeapObj::LongInt`. Range `+/-2^127 - 1`. Auto-used when a literal exceeds 47-bit or inline arithmetic overflows.
 
-Outside `±2^127` raises `OverflowError`. Promotion is automatic — user code doesn't see the boundary.
+Outside `+/-2^127` raises `OverflowError`. Promotion is automatic, user code doesn't see the boundary.
 
 ```python
 print(140737488355327) # inline, fast path
@@ -42,8 +42,8 @@ overflow
 ### Caveats
 
 - **`pow(a, b, m)` modular**: modulus must be `< 2^63` (larger overflows i128 in the multiply). Hard cap without arbitrary-precision arithmetic.
-- **No CPython-style unbounded ints**: by design — edge workloads don't need wider than 128 bits; crypto-scale math is out of scope.
-- **Float vs LongInt mixing**: `==` works (LongInt -> f64), but dict/set hashing follows raw `Val` bits — `{long_int: x}` indexed by a same-magnitude float misses. Coerce explicitly.
+- **No CPython-style unbounded ints**: by design, edge workloads don't need wider than 128 bits; crypto-scale math is out of scope.
+- **Float vs LongInt mixing**: `==` works (LongInt -> f64), but dict/set hashing follows raw `Val` bits, `{long_int: x}` indexed by a same-magnitude float misses. Coerce explicitly.
 
 ### Triggering limits
 
@@ -78,65 +78,65 @@ Source must be < 10 MiB; larger rejected at lex time.
 
 ## Token limits
 
-| Limit                | Value |
+| Limit | Value |
 |----------------------|-------|
-| Max indent depth     | 100   |
-| Max f-string depth   | 200   |
-| Max expression depth | 200   |
+| Max indent depth | 100 |
+| Max f-string depth | 200 |
+| Max expression depth | 200 |
 | Max instructions per chunk | 65,535 |
 
-Prevent asymmetric DoS — small input producing an exponentially large parse tree.
+Prevent asymmetric DoS, small input producing an exponentially large parse tree.
 
 ## Error types
 
 ### Compile-time
 
-Reported as `Diagnostic { start, end, msg }` — byte offsets into source; line/column computed lazily by `render()`. Caught before any code runs.
+Reported as `Diagnostic { start, end, msg }`, byte offsets into source; line/column computed lazily by `render()`. Caught before any code runs.
 
-| Diagnostic                                | Cause                                  |
+| Diagnostic | Cause |
 |-------------------------------------------|----------------------------------------|
-| `expected X, got 'Y'`                     | Unexpected token                       |
+| `expected X, got 'Y'` | Unexpected token |
 | `'(' was never closed` (or `'['` / `'{'`) | Bracket opened with no matching closer |
-| `')' does not match '[', expected ']'`    | Wrong closer kind for innermost opener |
-| `unexpected ')', no matching opener`      | Closer with no opener on the stack     |
-| `unexpected ':' (missing 'if', 'while', 'for', ...)` | `expr:` at statement level  |
-| `unterminated string literal`             | String missing closing quote           |
-| `unterminated triple-quoted string literal` | Triple-quoted string hit EOF         |
-| `f-string was never closed`               | F-string body hit EOF before close     |
+| `')' does not match '[', expected ']'` | Wrong closer kind for innermost opener |
+| `unexpected ')', no matching opener` | Closer with no opener on the stack |
+| `unexpected ':' (missing 'if', 'while', 'for', ...)` | `expr:` at statement level |
+| `unterminated string literal` | String missing closing quote |
+| `unterminated triple-quoted string literal` | Triple-quoted string hit EOF |
+| `f-string was never closed` | F-string body hit EOF before close |
 | `inconsistent indentation: mixing tabs and spaces` | Indent mixes both whitespace kinds |
-| `'break' outside loop`                    | Misplaced control keyword              |
-| `'continue' outside loop`                 | Misplaced control keyword              |
-| `default 'except:' must be last`          | Bare `except` not at end               |
-| `expression too deeply nested`            | Past `MAX_EXPR_DEPTH`                  |
+| `'break' outside loop` | Misplaced control keyword |
+| `'continue' outside loop` | Misplaced control keyword |
+| `default 'except:' must be last` | Bare `except` not at end |
+| `expression too deeply nested` | Past `MAX_EXPR_DEPTH` |
 | `program too large: exceeded maximum instruction limit` | Past `MAX_INSTRUCTIONS` |
 
 ### Runtime
 
 Raised as `VmErr`; most catchable with `try` / `except`.
 
-| Variant         | Class name           | When                               |
+| Variant | Class name | When |
 |-----------------|----------------------|------------------------------------|
-| `Type`          | `TypeError`          | Wrong operand type                 |
-| `TypeMsg`       | `TypeError`          | Wrong operand type (with context)  |
-| `Value`         | `ValueError`         | Right type, invalid value          |
-| `Attribute`     | `AttributeError`     | Attribute not found on object      |
-| `Name`          | `NameError`          | Undefined name                     |
-| `ZeroDiv`       | `ZeroDivisionError`  | Division or modulo by zero         |
-| `Overflow`      | `OverflowError`      | Integer arithmetic past ±2⁴⁷       |
-| `Raised("KeyError")`       | `KeyError`         | Dict / set lookup miss          |
-| `Raised("IndexError")`     | `IndexError`       | Sequence index out of range     |
-| `Raised("StopIteration")`  | `StopIteration`    | Iterator exhausted              |
-| `Raised("TimeoutError")`   | `TimeoutError`     | `with_timeout` deadline expired |
-| `Raised("CancelledError")` | `CancelledError`   | User-thrown cancellation        |
-| `CallDepth`     | `RecursionError`     | Past `max_calls`                   |
-| `Heap`          | `MemoryError`        | Past heap limit                    |
-| `Budget`        | `RuntimeError`       | Past op limit                      |
-| `Runtime`       | `RuntimeError`       | Internal invariant or unsupported  |
-| `Raised`        | (custom)             | User `raise X` (X may be a class or string) |
+| `Type` | `TypeError` | Wrong operand type |
+| `TypeMsg` | `TypeError` | Wrong operand type (with context) |
+| `Value` | `ValueError` | Right type, invalid value |
+| `Attribute` | `AttributeError` | Attribute not found on object |
+| `Name` | `NameError` | Undefined name |
+| `ZeroDiv` | `ZeroDivisionError` | Division or modulo by zero |
+| `Overflow` | `OverflowError` | Integer arithmetic past +/-2^47 |
+| `Raised("KeyError")` | `KeyError` | Dict / set lookup miss |
+| `Raised("IndexError")` | `IndexError` | Sequence index out of range |
+| `Raised("StopIteration")` | `StopIteration` | Iterator exhausted |
+| `Raised("TimeoutError")` | `TimeoutError` | `with_timeout` deadline expired |
+| `Raised("CancelledError")` | `CancelledError` | User-thrown cancellation |
+| `CallDepth` | `RecursionError` | Past `max_calls` |
+| `Heap` | `MemoryError` | Past heap limit |
+| `Budget` | `RuntimeError` | Past op limit |
+| `Runtime` | `RuntimeError` | Internal invariant or unsupported |
+| `Raised` | (custom) | User `raise X` (X may be a class or string) |
 
 #### Exception hierarchy
 
-Flat tree rooted at `BaseException -> Exception`. `except` walks parent links — `except Exception` catches `RuntimeError`, `ValueError`, `KeyError`, etc.; `except RuntimeError` catches `RecursionError`, `NotImplementedError`.
+Flat tree rooted at `BaseException -> Exception`. `except` walks parent links, `except Exception` catches `RuntimeError`, `ValueError`, `KeyError`, etc.; `except RuntimeError` catches `RecursionError`, `NotImplementedError`.
 
 ```python
 try:
@@ -155,7 +155,7 @@ caught via parent: oops
 caught IndexError as Exception
 ```
 
-User-defined classes don't auto-extend the built-in `BaseException` tree but support single-level inheritance among themselves — `except UserBase` catches a raised `UserSub` when `UserSub` inherits from `UserBase`. `raise X from Y` raises `X`; the cause is discarded (no `__cause__` / `__context__` chaining).
+User-defined classes don't auto-extend the built-in `BaseException` tree but support single-level inheritance among themselves, `except UserBase` catches a raised `UserSub` when `UserSub` inherits from `UserBase`. `raise X from Y` raises `X`; the cause is discarded (no `__cause__` / `__context__` chaining).
 
 ### Exception arguments
 
@@ -212,12 +212,12 @@ type
 
 ### Environmental errors
 
-Failures surfaced before the source reaches the compiler — no line/column preview, no parsed code to anchor to. Emitted as plain text, uncatchable from Python.
+Failures surfaced before the source reaches the compiler, no line/column preview, no parsed code to anchor to. Emitted as plain text, uncatchable from Python.
 
-| Error                                       | When                                          | Resolution                            |
+| Error | When | Resolution |
 |---------------------------------------------|-----------------------------------------------|---------------------------------------|
-| `input rejected: invalid utf-8 at byte N`   | Host input bytes not valid UTF-8              | Re-encode as UTF-8                    |
-| `source file exceeds maximum size (10 MiB)` | Source over the 10 MiB lex-time cap           | Split or trim the input               |
+| `input rejected: invalid utf-8 at byte N` | Host input bytes not valid UTF-8 | Re-encode as UTF-8 |
+| `source file exceeds maximum size (10 MiB)` | Source over the 10 MiB lex-time cap | Split or trim the input |
 
 Handle at the embedder layer (path validation, encoding, size check) before invoking the compiler.
 
@@ -236,4 +236,4 @@ Exist for syntactic compatibility. For code reuse, use higher-order functions.
 
 ## Determinism
 
-Same source + input -> same output across runs and architectures (`x86_64`, `aarch64`, `wasm32`). No time, randomness, threading, or OS interaction. Heap-pool slot reuse is the only nondeterminism, observable through `id(x)` only — never `==`, `repr`, or any other operation.
+Same source + input -> same output across runs and architectures (`x86_64`, `aarch64`, `wasm32`). No time, randomness, threading, or OS interaction. Heap-pool slot reuse is the only nondeterminism, observable through `id(x)` only, never `==`, `repr`, or any other operation.

@@ -32,7 +32,7 @@ impl<'a> VM<'a> {
         self.yielded = false;
         self.depth += 1;
 
-        // Walk frames inside-out, then the outer. `outer_ran` tracks whether `outer_ip` should be overwritten by `resume_ip` on save — a re-yield inside a sync frame leaves the outer pristine.
+        // Walk frames inside-out, then the outer. `outer_ran` tracks whether `outer_ip` should be overwritten by `resume_ip` on save, a re-yield inside a sync frame leaves the outer pristine.
         let mut outer_ran = false;
         let result: Result<Val, VmErr> = 'drive: loop {
             if let Some(frame) = sync_frames.pop() {
@@ -131,7 +131,7 @@ impl<'a> VM<'a> {
         }
     }
 
-    /* `run(*coros)` — single-driver model: pushes the targets into the global scheduler, parks the outer in `WaitingForChildren` with `WaitKind::Run(target)`, and yields. The top loop drains the children and wakes the outer when all are terminal. */
+    /* `run(*coros)`, single-driver model: pushes the targets into the global scheduler, parks the outer in `WaitingForChildren` with `WaitKind::Run(target)`, and yields. The top loop drains the children and wakes the outer when all are terminal. */
     pub fn call_run(&mut self, argc: u16) -> Result<(), VmErr> {
         let raw_tasks = self.pop_n(argc as usize)?;
         if raw_tasks.is_empty() {
@@ -151,7 +151,7 @@ impl<'a> VM<'a> {
         // Placeholder on stack top; wake-loop overwrites it with the target's result.
         self.push(Val::none());
         if coros.is_empty() {
-            // `run(non_coro)` — nothing to wait for; placeholder stays None.
+            // `run(non_coro)`, nothing to wait for; placeholder stays None.
             return Ok(());
         }
         self.pending.waiting_for_children = Some((coros, WaitKind::Run(target)));
@@ -159,7 +159,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    // Sweep `WaitingForChildren` outers: enforce timeouts, then wake any whose tracked tasks are all terminal — finalizing per `WaitKind`. Gated by `waiting_for_children_count` so the common (no-nested-run) tick is one comparison.
+    // Sweep `WaitingForChildren` outers: enforce timeouts, then wake any whose tracked tasks are all terminal, finalizing per `WaitKind`. Gated by `waiting_for_children_count` so the common (no-nested-run) tick is one comparison.
     fn wake_waiting_outers(&mut self) {
         if self.waiting_for_children_count == 0 { return; }
 
@@ -274,7 +274,7 @@ impl<'a> VM<'a> {
                 Err(alloc_e) => return CoroState::Errored(alloc_e),
             }
         };
-        // Splice into the outer's saved state — depths are relative to the saved stack/iter, matching the normalization on yield.
+        // Splice into the outer's saved state, depths are relative to the saved stack/iter, matching the normalization on yield.
         if let HeapObj::Coroutine(ip, _, stack, _, iters, _, _) = self.heap.get_mut(outer) {
             stack.truncate(frame.stack_depth);
             iters.truncate(frame.iter_depth);
@@ -410,7 +410,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* `gather(*coros)` — single-driver: pushes all targets, parks the outer in `WaitingForChildren` with `WaitKind::Gather`, and yields. Wake-loop builds the result list (or raises the first child error). */
+    /* `gather(*coros)`, single-driver: pushes all targets, parks the outer in `WaitingForChildren` with `WaitKind::Gather`, and yields. Wake-loop builds the result list (or raises the first child error). */
     pub fn call_gather(&mut self, argc: u16) -> Result<(), VmErr> {
         let tasks = self.pop_n(argc as usize)?;
         let coros: Vec<Val> = tasks.into_iter()
@@ -432,7 +432,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* `with_timeout(seconds, coro)` — single-driver: pushes the target, parks the outer with `WaitKind::Timeout { deadline_ns, target }`, and yields. The top loop enforces the deadline by marking the target CancelPending when it expires; the wake-loop returns the target's value or `TimeoutError`. */
+    /* `with_timeout(seconds, coro)`, single-driver: pushes the target, parks the outer with `WaitKind::Timeout { deadline_ns, target }`, and yields. The top loop enforces the deadline by marking the target CancelPending when it expires; the wake-loop returns the target's value or `TimeoutError`. */
     pub fn call_with_timeout(&mut self) -> Result<(), VmErr> {
         let coro = self.pop()?;
         let secs_v = self.pop()?;
@@ -452,7 +452,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* cancel(coro) — flag the coroutine for cancellation. */
+    /* cancel(coro), flag the coroutine for cancellation. */
     pub fn call_cancel(&mut self) -> Result<(), VmErr> {
         let coro = self.pop()?;
         if let Some(h) = self.scheduler.iter_mut().find(|h| h.coro == coro) {

@@ -3,7 +3,7 @@ use super::*;
 use cache::OpcodeCache;
 use ops::cached_binop;
 
-/* IC: maps an arithmetic opcode to the dunder name it dispatches to. Only the cacheable forward dunder — reflected ops are handled by the slow path's `NotImplemented` deopt. */
+/* IC: maps an arithmetic opcode to the dunder name it dispatches to. Only the cacheable forward dunder, reflected ops are handled by the slow path's `NotImplemented` deopt. */
 fn binary_dunder_name(op: OpCode) -> Option<&'static str> {
     match op {
         OpCode::Add => Some("__add__"),
@@ -39,7 +39,7 @@ impl<'a> VM<'a> {
 
         let (a, b) = self.pop2()?;
 
-        // instance dunder protocol — try user-defined operator before any builtin coercion.
+        // instance dunder protocol, try user-defined operator before any builtin coercion.
         if let Some(r) = self.try_binary_dunder(op, a, b, chunk, slots)? {
             // record the resolved class+method so the IC can fire on subsequent iterations of a hot loop.
             if let Some(name) = binary_dunder_name(op) {
@@ -189,7 +189,7 @@ impl<'a> VM<'a> {
             return Ok(());
         }
 
-        // Set/Set uses subset/superset, NOT total order — the numeric `LtEq = !lt_vals(b, a)` identity is wrong here ({1,2} <= {2,3} would come back True), so we bypass `lt_vals`.
+        // Set/Set uses subset/superset, NOT total order, the numeric `LtEq = !lt_vals(b, a)` identity is wrong here ({1,2} <= {2,3} would come back True), so we bypass `lt_vals`.
         if a.is_heap() && b.is_heap()
             && matches!(self.heap.get(a), HeapObj::Set(_))
             && matches!(self.heap.get(b), HeapObj::Set(_)) {

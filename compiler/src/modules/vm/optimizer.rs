@@ -1,6 +1,6 @@
-/* 
-Post-SSA optimisation passes: constant folding (binop / Not / Minus on LoadConst) and Phi-noop elimination. LoadName is left alone so IC/super-ops/templates still see it.
-After any pass, dead instructions are removed and jump operands remapped. 
+/*
+Post-SSA passes: constant folding (binop / Not / Minus on LoadConst) and Phi-noop elimination.
+LoadName preserved for IC/super-ops/templates. Dead instructions removed, jump operands remapped.
 */
 
 use crate::modules::parser::{OpCode, SSAChunk, Instruction, Value};
@@ -43,7 +43,7 @@ pub fn constant_fold(chunk: &mut SSAChunk) {
             if dead[ip] || ins.opcode != OpCode::Phi { continue; }
             let phi_idx = chunk.phi_map[ip];
             let Some(&(a, b)) = chunk.phi_sources.get(phi_idx) else { continue };
-            // Sources + dest collapsed to one slot — `slots[X] = slots[X]` is a no-op.
+            // Sources + dest collapsed to one slot, `slots[X] = slots[X]` is a no-op.
             if a == b && a == ins.operand {
                 dead[ip] = true;
             } else {

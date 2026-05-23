@@ -117,7 +117,7 @@ impl OpcodeCache {
                 s.fast = Self::specialize(opcode, ta, tb);
             }
         } else {
-            // Preserve `inst` — its lifecycle is independent of scalar specialisation.
+            // Preserve `inst`, its lifecycle is independent of scalar specialisation.
             s.type_key = key;
             s.hits = 1;
             s.fast = None;
@@ -138,7 +138,7 @@ impl OpcodeCache {
         }
     }
 
-    /* F4: monomorphic instance-dunder hit counter — promotes after `QUICK_THRESH` consecutive hits with the same class + method pair. Polymorphic sites churn (`record_inst` overwrites on mismatch) but never wedge. */
+    /* F4: monomorphic instance-dunder hit counter, promotes after `QUICK_THRESH` consecutive hits with the same class + method pair. Polymorphic sites churn (`record_inst` overwrites on mismatch) but never wedge. */
     pub fn record_inst(&mut self, ip: usize, class: u32, method: Val, arity: u8) {
         let Some(s) = self.slots.get_mut(ip) else { return };
         match s.inst.as_mut() {

@@ -1,6 +1,6 @@
 # Edge Python
 
-A compact single-pass SSA bytecode compiler and stack VM for a sandboxed Python subset. Hand-written lexer, Pratt parser that emits bytecode directly (no AST), and a threaded-code interpreter with dual inline caching (scalar + instance-dunder), super-instruction fusion, and pure-function template memoization. Deterministic execution; ~170 KB WASM release.
+A compact single-pass SSA bytecode compiler and stack VM for a sandboxed Python subset. Hand-written lexer, Pratt parser that emits bytecode directly (no AST), and a threaded-code interpreter with dual inline caching (scalar + instance-dunder), super-instruction fusion, and pure-function template memoization. Deterministic execution; around 170 KB WASM release.
 
 * **Demo:** [demo.edgepython.com](https://demo.edgepython.com/)
 * **Docs:** [edgepython.com](https://edgepython.com/)
@@ -9,14 +9,14 @@ A compact single-pass SSA bytecode compiler and stack VM for a sandboxed Python 
 
 Single-pass pipeline: source -> bytecode in an SSA chunk; stack interpreter with adaptive inline caching and pure-function memoization.
 
-* **Lexer** (`modules/lexer/`) — LUT-driven, offset-based tokens. See [Lexical](https://edgepython.com/implementation/lexical).
-* **Parser** (`modules/parser/`) — Pratt precedence; SSA-versioned bytecode with `Phi` at control-flow joins; no AST. See [Syntax (impl)](https://edgepython.com/implementation/syntax).
-* **Optimizer** (`modules/vm/optimizer.rs`) — constant folding, Phi-noop elimination, dead-instruction compaction. Preserves `LoadName` for IC.
-* **VM** (`modules/vm/`) — flat-match dispatch on `(opcode, operand: u16)`; `handlers/` + `handlers/builtin_methods/`. `LoadAttr + Call(0)` fuses into `CallMethod`.
-* **Inline caching** (`modules/vm/cache.rs`) — scalar IC promotes arith/compare to typed `FastOp` after 4 hits; instance-dunder IC caches `(class_idx, method)`.
-* **Template memoization** — pure-function results cached after 2 hits; impurity tagged on `StoreItem` / `StoreAttr` / I/O / `raise` / `yield`.
-* **Memory** — NaN-boxed 64-bit `Val` (47-bit inline int, IEEE-754 float, bool, None, 28-bit heap index); mark-and-sweep arena; interned strings/bytes ≤ 128 B; auto-promote to i128 `LongInt`, capped at ±2¹²⁷.
-* **Resolver** (`modules/packages/`) — host-injected; `packages.json` walk-up; native imports register for `CallExtern` dispatch.
+* **Lexer** (`modules/lexer/`), LUT-driven, offset-based tokens. See [Lexical](https://edgepython.com/implementation/lexical).
+* **Parser** (`modules/parser/`), Pratt precedence; SSA-versioned bytecode with `Phi` at control-flow joins; no AST. See [Syntax (impl)](https://edgepython.com/implementation/syntax).
+* **Optimizer** (`modules/vm/optimizer.rs`), constant folding, Phi-noop elimination, dead-instruction compaction. Preserves `LoadName` for IC.
+* **VM** (`modules/vm/`), flat-match dispatch on `(opcode, operand: u16)`; `handlers/` + `handlers/builtin_methods/`. `LoadAttr + Call(0)` fuses into `CallMethod`.
+* **Inline caching** (`modules/vm/cache.rs`), scalar IC promotes arith/compare to typed `FastOp` after 4 hits; instance-dunder IC caches `(class_idx, method)`.
+* **Template memoization**, pure-function results cached after 2 hits; impurity tagged on `StoreItem` / `StoreAttr` / I/O / `raise` / `yield`.
+* **Memory**, NaN-boxed 64-bit `Val` (47-bit inline int, IEEE-754 float, bool, None, 28-bit heap index); mark-and-sweep arena; interned strings/bytes <= 128 B; auto-promote to i128 `LongInt`, capped at +/-2^127.
+* **Resolver** (`modules/packages/`), host-injected; `packages.json` walk-up; native imports register for `CallExtern` dispatch.
 
 Full rationale, NaN-box patterns, IC thresholds, GC roots, and intentional omissions: [Design](https://edgepython.com/implementation/design).
 
@@ -47,7 +47,7 @@ cargo wasm           # release WASM artifact -> target/wasm32-unknown-unknown/re
 cargo test --release # host-side test suite
 ```
 
-`cargo wasm` is a workspace alias (`.cargo/config.toml`) for `cargo build --release --target wasm32-unknown-unknown -p edge-python`. Plain `cargo build --release` produces host artifacts (`.rlib` + cdylib) for embedders linking `compiler_lib`. To add native modules from your own crate, implement the `Resolver` trait — see [Writing modules](https://edgepython.com/reference/writing-modules).
+`cargo wasm` is a workspace alias (`.cargo/config.toml`) for `cargo build --release --target wasm32-unknown-unknown -p edge-python`. Plain `cargo build --release` produces host artifacts (`.rlib` + cdylib) for embedders linking `compiler_lib`. To add native modules from your own crate, implement the `Resolver` trait, see [Writing modules](https://edgepython.com/reference/writing-modules).
 
 The host runtime owns I/O, network, and module fetching; there is no native CLI. Browser hosts use the [`runtime/`](../runtime/) JS package; server/edge runtimes use wasmtime, wasmer, Cloudflare Workers, Fastly Compute, Spin.
 
@@ -71,7 +71,7 @@ fn main() {
 }
 ```
 
-URL is derived from `<repository>/releases/download/v<version>/compiler_lib.wasm` — a tag bump is the only retarget needed. Use `branch = "main"` for unreleased work. Requires `curl` on PATH. Gated by the default-on `prebuilt` feature; producer-side commands pass `--no-default-features` to skip.
+URL is derived from `<repository>/releases/download/v<version>/compiler_lib.wasm`, a tag bump is the only retarget needed. Use `branch = "main"` for unreleased work. Requires `curl` on PATH. Gated by the default-on `prebuilt` feature; producer-side commands pass `--no-default-features` to skip.
 
 ## References
 

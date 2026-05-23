@@ -35,7 +35,7 @@ pub unsafe extern "C" fn wasm_alloc(size: u32) -> *mut u8 {
     Box::into_raw(v.into_boxed_slice()) as *mut u8
 }
 
-/* Frees a `wasm_alloc` buffer. Host must pass the exact `size` it requested — a mismatched length rebuilds the wrong Box layout. Null or zero is a no-op. */
+/* Frees a `wasm_alloc` buffer. Host must pass the exact `size` it requested, a mismatched length rebuilds the wrong Box layout. Null or zero is a no-op. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wasm_free(ptr: *mut u8, size: u32) {
     if ptr.is_null() || size == 0 { return; }

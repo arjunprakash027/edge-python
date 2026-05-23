@@ -37,7 +37,7 @@ impl<'a> Scanner<'a> {
         self.errors.push(LexError { start, end, msg });
     }
 
-    /* All inner scan loops use BYTE_CLASS indexed loads — zero branches per byte. */
+    /* All inner scan loops use BYTE_CLASS indexed loads, zero branches per byte. */
     #[inline]
     fn scan_while(&mut self, pred: impl Fn(u8) -> bool) {
         while self.pos < self.src.len() && pred(self.src[self.pos]) {
@@ -352,7 +352,7 @@ impl<'a> Scanner<'a> {
             return self.pending.pop();
         }
 
-        if b == b'#' { // inside an f-string interpolation, '#' is part of the format spec — skip silently
+        if b == b'#' { // inside an f-string interpolation, '#' is part of the format spec, skip silently
             if !self.fstring_stack.is_empty() {
                 self.pos += 1;
                 return self.next_token();

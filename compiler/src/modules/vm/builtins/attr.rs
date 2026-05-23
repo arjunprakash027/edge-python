@@ -39,7 +39,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* `setattr(obj, name, value)` — mirrors `obj.name = value`. Instance-only: builtin types have no mutable attribute table. */
+    /* `setattr(obj, name, value)`, mirrors `obj.name = value`. Instance-only: builtin types have no mutable attribute table. */
     pub fn call_setattr(&mut self) -> Result<(), VmErr> {
         let value = self.pop()?;
         let name = self.expect_str_arg("setattr() name must be a string")?;
@@ -55,14 +55,14 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* `delattr(obj, name)` — remove an attribute from a user instance. */
+    /* `delattr(obj, name)`, remove an attribute from a user instance. */
     pub fn call_delattr(&mut self) -> Result<(), VmErr> {
         let name = self.expect_str_arg("delattr() name must be a string")?;
         let obj = self.pop()?;
         if !obj.is_heap() || !matches!(self.heap.get(obj), HeapObj::Instance(..)) {
             return Err(cold_type("delattr() target must be an instance"));
         }
-        // Strings ≤128 bytes are interned, so re-alloc'ing yields the same Val key StoreAttr used.
+        // Strings <=128 bytes are interned, so re-alloc'ing yields the same Val key StoreAttr used.
         let key = self.heap.alloc(HeapObj::Str(name))?;
         if let HeapObj::Instance(_, attrs) = self.heap.get(obj) {
             attrs.borrow_mut().remove(&key);
@@ -78,7 +78,7 @@ impl<'a> VM<'a> {
         Err(cold_type(msg))
     }
 
-    /* `vars(obj)` — Instance: copy of `__dict__`; Module: dict from its attrs. No-arg form is unsupported — use `locals()`. */
+    /* `vars(obj)`, Instance: copy of `__dict__`; Module: dict from its attrs. No-arg form is unsupported, use `locals()`. */
     pub fn call_vars(&mut self) -> Result<(), VmErr> {
         use alloc::vec::Vec;
         let obj = self.pop()?;
@@ -108,7 +108,7 @@ impl<'a> VM<'a> {
         self.alloc_and_push_dict(dm)
     }
 
-    /* `globals()` — module-level bindings as a dict. Merges `self.globals` (builtins/types/modules) with entry-chunk slots (user top-level names). Returned dict is a copy. */
+    /* `globals()`, module-level bindings as a dict. Merges `self.globals` (builtins/types/modules) with entry-chunk slots (user top-level names). Returned dict is a copy. */
     pub fn call_globals(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &[Val]) -> Result<(), VmErr> {
         // Builtin/type/module pairs from `self.globals`, deduped to bare names.
         let mut out: crate::util::fx::FxHashMap<String, Val> = crate::util::fx::FxHashMap::default();
@@ -151,7 +151,7 @@ impl<'a> VM<'a> {
         self.alloc_and_push_dict(dm)
     }
 
-    /* `locals()` — frame bindings as a dict. Dedupes SSA versions (`x_0`, `x_1`, ...) to the highest live one. Filters synthetic `#`-slots and unrebound builtins (same Val as the global). */
+    /* `locals()`, frame bindings as a dict. Dedupes SSA versions (`x_0`, `x_1`, ...) to the highest live one. Filters synthetic `#`-slots and unrebound builtins (same Val as the global). */
     pub fn call_locals(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &[Val]) -> Result<(), VmErr> {
         // Map bare-name -> (best version, val) so we keep only the latest.
         let mut latest: crate::util::fx::FxHashMap<String, (i64, Val)> = crate::util::fx::FxHashMap::default();
@@ -160,7 +160,7 @@ impl<'a> VM<'a> {
                 Some(v) if !v.is_undef() => *v,
                 _ => continue,
             };
-            // Synthetic `#`-slots are matcher scratch — never user-visible.
+            // Synthetic `#`-slots are matcher scratch, never user-visible.
             if name.starts_with('#') { continue; }
             // Strip SSA version suffix.
             let (bare, ver) = crate::modules::parser::SsaName::parse_or_bare(name);

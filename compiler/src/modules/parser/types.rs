@@ -270,7 +270,7 @@ pub const SSA_TMP_CMP: &str = "#cmp";
 pub const SSA_TMP_MATCH: &str = "#match";
 pub const SSA_TMP_MATCH_ITEM: &str = "#match_item";
 
-/* Parsed view of a `<bare>_<digits>` SSA-suffixed name — avoids re-inlining the rfind('_') + ascii-digit + parse dance at every call site. */
+/* Parsed view of a `<bare>_<digits>` SSA-suffixed name, avoids re-inlining the rfind('_') + ascii-digit + parse dance at every call site. */
 pub struct SsaName<'a> {
     pub bare: &'a str,
     pub version: u32,

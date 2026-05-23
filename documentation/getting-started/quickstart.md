@@ -5,7 +5,7 @@ description: "Run your first Edge Python program in under a minute."
 
 ## Run it
 
-Edge Python ships as a 170 KB WebAssembly module. Fastest way to try it — the playground, no install, fully client-side.
+Edge Python ships as a 170 KB WebAssembly module. Fastest way to try it, the playground, no install, fully client-side.
 
 [Open the playground ->](https://demo.edgepython.com)
 
@@ -13,7 +13,7 @@ Edge Python ships as a 170 KB WebAssembly module. Fastest way to try it — the 
 
 Two artifacts:
 
-1. `compiler_lib.wasm` (170 KB — lexer, parser, stack VM).
+1. `compiler_lib.wasm` (170 KB, lexer, parser, stack VM).
 2. A loader. Browser: the [`runtime/`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) package; WASI: your runtime's import API.
 
 Build yourself:
@@ -24,7 +24,7 @@ cd edge-python/compiler
 cargo wasm # -> target/wasm32-unknown-unknown/release/compiler_lib.wasm
 ```
 
-Rust consumers can let cargo fetch the release artifact via `DEP_COMPILER_LIB_WASM` (see the repo README). No native CLI — `compiler_lib.wasm` is the artifact and the host owns I/O, network, time, module fetching. Full ABI: [What it is — Where it runs](/getting-started/what-it-is#where-it-runs).
+Rust consumers can let cargo fetch the release artifact via `DEP_COMPILER_LIB_WASM` (see the repo README). No native CLI, `compiler_lib.wasm` is the artifact and the host owns I/O, network, time, module fetching. Full ABI: [What it is, Where it runs](/getting-started/what-it-is#where-it-runs).
 
 ## Your first program
 
@@ -45,7 +45,7 @@ Hello, python!
 
 ## Language overview
 
-Edge Python is a Python subset with classes, async/await, structural pattern matching, and `packages.json` imports — compiled to bytecode and run on a sandboxed WebAssembly VM.
+Edge Python is a Python subset with classes, async/await, structural pattern matching, and `packages.json` imports, compiled to bytecode and run on a sandboxed WebAssembly VM.
 
 ```python
 # First-class functions

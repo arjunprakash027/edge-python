@@ -81,7 +81,7 @@ impl<'a> VM<'a> {
         self.alloc_and_push_list(items)
     }
 
-    /* sorted(iterable, key=fn) — decorate-sort-undecorate via a parallel keys vec. key=None delegates to the no-key path. */
+    /* sorted(iterable, key=fn), decorate-sort-undecorate via a parallel keys vec. key=None delegates to the no-key path. */
     pub fn call_sorted_with_key(&mut self, key: Option<Val>, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let key = match key {
             Some(k) if !k.is_none() => k,
@@ -115,7 +115,7 @@ impl<'a> VM<'a> {
         self.alloc_and_push_list(sorted)
     }
 
-    /* In-place sort via `lt_vals`. Stashes the first error and surfaces it after the sort — `sort_by` closures can't return Result. */
+    /* In-place sort via `lt_vals`. Stashes the first error and surfaces it after the sort, `sort_by` closures can't return Result. */
     pub(crate) fn sort_by_lt(&self, items: &mut [Val]) -> Result<(), VmErr> {
         let mut sort_err: Option<VmErr> = None;
         items.sort_by(|&a, &b| {
@@ -212,7 +212,7 @@ impl<'a> VM<'a> {
             }
             HeapObj::Dict(d) => Some(d.borrow().keys().collect()),
             HeapObj::Bytes(b) => Some(b.iter().map(|&x| Val::int(x as i64)).collect()),
-            HeapObj::Str(_) => None, // handled below — needs heap allocation
+            HeapObj::Str(_) => None, // handled below, needs heap allocation
             _ => return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable"))),
         };
         if let Some(v) = snapshot { return Ok(v); }
@@ -224,7 +224,7 @@ impl<'a> VM<'a> {
         unreachable!()
     }
 
-    /* Flatten any iterable to a fresh `Vec<Val>` — shared input path for iter/map/filter so all three accept the same set of sources. */
+    /* Flatten any iterable to a fresh `Vec<Val>`, shared input path for iter/map/filter so all three accept the same set of sources. */
     pub(crate) fn iter_to_vec_general(&mut self, o: Val) -> Result<Vec<Val>, VmErr> {
         if !o.is_heap() {
             return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable")));
@@ -243,7 +243,7 @@ impl<'a> VM<'a> {
         self.extract_iter(o, true)
     }
 
-    /* `iter(x)` — eager flatten into a fresh List drained front-to-back by `next()`. Original isn't touched. Mirrors the universal ABI's `Op::Iter`. */
+    /* `iter(x)`, eager flatten into a fresh List drained front-to-back by `next()`. Original isn't touched. Mirrors the universal ABI's `Op::Iter`. */
     pub fn call_iter(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         let items = self.iter_to_vec_general(o)?;
@@ -277,7 +277,7 @@ impl<'a> VM<'a> {
         }
     }
 
-    /* `map(fn, iter)` — eager; returns a list. Re-enters `exec_call` per item so closures with captures see the caller's chunk/slots. */
+    /* `map(fn, iter)`, eager; returns a list. Re-enters `exec_call` per item so closures with captures see the caller's chunk/slots. */
     pub fn call_map(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let iterable = self.pop()?;
         let fn_val = self.pop()?;
@@ -292,7 +292,7 @@ impl<'a> VM<'a> {
         self.alloc_and_push_list(out)
     }
 
-    /* `filter(pred, iter)` — eager; keeps truthy `pred(item)`. Same call-shape as `map`. `pred=None` falls back to Python's identity-truthy filter. */
+    /* `filter(pred, iter)`, eager; keeps truthy `pred(item)`. Same call-shape as `map`. `pred=None` falls back to Python's identity-truthy filter. */
     pub fn call_filter(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let iterable = self.pop()?;
         let fn_val = self.pop()?;
@@ -341,7 +341,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    // Materialise an iterable to a list — strings -> chars, ranges eager, coroutines drained.
+    // Materialise an iterable to a list, strings -> chars, ranges eager, coroutines drained.
     pub fn call_list(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let o = self.pop()?;
         // user-defined iterable wins over the built-in dispatch.

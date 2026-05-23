@@ -272,7 +272,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
     ed.addEventListener('compositionend', () => { composing = false; });
 
     ed.addEventListener('keydown', (e) => {
-        // IME, dead-key, or AltGr printable: never intercept — each path corrupts accents/CJK input otherwise.
+        // IME, dead-key, or AltGr printable: never intercept, each path corrupts accents/CJK input otherwise.
         if (composing || e.isComposing || e.keyCode === 229) return;
         if (e.key === 'Dead') return;
         if (isAltGrChar(e)) return;
@@ -281,7 +281,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
             e.preventDefault(); onRun(jar.toString()); return;
         }
-        // Any other modifier-bearing keystroke (Ctrl+S, Cmd+C, Alt+arrow, …) belongs to the browser / CodeJar.
+        // Any other modifier-bearing keystroke (Ctrl+S, Cmd+C, Alt+arrow, ...) belongs to the browser / CodeJar.
         if (e.ctrlKey || e.metaKey || e.altKey) return;
 
         // Hard cap on document size: block Enter once we'd exceed MAX_LINES.

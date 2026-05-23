@@ -88,7 +88,7 @@ where F: FnOnce(&mut crate::util::fx::FxHashSet<Val>) -> Result<R, VmErr>
     }
 }
 
-// `Vec<Val>` from any iterable (list/tuple/set) — for set ops accepting non-set iterables.
+// `Vec<Val>` from any iterable (list/tuple/set), for set ops accepting non-set iterables.
 #[inline]
 pub(super) fn iter_to_vec(vm: &VM, v: Val) -> Result<Vec<Val>, VmErr> {
     if !v.is_heap() { return Err(cold_type("expected an iterable")); }

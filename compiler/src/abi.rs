@@ -1,15 +1,14 @@
-/* 
-Sealed module contract: op codes / tags / error kinds / HandleTable / ErrorStash / primitive codec.
-Wire-level constants live in `wasm-abi`; the enums below mirror them byte-for-byte.
-Add host modules via new Op values, never new imports or signature changes.
-See documentation/reference/wasm-abi.md for the spec. 
+/*
+Sealed module contract: op codes / tags / error kinds / HandleTable / ErrorStash / codec.
+Constants mirror `wasm-abi` byte-for-byte; extend host modules via new Op values, never new imports.
+Spec: documentation/reference/wasm-abi.md.
 */
 
 use alloc::{string::String, vec::Vec};
 
 pub use wasm_abi::{nan_box, EDGE_ABI_VERSION, TAG_INVALID};
 
-/* Op codes (sealed) — values mirror `wasm_abi::op::*`. */
+/* Op codes (sealed), values mirror `wasm_abi::op::*`. */
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,7 +46,7 @@ impl Op {
     }
 }
 
-/* Tags (sealed) — values mirror `wasm_abi::tag::*`. */
+/* Tags (sealed), values mirror `wasm_abi::tag::*`. */
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,7 +73,7 @@ impl Tag {
     }
 }
 
-/* Error kinds (sealed) — values mirror `wasm_abi::error_kind::*`. */
+/* Error kinds (sealed), values mirror `wasm_abi::error_kind::*`. */
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

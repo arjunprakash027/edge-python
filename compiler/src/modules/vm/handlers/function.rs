@@ -116,7 +116,7 @@ impl<'a> VM<'a> {
             return Ok(());
         }
 
-        // Snapshot defaults/captures once — both are tiny (<10), and cloning beats the 3+ heap re-reads later phases would do. Back-prop still uses `get_mut` since it writes.
+        // Snapshot defaults/captures once, both are tiny (<10), and cloning beats the 3+ heap re-reads later phases would do. Back-prop still uses `get_mut` since it writes.
         let (fi, defaults, captures) = match self.heap.get(callee) {
             HeapObj::Func(i, d, c) => (*i, d.clone(), c.clone()),
             _ => return Err(cold_type("object is not callable")),
@@ -218,7 +218,7 @@ impl<'a> VM<'a> {
         Ok((stack_items, kw_flat, num_pos, num_kw))
     }
 
-    /* Pack a flat `[name, val, name, val, …]` slice into a heap dict for the trailing kwargs slot. `None` when there are no kwargs so the FFI layer can serialize handle 0 on the wire. */
+    /* Pack a flat `[name, val, name, val, ...]` slice into a heap dict for the trailing kwargs slot. `None` when there are no kwargs so the FFI layer can serialize handle 0 on the wire. */
     pub(crate) fn pack_kw_dict(heap: &mut super::super::types::HeapPool, kw_flat: &[Val]) -> Result<Option<Val>, VmErr> {
         if kw_flat.is_empty() { return Ok(None); }
         let dm = super::super::types::DictMap::from_pairs(kw_flat.chunks_exact(2).map(|p| (p[0], p[1])).collect());
@@ -263,13 +263,13 @@ impl<'a> VM<'a> {
 
         // Calling a class: create an instance and run `__init__` if defined (walks bases).
         if let HeapObj::Class(..) = self.heap.get(callee) {
-            // The recursive `exec_call` below only encodes positional count — kwargs would silently disappear before reaching `__init__`, so reject them here.
+            // The recursive `exec_call` below only encodes positional count, kwargs would silently disappear before reaching `__init__`, so reject them here.
             if !kw_flat.is_empty() {
                 return Err(cold_type("class constructor takes no keyword arguments"));
             }
             let instance = self.heap.alloc(HeapObj::Instance(callee, Rc::new(RefCell::new(DictMap::new()))))?;
             if let Some((init_fn, defining)) = self.lookup_class_member(callee, "__init__") {
-                // Fail-fast before pushing — the inner check fires only after parse_call_args pops.
+                // Fail-fast before pushing, the inner check fires only after parse_call_args pops.
                 if self.depth >= self.max_calls { return Err(cold_depth()); }
                 self.pending.method_binding = Some((defining, instance));
                 self.push(init_fn);
@@ -315,7 +315,7 @@ impl<'a> VM<'a> {
             return Ok(true);
         }
 
-        // F2.5: instance with `__call__` — bind and dispatch through `BoundUserMethod`-style flow.
+        // F2.5: instance with `__call__`, bind and dispatch through `BoundUserMethod`-style flow.
         if let HeapObj::Instance(..) = self.heap.get(callee)
             && let Some((func, class)) = self.lookup_class_member(
                 match self.heap.get(callee) { HeapObj::Instance(c, _) => *c, _ => unreachable!() },
@@ -402,7 +402,7 @@ impl<'a> VM<'a> {
             }
         }
 
-        // Closure captures: same rule as defaults — only fill if undef.
+        // Closure captures: same rule as defaults, only fill if undef.
         for &(bi, val) in captures {
             if bi < fn_slots.len() && fn_slots[bi].is_undef() {
                 fn_slots[bi] = val;
@@ -418,7 +418,7 @@ impl<'a> VM<'a> {
         let param_bm = &self.is_param_slot[fi];
         let caller_fi = self.body_to_fi.get(&(chunk as *const _)).copied();
         let callee_parent_fi = self.function_parents.get(fi).and_then(|x| *x);
-        // Same-scope also requires same module — keeps top-level imports (`parent_fi == None`) isolated.
+        // Same-scope also requires same module, keeps top-level imports (`parent_fi == None`) isolated.
         let caller_module = caller_fi.and_then(|cf| self.fn_module.get(cf).cloned().flatten());
         let callee_module = self.fn_module.get(fi).cloned().flatten();
         let same_scope = caller_fi == callee_parent_fi && caller_module == callee_module;
@@ -463,7 +463,7 @@ impl<'a> VM<'a> {
             }
             if !latest_v.is_undef() { return Some(latest_v); }
         }
-        // Layer 2: callee's module attrs — keeps `a.helper` and `b.helper` isolated.
+        // Layer 2: callee's module attrs, keeps `a.helper` and `b.helper` isolated.
         if let Some(Some(spec)) = self.fn_module.get(fi).cloned()
             && let Some(mod_val) = self.module_table.get(&spec).copied()
             && mod_val.is_heap()
@@ -472,7 +472,7 @@ impl<'a> VM<'a> {
         {
             return Some(*v);
         }
-        // Layer 3: globals — catches forward-ref mutual recursion in the entry chunk.
+        // Layer 3: globals, catches forward-ref mutual recursion in the entry chunk.
         self.globals.get(bare).copied()
     }
 
@@ -548,13 +548,13 @@ impl<'a> VM<'a> {
     }
 
 
-    /* CallExtern: operand packs `(extern_idx<<8)|(kw<<4)|pos`. Pop kw `name,val` pairs then `pos` positional vals, pack pairs into a heap dict via `pack_kw_dict` and hand it off as the explicit `Option<Val>` kwargs slot. Pure externs leave the impurity flag alone — bodies whose only side-effects are pure externs stay memoizable. */
+    /* CallExtern: operand packs `(extern_idx<<8)|(kw<<4)|pos`. Pop kw `name,val` pairs then `pos` positional vals, pack pairs into a heap dict via `pack_kw_dict` and hand it off as the explicit `Option<Val>` kwargs slot. Pure externs leave the impurity flag alone, bodies whose only side-effects are pure externs stay memoizable. */
     pub(crate) fn call_extern(&mut self, operand: u16, chunk: &SSAChunk) -> Result<(), VmErr> {
         let extern_idx = (operand >> 8) as usize;
         let kw = ((operand >> 4) & 0xF) as usize;
         let pos = (operand & 0xF) as usize;
         let extern_fn = chunk.extern_table.get(extern_idx).ok_or(cold_runtime("CallExtern: extern index out of bounds"))?;
-        let func = extern_fn.func.clone(); // Arc clone — refcount bump only
+        let func = extern_fn.func.clone(); // Arc clone, refcount bump only
         let pure = extern_fn.pure;
         let kw_flat = if kw > 0 { self.pop_n(kw * 2)? } else { Vec::new() };
         let positional = self.pop_n(pos)?;

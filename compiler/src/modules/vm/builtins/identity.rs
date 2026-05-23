@@ -6,7 +6,7 @@ use super::matches_exc_class;
 
 impl<'a> VM<'a> {
 
-    /* `property(fget)` / `property(fget, fset)` — captures the descriptor pair the class chain hands to `LoadAttr` / `StoreAttr`. The `@x.setter` decorator builds the second form via `PropertySetter`. */
+    /* `property(fget)` / `property(fget, fset)`, captures the descriptor pair the class chain hands to `LoadAttr` / `StoreAttr`. The `@x.setter` decorator builds the second form via `PropertySetter`. */
     pub fn call_property(&mut self, argc: u16) -> Result<(), VmErr> {
         let args = self.pop_n(argc as usize)?;
         let (getter, setter) = match args.as_slice() {
@@ -66,7 +66,7 @@ impl<'a> VM<'a> {
         use core::hash::{Hash, Hasher};
         let o = self.pop()?;
 
-        // instance dispatch — user `__hash__` wins; `__eq__` without `__hash__` makes the instance unhashable.
+        // instance dispatch, user `__hash__` wins; `__eq__` without `__hash__` makes the instance unhashable.
         if o.is_heap() && let HeapObj::Instance(cls, _) = self.heap.get(o) {
             let cls = *cls;
             let has_hash = self.lookup_class_member(cls, "__hash__").is_some();
@@ -104,7 +104,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* Type-name based isinstance check. Accepts Type / NativeFn (builtin types) / user Class on the right; allows int↔bool aliasing and walks user inheritance via `is_subclass`. */
+    /* Type-name based isinstance check. Accepts Type / NativeFn (builtin types) / user Class on the right; allows int<->bool aliasing and walks user inheritance via `is_subclass`. */
     pub fn call_isinstance(&mut self) -> Result<(), VmErr> {
         let (arg2, obj) = (self.pop()?, self.pop()?);
         let obj_ty = self.type_name(obj);

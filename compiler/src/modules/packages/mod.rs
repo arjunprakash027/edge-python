@@ -10,7 +10,7 @@ use crate::modules::vm::types::{HeapPool, Val, VmErr};
 pub mod manifest;
 pub use manifest::{Manifest, parse_manifest, walk_up_dirs, dir_of, join_relative};
 
-/* Plain fn-pointer alias for hand-written Rust natives; the `Arc<dyn Fn ...>` form lives in `ExternFnPtr` below. Third arg is the kwargs slot — `None` for plain positional calls, `Some(dict_val)` when the caller used `name=value`; natives that don't accept kwargs ignore it. */
+/* Plain fn-pointer alias for hand-written Rust natives; the `Arc<dyn Fn ...>` form lives in `ExternFnPtr` below. Third arg is the kwargs slot, `None` for plain positional calls, `Some(dict_val)` when the caller used `name=value`; natives that don't accept kwargs ignore it. */
 pub type ExternFnPlain = fn(&mut HeapPool, &[Val], Option<Val>) -> Result<Val, VmErr>;
 
 /* Arc-wrapped callable for EdgePython natives; supports stateful loaders like wasmtime stores. */

@@ -128,7 +128,7 @@ done
 
 Subset supported: literal patterns, capture variables, `_` wildcard, OR (`|`), guards (`if`), sequence patterns with `*rest`.
 
-Sequence-pattern items must be literals (`int` / `float` / `str` / `True` / `False` / `None`), capture names, or `_`. Nested sequences (`case [[a, b], c]:`), mapping patterns (`{"key": x}`), class patterns (`Point(x=0)`), and `as` captures are unsupported — use chained `if` / `elif`.
+Sequence-pattern items must be literals (`int` / `float` / `str` / `True` / `False` / `None`), capture names, or `_`. Nested sequences (`case [[a, b], c]:`), mapping patterns (`{"key": x}`), class patterns (`Point(x=0)`), and `as` captures are unsupported, use chained `if` / `elif`.
 
 ```python
 def classify(p):
@@ -246,7 +246,7 @@ except ValueError:
 rejected
 ```
 
-`raise X from Y` raises `X`. The `from` clause parses and the cause evaluates, but `__cause__` / `__context__` aren't preserved — only `X` reaches the handler.
+`raise X from Y` raises `X`. The `from` clause parses and the cause evaluates, but `__cause__` / `__context__` aren't preserved, only `X` reaches the handler.
 
 ```python
 try:
@@ -274,11 +274,11 @@ subclass caught
 
 ### Exception names available
 
-Pre-bound exception classes (with their parent links so `except <Parent>:` matches subclasses) are listed in [Limits and errors — Runtime](/reference/limits-and-errors#runtime).
+Pre-bound exception classes (with their parent links so `except <Parent>:` matches subclasses) are listed in [Limits and errors, Runtime](/reference/limits-and-errors#runtime).
 
 ## with
 
-`with` drives the context-manager protocol: evaluate the expression, call `__enter__`, bind the result to `as`. On exit, `__exit__(exc_type, exc_value, traceback)` runs — `(None, None, None)` on normal completion, live exception info on raise. Truthy return suppresses; falsy propagates. See [`/language/dunders`](/language/dunders).
+`with` drives the context-manager protocol: evaluate the expression, call `__enter__`, bind the result to `as`. On exit, `__exit__(exc_type, exc_value, traceback)` runs, `(None, None, None)` on normal completion, live exception info on raise. Truthy return suppresses; falsy propagates. See [`/language/dunders`](/language/dunders).
 
 ```python
 x = [1, 2]

@@ -46,7 +46,7 @@ pub mod tag {
     pub const BYTES: u32 = 4;
 }
 
-/* Sentinel from `edge_decode` for invalid handles or non-primitives — callers should reach the value via `edge_op` instead. */
+/* Sentinel from `edge_decode` for invalid handles or non-primitives, callers should reach the value via `edge_op` instead. */
 pub const TAG_INVALID: u32 = u32::MAX;
 
 /* Error kinds for `edge_take_error` and `edge_throw`. */

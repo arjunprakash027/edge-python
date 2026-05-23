@@ -7,22 +7,22 @@ check -> wasm -> runtime -> demo
 
 | Workflow | Role |
 |----------|------|
-| `_check.yml`         | `cargo shear` + `clippy` (host and wasm targets) |
-| `_wasm.yml`          | Builds and optimizes `compiler_lib.wasm`. On tags, attaches the `.wasm` to the GitHub Release |
-| `_runtime_check.yml` | JS-side gate: `deno lint runtime/` + `deno test runtime/tests/` (Playwright + Chromium driving `createWorker` against the CDN-deployed wasm). Independent branch — runs in parallel with the Rust pipeline; only the CDN upload below blocks on it |
-| `_runtime.yml`       | Bundles `runtime/` + `compiler_lib.wasm` and deploys them to Cloudflare Pages |
-| `_demo.yml`          | Hashes `compiler_lib.wasm` into `version.json` (cache-busting) and deploys `demo/` to Cloudflare Pages |
+| `_check.yml` | `cargo shear` + `clippy` (host and wasm targets) |
+| `_wasm.yml` | Builds and optimizes `compiler_lib.wasm`. On tags, attaches the `.wasm` to the GitHub Release |
+| `_runtime_check.yml` | JS-side gate: `deno lint runtime/` + `deno test runtime/tests/` (Playwright + Chromium driving `createWorker` against the CDN-deployed wasm). Independent branch, runs in parallel with the Rust pipeline; only the CDN upload below blocks on it |
+| `_runtime.yml` | Bundles `runtime/` + `compiler_lib.wasm` and deploys them to Cloudflare Pages |
+| `_demo.yml` | Hashes `compiler_lib.wasm` into `version.json` (cache-busting) and deploys `demo/` to Cloudflare Pages |
 
 ## Cloudflare Pages
 
-Two **Direct Upload** projects — Actions pushes prebuilt directories via `wrangler pages deploy`; Cloudflare doesn't clone or build.
+Two **Direct Upload** projects, Actions pushes prebuilt directories via `wrangler pages deploy`; Cloudflare doesn't clone or build.
 
 | Project | Source | Production URL |
 |---------|--------|----------------|
 | `edge-python-demo` | `demo/` (wasm hashed for `version.json`, not bundled) | `https://edge-python-demo.pages.dev` |
 | `edge-python-runtime` | `runtime/` + bundled `compiler_lib.wasm` | `https://edge-python-runtime.pages.dev` |
 
-Both deploys pinned to `main` in `_runtime.yml` / `_demo.yml` — without the pin, tag pushes would land at preview URLs (`v0-1-0.edge-python-runtime.pages.dev`) and never update the custom domain.
+Both deploys pinned to `main` in `_runtime.yml` / `_demo.yml`, without the pin, tag pushes would land at preview URLs (`v0-1-0.edge-python-runtime.pages.dev`) and never update the custom domain.
 
 ### Cloudflare and GitHub setup
 
@@ -35,8 +35,8 @@ npx wrangler pages project create edge-python-runtime --production-branch=main
 
 Repo secrets (*Settings -> Secrets and variables -> Actions*):
 
-- `CLOUDFLARE_API_TOKEN` — `Account -> Cloudflare Pages -> Edit`. Create via dashboard: <https://dash.cloudflare.com/profile/api-tokens>.
-- `CLOUDFLARE_ACCOUNT_ID` — from `npx wrangler whoami` or any dashboard sidebar.
+- `CLOUDFLARE_API_TOKEN`, `Account -> Cloudflare Pages -> Edit`. Create via dashboard: <https://dash.cloudflare.com/profile/api-tokens>.
+- `CLOUDFLARE_ACCOUNT_ID`, from `npx wrangler whoami` or any dashboard sidebar.
 
 Rotate: create new token -> update secret -> revoke old token.
 
@@ -54,8 +54,8 @@ git push origin v0.1.0
 
 On tag push: `_check` lints, `_wasm` builds and optimizes the artifact, attaches it to a fresh Release with auto-generated notes, `_runtime` + `_demo` redeploy.
 
-Nothing is published to crates.io — distribution is the `.wasm` on the Release. `starter-module` carries its own version and isn't bumped with the workspace.
+Nothing is published to crates.io, distribution is the `.wasm` on the Release. `starter-module` carries its own version and isn't bumped with the workspace.
 
-Consumer crates pick up the release automatically: `compiler/Cargo.toml` declares `links = "compiler_lib"` and `compiler/build.rs` downloads `<repository>/releases/download/v<version>/compiler_lib.wasm` into `OUT_DIR`. Downstreams read `DEP_COMPILER_LIB_WASM` in their own `build.rs` — see [root README](../../README.md#consume-the-release-from-a-rust-host). Tag bumps flow via `cargo update`.
+Consumer crates pick up the release automatically: `compiler/Cargo.toml` declares `links = "compiler_lib"` and `compiler/build.rs` downloads `<repository>/releases/download/v<version>/compiler_lib.wasm` into `OUT_DIR`. Downstreams read `DEP_COMPILER_LIB_WASM` in their own `build.rs`, see [root README](../../README.md#consume-the-release-from-a-rust-host). Tag bumps flow via `cargo update`.
 
 Gated behind the default-on `prebuilt` feature. Producer-side steps (`_check`, `_wasm`) pass `--no-default-features` to avoid fetching the asset that this same pipeline uploads later.

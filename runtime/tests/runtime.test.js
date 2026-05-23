@@ -1,4 +1,8 @@
-/* Runtime tester. Cases live in `./cases.json` (table-driven, same pattern as `compiler/tests/cases/vm.json`); this file is just the harness. Serves runtime/ from disk, drives `createWorker(...)` in Chromium per case, uses the CDN-deployed wasm so the test is decoupled from local builds. Run: deno test --allow-all runtime/tests/runtime.test.js (one-time: deno run -A npm:playwright install chromium). */
+/*
+Runtime tester. Cases live in `./cases.json` (table-driven, mirrors `compiler/tests/cases/vm.json`).
+Serves runtime/ from disk, drives `createWorker(...)` in Chromium, uses CDN wasm to decouple from local builds.
+Run: `deno test --allow-all runtime/tests/runtime.test.js` (one-time: `deno run -A npm:playwright install chromium`).
+*/
 
 import { chromium } from "npm:playwright@latest";
 import { readFileSync } from "node:fs";
@@ -7,7 +11,7 @@ const REPO = new URL("../../", import.meta.url).pathname; // edge-python/
 const WASM_URL = "https://runtime.edgepython.com/js/compiler_lib.wasm";
 const cases = JSON.parse(readFileSync(new URL("./cases.json", import.meta.url)));
 
-/* Named handler fixtures referenced by `cases.main_thread` — kept in JS because handler bodies are functions (not JSON-serializable). Each case lists fixture names; the harness rehydrates them into actual functions inside the browser. */
+/* Named handler fixtures referenced by `cases.main_thread`, kept in JS because handler bodies are functions (not JSON-serializable). Each case lists fixture names; the harness rehydrates them inside the browser. */
 const FIXTURES = {
     uppercase: "(s) => s.toUpperCase()",
     double:    "(n) => Number(n) * 2",

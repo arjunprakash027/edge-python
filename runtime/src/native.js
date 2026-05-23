@@ -1,5 +1,5 @@
 /*
-Native module loading + dispatch. `nativeTable` indexed by `baseId` from `register_native_module`; entries are wasmpdk fns or capability JS handlers, dispatched by `env.js`'s `host_call_native`.
+Native module loading + dispatch. `nativeTable` indexed by `baseId` from `register_native_module`; entries are wasmpdk fns or JS handlers, dispatched by `host_call_native`.
 */
 
 export const nativeTable = [];
@@ -8,7 +8,7 @@ export function resetNativeTable() {
     nativeTable.length = 0;
 }
 
-/* Build the 6 `env.edge_*` imports for wasm-pdk plugins; bridges guest ↔ compiler memory. */
+/* Build the 6 `env.edge_*` imports for wasm-pdk plugins; bridges guest <-> compiler memory. */
 export function makeGuestEnv(compilerExports) {
     const compMem = () => new Uint8Array(compilerExports.memory.buffer);
     const compView = () => new DataView(compilerExports.memory.buffer);
@@ -27,7 +27,7 @@ export function makeGuestEnv(compilerExports) {
             edge_op: (op, recv, name_ptr, name_len, argv_ptr, argc, out) => {
                 const cName = stage(name_ptr, name_len);
                 const cArgv = compilerExports.wasm_alloc(Math.max(4, argc * 4));
-                const cOut  = compilerExports.wasm_alloc(4);
+                const cOut = compilerExports.wasm_alloc(4);
                 for (let i = 0; i < argc; i++) {
                     compView().setUint32(cArgv + i * 4, gView().getUint32(argv_ptr + i * 4, true), true);
                 }
@@ -56,7 +56,7 @@ export function makeGuestEnv(compilerExports) {
 
             edge_take_error: (out_kind, dst, dst_max) => {
                 const cKind = compilerExports.wasm_alloc(4);
-                const cBuf  = compilerExports.wasm_alloc(Math.max(1, dst_max));
+                const cBuf = compilerExports.wasm_alloc(Math.max(1, dst_max));
                 const ret = compilerExports.host_edge_take_error(cKind, cBuf, dst_max);
                 if (ret >= 0) {
                     gView().setUint32(out_kind, compView().getUint32(cKind, true), true);

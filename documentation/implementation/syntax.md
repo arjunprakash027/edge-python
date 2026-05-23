@@ -20,22 +20,22 @@ pub struct Instruction {
 }
 ```
 
-The operand is a 16-bit slot — its meaning depends on the opcode. Common shapes:
+The operand is a 16-bit slot, its meaning depends on the opcode. Common shapes:
 
-| OpCode                    | Operand interpretation                               |
+| OpCode | Operand interpretation |
 |---------------------------|------------------------------------------------------|
-| `LoadConst`               | constant pool index                                  |
-| `LoadName` / `StoreName`  | name slot index                                      |
-| `Add`, `Sub`, ...         | unused (IC keyed by ip)                              |
-| `Call`                    | `(num_kw << 8) \| num_pos`                           |
-| `BuildList` / `BuildTuple` / `BuildSet` | element count                          |
-| `BuildDict`               | key-value pair count                                 |
-| `BuildSlice`              | parts count (2 or 3)                                 |
-| `Jump` / `JumpIfFalse`    | target instruction index                             |
-| `ForIter`                 | jump target on iterator exhaustion                   |
-| `Phi`                     | target slot; sources stored in `chunk.phi_sources`   |
-| `UnpackEx`                | `(before << 8) \| after`                             |
-| `MakeFunction`            | function index in `chunk.functions`                  |
+| `LoadConst` | constant pool index |
+| `LoadName` / `StoreName` | name slot index |
+| `Add`, `Sub`, ... | unused (IC keyed by ip) |
+| `Call` | `(num_kw << 8) \| num_pos` |
+| `BuildList` / `BuildTuple` / `BuildSet` | element count |
+| `BuildDict` | key-value pair count |
+| `BuildSlice` | parts count (2 or 3) |
+| `Jump` / `JumpIfFalse` | target instruction index |
+| `ForIter` | jump target on iterator exhaustion |
+| `Phi` | target slot; sources stored in `chunk.phi_sources` |
+| `UnpackEx` | `(before << 8) \| after` |
+| `MakeFunction` | function index in `chunk.functions` |
 
 Operands and the constant pool, name table, and instruction stream per chunk are all capped at `u16::MAX` (65,535).
 
@@ -55,34 +55,34 @@ Lpar   -> grouped expr, tuple, generator, or empty tuple
 Lambda   -> parse_lambda()
 ```
 
-After an atom, `postfix_tail()` handles trailers — subscript, attribute, call — iterating until none apply. Lets `fns[0](-3)`, `obj.method()`, `(lambda x: x)(3)`, `compose(f, g)(x)` parse uniformly.
+After an atom, `postfix_tail()` handles trailers, subscript, attribute, call, iterating until none apply. Lets `fns[0](-3)`, `obj.method()`, `(lambda x: x)(3)`, `compose(f, g)(x)` parse uniformly.
 
-`*args` / `**kwargs` are accepted in **call** position only — starred unpacking inside literals (`[*a, *b]`, `{**d1, **d2}`, `(1, *xs, 2)`) is not supported.
+`*args` / `**kwargs` are accepted in **call** position only, starred unpacking inside literals (`[*a, *b]`, `{**d1, **d2}`, `(1, *xs, 2)`) is not supported.
 
 ## Operator precedence
 
 Each binary operator declares `(l_bp, r_bp, OpCode)` in `binding_power`. Higher binding pulls tighter. Only `**` is right-associative (`r_bp < l_bp`); everything else is left-associative.
 
-| Level | Operators                                | Notes                |
+| Level | Operators | Notes |
 |-------|------------------------------------------|----------------------|
-| 1/2   | `or`                                     | short-circuit        |
-| 3/4   | `and`                                    | short-circuit        |
-| 5     | unary `not`                              | prefix only          |
-| 7/8   | `==` `!=` `<` `>` `<=` `>=` `in` `not in` `is` `is not` | chainable |
-| 9/10  | `\|`                                     | bitwise              |
-| 11/12 | `^`                                      | bitwise              |
-| 13/14 | `&`                                      | bitwise              |
-| 15/16 | `<<` `>>`                                | shifts               |
-| 17/18 | `+` `-`                                  | additive             |
-| 19/20 | `*` `/` `%` `//`                         | multiplicative       |
-| 21    | unary `-` `~` `await`                    | prefix               |
-| 22/21 | `**`                                     | right-associative    |
+| 1/2 | `or` | short-circuit |
+| 3/4 | `and` | short-circuit |
+| 5 | unary `not` | prefix only |
+| 7/8 | `==` `!=` `<` `>` `<=` `>=` `in` `not in` `is` `is not` | chainable |
+| 9/10 | `\|` | bitwise |
+| 11/12 | `^` | bitwise |
+| 13/14 | `&` | bitwise |
+| 15/16 | `<<` `>>` | shifts |
+| 17/18 | `+` `-` | additive |
+| 19/20 | `*` `/` `%` `//` | multiplicative |
+| 21 | unary `-` `~` `await` | prefix |
+| 22/21 | `**` | right-associative |
 
 Comparison chaining (`a < b < c`) is handled by `infix_bp`: when a comparison opcode is followed by another comparison token, the middle value is stored in a synthetic `__cmp__N` slot, the first comparison emitted, short-circuited on false, and the stored value reused for the next.
 
 ## Short-circuit lowering
 
-`and` / `or` lower to `JumpIfFalseOrPop` / `JumpIfTrueOrPop` — superinstructions that peek the stack top, pop only if execution continues, otherwise jump while leaving the value on the stack:
+`and` / `or` lower to `JumpIfFalseOrPop` / `JumpIfTrueOrPop`, superinstructions that peek the stack top, pop only if execution continues, otherwise jump while leaving the value on the stack:
 
 ```text
 a and b
@@ -153,7 +153,7 @@ LoadName x_3
 CallPrint 1
 ```
 
-Runtime resolves `Phi` by reading whichever source slot is `Some` — exactly one branch executed.
+Runtime resolves `Phi` by reading whichever source slot is `Some`, exactly one branch executed.
 
 ## Statement dispatch
 
@@ -186,7 +186,7 @@ Each statement returns a bool: did it leave a value on the stack. Driver emits `
 
 Decorators apply to `def` and `class`; the `@` arm peeks for `class` after the decorator stack. Each decorator wraps via `Call,1` between `MakeFunction`/`MakeClass` and the final `StoreName`.
 
-`raise X from Y` lowers to `RaiseFrom` — pops cause then exception so `X` surfaces. Bare `raise` re-raises. `__cause__` / `__context__` not exposed. `except` matching walks `EXC_PARENTS` so `except Exception` catches subclasses like `isinstance(e, Exception)` does.
+`raise X from Y` lowers to `RaiseFrom`, pops cause then exception so `X` surfaces. Bare `raise` re-raises. `__cause__` / `__context__` not exposed. `except` matching walks `EXC_PARENTS` so `except Exception` catches subclasses like `isinstance(e, Exception)` does.
 
 ## Lambda and function bodies
 
@@ -201,7 +201,7 @@ self.with_fresh_chunk(|s| {
 });
 ```
 
-Free variables (non-parameters with no local binding) are looked up in the outer chunk. `MakeFunction` captures matching slots from the enclosing scope into `captures` (snapshotted, no cell objects). Nested `def`/`lambda` push their free names back into the parent's name table — capture propagates through any depth (`A -> B -> C` where `C` references a var in `A`).
+Free variables (non-parameters with no local binding) are looked up in the outer chunk. `MakeFunction` captures matching slots from the enclosing scope into `captures` (snapshotted, no cell objects). Nested `def`/`lambda` push their free names back into the parent's name table, capture propagates through any depth (`A -> B -> C` where `C` references a var in `A`).
 
 Parameter slots: `Normal`, `Star` (`*args`), `DoubleStar` (`**kwargs`). Lone `*` separator marks following params as keyword-only. Defaults live in `HeapObj::Func.defaults` and apply to the last-N positional slots. Annotations (`x: T`, `-> T`) parse and drain to `chunk.annotations` (tooling-only).
 
@@ -223,7 +223,7 @@ Recorded in `chunk.annotations: HashMap<String, String>` for tooling; no code em
 
 List/set/dict comprehensions support multi-`for` and multi-`if`. Lower to `BuildList` / `BuildSet` / `BuildDict` plus a loop scaffold using `ListAppend` / `SetAdd` / `MapAdd`.
 
-Generator expressions `(i*2 for i in xs)` lower eagerly to `BuildList` — operationally equivalent to `[i*2 for i in xs]`. Deliberate: template memoisation needs hashable, finite args; lazy generators wouldn't memoise. For unbounded streams, write a `def` with `yield` (real `HeapObj::Coroutine`).
+Generator expressions `(i*2 for i in xs)` lower eagerly to `BuildList`, operationally equivalent to `[i*2 for i in xs]`. Deliberate: template memoisation needs hashable, finite args; lazy generators wouldn't memoise. For unbounded streams, write a `def` with `yield` (real `HeapObj::Coroutine`).
 
 Async comprehensions (`[x async for x in y]`) and starred-unpack inside comprehensions unsupported.
 
@@ -246,17 +246,17 @@ BuildString 5
 ```
 
 `FormatValue`'s 16-bit operand is a small flags field:
-* bit 0 — set when a format spec string is on the stack just below the value (collected as the raw text between `:` and `}` and emitted as a constant).
-* bits 1–2 — conversion: `0` none, `1` `!r`, `2` `!s`, `3` `!a`.
+* bit 0, set when a format spec string is on the stack just below the value (collected as the raw text between `:` and `}` and emitted as a constant).
+* bits 1,2, conversion: `0` none, `1` `!r`, `2` `!s`, `3` `!a`.
 
 VM applies conversion first, then the spec mini-language `[[fill]align][sign][#][0][width][,][.precision][type]` with type chars `s d b o x X f F e E g G n % c`. `n` aliases `d` (no locale). `=` self-documenting form (`{expr=}`) emits a literal `expr=` prefix. Adjacent string literals concatenate at parse time. Spec parse failures -> `ValueError` at runtime.
 
 ## Limits
 
-| Constant             | Value     | Purpose                                |
+| Constant | Value | Purpose |
 |----------------------|-----------|----------------------------------------|
-| `MAX_EXPR_DEPTH`     | 200       | Cap on recursive expression parsing    |
-| `MAX_INSTRUCTIONS`   | 65,535    | Cap on instructions per chunk          |
+| `MAX_EXPR_DEPTH` | 200 | Cap on recursive expression parsing |
+| `MAX_INSTRUCTIONS` | 65,535 | Cap on instructions per chunk |
 
 `MAX_EXPR_DEPTH` -> diagnostic ("expression too deeply nested"). `MAX_INSTRUCTIONS` -> sets `chunk.overflow = true`, reported at end of parsing; instruction stream cleared rather than dispatched.
 
@@ -264,5 +264,5 @@ VM applies conversion first, then the spec mini-language `[[fill]align][sign][#]
 
 - Pratt. *Top Down Operator Precedence* (POPL 1973). Precedence climbing.
 - Cytron et al. *Efficiently Computing Static Single Assignment Form* (TOPLAS 1991). SSA, phi-nodes.
-- Crafting Interpreters, by Robert Nystrom: craftinginterpreters.com — single-pass codegen patterns.
+- Crafting Interpreters, by Robert Nystrom: craftinginterpreters.com, single-pass codegen patterns.
 - Casey et al. *Towards Superinstructions for Java Interpreters* (SCOPES 2003). LoadAttr+Call fusion.

@@ -109,7 +109,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* `frozenset()` | `frozenset(iter)` — construct an immutable, hashable set from an iterable. Without args returns the empty frozenset. */
+    /* `frozenset()` | `frozenset(iter)`, construct an immutable, hashable set from an iterable. Without args returns the empty frozenset. */
     pub fn call_frozenset(&mut self, argc: u16) -> Result<(), VmErr> {
         let args = self.pop_n(argc as usize)?;
         let items: Vec<Val> = match args.len() {
@@ -123,7 +123,7 @@ impl<'a> VM<'a> {
         self.push(v); Ok(())
     }
 
-    /* `bytes()` — empty, `n` zero bytes, iter of ints (0..=255), or `(str, encoding)`. Encodings limited to utf-8/utf8/ascii; unknown ones error so mismatches aren't silent. */
+    /* `bytes()`, empty, `n` zero bytes, iter of ints (0..=255), or `(str, encoding)`. Encodings limited to utf-8/utf8/ascii; unknown ones error so mismatches aren't silent. */
     pub fn call_bytes(&mut self, argc: u16) -> Result<(), VmErr> {
         let args = self.pop_n(argc as usize)?;
         let buf: Vec<u8> = match args.len() {
@@ -157,7 +157,7 @@ impl<'a> VM<'a> {
                 }
             }
             2 => {
-                // `bytes(s, "utf-8")` — string encoding form.
+                // `bytes(s, "utf-8")`, string encoding form.
                 let (s, enc) = (args[0], args[1]);
                 let HeapObj::Str(text) = self.heap.get(s).clone() else {
                     return Err(cold_type("bytes() first argument must be a string when encoding is given"));

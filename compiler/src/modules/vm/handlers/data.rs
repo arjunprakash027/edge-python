@@ -146,7 +146,7 @@ impl<'a> VM<'a> {
             OpCode::Global | OpCode::Nonlocal => self.mark_impure(),
             OpCode::Raise | OpCode::RaiseFrom => {
                 self.mark_impure();
-                // RaiseFrom emits both `expr` then `from expr` — the topmost value is the cause, but the exception to raise is the LHS.
+                // RaiseFrom emits both `expr` then `from expr`, the topmost value is the cause, but the exception to raise is the LHS.
                 if op == OpCode::RaiseFrom { let _cause = self.pop()?; }
                 let exc = self.pop()?;
                 // Stash the Val for `except as e` binding; non-Exc values use `display()`.

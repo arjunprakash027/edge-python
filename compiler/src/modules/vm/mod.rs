@@ -133,7 +133,7 @@ pub struct VM<'a> {
     pub(crate) function_names: Vec<String>,
     /* Active call frames (innermost at end); drained by the traceback renderer on error. */
     pub(crate) call_stack: Vec<CallFrame>,
-    /* Cooperative scheduler for `run` / `gather` / `with_timeout`; one handle per coroutine. Single-driver model: only `top_loop` drives this — async builtins yield instead of recursing. */
+    /* Cooperative scheduler for `run` / `gather` / `with_timeout`; one handle per coroutine. Single-driver model: only `top_loop` drives this, async builtins yield instead of recursing. */
     pub(crate) scheduler: Vec<CoroutineHandle>,
     /* Count of scheduler entries in `WaitingForChildren`; gates the sweep so the common (no-nested-run) tick is one comparison. */
     pub(crate) waiting_for_children_count: usize,
@@ -255,7 +255,7 @@ impl<'a> VM<'a> {
             bm
         }).collect();
 
-        // Canonical, non-param, never-written slots — built once at VM init.
+        // Canonical, non-param, never-written slots, built once at VM init.
         vm.body_free_loads = (0..vm.functions.len()).map(|fi| {
             let (_, body, _, _) = vm.functions[fi];
             let param_bm = &vm.is_param_slot[fi];

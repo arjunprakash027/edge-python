@@ -34,7 +34,7 @@ impl<'a> VM<'a> {
         let v = if o.is_float() {
             Val::float(o.as_float().abs())
         } else if let Some(i) = self.as_i128(o) {
-            // i128::MIN.checked_abs() is None — trap as OverflowError.
+            // i128::MIN.checked_abs() is None, trap as OverflowError.
             self.int_to_val(i.checked_abs())?
         } else {
             return Err(cold_type("abs() requires a number"));
@@ -44,7 +44,7 @@ impl<'a> VM<'a> {
 
     pub fn call_int(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
-        // Already an int (inline or LongInt) — pass through unchanged.
+        // Already an int (inline or LongInt), pass through unchanged.
         if o.is_int() { self.push(o); return Ok(()); }
         if o.is_heap() && matches!(self.heap.get(o), HeapObj::LongInt(_)) {
             self.push(o); return Ok(());

@@ -93,7 +93,7 @@ pub enum IterFrame {
 }
 
 impl IterFrame {
-    /* Stateless steps only — built-in Seq/Range. User-defined iterators step in `dispatch.rs` because they need the VM to invoke `__next__`. */
+    /* Stateless steps only, built-in Seq/Range. User-defined iterators step in `dispatch.rs` because they need the VM to invoke `__next__`. */
     pub fn next_item(&mut self) -> Option<Val> {
         match self {
             Self::Coroutine(_) | Self::UserDefined(_) => None,

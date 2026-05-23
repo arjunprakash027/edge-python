@@ -4,7 +4,7 @@ IndexedDB cache: `cas` (hash -> bytes) + `lockfile` (spec -> hash). Engine falls
 
 const IDB_NAME = 'edgepython';
 const IDB_VER = 1;
-const VERSION_KEY = '\0v'; // '\0' isolates sentinel — canonical specs never contain null bytes
+const VERSION_KEY = '\0v'; // '\0' isolates sentinel, canonical specs never contain null bytes
 
 export class IdbCache {
     constructor() {

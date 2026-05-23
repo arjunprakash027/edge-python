@@ -52,12 +52,12 @@ export function makeCompilerEnv({ getExports, onLine, fetchedSources, lockfile, 
                 }
             }
 
-            // wasmpdk: stage argv, call, copy back. Views as fns — `fn(...)` can re-enter `wasm_alloc` and detach a cached view.
+            // wasmpdk: stage argv, call, copy back. Views as fns because `fn(...)` can re-enter `wasm_alloc` and detach a cached view.
             const guestView = () => new DataView(fn.__edge_memory.buffer);
-            const compView  = () => new DataView(exports.memory.buffer);
+            const compView = () => new DataView(exports.memory.buffer);
 
             const g_argv = fn.__edge_alloc(Math.max(4, argc * 4));
-            const g_out  = fn.__edge_alloc(4);
+            const g_out = fn.__edge_alloc(4);
             for (let i = 0; i < argc; i++) {
                 guestView().setUint32(g_argv + i * 4, compView().getUint32(argv_ptr + i * 4, true), true);
             }

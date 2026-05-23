@@ -9,7 +9,7 @@ use crate::s;
 pub use super::builtin_methods::BuiltinMethodId;
 pub(crate) use super::builtin_methods::{dispatch_method, lookup_method};
 
-// `resolve_attr` result — every shape LoadAttr / CallMethod dispatches on.
+// `resolve_attr` result, every shape LoadAttr / CallMethod dispatches on.
 pub(crate) enum AttrLookup {
     ModuleAttr(Val),
     ClassMember(Val),
@@ -17,11 +17,11 @@ pub(crate) enum AttrLookup {
     // `class` is where `func` was found; the called frame needs it so `super()` knows where to resume.
     InstanceMethod { recv: Val, func: Val, class: Val },
     BuiltinMethod(BuiltinMethodId),
-    // `e.args` on ExcInstance — caller picks: LoadAttr materialises the tuple, CallMethod errors.
+    // `e.args` on ExcInstance, caller picks: LoadAttr materialises the tuple, CallMethod errors.
     ExcArgs(Vec<Val>),
-    // Property descriptor on an instance — `LoadAttr` invokes `getter(recv)`.
+    // Property descriptor on an instance, `LoadAttr` invokes `getter(recv)`.
     PropertyGet { recv: Val, getter: Val },
-    // `prop.setter` access — `LoadAttr` materialises a `PropertySetter` value bound to the source property.
+    // `prop.setter` access, `LoadAttr` materialises a `PropertySetter` value bound to the source property.
     PropertySetterRef(Val),
 }
 
@@ -119,7 +119,7 @@ impl<'a> VM<'a> {
             .ok_or_else(|| VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str name, "'")))
     }
 
-    // `resolve_attr` that swallows `AttributeError` into `None`; other VmErrs still propagate — dunder probes need a miss to be silent.
+    // `resolve_attr` that swallows `AttributeError` into `None`; other VmErrs still propagate, dunder probes need a miss to be silent.
     pub(crate) fn resolve_attr_silent(&self, obj: Val, name: &str) -> Result<Option<AttrLookup>, VmErr> {
         match self.resolve_attr(obj, name) {
             Ok(lookup) => Ok(Some(lookup)),

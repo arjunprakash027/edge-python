@@ -1,5 +1,6 @@
 /*
-Plugin authoring proc macros. `#[plugin_fn]` wraps a free fn as a wasm-abi export. `#[plugin_class]` synthesises per-class state plumbing. `#[plugin_methods]` lowers an impl block into `__class_<Name>_<method>` exports. `#[plugin_ctor]` tags the constructor inside a `#[plugin_methods]` block.
+Plugin proc macros: `#[plugin_fn]` wraps a free fn as wasm-abi export.
+`#[plugin_class]` synthesises state plumbing; `#[plugin_methods]` lowers an impl into `__class_<Name>_<method>` exports; `#[plugin_ctor]` tags the constructor.
 */
 
 use proc_macro::TokenStream;
@@ -46,7 +47,7 @@ pub fn plugin_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
     };
     let is_result = matches!(&return_ty, syn::Type::Path(p) if p.path.segments.last().map(|s| s.ident == "Result").unwrap_or(false));
 
-    // Host always appends a trailing kwargs slot. If the user declared `Kwargs` as last param, that slot IS their arg (FromValue maps h=0 -> None). Otherwise we expect one more argv entry than user params and silently drop it.
+    // Host always appends a trailing kwargs slot. If user declared `Kwargs` as last param, that slot IS their arg (FromValue maps h=0 -> None); else expect one extra argv entry and drop it.
     let last_is_kwargs = bindings.last()
         .map(|(_, ty)| matches!(ty, Type::Path(p) if p.path.segments.last().map(|s| s.ident == "Kwargs").unwrap_or(false)))
         .unwrap_or(false);

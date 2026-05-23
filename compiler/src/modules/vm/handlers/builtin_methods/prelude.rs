@@ -1,5 +1,5 @@
 /*
-Internal prelude for `builtin_methods`. Each per-type file does `use super::prelude::*;` and gets the full surface — VM, Val, HeapObj, type helpers, and the receiver-unwrap primitives.
+Internal prelude for `builtin_methods`. Per-type files do `use super::prelude::*;` for VM, Val, HeapObj, helpers, receiver-unwrap primitives.
 */
 
 pub(super) use super::super::{VM, Val, VmErr, HeapObj, DictMap};

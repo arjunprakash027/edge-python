@@ -1,5 +1,5 @@
 /*
-BFS over the dependency graph: visited specs feed `ctx.fetchedSources`, register code/native, plus opportunistic sibling `packages.json`. Bare-name shortcut via `importsMap` synthesizes a root manifest.
+BFS over dependency graph: visited specs feed `ctx.fetchedSources`, register code/native, plus sibling `packages.json`. `importsMap` synthesizes a root manifest for bare names.
 */
 
 import { fetchWithLockfile } from './fetch.js';
