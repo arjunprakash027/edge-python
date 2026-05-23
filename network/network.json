@@ -1,0 +1,17 @@
+[
+  {
+    "src": "body = fetch_text('https://httpbin.org/json')\nprint('slideshow' in body)",
+    "http_mocks": [{"url": "**/httpbin.org/json", "body": "{\"slideshow\":{\"title\":\"Sample\"}}"}],
+    "output": ["True"]
+  },
+  {
+    "src": "resp = fetch('https://httpbin.org/uuid')\nprint('\"status\"' in resp)",
+    "http_mocks": [{"url": "**/httpbin.org/uuid", "body": "{\"uuid\":\"00000000-0000-0000-0000-000000000000\"}"}],
+    "output": ["True"]
+  },
+  {
+    "src": "sock = ws_open('wss://echo.websocket.org', 'echo')\ngot = None\nwhile True:\n    ev = receive()\n    if '\"type\":\"open\"' in ev:\n        ws_send(sock, 'hello')\n    elif '\"type\":\"message\"' in ev:\n        got = 'echo'\n        ws_close(sock)\n    elif '\"type\":\"close\"' in ev:\n        break\nprint(got)",
+    "ws_mocks": [{"url": "**/echo.websocket.org/**", "echo": true}],
+    "output": ["echo"]
+  }
+]

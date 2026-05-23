@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body>
+<script type="module">
+import { createWorker } from "https://runtime.edgepython.com/js/src/index.js";
+
+/* Convention: folder name = capability name = ESM factory exported by `<cap>/src/index.js`. Dynamic import resolves named (`export { dom }`) or default exports uniformly. */
+const params = new URLSearchParams(location.search);
+const cap = params.get("capability");
+if (!cap) throw new Error("missing ?capability=<name>");
+
+const mod = await import(new URL(`../${cap}/src/index.js`, location.href).href);
+const factory = mod[cap] ?? mod.default;
+
+const worker = await createWorker({
+    wasmUrl: "https://runtime.edgepython.com/js/compiler_lib.wasm",
+    mainThreadModules: { [cap]: factory },
+    /* Disable lockfile integrity hashing: `crypto.subtle.digest` requires a secure context, which `http://x` (Playwright's intercepted origin) is not. */
+    integrity: false,
+});
+
+/* Wipes DOM body, web storage, and any IndexedDB databases so each case starts from a fresh browser state. */
+const resetState = async (html) => {
+    document.body.innerHTML = html ?? "";
+    localStorage.clear();
+    sessionStorage.clear();
+    if (indexedDB.databases) {
+        const dbs = await indexedDB.databases();
+        await Promise.all(dbs.map(({ name }) => name && new Promise((res) => {
+            const req = indexedDB.deleteDatabase(name);
+            req.onsuccess = req.onerror = req.onblocked = () => res();
+        })));
+    }
+};
+
+/* Captures stdout per call; `baseUrl` is required so the runtime resolves relative imports against this page, not the cross-origin worker URL. */
+window.runHostCase = async (src, html) => {
+    await resetState(html);
+    const lines = [];
+    worker.onOutput((line) => lines.push(line));
+    const { out: trace } = await worker.run(src, { baseUrl: location.href });
+    return { output: lines, error: trace || null };
+};
+</script>
+</body>
+</html>

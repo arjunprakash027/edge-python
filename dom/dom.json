@@ -1,0 +1,22 @@
+[
+  {
+    "src": "b = body()\nfor name, color in [('A','#111'),('B','#222'),('C','#333')]:\n    box = create_element('div')\n    set_attribute(box, 'class', 'box')\n    set_attribute(box, 'style', f'background:{color}')\n    label = create_element('span')\n    set_text(label, f'{name} {color}')\n    append_child(box, label)\n    append_child(b, box)\nprint(len([h for h in children(b).split(',') if h]))",
+    "output": ["3"]
+  },
+  {
+    "src": "btn = create_element('button')\nset_text(btn, 'Clicked 0 times')\nappend_child(body(), btn)\nbind_event(btn, 'click', 'click')\nclick(btn)\nev = receive()\nprint('\"msg\":\"click\"' in ev)\nset_text(btn, 'Clicked 1 time')\nprint(get_text(btn))",
+    "output": ["True", "Clicked 1 time"]
+  },
+  {
+    "src": "grid = create_element('div')\nappend_child(body(), grid)\nadd = create_element('button')\nappend_child(body(), add)\nbind_event(add, 'click', 'add')\nclick(add)\nev = receive()\nif '\"msg\":\"add\"' in ev:\n    swatch = create_element('div')\n    append_child(grid, swatch)\nprint(tag_name(last_child(grid)))",
+    "output": ["div"]
+  },
+  {
+    "src": "inp = create_element('input')\nappend_child(body(), inp)\nset_value(inp, '#ff0080')\nprint(get_value(inp))\nset_value(inp, '')\nprint(get_value(inp) == '')",
+    "output": ["#ff0080", "True"]
+  },
+  {
+    "src": "el = create_element('div')\nappend_child(body(), el)\nh = animate(el, '[{\"opacity\":0},{\"opacity\":1}]', '{\"duration\":30}', 'done')\nev = receive()\nprint('\"msg\":\"done\"' in ev, '\"ok\":true' in ev, f'\"animation_handle\":{h}' in ev)",
+    "output": ["True True True"]
+  }
+]

@@ -39,6 +39,8 @@ jobs:
       - name: Install Chromium
         run: deno run -A npm:playwright install --with-deps chromium
 
-      - name: Test tests/
-        working-directory: ${{ inputs.capability }}
-        run: deno test --allow-all tests/
+      # `HOSTCAP` narrows sandbox discovery so this shard only drives its own corpus through Chromium.
+      - name: Test sandbox/
+        env:
+          HOSTCAP: ${{ inputs.capability }}
+        run: deno test --allow-all sandbox/
