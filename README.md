@@ -9,7 +9,6 @@ dom/      — src/, dom.json, README.md
 network/  — src/, network.json, README.md
 storage/  — src/, storage.json, README.md
 sandbox/  — shared browser shell + agnostic Deno + Playwright runner
-static/
 ```
 
 One folder per capability. Each ships a `<name>/<name>.json` corpus; the shared sandbox at the repo root walks for them and drives every case through headless Chromium.
