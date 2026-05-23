@@ -26,7 +26,8 @@ export function makeCompilerEnv({ getExports, onLine, fetchedSources, lockfile, 
             const exports = getExports();
 
             if (fn.__edge_kind === 'capability') {
-                const handles = Array.from(new Uint32Array(exports.memory.buffer, argv_ptr, argc));
+                /* Host appends a trailing kwargs handle (0 = no kwargs); JS capabilities don't model kwargs so drop it. */
+                const handles = Array.from(new Uint32Array(exports.memory.buffer, argv_ptr, Math.max(0, argc - 1)));
                 /* Marked main-thread: decode args to JS, defer via captureHostCall; driver wakes us with set_host_result. */
                 if (fn.__edge_main_thread) {
                     if (!captureHostCall || !rt) {

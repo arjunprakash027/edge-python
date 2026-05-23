@@ -118,7 +118,9 @@ impl Val {
     #[inline(always)] pub fn as_float(&self) -> f64 { f64::from_bits(self.0) }
     /* Wire-format accessors (FFI / WASM loader / SDK). */
     #[inline(always)] pub fn raw(&self) -> u64 { self.0 }
-    /** # Safety: `u` must come from `Val::raw()` on a live heap slot in the same VM. */
+    /// # Safety
+    ///
+    /// `u` must come from `Val::raw()` on a live heap slot in the same VM.
     #[inline(always)] pub unsafe fn from_raw(u: u64) -> Self { Self(u) }
     #[inline(always)] pub fn as_int(&self) -> i64 {
         let raw = (self.0 & INT_PAYLOAD_MASK) as i64;
