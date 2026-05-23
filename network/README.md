@@ -35,15 +35,19 @@ async def main():
 </script>
 ```
 
-## Quick start
+## Testing
+
+Cases live in [`network.json`](network.json) and run through the shared sandbox at the repo root:
 
 ```bash
-git clone https://github.com/dylan-sutton-chavez/edge-python-host
-cd edge-python-host
-python3 -m http.server 8080
+# One-time setup
+deno run -A npm:playwright install chromium
+
+# Run (from repo root)
+HOSTCAP=network deno test --allow-all sandbox/
 ```
 
-Open <http://127.0.0.1:8080/network/web/>. No build step.
+See [`sandbox/README.md`](../sandbox/README.md) for the corpus shape.
 
 ## API
 

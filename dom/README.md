@@ -31,29 +31,19 @@ async def main():
 
 Engine runs in a Web Worker; `dom` handlers run on the page's main thread (where `document` lives) via the runtime's deferred host-call mechanism. Python sees every call as synchronous.
 
-## Quick start
-
-```bash
-git clone https://github.com/dylan-sutton-chavez/edge-python-host
-cd edge-python-host
-python3 -m http.server 8080
-```
-
-Open <http://127.0.0.1:8080/dom/web/>. No build step.
-
 ## Testing
 
-Headless Chromium smoke test — loads the demo, clicks through, fails on console error:
+Cases live in [`dom.json`](dom.json) and run through the shared sandbox at the repo root:
 
 ```bash
-# Setup
-curl -fsSL https://deno.land/install.sh | sh && source ~/.bashrc
+# One-time setup
 deno run -A npm:playwright install chromium
 
-# Run
-cd edge-python-host/dom
-deno test --allow-all tests/dom.test.js
+# Run (from repo root)
+HOSTCAP=dom deno test --allow-all sandbox/
 ```
+
+See [`sandbox/README.md`](../sandbox/README.md) for the corpus shape.
 
 ## API
 
