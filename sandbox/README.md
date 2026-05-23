@@ -4,6 +4,8 @@ Shared browser shell for every stdpkg. `index.html` boots the upstream Edge Pyth
 
 ## Manual exploration
 
+`index.html` is a headless loader, no UI. Drive it from devtools.
+
 Build a package first so its artifact is on disk:
 
 ```bash
@@ -17,7 +19,12 @@ python3 -m http.server 8000
 # -> http://localhost:8000/sandbox/?packages=json
 ```
 
-Multiple packages: `?packages=json,re`. Edit the textarea and press Run.
+Multiple packages: `?packages=json,re`. Open devtools and call `runEdgePython(src)`:
+
+```js
+await runEdgePython(`from json import *\nprint(loads('[1,2,3]'))`);
+// { output: ["[1, 2, 3]"], error: null }
+```
 
 ## Automated tests
 

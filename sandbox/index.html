@@ -1,61 +1,29 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Edge Python stdpkg sandbox</title>
-    <style>
-        body { font-family: ui-sans-serif, system-ui, sans-serif; max-width: 780px; margin: 3rem auto; padding: 0 1.5rem; color: #1f2937; }
-        h1 { font-size: 1.5rem; margin: 0 0 0.25rem; }
-        p { color: #6b7280; font-size: 0.95em; margin: 0 0 1.5rem; }
-        textarea { width: 100%; min-height: 8rem; font-family: ui-monospace, monospace; font-size: 0.85em; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; box-sizing: border-box; margin-bottom: 0.75rem; }
-        button { background: #111827; color: #fff; padding: 0.5rem 1rem; border: 0; border-radius: 6px; font-size: 0.9em; cursor: pointer; }
-        button:hover { background: #1f2937; }
-        pre { background: #111827; color: #e5e7eb; padding: 1rem; border-radius: 8px; font-size: 0.85em; overflow-x: auto; line-height: 1.5; margin-top: 1rem; min-height: 2rem; }
-        code { background: #f3f4f6; padding: 0.1em 0.3em; border-radius: 4px; font-size: 0.9em; }
-    </style>
-</head>
+<html>
+<head><meta charset="UTF-8"></head>
 <body>
-    <h1>Edge Python stdpkg</h1>
-    <p>Pass <code>?packages=&lt;name&gt;,...</code> (e.g. <code>?packages=json</code>) so the runtime resolves each <code>from &lt;name&gt; import *</code> against <code>../&lt;name&gt;/target/wasm32-unknown-unknown/release/&lt;name&gt;.wasm</code>. The repo's <code>tests/run.test.js</code> driver invokes <code>window.runEdgePython</code> programmatically.</p>
+<script type="module">
+import { createWorker } from "https://runtime.edgepython.com/js/src/index.js";
 
-    <textarea id="source">from json import *
-print(loads('[1,2,3]'))
-print(dumps({"k": "v"}))</textarea>
-    <button id="run">Run</button>
+/* Convention: folder name = package name = wasm filename. Absolute URLs avoid the runtime's relative-spec normalisation stripping `..` and producing a mismatched cache key. */
+const params = new URLSearchParams(location.search);
+const packages = (params.get("packages") ?? "json").split(",").map((s) => s.trim()).filter(Boolean);
+const imports = Object.fromEntries(packages.map((p) => [p, new URL(`../${p}/target/wasm32-unknown-unknown/release/${p}.wasm`, location.href).href]));
 
-    <pre id="output"></pre>
+const worker = await createWorker({
+    wasmUrl: "https://runtime.edgepython.com/js/compiler_lib.wasm",
+    imports,
+    /* Disable lockfile integrity hashing: `crypto.subtle.digest` requires a secure context, which `http://x` (Playwright's intercepted origin) is not. Tests serve artifacts from disk so attestation has no value here. */
+    integrity: false,
+});
 
-    <script type="module">
-        import { createWorker } from "https://runtime.edgepython.com/js/src/index.js";
-
-        const out = document.getElementById("output");
-
-        /* Convention: folder name = package name = wasm filename. Absolute URLs avoid the runtime's relative-spec normalisation stripping `..` and producing a mismatched cache key. */
-        const params = new URLSearchParams(location.search);
-        const packages = (params.get("packages") ?? "json").split(",").map((s) => s.trim()).filter(Boolean);
-        const imports = Object.fromEntries(packages.map((p) => [p, new URL(`../${p}/target/wasm32-unknown-unknown/release/${p}.wasm`, location.href).href]));
-
-        const worker = await createWorker({
-            wasmUrl: "https://runtime.edgepython.com/js/compiler_lib.wasm",
-            imports,
-            /* Disable lockfile integrity hashing: `crypto.subtle.digest` requires a secure context, which `http://x` (Playwright's intercepted origin) is not. Tests serve artifacts from disk so attestation has no value here. */
-            integrity: false,
-        });
-
-        /* Captures stdout per call and surfaces any trace; `baseUrl` is required so the runtime resolves relative imports against this page, not the cross-origin worker URL. */
-        window.runEdgePython = async (src) => {
-            const lines = [];
-            worker.onOutput((line) => lines.push(line));
-            const { out: trace } = await worker.run(src, { baseUrl: location.href });
-            return { output: lines, error: trace || null };
-        };
-
-        document.getElementById("run").addEventListener("click", async () => {
-            out.textContent = "";
-            const { output, error } = await window.runEdgePython(document.getElementById("source").value);
-            for (const line of output) out.textContent += line + "\n";
-            if (error) out.textContent += "\n[error]\n" + error;
-        });
-    </script>
+/* Captures stdout per call and surfaces any trace; `baseUrl` is required so the runtime resolves relative imports against this page, not the cross-origin worker URL. */
+window.runEdgePython = async (src) => {
+    const lines = [];
+    worker.onOutput((line) => lines.push(line));
+    const { out: trace } = await worker.run(src, { baseUrl: location.href });
+    return { output: lines, error: trace || null };
+};
+</script>
 </body>
 </html>
