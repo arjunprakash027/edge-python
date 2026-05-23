@@ -1,7 +1,7 @@
 /* Intersection / Resize / Mutation observers; each entry fires through `ctx.pushEvent`. */
 
-export default ({ node, intersectionObservers, resizeObservers, mutationObservers }, { pushEvent }) => ({
-    /* Options: {root_handle?, rootMargin?, threshold?}. Event detail: {msg, intersecting, ratio, x, y, w, h}. */
+export default ({ node, intersectionObservers, resizeObservers, mutationObservers }, { pushEvent, emitError }) => ({
+    /* Options: {root_handle?, rootMargin?, threshold?}. Event detail: {msg, target_handle, intersecting, ratio, x, y, w, h}. */
     observe_intersection: (h, msg, optionsJson) => {
         const target = node(h);
         const opts = optionsJson !== undefined ? JSON.parse(optionsJson || '{}') : {};
@@ -10,14 +10,19 @@ export default ({ node, intersectionObservers, resizeObservers, mutationObserver
             delete opts.root_handle;
         }
         const observer = new IntersectionObserver((entries) => {
-            for (const e of entries) {
-                const r = e.boundingClientRect;
-                pushEvent(JSON.stringify({
-                    msg,
-                    intersecting: e.isIntersecting,
-                    ratio: e.intersectionRatio,
-                    x: r.x, y: r.y, w: r.width, h: r.height,
-                }));
+            try {
+                for (const e of entries) {
+                    const r = e.boundingClientRect;
+                    pushEvent(JSON.stringify({
+                        msg,
+                        target_handle: h,
+                        intersecting: e.isIntersecting,
+                        ratio: e.intersectionRatio,
+                        x: r.x, y: r.y, w: r.width, h: r.height,
+                    }));
+                }
+            } catch (err) {
+                emitError('observe_intersection', err);
             }
         }, opts);
         observer.observe(target);
@@ -36,9 +41,13 @@ export default ({ node, intersectionObservers, resizeObservers, mutationObserver
     observe_resize: (h, msg) => {
         const target = node(h);
         const observer = new ResizeObserver((entries) => {
-            for (const e of entries) {
-                const r = e.contentRect;
-                pushEvent(JSON.stringify({ msg, w: r.width, h: r.height, x: r.x, y: r.y }));
+            try {
+                for (const e of entries) {
+                    const r = e.contentRect;
+                    pushEvent(JSON.stringify({ msg, target_handle: h, w: r.width, h: r.height, x: r.x, y: r.y }));
+                }
+            } catch (err) {
+                emitError('observe_resize', err);
             }
         });
         observer.observe(target);
@@ -53,24 +62,29 @@ export default ({ node, intersectionObservers, resizeObservers, mutationObserver
         resizeObservers[h] = null;
     },
 
-    /* Options follow MutationObserverInit. Added/removed report counts only; re-query for the actual new nodes. */
+    /* Options follow MutationObserverInit. `target_handle` is the watched root; mutations may fire on descendants (see `target_id`/`target_tag`). Added/removed report counts only; re-query for the actual new nodes. */
     observe_mutations: (h, msg, optionsJson) => {
         const target = node(h);
         const opts = optionsJson !== undefined ? JSON.parse(optionsJson || '{}') : {};
         /* Spec requires at least one of childList/attributes/characterData; default to the most common. */
         if (!opts.childList && !opts.attributes && !opts.characterData) opts.childList = true;
         const observer = new MutationObserver((mutations) => {
-            for (const m of mutations) {
-                pushEvent(JSON.stringify({
-                    msg,
-                    type: m.type,
-                    target_tag: m.target && m.target.tagName ? m.target.tagName.toLowerCase() : undefined,
-                    target_id: m.target && m.target.id ? m.target.id : undefined,
-                    attribute_name: m.attributeName || undefined,
-                    attribute_old: m.oldValue || undefined,
-                    added: m.addedNodes.length,
-                    removed: m.removedNodes.length,
-                }));
+            try {
+                for (const m of mutations) {
+                    pushEvent(JSON.stringify({
+                        msg,
+                        target_handle: h,
+                        type: m.type,
+                        target_tag: m.target && m.target.tagName ? m.target.tagName.toLowerCase() : undefined,
+                        target_id: m.target && m.target.id ? m.target.id : undefined,
+                        attribute_name: m.attributeName || undefined,
+                        attribute_old: m.oldValue || undefined,
+                        added: m.addedNodes.length,
+                        removed: m.removedNodes.length,
+                    }));
+                }
+            } catch (err) {
+                emitError('observe_mutations', err);
             }
         });
         observer.observe(target, opts);

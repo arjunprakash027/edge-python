@@ -1,6 +1,6 @@
 /* Selection, traversal, mutation, content, attrs, classes, dataset. */
 
-export default ({ nodes, alloc, node, allocList }) => ({
+export default ({ alloc, node, allocList, cleanSubtree }) => ({
     query: (sel) => alloc(document.querySelector(sel)),
     query_all: (sel) => allocList(document.querySelectorAll(sel)),
     closest: (h, sel) => alloc(node(h).closest(sel)),
@@ -26,21 +26,37 @@ export default ({ nodes, alloc, node, allocList }) => ({
         const refNode = node(refH);
         refNode.parentNode.insertBefore(node(newH), refNode);
     },
-    /* Nulls the slot rather than splicing; splicing would shift every later handle. */
-    remove: (h) => { node(h).remove(); nodes[h] = null; },
-    /* Variadic: first arg is the parent, rest are child handles. Pass only the parent to clear. */
+    // Sweeps subtree handles, bindings, animations.
+    remove: (h) => {
+        const el = node(h);
+        el.remove();
+        cleanSubtree(el);
+    },
+    // Variadic: first arg is parent, rest are child handles. Pass only parent to clear. Sweeps detached children.
     replace_children: (parent, ...kids) => {
         const p = node(parent);
+        const old = Array.from(p.children);
         p.replaceChildren(...kids.map(node));
+        for (const c of old) cleanSubtree(c);
     },
     /* `deep` defaults to true (descendants included). */
     clone_node: (h, deep) => alloc(node(h).cloneNode(deep === undefined ? true : deep)),
 
     get_text: (h) => node(h).textContent || '',
-    set_text: (h, txt) => { node(h).textContent = txt; },
+    set_text: (h, txt) => {
+        const el = node(h);
+        const old = el.children.length ? Array.from(el.children) : null;
+        el.textContent = txt;
+        if (old) for (const c of old) cleanSubtree(c);
+    },
 
     get_html: (h) => node(h).innerHTML || '',
-    set_html: (h, html) => { node(h).innerHTML = html; },
+    set_html: (h, html) => {
+        const el = node(h);
+        const old = el.children.length ? Array.from(el.children) : null;
+        el.innerHTML = html;
+        if (old) for (const c of old) cleanSubtree(c);
+    },
 
     get_attribute: (h, name) => {
         const v = node(h).getAttribute(name);

@@ -1,6 +1,6 @@
 /* `<dialog>`, fullscreen, pointer lock, SVG geometry. */
 
-export default ({ alloc, node }) => ({
+export default ({ alloc, node }, { emitError }) => ({
     /* Native modal with backdrop + focus trap. Bind "close" event to detect dismissal. */
     show_modal: (h) => { node(h).showModal(); },
     dialog_close: (h, returnValue) => {
@@ -8,21 +8,21 @@ export default ({ alloc, node }) => ({
         if (returnValue !== undefined) n.close(returnValue); else n.close();
     },
 
-    /* May reject without a user gesture; we swallow. Bind "fullscreenchange" on documentElement for state. */
+    /* May reject without a user gesture; surfaces via emitError. Bind "fullscreenchange" on documentElement for state. */
     request_fullscreen: (h) => {
         const p = node(h).requestFullscreen();
-        if (p && p.catch) p.catch(() => {});
+        if (p && p.catch) p.catch(e => emitError('request_fullscreen', e));
     },
     exit_fullscreen: () => {
         const p = document.exitFullscreen();
-        if (p && p.catch) p.catch(() => {});
+        if (p && p.catch) p.catch(e => emitError('exit_fullscreen', e));
     },
     fullscreen_element: () => alloc(document.fullscreenElement),
 
     /* While locked, clientX/Y freezes but movementX/Y keeps firing (see events.js payload). */
     request_pointer_lock: (h) => {
         const p = node(h).requestPointerLock();
-        if (p && p.catch) p.catch(() => {});
+        if (p && p.catch) p.catch(e => emitError('request_pointer_lock', e));
     },
     exit_pointer_lock: () => { document.exitPointerLock(); },
 

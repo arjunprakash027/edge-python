@@ -1,10 +1,10 @@
 /* `<video>` and `<audio>` controls. */
 
-export default ({ node }) => ({
-    /* play() may reject under user-gesture policies; we swallow. */
+export default ({ node }, { emitError }) => ({
+    /* play() may reject under user-gesture policies; surfaces via emitError. */
     media_play: (h) => {
         const p = node(h).play();
-        if (p && p.catch) p.catch(() => {});
+        if (p && p.catch) p.catch(e => emitError('media_play', e));
     },
     media_pause: (h) => { node(h).pause(); },
 

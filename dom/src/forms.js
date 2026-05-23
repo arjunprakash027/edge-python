@@ -1,6 +1,6 @@
 /* Form value/checked, submit/reset, FormData, Validity, file pickers. */
 
-export default ({ node, files }, { pushEvent }) => ({
+export default ({ node, files }, { pushEvent, emitError }) => ({
     /* `value`/`checked` are live state; `get_attribute("value")` reads the initial-value attribute instead. */
     get_value: (h) => node(h).value ?? '',
     set_value: (h, v) => { node(h).value = v; },
@@ -66,23 +66,39 @@ export default ({ node, files }, { pushEvent }) => ({
         return JSON.stringify({ name: f.name, size: f.size, type: f.type, last_modified: f.lastModified });
     },
 
-    /* Async; result arrives via `receive()` as {msg, ok, text} or {msg, ok: false, error}. */
+    // Async; result via receive() as {msg, file_handle, ok, text}. File handle disposes on completion.
     file_read_text: (h, msg) => {
         const f = files[h];
         if (!f) return;
         const r = new FileReader();
-        r.onload = () => pushEvent(JSON.stringify({ msg, ok: true, text: r.result }));
-        r.onerror = () => pushEvent(JSON.stringify({ msg, ok: false, error: String(r.error) }));
+        r.onload = () => {
+            try { pushEvent(JSON.stringify({ msg, file_handle: h, ok: true, text: r.result })); }
+            catch (err) { emitError('file_read_text', err); }
+            files[h] = null;
+        };
+        r.onerror = () => {
+            try { pushEvent(JSON.stringify({ msg, file_handle: h, ok: false, error: String(r.error) })); }
+            catch (err) { emitError('file_read_text', err); }
+            files[h] = null;
+        };
         r.readAsText(f);
     },
 
-    /* Async; result via `receive()` as {msg, ok, data_url}. Strip "data:<mime>;base64," and b64decode for raw bytes. */
+    // Async; result via receive() as {msg, file_handle, ok, data_url}. File handle disposes on completion.
     file_read_data_url: (h, msg) => {
         const f = files[h];
         if (!f) return;
         const r = new FileReader();
-        r.onload = () => pushEvent(JSON.stringify({ msg, ok: true, data_url: r.result }));
-        r.onerror = () => pushEvent(JSON.stringify({ msg, ok: false, error: String(r.error) }));
+        r.onload = () => {
+            try { pushEvent(JSON.stringify({ msg, file_handle: h, ok: true, data_url: r.result })); }
+            catch (err) { emitError('file_read_data_url', err); }
+            files[h] = null;
+        };
+        r.onerror = () => {
+            try { pushEvent(JSON.stringify({ msg, file_handle: h, ok: false, error: String(r.error) })); }
+            catch (err) { emitError('file_read_data_url', err); }
+            files[h] = null;
+        };
         r.readAsDataURL(f);
     },
 });
