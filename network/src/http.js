@@ -1,11 +1,7 @@
-/* HTTP — async handlers; the worker parks the coro on the returned Promise so Python sees `fetch()` as a yielding builtin that composes with `gather` / `with_timeout`. */
+/* HTTP async handlers; worker parks the coro on the returned Promise so Python sees `fetch()` as a yielding builtin composing with `gather` / `with_timeout`. */
 
 export default ({ requests }) => ({
-    /* `fetch(url, options_json?)` -> JSON string `{id, ok, status, headers, body}`.
-     *
-     * `id` is a request handle usable with `abort_request(id)` if you later need to cancel.
-     * `options_json` is a JSON string forwarded as the `RequestInit` (method, headers, body, credentials, …).
-     */
+    /* `fetch(url, options_json?)` -> JSON `{id, ok, status, headers, body}`. `id` cancels via `abort_request(id)`. `options_json` forwarded as `RequestInit`. */
     fetch: async (url, optionsJson) => {
         const opts = optionsJson !== undefined ? JSON.parse(optionsJson || '{}') : {};
         const ctrl = new AbortController();

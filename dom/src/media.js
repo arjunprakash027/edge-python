@@ -11,7 +11,7 @@ export default ({ node }) => ({
     get_current_time: (h) => node(h).currentTime || 0,
     set_current_time: (h, t) => { node(h).currentTime = t; },
 
-    /* NaN until metadata loads — coerce to 0 so Python's float math stays clean. */
+    /* NaN until metadata loads; coerce to 0 so Python's float math stays clean. */
     get_duration: (h) => {
         const d = node(h).duration;
         return isFinite(d) ? d : 0;

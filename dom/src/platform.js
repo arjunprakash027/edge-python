@@ -32,10 +32,10 @@ export default ({ alloc, node }) => ({
         return JSON.stringify({ x: r.x, y: r.y, w: r.width, h: r.height });
     },
 
-    /* Total length of an SVGPathElement — needed for stroke-dasharray "drawing" animations. */
+    /* Total length of an SVGPathElement; needed for stroke-dasharray "drawing" animations. */
     path_length: (h) => node(h).getTotalLength(),
 
-    /* {x, y} at distance `dist` along the path — animating an object along a curve. */
+    /* {x, y} at distance `dist` along the path; animating an object along a curve. */
     point_at_length: (h, dist) => {
         const p = node(h).getPointAtLength(dist);
         return JSON.stringify({ x: p.x, y: p.y });

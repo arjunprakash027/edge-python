@@ -26,7 +26,7 @@ export default ({ nodes, alloc, node, allocList }) => ({
         const refNode = node(refH);
         refNode.parentNode.insertBefore(node(newH), refNode);
     },
-    /* Nulls the slot rather than splicing — splicing would shift every later handle. */
+    /* Nulls the slot rather than splicing; splicing would shift every later handle. */
     remove: (h) => { node(h).remove(); nodes[h] = null; },
     /* Variadic: first arg is the parent, rest are child handles. Pass only the parent to clear. */
     replace_children: (parent, ...kids) => {

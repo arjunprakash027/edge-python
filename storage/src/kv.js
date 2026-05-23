@@ -1,4 +1,4 @@
-/* localStorage + sessionStorage — sync handlers; both APIs are blocking by spec so no Promise wrapping needed. */
+/* localStorage + sessionStorage, sync handlers; both APIs are blocking by spec so no Promise wrapping needed. */
 
 /* JSON-array of keys (not CSV) so keys containing commas survive the round-trip. Python parses with `json.loads`. */
 const keysOf = (store) => JSON.stringify(Array.from({ length: store.length }, (_, i) => store.key(i)));

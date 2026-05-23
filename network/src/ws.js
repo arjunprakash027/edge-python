@@ -1,4 +1,4 @@
-/* WebSocket — push-event pattern (streaming, so `bind_event` + `receive()` like `dom`). */
+/* WebSocket, push-event pattern (streaming, so `bind_event` + `receive()` like `dom`). */
 
 export default ({ sockets, allocSocket, socket }, { pushEvent }) => ({
     /* `ws_open(url, msg)` -> socket handle. Every event (open/message/close/error) arrives via `receive()` tagged `msg`. */
@@ -10,8 +10,7 @@ export default ({ sockets, allocSocket, socket }, { pushEvent }) => ({
         ws.addEventListener('message', (e) => pushEvent(JSON.stringify({
             msg, type: 'message',
             data: typeof e.data === 'string' ? e.data : undefined,
-            /* binary messages surface as `binary: true`; the actual bytes aren't crossed
-             * back yet (would need an out-of-band channel like a file handle). */
+            /* binary messages surface as `binary: true`; bytes aren't crossed back yet (needs an out-of-band channel like a file handle). */
             binary: typeof e.data !== 'string' || undefined,
         })));
         ws.addEventListener('close', (e) => pushEvent(JSON.stringify({
@@ -22,10 +21,10 @@ export default ({ sockets, allocSocket, socket }, { pushEvent }) => ({
         return allocSocket(ws);
     },
 
-    /* `ws_send(h, data)` — strings only for now; binary would need a bytes handle channel. */
+    /* `ws_send(h, data)`, strings only for now; binary would need a bytes handle channel. */
     ws_send: (h, data) => { socket(h).send(data); },
 
-    /* `ws_close(h, code?, reason?)` — defaults to a clean close (1000). */
+    /* `ws_close(h, code?, reason?)`, defaults to a clean close (1000). */
     ws_close: (h, code, reason) => {
         const ws = socket(h);
         if (code !== undefined) ws.close(code, reason || '');

@@ -1,4 +1,4 @@
-/* Smoke test: serves storage/ from disk, loads web/index.html in Chromium, drives the example, and fails if any console error fires. localStorage and IndexedDB are native browser APIs, so no mocking is needed. */
+/* Smoke test: serves storage/, drives web/index.html in Chromium, fails on console error. localStorage and IndexedDB are native browser APIs, no mocking needed. */
 
 import { chromium } from "npm:playwright";
 import { readFileSync } from "node:fs";

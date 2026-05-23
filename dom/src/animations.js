@@ -1,4 +1,4 @@
-/* Web Animations API — `finish_msg` arrives via `receive()` on completion. */
+/* Web Animations API; `finish_msg` arrives via `receive()` on completion. */
 
 export default ({ node, animations }, { pushEvent }) => ({
     /* keyframes/options are JSON. `finish_msg` (optional) wakes `receive()` when the animation finishes. */

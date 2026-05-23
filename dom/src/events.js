@@ -96,6 +96,6 @@ export default ({ node, bindings, files }, { pushEvent }) => ({
         node(h).dispatchEvent(new CustomEvent(type, { detail: detail || '', bubbles: true, cancelable: true }));
     },
 
-    /* Synthetic native click — triggers default behaviors (file picker, link nav). CustomEvent("click") wouldn't. */
+    /* Synthetic native click; triggers default behaviors (file picker, link nav). CustomEvent("click") wouldn't. */
     click: (h) => { node(h).click(); },
 });

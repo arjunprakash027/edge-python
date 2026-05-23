@@ -66,7 +66,7 @@ export default ({ node, files }, { pushEvent }) => ({
         return JSON.stringify({ name: f.name, size: f.size, type: f.type, last_modified: f.lastModified });
     },
 
-    /* Async — result arrives via `receive()` as {msg, ok, text} or {msg, ok: false, error}. */
+    /* Async; result arrives via `receive()` as {msg, ok, text} or {msg, ok: false, error}. */
     file_read_text: (h, msg) => {
         const f = files[h];
         if (!f) return;

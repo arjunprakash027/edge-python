@@ -1,7 +1,7 @@
 # Edge Python Host CI/CD
 
 ```
-lint -> test   (matrix-fanned per capability)
+lint -> test (matrix-fanned per capability)
 ```
 
 | Workflow | Role |
@@ -20,7 +20,7 @@ The list lives **in one place**: the anchored `strategy` block on the `lint` job
 lint:
   strategy: &capability-matrix
     matrix:
-      capability: [dom, forms]   # ← edit only here; `test` aliases via *capability-matrix
+      capability: [dom, forms] # ← edit only here; `test` aliases via *capability-matrix
 ```
 
 GitHub Actions supports YAML anchors (since Sep 2025), so the alias on the `test` job picks up the change automatically. The reusable workflows run against `${{ inputs.capability }}/src/` and `${{ inputs.capability }}/tests/` — no per-capability config beyond the array entry.

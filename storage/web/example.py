@@ -4,7 +4,7 @@ from storage import (
     idb_open, idb_put, idb_get, idb_keys, idb_close,
 )
 
-# localStorage / sessionStorage — sync; getItem returns None when the key is missing.
+# localStorage / sessionStorage, sync; getItem returns None when the key is missing.
 
 print("-> localStorage")
 local_set("theme", "dark")
@@ -16,7 +16,7 @@ print("-> sessionStorage")
 session_set("cart", "[1,2,3]")
 print(f"  cart = {session_get('cart')}")
 
-# IndexedDB — yielding host calls: looks sync, suspends until the transaction settles. Compose with gather / with_timeout exactly like fetch().
+# IndexedDB, yielding host calls: looks sync, suspends until the transaction settles. Compose with gather / with_timeout exactly like fetch().
 
 print("-> IndexedDB")
 db = idb_open("notes", 1, '{"stores":["items"]}')

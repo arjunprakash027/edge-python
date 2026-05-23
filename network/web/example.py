@@ -1,6 +1,6 @@
 from network import fetch, fetch_text, ws_open, ws_send, ws_close
 
-# HTTP — yielding host call: looks sync, suspends until the response arrives. Compose with gather / with_timeout exactly like sleep().
+# HTTP, yielding host call: looks sync, suspends until the response arrives. Compose with gather / with_timeout exactly like sleep().
 
 print("-> GET https://httpbin.org/json")
 print(f"  {len(fetch_text("https://httpbin.org/json"))} bytes received")
@@ -8,7 +8,7 @@ print(f"  {len(fetch_text("https://httpbin.org/json"))} bytes received")
 print("-> GET https://httpbin.org/uuid (full response object)")
 print(f"  status field present in JSON: {'\"status\"' in fetch("https://httpbin.org/uuid")}")
 
-# WebSocket — streaming, so push-event pattern: bind via msg tag, drain with receive(). Top-level receive() yields the implicit module-body coro; no async def / run() wrapper needed.
+# WebSocket streaming push-event pattern: bind via msg tag, drain with receive(). Top-level receive() yields the implicit module-body coro; no async def / run() wrapper.
 
 print("-> WS wss://echo.websocket.org")
 sock = ws_open("wss://echo.websocket.org", "echo")

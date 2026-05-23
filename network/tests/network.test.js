@@ -1,4 +1,4 @@
-/* Smoke test: serves network/ from disk, mocks all outgoing HTTP/WS via page.route, loads web/index.html in Chromium, drives the example, and fails if any console error fires. */
+/* Smoke test: serves network/, mocks HTTP/WS via page.route, drives web/index.html in Chromium, fails on console error. */
 
 import { chromium } from "npm:playwright";
 import { readFileSync } from "node:fs";

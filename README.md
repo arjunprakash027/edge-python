@@ -5,9 +5,9 @@ Official JS modules for [Edge Python](https://edgepython.com) exposing host APIs
 ## Layout
 
 ```
-dom/      — src/, web/, tests/, README.md
-network/  — src/, web/, tests/, README.md
-storage/  — src/, web/, tests/, README.md
+dom/ — src/, web/, tests/, README.md
+network/ — src/, web/, tests/, README.md
+storage/ — src/, web/, tests/, README.md
 static/
 ```
 
