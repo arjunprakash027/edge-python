@@ -104,7 +104,7 @@ impl<'a> VM<'a> {
         if !obj.is_heap() {
             return Err(VmErr::TypeMsg(s!("'", str self.type_name(obj), "' object is not iterable")));
         }
-        // F2.6: instance `__iter__` produces a user-defined iterator that drives `ForIter` via `__next__`.
+        // Instance `__iter__` produces a user-defined iterator that drives `ForIter` via `__next__`.
         if matches!(self.heap.get(obj), HeapObj::Instance(..))
             && let Some(iter) = self.try_call_dunder(obj, "__iter__", &[], chunk, slots)? {
             return Ok(IterFrame::UserDefined(iter));

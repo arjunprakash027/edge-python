@@ -62,7 +62,7 @@ impl<'a> VM<'a> {
                 let spec_val = if has_spec { Some(self.pop()?) } else { None };
                 let v = self.pop()?;
 
-                // F2.8: conversion flags consult the dunder-aware helpers so `f"{x!s}"` honours `__str__`.
+                // Conversion flags consult the dunder-aware helpers so `f"{x!s}"` honours `__str__`.
                 let converted = match conv {
                     1 => { let s = self.repr_op(v, chunk, slots)?; self.heap.alloc(HeapObj::Str(s))? }
                     2 => { let s = self.display_op(v, chunk, slots)?; self.heap.alloc(HeapObj::Str(s))? }
@@ -76,7 +76,7 @@ impl<'a> VM<'a> {
                             HeapObj::Str(s) => s.clone(),
                             _ => return Err(cold_type("format spec must be a string")),
                         };
-                        // F2.11: instance `__format__(spec)` runs through `format_op`; built-ins fall through to the spec engine.
+                        // Instance `__format__(spec)` runs through `format_op`; built-ins fall through to the spec engine.
                         self.format_op(converted, &spec, chunk, slots)?
                     }
                     None => {

@@ -19,7 +19,7 @@ pub enum FastOp {
 /* Promote to `fast` after this many hits with a stable type key. */
 const QUICK_THRESH: u8 = 4;
 
-/* F4: per-site monomorphic instance-dunder cache. Records the receiver's class heap idx and the pre-resolved method Val; once `hits >= QUICK_THRESH` the slot promotes and the hot dispatch skips `resolve_attr_silent` entirely. `arity` is the total operand count consumed from the stack (1 for unary, 2 for binary like `__add__`/`__getitem__`). */
+/* Pper-site monomorphic instance-dunder cache. Records the receiver's class heap idx and the pre-resolved method Val; once `hits >= QUICK_THRESH` the slot promotes and the hot dispatch skips `resolve_attr_silent` entirely. `arity` is the total operand count consumed from the stack (1 for unary, 2 for binary like `__add__`/`__getitem__`). */
 #[derive(Clone, Copy)]
 pub struct InstanceCache {
     pub class: u32,
@@ -34,7 +34,7 @@ struct CacheSlot {
     type_key: u8,
     hits: u8,
     fast: Option<FastOp>,
-    // F4: instance-dunder cache; orthogonal to `fast`, dispatch checks it after scalar specialisation misses.
+    // Instance-dunder cache; orthogonal to `fast`, dispatch checks it after scalar specialisation misses.
     inst: Option<InstanceCache>,
 }
 
@@ -138,7 +138,7 @@ impl OpcodeCache {
         }
     }
 
-    /* F4: monomorphic instance-dunder hit counter, promotes after `QUICK_THRESH` consecutive hits with the same class + method pair. Polymorphic sites churn (`record_inst` overwrites on mismatch) but never wedge. */
+    /* Monomorphic instance-dunder hit counter, promotes after `QUICK_THRESH` consecutive hits with the same class + method pair. Polymorphic sites churn (`record_inst` overwrites on mismatch) but never wedge. */
     pub fn record_inst(&mut self, ip: usize, class: u32, method: Val, arity: u8) {
         let Some(s) = self.slots.get_mut(ip) else { return };
         match s.inst.as_mut() {

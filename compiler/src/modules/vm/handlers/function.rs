@@ -299,7 +299,7 @@ impl<'a> VM<'a> {
             return Ok(true);
         }
 
-        // F3: `prop.setter(fn)` returns a new `Property` carrying the original getter plus the supplied setter.
+        // `prop.setter(fn)` returns a new `Property` carrying the original getter plus the supplied setter.
         if let HeapObj::PropertySetter(prop_val) = self.heap.get(callee) {
             if positional.len() != 1 || !kw_flat.is_empty() {
                 return Err(cold_type("property.setter takes exactly 1 argument"));
@@ -315,7 +315,7 @@ impl<'a> VM<'a> {
             return Ok(true);
         }
 
-        // F2.5: instance with `__call__`, bind and dispatch through `BoundUserMethod`-style flow.
+        // Instance with `__call__`, bind and dispatch through `BoundUserMethod`-style flow.
         if let HeapObj::Instance(..) = self.heap.get(callee)
             && let Some((func, class)) = self.lookup_class_member(
                 match self.heap.get(callee) { HeapObj::Instance(c, _) => *c, _ => unreachable!() },

@@ -29,7 +29,7 @@ impl<'a> VM<'a> {
 
         // instance `__getitem__` runs before built-in indexing; slices pass through as a single Slice arg.
         if let Some(r) = self.try_call_dunder(obj, "__getitem__", &[idx], chunk, slots)? {
-            // F4: record monomorphic hit so the next iteration skips `resolve_attr_silent`.
+            // Record monomorphic hit so the next iteration skips `resolve_attr_silent`.
             self.record_dunder_hit(ip, cache, obj, "__getitem__", 2);
             self.push(r);
             return Ok(true);

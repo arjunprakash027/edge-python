@@ -85,7 +85,7 @@ impl<'a> VM<'a> {
                     .map(|(_, v)| *v);
                 if let Some(v) = found { return Ok(AttrLookup::InstanceField(v)); }
                 if let Some((mv, defining)) = self.lookup_class_member(cls_val, bare) {
-                    // F3: a Property member triggers getter invocation in `handle_load_attr`; plain methods stay bound to the receiver.
+                    // A Property member triggers getter invocation in `handle_load_attr`; plain methods stay bound to the receiver.
                     if let HeapObj::Property(getter, _) = self.heap.get(mv) {
                         return Ok(AttrLookup::PropertyGet { recv: obj, getter: *getter });
                     }

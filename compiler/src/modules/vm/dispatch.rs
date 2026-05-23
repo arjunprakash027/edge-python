@@ -82,7 +82,7 @@ impl<'a> VM<'a> {
         Ok(FastOutcome::Done)
     }
 
-    /* F4: instance-dunder fast path. Guards the receiver's class identity, invokes the pre-resolved method bypassing `resolve_attr_silent`, and treats `NotImplemented` as a deopt so reflected dispatch can take over via the slow path. Restores the stack on miss so the slow handler reads its operands unchanged. */
+    /* Instance-dunder fast path. Guards the receiver's class identity, invokes the pre-resolved method bypassing `resolve_attr_silent`, and treats `NotImplemented` as a deopt so reflected dispatch can take over via the slow path. Restores the stack on miss so the slow handler reads its operands unchanged. */
     #[inline]
     fn exec_inst(&mut self, inst: InstanceCache, chunk: &SSAChunk, slots: &mut [Val]) -> Result<FastOutcome, VmErr> {
         let arity = inst.arity as usize;
