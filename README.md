@@ -1,4 +1,4 @@
-# Edge Python stdpkg
+# Edge Python Standard Packages
 
 Official `.wasm` standard-library packages for [Edge Python](https://edgepython.com). Each capability is a Rust crate compiled to `wasm32-unknown-unknown` against the [wasm-pdk](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) ABI. Hosts load the resulting `.wasm` over the standard plugin contract, no custom embedder, no Rust on the consumer side.
 
