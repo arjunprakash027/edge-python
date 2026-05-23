@@ -7,10 +7,12 @@ import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 
 const root = new URL("../", import.meta.url).pathname;
 
-/* Repo-root entries whose `<name>/<name>.json` corpus exists are treated as stdpkgs. */
+/* Repo-root entries whose `<name>/<name>.json` corpus exists are treated as stdpkgs. `STDPKG=<name>` narrows discovery to a single package, used by the matrix-fanned CI to isolate per-shard work. */
+const onlyPkg = Deno.env.get("STDPKG");
 const packages = readdirSync(root).filter((name) => {
     const full = root + name;
     if (!statSync(full).isDirectory()) return false;
+    if (onlyPkg && name !== onlyPkg) return false;
     return existsSync(`${full}/${name}.json`);
 });
 

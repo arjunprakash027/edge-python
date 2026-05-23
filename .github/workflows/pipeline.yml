@@ -1,0 +1,31 @@
+name: CI / CD
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Clippy each stdpkg's Rust source against the wasm32 target. Anchors the matrix so downstream jobs can alias it.
+  lint:
+    name: Lint (${{ matrix.package }})
+    strategy: &package-matrix
+      fail-fast: false
+      matrix:
+        package: [json]
+    uses: ./.github/workflows/_lint.yml
+    with:
+      package: ${{ matrix.package }}
+    secrets: inherit
+
+  # Build the package's .wasm and drive its corpus through the shared sandbox in headless Chromium. Gated on lint so a broken crate never reaches the (slower) Chromium-backed test stage.
+  test:
+    name: Test (${{ matrix.package }})
+    needs: lint
+    strategy: *package-matrix
+    uses: ./.github/workflows/_test.yml
+    with:
+      package: ${{ matrix.package }}
+    secrets: inherit

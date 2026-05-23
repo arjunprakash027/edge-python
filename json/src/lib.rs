@@ -79,15 +79,18 @@ fn loads(text: String, kw: Kwargs) -> Result<Handle> {
 
 #[plugin_fn]
 fn dumps(value: Handle, kw: Kwargs) -> Result<String> {
-    let mut opts = main::serializer::Options::default();
-    opts.indent = kw.get::<i64>("indent")?;
-    opts.sort_keys = kw.get::<bool>("sort_keys")?.unwrap_or(false);
-    if let Some(b) = kw.get::<bool>("ensure_ascii")? { opts.ensure_ascii = b; }
-    if let Some(b) = kw.get::<bool>("check_circular")? { opts.check_circular = b; }
-    if let Some(b) = kw.get::<bool>("allow_nan")? { opts.allow_nan = b; }
-    if let Some(b) = kw.get::<bool>("skipkeys")? { opts.skipkeys = b; }
-    opts.cls = kw.get_handle("cls")?;
-    opts.default = kw.get_handle("default")?;
+    let mut opts = main::serializer::Options {
+        indent: kw.get::<i64>("indent")?,
+        sort_keys: kw.get::<bool>("sort_keys")?.unwrap_or(false),
+        ensure_ascii: kw.get::<bool>("ensure_ascii")?.unwrap_or(true),
+        check_circular: kw.get::<bool>("check_circular")?.unwrap_or(true),
+        allow_nan: kw.get::<bool>("allow_nan")?.unwrap_or(true),
+        skipkeys: kw.get::<bool>("skipkeys")?.unwrap_or(false),
+        cls: kw.get_handle("cls")?,
+        default: kw.get_handle("default")?,
+        item_sep: ",".to_string(),
+        key_sep: ":".to_string(),
+    };
     // `separators` arrives as a 2-tuple `(item, key)`; index manually since `Kwargs::get` can't decode tuples.
     if let Some(seps) = kw.get_handle("separators")? {
         let zero = encode(Value::Int(0))?;
@@ -98,7 +101,6 @@ fn dumps(value: Handle, kw: Kwargs) -> Result<String> {
         opts.key_sep = decode_str(&key, "separators[1]")?;
     } else if opts.indent.is_some() {
         // CPython: when `indent` is given and `separators` is not, default key separator becomes `": "`.
-        opts.item_sep = ",".to_string();
         opts.key_sep = ": ".to_string();
     }
     main::serializer::serialize(&value, opts)

@@ -1,5 +1,5 @@
 /*
-Streaming JSON tokenizer. `next` advances one token, tracks byte offset. `Int`/`Float` carry source slice for `parse_int`/`parse_float`. `Constant` covers CPython tokens `NaN`/`Infinity`/`-Infinity`.
+Streaming JSON tokenizer. `next_token` advances one token, tracks byte offset. `Int`/`Float` carry source slice for `parse_int`/`parse_float`. `Constant` covers CPython tokens `NaN`/`Infinity`/`-Infinity`.
 */
 
 use alloc::string::{String, ToString};
@@ -44,7 +44,7 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    pub fn next(&mut self) -> Result<Token, JsonError> {
+    pub fn next_token(&mut self) -> Result<Token, JsonError> {
         self.skip_ws();
         if self.pos >= self.src.len() { return Ok(Token::Eof); }
         let c = self.src[self.pos];

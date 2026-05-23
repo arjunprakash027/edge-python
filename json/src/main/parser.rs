@@ -18,14 +18,14 @@ pub struct LoadCtx {
 pub fn parse(src: &str, ctx: &LoadCtx) -> Result<Handle> {
     let mut tk = Tokenizer::new(src);
     let value = parse_value(&mut tk, ctx)?;
-    match tk.next().map_err(to_pdk_err)? {
+    match tk.next_token().map_err(to_pdk_err)? {
         Token::Eof => Ok(value),
         _ => Err(value_err(tk.pos(), "trailing data after JSON value")),
     }
 }
 
 fn parse_value(tk: &mut Tokenizer, ctx: &LoadCtx) -> Result<Handle> {
-    let t = tk.next().map_err(to_pdk_err)?;
+    let t = tk.next_token().map_err(to_pdk_err)?;
     parse_value_with(tk, t, ctx)
 }
 
@@ -75,14 +75,14 @@ fn parse_value_with(tk: &mut Tokenizer, t: Token, ctx: &LoadCtx) -> Result<Handl
 
 fn parse_array(tk: &mut Tokenizer, ctx: &LoadCtx) -> Result<Handle> {
     let list = Handle::new_list()?;
-    let first = tk.next().map_err(to_pdk_err)?;
+    let first = tk.next_token().map_err(to_pdk_err)?;
     if matches!(first, Token::RBracket) { return Ok(list); }
     let mut current = first;
     loop {
         let item = parse_value_with(tk, current, ctx)?;
         let _ = list.call("append", &[item.raw()])?;
-        match tk.next().map_err(to_pdk_err)? {
-            Token::Comma => current = tk.next().map_err(to_pdk_err)?,
+        match tk.next_token().map_err(to_pdk_err)? {
+            Token::Comma => current = tk.next_token().map_err(to_pdk_err)?,
             Token::RBracket => return Ok(list),
             _ => return Err(value_err(tk.pos(), "expected ',' or ']' in array")),
         }
@@ -95,7 +95,7 @@ fn parse_object(tk: &mut Tokenizer, ctx: &LoadCtx) -> Result<Handle> {
         return parse_object_pairs(tk, ctx);
     }
     let dict = Handle::new_dict()?;
-    let first = tk.next().map_err(to_pdk_err)?;
+    let first = tk.next_token().map_err(to_pdk_err)?;
     if matches!(first, Token::RBrace) {
         return apply_object_hook(dict, ctx);
     }
@@ -106,14 +106,14 @@ fn parse_object(tk: &mut Tokenizer, ctx: &LoadCtx) -> Result<Handle> {
             _ => return Err(value_err(tk.pos(), "object key must be a string")),
         };
         let key = encode(Value::Bytes(key_str.into_bytes()))?;
-        match tk.next().map_err(to_pdk_err)? {
+        match tk.next_token().map_err(to_pdk_err)? {
             Token::Colon => {}
             _ => return Err(value_err(tk.pos(), "expected ':' after object key")),
         }
         let value = parse_value(tk, ctx)?;
         dict.set_item(&key, &value)?;
-        match tk.next().map_err(to_pdk_err)? {
-            Token::Comma => current = tk.next().map_err(to_pdk_err)?,
+        match tk.next_token().map_err(to_pdk_err)? {
+            Token::Comma => current = tk.next_token().map_err(to_pdk_err)?,
             Token::RBrace => return apply_object_hook(dict, ctx),
             _ => return Err(value_err(tk.pos(), "expected ',' or '}' in object")),
         }
@@ -122,7 +122,7 @@ fn parse_object(tk: &mut Tokenizer, ctx: &LoadCtx) -> Result<Handle> {
 
 fn parse_object_pairs(tk: &mut Tokenizer, ctx: &LoadCtx) -> Result<Handle> {
     let mut pairs: Vec<(Handle, Handle)> = Vec::new();
-    let first = tk.next().map_err(to_pdk_err)?;
+    let first = tk.next_token().map_err(to_pdk_err)?;
     if !matches!(first, Token::RBrace) {
         let mut current = first;
         loop {
@@ -131,14 +131,14 @@ fn parse_object_pairs(tk: &mut Tokenizer, ctx: &LoadCtx) -> Result<Handle> {
                 _ => return Err(value_err(tk.pos(), "object key must be a string")),
             };
             let key = encode(Value::Bytes(key_str.into_bytes()))?;
-            match tk.next().map_err(to_pdk_err)? {
+            match tk.next_token().map_err(to_pdk_err)? {
                 Token::Colon => {}
                 _ => return Err(value_err(tk.pos(), "expected ':' after object key")),
             }
             let value = parse_value(tk, ctx)?;
             pairs.push((key, value));
-            match tk.next().map_err(to_pdk_err)? {
-                Token::Comma => current = tk.next().map_err(to_pdk_err)?,
+            match tk.next_token().map_err(to_pdk_err)? {
+                Token::Comma => current = tk.next_token().map_err(to_pdk_err)?,
                 Token::RBrace => break,
                 _ => return Err(value_err(tk.pos(), "expected ',' or '}' in object")),
             }

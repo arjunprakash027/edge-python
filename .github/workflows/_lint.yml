@@ -1,0 +1,38 @@
+name: _Lint
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: Stdpkg directory to clippy (e.g. json).
+        required: true
+        type: string
+
+jobs:
+  lint:
+    name: Cargo Clippy
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+
+      # Caches `~/.cargo/registry` (git deps + index) and the package's `target/`. Key invalidates when Cargo.toml changes.
+      - name: Cache Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ inputs.package }}/target
+          key: cargo-${{ runner.os }}-${{ inputs.package }}-${{ hashFiles(format('{0}/Cargo.toml', inputs.package)) }}
+          restore-keys: cargo-${{ runner.os }}-${{ inputs.package }}-
+
+      # `--all-targets` would also build the lib under std for unit tests, which conflicts with the cdylib's own panic handler. The wasm cdylib is the only artifact the runtime consumes, so lint exactly that surface.
+      - name: Clippy src/
+        working-directory: ${{ inputs.package }}
+        run: cargo clippy --release --target wasm32-unknown-unknown -- -D warnings
