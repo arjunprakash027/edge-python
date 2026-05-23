@@ -34,6 +34,11 @@ Deno.test("demo: boot + interactions produce no console errors", async () => {
         return route.fulfill({ status: 404 });
     });
 
+    /* Emulate echo.websocket.org locally; the public service is flaky and blocked from some CI runners. */
+    await page.routeWebSocket("**/echo.websocket.org/**", (ws) => {
+        ws.onMessage((message) => ws.send(message));
+    });
+
     /* Local files (network/web, network/src, static). External CDNs (runtime.edgepython.com, cdn.tailwindcss.com) pass through. */
     await page.route("**/*", (route) => {
         const url = new URL(route.request().url());
