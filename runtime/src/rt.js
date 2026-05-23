@@ -56,7 +56,7 @@ function decodeBytes(exps, handle, expectedTag) {
 const decodeStr = (exps, h) => TD.decode(decodeBytes(exps, h, TAG_BYTES));
 const decodeInt = (exps, h) => {
     const b = decodeBytes(exps, h, TAG_INT);
-    return Number(new DataView(b.buffer, b.byteOffset, 8).getBigInt64(0, true));
+    return Number(new DataView(b.buffer, b.byteOffset, 16).getBigInt64(0, true));
 };
 const decodeBool = (exps, h) => decodeBytes(exps, h, TAG_BOOL)[0] !== 0;
 const decodeFloat = (exps, h) => {
@@ -73,10 +73,14 @@ function encodeStr(exps, s) {
     return h;
 }
 function encodeInt(exps, n) {
-    const buf = exps.wasm_alloc(8);
-    new DataView(exps.memory.buffer).setBigInt64(buf, BigInt(n), true);
-    const h = exps.host_edge_encode(TAG_INT, buf, 8);
-    exps.wasm_free(buf, 8);
+    const buf = exps.wasm_alloc(16);
+    const view = new DataView(exps.memory.buffer);
+    const big = BigInt(n);
+    view.setBigInt64(buf, big, true);
+    /* Sign-extend upper 64 bits so the i128 round-trip preserves negative values. */
+    view.setBigInt64(buf + 8, big < 0n ? -1n : 0n, true);
+    const h = exps.host_edge_encode(TAG_INT, buf, 16);
+    exps.wasm_free(buf, 16);
     return h;
 }
 function encodeBool(exps, b) {
@@ -114,7 +118,7 @@ function decodeAny(exps, handle) {
     switch (tag) {
         case TAG_NONE: return null;
         case TAG_BOOL: return bytes[0] !== 0;
-        case TAG_INT: return Number(new DataView(bytes.buffer, bytes.byteOffset, 8).getBigInt64(0, true));
+        case TAG_INT: return Number(new DataView(bytes.buffer, bytes.byteOffset, 16).getBigInt64(0, true));
         case TAG_FLOAT: return new DataView(bytes.buffer, bytes.byteOffset, 8).getFloat64(0, true);
         case TAG_BYTES: return TD.decode(bytes);
         default: throw new Error(`unknown handle tag ${tag}`);
