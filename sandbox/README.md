@@ -21,7 +21,7 @@ Multiple packages: `?packages=json,re`. Edit the textarea and press Run.
 
 ## Automated tests
 
-`run.test.js` next to `index.html` is the agnostic Playwright driver — it discovers stdpkgs by walking the repo root for `<name>/<name>.json` corpora and runs each through this sandbox. From the repo root:
+`run.test.js` next to `index.html` is the agnostic Playwright driver, it discovers stdpkgs by walking the repo root for `<name>/<name>.json` corpora and runs each through this sandbox. From the repo root:
 
 ```bash
 deno test --allow-all sandbox/

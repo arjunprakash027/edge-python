@@ -1,5 +1,5 @@
 /*
-Streaming JSON tokenizer. `next` advances one token at a time, tracking byte offset for error reporting. `Int` / `Float` carry the source slice so `loads` can hand it to `parse_int` / `parse_float` hooks. `Constant("NaN" | "Infinity" | "-Infinity")` is emitted for the non-standard tokens CPython accepts by default — `parse_constant` decides their value.
+Streaming JSON tokenizer. `next` advances one token, tracks byte offset. `Int`/`Float` carry source slice for `parse_int`/`parse_float`. `Constant` covers CPython tokens `NaN`/`Infinity`/`-Infinity`.
 */
 
 use alloc::string::{String, ToString};

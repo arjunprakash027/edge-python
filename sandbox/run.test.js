@@ -1,5 +1,5 @@
 /*
-Agnostic runner. Discovers stdpkgs by walking the repo root for `<name>/<name>.json` corpora; each case runs through `sandbox/index.html` with `from <name> import *\n` prepended. Adding a stdpkg means dropping its folder plus a sibling `<name>.json` — no edits here.
+Agnostic runner. Discovers stdpkgs via `<name>/<name>.json`; cases run through `sandbox/index.html` with `from <name> import *\n` prepended.
 */
 
 import { chromium } from "npm:playwright";

@@ -125,7 +125,7 @@ dumps(loads('[1,2,3]'))                      # -> '[1,2,3]'
 dumps(loads('{"k":"v"}'))                    # -> '{"k":"v"}'
 ```
 
-Idempotent for canonical shapes — output of `dumps` parsed by `loads` then re-`dumps`'d returns the same text.
+Idempotent for canonical shapes, output of `dumps` parsed by `loads` then re-`dumps`'d returns the same text.
 
 ## How it works
 
@@ -135,9 +135,9 @@ The crate compiles to `wasm32-unknown-unknown` (`cdylib`) against the [wasm-pdk]
 
 ## Performance
 
-Single-pass tokenizer + recursive-descent parser; ~95 KB stripped. The serializer reuses a single growing `String` buffer per call. For multi-megabyte payloads the bottleneck is the handle round-trip per primitive (the runtime's wire ABI cost), not parsing.
+Single-pass tokenizer + recursive-descent parser; around 95 KB stripped. The serializer reuses a single growing `String` buffer per call. For multi-megabyte payloads the bottleneck is the handle round-trip per primitive (the runtime's wire ABI cost), not parsing.
 
-Plugin memory is recycled per call: each `loads`/`dumps` returns its scratch allocations to a static 4 MB pool, so long-running workers (JSONL streaming, polling loops) stay flat rather than growing. The upstream wasm-pdk ABI leaks ~8 bytes per host call (`__edge_alloc` boxed-slice), so a single worker session caps at roughly 500 k plugin calls before the pool exhausts; recycle the worker periodically for unbounded streaming.
+Plugin memory is recycled per call: each `loads`/`dumps` returns its scratch allocations to a static 4 MB pool, so long-running workers (JSONL streaming, polling loops) stay flat rather than growing. The upstream wasm-pdk ABI leaks around 8 bytes per host call (`__edge_alloc` boxed-slice), so a single worker session caps at roughly 500 k plugin calls before the pool exhausts; recycle the worker periodically for unbounded streaming.
 
 ## Distribution
 

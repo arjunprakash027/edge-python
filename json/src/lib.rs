@@ -11,7 +11,7 @@ extern crate alloc;
 use alloc::string::{String, ToString};
 use wasm_pdk::*;
 
-/* Free-list allocator over a static `.bss` pool — `memory.grow` is never called, side-stepping the runtime bug where `env.js` host_call_native captures `new DataView(memory.buffer)` before the first `__edge_alloc` and detaches it if memory grows mid-call. `dealloc` reclaims chunks so iterative workloads (JSONL streaming, loops over `loads`/`dumps`) reuse memory instead of leaking. Single-threaded: wasm32-unknown-unknown has no threads, so `UnsafeCell` access is safe without a lock. */
+/* Free-list allocator on static `.bss` pool, avoids `memory.grow` detaching `env.js` host_call_native's pre-captured `DataView(memory.buffer)`. `dealloc` reclaims chunks for iterative `loads`/`dumps`; single-threaded wasm32 makes `UnsafeCell` safe. */
 #[cfg(target_arch = "wasm32")]
 mod allocator {
     use core::alloc::{GlobalAlloc, Layout};

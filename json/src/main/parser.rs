@@ -1,5 +1,5 @@
 /*
-Recursive-descent JSON parser. Builds Handles via `Handle::new_dict` / `new_list` / `set_item` and `list.append`; primitives go through `encode`. `LoadCtx` carries the 5 CPython `json.loads` hooks (`object_hook`, `object_pairs_hook`, `parse_float`, `parse_int`, `parse_constant`); each fires at the matching production and returns its Handle in place of the default value.
+Recursive-descent JSON parser. Composites via `Handle::new_dict`/`new_list`/`set_item`/`list.append`; primitives via `encode`. `LoadCtx` carries CPython `json.loads` hooks, each replaces the default at its production.
 */
 
 use alloc::{format, vec::Vec};
@@ -90,7 +90,7 @@ fn parse_array(tk: &mut Tokenizer, ctx: &LoadCtx) -> Result<Handle> {
 }
 
 fn parse_object(tk: &mut Tokenizer, ctx: &LoadCtx) -> Result<Handle> {
-    // `object_pairs_hook` wins over `object_hook` per CPython spec: gather (key, value) tuples then call the hook on a list of them, skipping the dict build entirely.
+    // `object_pairs_hook` wins over `object_hook` per CPython spec: gather (key, value) pairs and call the hook on them, skipping dict build.
     if ctx.object_pairs_hook.is_some() {
         return parse_object_pairs(tk, ctx);
     }

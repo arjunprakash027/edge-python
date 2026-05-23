@@ -1,12 +1,12 @@
 # Edge Python stdpkg
 
-Official `.wasm` standard-library packages for [Edge Python](https://edgepython.com). Each capability is a Rust crate compiled to `wasm32-unknown-unknown` against the [wasm-pdk](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) ABI. Hosts load the resulting `.wasm` over the standard plugin contract — no custom embedder, no Rust on the consumer side.
+Official `.wasm` standard-library packages for [Edge Python](https://edgepython.com). Each capability is a Rust crate compiled to `wasm32-unknown-unknown` against the [wasm-pdk](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) ABI. Hosts load the resulting `.wasm` over the standard plugin contract, no custom embedder, no Rust on the consumer side.
 
 ## Layout
 
 ```
-sandbox/      — shared browser shell + agnostic Deno + Playwright runner
-<name>/       — one folder per stdpkg crate, with src/, README.md, and <name>.json corpus
+sandbox/, shared browser shell + agnostic Deno + Playwright runner
+<name>/, one folder per stdpkg crate, with src/, README.md, and <name>.json corpus
 ```
 
 The folder name IS the package name IS the wasm artifact name (e.g. `json/` -> `json/target/wasm32-unknown-unknown/release/json.wasm`). Each package's `<name>.json` sits alongside `Cargo.toml`; cases in it are automatically prefixed with `from <name> import *\n` before dispatch, so the corpus only contains the code being tested.
@@ -15,7 +15,7 @@ The folder name IS the package name IS the wasm artifact name (e.g. `json/` -> `
 
 | Folder | Description |
 |--------|-------------|
-| `json` | JSON serialization/deserialization — see [`json/README.md`](json/README.md) |
+| `json` | JSON serialization/deserialization, see [`json/README.md`](json/README.md) |
 
 ## Build + test
 

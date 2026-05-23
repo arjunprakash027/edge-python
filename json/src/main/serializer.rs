@@ -1,5 +1,5 @@
 /*
-Walk a Handle and emit JSON text. Dispatch by `type_of`; sequences via `iter`+`len`+`get_item` (`iter_next` bypassed: wasm-pdk v0.1.0's StopIteration check is broken). Full CPython `json.dumps` kwargs supported: indent, sort_keys, ensure_ascii, check_circular, skipkeys, allow_nan, separators, cls, default.
+Walk a Handle, emit JSON text. Dispatch by `type_of`; sequences use `iter`+`len`+`get_item` (skip `iter_next`: wasm-pdk v0.1.0 StopIteration broken). Full CPython `json.dumps` kwargs supported.
 */
 
 use alloc::{borrow::ToOwned, format, string::String, vec::Vec};
@@ -34,7 +34,7 @@ pub struct SerCtx<'a> {
     pub depth: usize,
 }
 
-/* Depth ceiling for circular detection. CPython uses object identity (`id(x) in seen`); we can't access Val identity from inside a wasm plugin (handles to the same value differ), so we fall back to a recursion-depth cap. Set high enough to allow any sane JSON tree but low enough to trip well before the JS call stack overflows on a self-referencing structure. */
+/* Recursion-depth cap for circular detection: wasm plugin can't see Val identity (CPython's `id(x) in seen`); trips before JS call stack overflow on self-reference. */
 const MAX_DEPTH: usize = 200;
 
 pub fn serialize(value: &Handle, opts: Options) -> Result<String> {
