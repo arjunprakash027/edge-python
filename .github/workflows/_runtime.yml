@@ -35,5 +35,5 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # Pin to the Pages production branch. `github.ref_name` would be the tag name (e.g. `v0.1.0`) on tag pushes, which Pages treats as a preview deploy with a per-branch URL, the custom domain `runtime.edgepython.com` would never pick it up.
+          # Pin to the Pages production branch. The job only runs on main pushes (gated in pipeline.yml).
           command: pages deploy _site --project-name=edge-python-runtime --branch=main

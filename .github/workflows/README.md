@@ -22,7 +22,7 @@ Two **Direct Upload** projects, Actions pushes prebuilt directories via `wrangle
 | `edge-python-demo` | `demo/` (wasm hashed for `version.json`, not bundled) | `https://edge-python-demo.pages.dev` |
 | `edge-python-runtime` | `runtime/` + bundled `compiler_lib.wasm` | `https://edge-python-runtime.pages.dev` |
 
-Both deploys pinned to `main` in `_runtime.yml` / `_demo.yml`, without the pin, tag pushes would land at preview URLs (`v0-1-0.edge-python-runtime.pages.dev`) and never update the custom domain.
+Both deploys run **only on pushes to `main`** (gated in `pipeline.yml`) and are pinned to the production `main` branch in `_runtime.yml` / `_demo.yml`. PRs and tags never deploy; the next `main` push refreshes both projects.
 
 ### Cloudflare and GitHub setup
 
@@ -52,7 +52,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-On tag push: `_check` lints, `_wasm` builds and optimizes the artifact, attaches it to a fresh Release with auto-generated notes, `_runtime` + `_demo` redeploy.
+On tag push: `_check` lints, `_wasm` builds and optimizes the artifact and attaches it to a fresh Release with auto-generated notes. The CDN deploys (`_runtime` + `_demo`) do not run on tags; they already deployed from the preceding `main` push.
 
 Nothing is published to crates.io, distribution is the `.wasm` on the Release. `starter-module` carries its own version and isn't bumped with the workspace.
 
