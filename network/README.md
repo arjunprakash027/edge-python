@@ -7,10 +7,10 @@ from network import fetch_json, ws_open, ws_send
 
 import json
 
-# HTTP — yields and resumes when the response arrives. Composes with gather / with_timeout.
+# HTTP, yields and resumes when the response arrives. Composes with gather / with_timeout.
 data = fetch_json("https://api.example.com/users")
 
-# WebSocket — streaming, push-event pattern.
+# WebSocket, streaming, push-event pattern.
 sock = ws_open("wss://example.com/socket", "msg")
 ws_send(sock, "hello")
 async def main():
@@ -53,11 +53,11 @@ See [`tests/README.md`](../tests/README.md) for the corpus shape.
 
 ### Conventions
 
-- **HTTP handlers yield.** They return a Promise on the JS side; the runtime parks the coro in `WaitingHostCall` until it resolves — Python sees a sync-looking call that suspends. `gather()`, `with_timeout()`, and `run()` work over them with no `await`/`receive()`.
+- **HTTP handlers yield.** They return a Promise on the JS side; the runtime parks the coro in `WaitingHostCall` until it resolves, Python sees a sync-looking call that suspends. `gather()`, `with_timeout()`, and `run()` work over them with no `await`/`receive()`.
 - **WebSocket/SSE use push-events** (like `dom`'s `bind_event`). Connections open with a `msg` tag; every wire event arrives via `receive()` as JSON.
 - **Handles are integer IDs.**
-- **Options are JSON strings** — `fetch(url, '{"method":"POST","body":"..."}')`.
-- **Response bodies are strings.** Parse JSON with `json.loads` — `json` is auto-registered by the runtime.
+- **Options are JSON strings**, `fetch(url, '{"method":"POST","body":"..."}')`.
+- **Response bodies are strings.** Parse JSON with `json.loads`, `json` is auto-registered by the runtime.
 
 ### HTTP
 
@@ -122,7 +122,7 @@ async def main():
 run(main())
 ```
 
-Payload `type` values: `open`, `message`, `close`, `error`. `message` carries `data` for text frames (binary frames surface `binary: true` only — bidirectional bytes is a future addition).
+Payload `type` values: `open`, `message`, `close`, `error`. `message` carries `data` for text frames (binary frames surface `binary: true` only, bidirectional bytes is a future addition).
 
 `ws_open(url, msg, protocols_json?)`, `ws_send(handle, data)`, `ws_close(handle, code?, reason?)`, `ws_state(handle)`.
 
@@ -152,15 +152,15 @@ run(main())
 
 `src/index.js` is a factory `(ctx) => handlers` (same shape as `dom`). Three slices (`http`, `ws`, `sse`) close over a shared `state` (handle tables for in-flight requests, sockets, SSE sources) and merge with `Object.assign`.
 
-HTTP slice returns async handlers (`async (url) => { ... return body; }`); the runtime detects the Promise and parks in `WaitingHostCall` until resolved — same shape as `sleep()`. WS/SSE slices return sync handlers wiring DOM-style listeners into `ctx.pushEvent`.
+HTTP slice returns async handlers (`async (url) => { ... return body; }`); the runtime detects the Promise and parks in `WaitingHostCall` until resolved, same shape as `sleep()`. WS/SSE slices return sync handlers wiring DOM-style listeners into `ctx.pushEvent`.
 
 ## Performance
 
-Per-handler cost is one `postMessage` round-trip per call; HTTP adds network latency on top. For many small same-host requests, prefer one larger request — same advice as plain JS.
+Per-handler cost is one `postMessage` round-trip per call; HTTP adds network latency on top. For many small same-host requests, prefer one larger request, same advice as plain JS.
 
 ## Distribution
 
-JS sources only — `compiler_lib.wasm` and the runtime load from `runtime.edgepython.com`. No build step.
+JS sources only, `compiler_lib.wasm` and the runtime load from `runtime.edgepython.com`. No build step.
 
 ## License
 

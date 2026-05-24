@@ -1,14 +1,17 @@
 # Edge Python Host
 
-Official JS modules for [Edge Python](https://edgepython.com) exposing host APIs (DOM, network, storage) to Python scripts. Each capability is a plain ESM registered with `createWorker` via `mainThreadModules` — no `.wasm`, no Rust, no custom embedder.
+Official JS modules for [Edge Python](https://edgepython.com) exposing host APIs (DOM, network, storage) to Python scripts. Each capability is a plain ESM registered with `createWorker` via `mainThreadModules`, no `.wasm`, no Rust, no custom embedder.
 
 ## Layout
 
 ```
-dom/      — src/, dom.json, README.md
-network/  — src/, network.json, README.md
-storage/  — src/, storage.json, README.md
-tests/    — agnostic Deno + Playwright runner driving the <edge-python> tag
+├── dom
+│   └── src
+├── network
+│   └── src
+├── storage
+│   └── src
+└── tests
 ```
 
 One folder per capability. Each ships a `<name>/<name>.json` corpus; the shared runner in `tests/` walks for them and drives every case through headless Chromium.
@@ -32,9 +35,9 @@ One folder per capability. Each ships a `<name>/<name>.json` corpus; the shared 
 
 | Folder | Description |
 |--------|-------------|
-| `dom`     | Browser DOM access — see [`dom/README.md`](dom/README.md) |
-| `network` | HTTP fetch, WebSocket, SSE — see [`network/README.md`](network/README.md) |
-| `storage` | localStorage, sessionStorage, IndexedDB — see [`storage/README.md`](storage/README.md) |
+| `dom`     | Browser DOM access, see [`dom/README.md`](dom/README.md) |
+| `network` | HTTP fetch, WebSocket, SEE, see [`network/README.md`](network/README.md) |
+| `storage` | localStorage, sessionStorage, IndexedDB, see [`storage/README.md`](storage/README.md) |
 
 ## License
 

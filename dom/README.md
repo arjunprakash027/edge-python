@@ -1,6 +1,6 @@
 # Edge Python DOM
 
-DOM access shipped as a plain ESM module. Scripts see `dom` as ordinary — full surface: queries, mutation, events, forms, files, observers, animations, layout, media, SVG, dialog, fullscreen, pointer lock.
+DOM access shipped as a plain ESM module. Scripts see `dom` as ordinary, full surface: queries, mutation, events, forms, files, observers, animations, layout, media, SVG, dialog, fullscreen, pointer lock.
 
 ```python
 from dom import query, set_text, bind_event
@@ -49,14 +49,14 @@ See [`tests/README.md`](../tests/README.md) for the corpus shape.
 
 **Conventions:**
 
-- Handles are opaque integers — store, pass, never compute on them.
+- Handles are opaque integers; store, pass, never compute on them.
 - Multi-result queries (`query_all`, `children`) return CSV strings of handles.
 - Structured returns (`rect`, `validity`, `form_data`, `bbox`, event payloads) are JSON strings.
 - Async results (events, FileReader, animation finishes, observer entries) arrive via `receive()`.
 - Async payloads carry a correlation handle so the consumer can route results back to the originating call: `target_handle` (events, observers), `file_handle` (file_read_*), `animation_handle` (animate finish).
 - Cleanup is automatic. Detaching nodes (`remove`, `replace_children`, `set_html`, `set_text`) sweeps the subtree's handles, event bindings, and active animations. `file_read_*` releases its file handle on completion. Animations auto-release on finish or cancel, except `iterations: "Infinity"` loops, which need `animation_dispose(h)`.
 
-**Parsing JSON returns.** The runtime auto-registers `json` — `from json import loads, dumps` works with zero setup. Examples below assume it.
+**Parsing JSON returns.** The runtime auto-registers `json`, `from json import loads, dumps` works with zero setup. Examples below assume it.
 
 ### Selection and traversal
 
@@ -128,7 +128,7 @@ async def main():
 
 `bind_event(node, type, msg, options_json?)` dispatches a JSON detail on each fire. Payload fields: `msg`, `target_handle`, `type`, `target_id`, `target_tag`, `value`, `checked`, `key`, `code`, `button`, `x`, `y`, `movement_x`/`y`, `alt`/`ctrl`/`shift`/`meta`, plus `drop_files`, `drop_text`, `clipboard_text`, `clipboard_files`, `touches` when applicable. `target_handle` is the bound element (useful when sharing a `msg` across multiple bindings). Options JSON: `prevent_default`, `stop_propagation`, `once`, `capture`, `passive`.
 
-Returns a binding handle for `unbind_event(h)`. Also: `dispatch_event(node, type, detail?)`, `click(node)` (native click — triggers file pickers and form behaviors).
+Returns a binding handle for `unbind_event(h)`. Also: `dispatch_event(node, type, detail?)`, `click(node)` (native click, triggers file pickers and form behaviors).
 
 ### Forms
 
@@ -261,13 +261,13 @@ Adding a handler is one entry in one slice. Nothing else changes.
 
 ## Performance
 
-Per-handler cost is one `postMessage` round-trip (~0.1–0.4 ms in modern browsers) — plenty for UI-rate workloads (events, mutations, layout) at hundreds of ops/frame.
+Per-handler cost is one `postMessage` round-trip (~0.1–0.4 ms in modern browsers), plenty for UI-rate workloads (events, mutations, layout) at hundreds of ops/frame.
 
 Bad fit: tight per-frame loops with thousands of fine-grained ops, or pixel-precise renders. Pair with a `<canvas>` capability for the framebuffer path.
 
 ## Distribution
 
-JS sources only — `compiler_lib.wasm` and the runtime load from `runtime.edgepython.com` at page load. No vendored copy, no build step.
+JS sources only, `compiler_lib.wasm` and the runtime load from `runtime.edgepython.com` at page load. No vendored copy, no build step.
 
 ## License
 

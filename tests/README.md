@@ -5,9 +5,8 @@ Shared test harness for every host capability, modeled on [`edge-python/runtime/
 ## Layout
 
 ```
-tests/
-  index.html   — pure markup; loads the runtime <edge-python> tag
-  host.test.js — Playwright driver: discovers <cap>/<cap>.json, drives each corpus
+├── host.test.js
+└── index.html
 ```
 
 The `<cap>/` folders and their `<cap>.json` corpora stay agnostic to testing. The driver synthesizes the `packages.json` and prepends `from <cap> import *\n`, so a corpus only holds the code under test.

@@ -1,6 +1,6 @@
 # Edge Python Storage
 
-Persistent client-side storage — `localStorage`, `sessionStorage`, `IndexedDB`. Plain ESM module registered with `createWorker`.
+Persistent client-side storage, `localStorage`, `sessionStorage`, `IndexedDB`. Plain ESM module registered with `createWorker`.
 
 ```python
 from storage import local_set, local_get, idb_open, idb_put, idb_get
@@ -49,7 +49,7 @@ See [`tests/README.md`](../tests/README.md) for the corpus shape.
 ### Conventions
 
 - **KV handlers are sync.** `localStorage` / `sessionStorage` are blocking by spec; handlers return strings or `None`. No `await`, no `receive()`.
-- **IndexedDB handlers yield.** They return a Promise on the JS side; the runtime parks the coro in `WaitingHostCall` until resolved — same shape as `fetch()` in [`network/`](../network/README.md).
+- **IndexedDB handlers yield.** They return a Promise on the JS side; the runtime parks the coro in `WaitingHostCall` until resolved, same shape as `fetch()` in [`network/`](../network/README.md).
 - **Values cross as JSON strings.** Encode with `json.dumps`, decode with `json.loads`. Same trade-off `dom`'s `animate` and `bind_event` make for options.
 - **Key listings are JSON arrays** (keys can contain commas). Parse with `json.loads`.
 - **Handles are integer IDs** for IndexedDB; `local_*` / `session_*` address global stores directly (no handle).
@@ -71,7 +71,7 @@ local_clear()
 
 `local_get`, `local_set`, `local_remove`, `local_clear`, `local_keys`.
 
-Same surface for `sessionStorage` with the `session_` prefix: `session_get`, `session_set`, `session_remove`, `session_clear`, `session_keys`. Difference is lifetime — sessionStorage clears when the tab closes; localStorage persists.
+Same surface for `sessionStorage` with the `session_` prefix: `session_get`, `session_set`, `session_remove`, `session_clear`, `session_keys`. Difference is lifetime, sessionStorage clears when the tab closes; localStorage persists.
 
 ### IndexedDB
 
