@@ -4,14 +4,14 @@ Persistent client-side storage, `localStorage`, `sessionStorage`, `IndexedDB`. P
 
 ```python
 from storage import local_set, local_get, idb_open, idb_put, idb_get
-import json
+from "http://std.edgepython.com/json.wasm" import loads
 
 local_set("theme", "dark")
 print(local_get("theme")) # -> "dark"
 
 db = idb_open("notes", 1, '{"stores":["items"]}')
 idb_put(db, "items", "1", '{"title":"hello"}')
-note = json.loads(idb_get(db, "items", "1"))
+note = loads(idb_get(db, "items", "1"))
 print(note["title"]) # -> "hello"
 ```
 
@@ -58,13 +58,13 @@ See [`tests/README.md`](../tests/README.md) for the corpus shape.
 
 ```python
 from storage import local_set, local_get, local_remove, local_clear, local_keys
-import json
+from "http://std.edgepython.com/json.wasm" import loads
 
 local_set("theme", "dark")
 local_set("user", "ada")
 print(local_get("theme")) # -> "dark"
 print(local_get("missing")) # -> None
-print(json.loads(local_keys())) # -> ["theme", "user"]
+print(loads(local_keys())) # -> ["theme", "user"]
 local_remove("user")
 local_clear()
 ```
@@ -77,14 +77,14 @@ Same surface for `sessionStorage` with the `session_` prefix: `session_get`, `se
 
 ```python
 from storage import idb_open, idb_put, idb_get, idb_delete, idb_keys, idb_close
-import json
+from "http://std.edgepython.com/json.wasm" import dumps, loads
 
 # Schema declares the object stores to create on first open / version bump.
 db = idb_open("notes", 1, '{"stores":["items","tags"]}')
 
-idb_put(db, "items", "1", json.dumps({"title": "hello", "ts": 1234}))
-item = json.loads(idb_get(db, "items", "1"))
-keys = json.loads(idb_keys(db, "items"))
+idb_put(db, "items", "1", dumps({"title": "hello", "ts": 1234}))
+item = loads(idb_get(db, "items", "1"))
+keys = loads(idb_keys(db, "items"))
 
 idb_delete(db, "items", "1")
 idb_close(db)

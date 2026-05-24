@@ -63,19 +63,19 @@ See [`tests/README.md`](../tests/README.md) for the corpus shape.
 
 ```python
 from network import fetch, fetch_text, fetch_json, abort_request
-import json
+from "http://std.edgepython.com/json.wasm" import loads
 
 # Full response object as a JSON string: {id, ok, status, headers, body}
-resp = json.loads(fetch("https://api.example.com/users"))
+resp = loads(fetch("https://api.example.com/users"))
 if resp["ok"]:
     print(resp["body"])
 
 # Convenience helpers: body string only. Raise on non-2xx.
 text = fetch_text("https://example.com")
-data = json.loads(fetch_json("https://api.example.com/users"))
+data = loads(fetch_json("https://api.example.com/users"))
 
 # POST with options
-resp = json.loads(fetch("https://api.example.com/users",
+resp = loads(fetch("https://api.example.com/users",
     '{"method":"POST","body":"{\\"name\\":\\"ada\\"}","headers":{"Content-Type":"application/json"}}'))
 
 # Abort an in-flight request by its `id` (returned in the full response object)
@@ -104,14 +104,14 @@ except TimeoutError:
 ### WebSocket
 
 ```python
-import json
+from "http://std.edgepython.com/json.wasm" import loads
 from network import ws_open, ws_send, ws_close, ws_state
 
 sock = ws_open("wss://example.com/socket", "ws")
 
 async def main():
     while True:
-        ev = json.loads(receive())
+        ev = loads(receive())
         if ev["type"] == "open":
             ws_send(sock, "hello")
         elif ev["type"] == "message":
@@ -129,14 +129,14 @@ Payload `type` values: `open`, `message`, `close`, `error`. `message` carries `d
 ### Server-Sent Events
 
 ```python
-import json
+from "http://std.edgepython.com/json.wasm" import loads
 from network import sse_open, sse_close
 
 stream = sse_open("/events", "sse")
 
 async def main():
     while True:
-        ev = json.loads(receive())
+        ev = loads(receive())
         if ev["type"] == "message":
             print(ev["data"])
         elif ev["type"] == "error":

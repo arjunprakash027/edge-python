@@ -101,10 +101,10 @@ set_data(query("#row"), "id", "42")  # element.dataset.id = "42"
 
 ```python
 from dom import set_style, rect, focus
-import json
+from "http://std.edgepython.com/json.wasm" import loads
 
 set_style(query("#box"), "transform", "translateX(20px)")
-r = json.loads(rect(query("#box")))
+r = loads(rect(query("#box")))
 print(r["w"], r["h"], r["x"], r["y"])
 focus(query("#input"))
 ```
@@ -114,14 +114,14 @@ focus(query("#input"))
 ### Events
 
 ```python
-import json
+from "http://std.edgepython.com/json.wasm" import loads
 from dom import bind_event
 
 bind_event(query("#form"), "submit", "submit", '{"prevent_default": true}')
 
 async def main():
     while True:
-        ev = json.loads(receive())
+        ev = loads(receive())
         if ev["msg"] == "submit":
             print("submitted")
 ```
@@ -133,15 +133,15 @@ Returns a binding handle for `unbind_event(h)`. Also: `dispatch_event(node, type
 ### Forms
 
 ```python
-import json
+from "http://std.edgepython.com/json.wasm" import loads
 from dom import validity, set_custom_validity, form_data
 
 email = query("#email")
-v = json.loads(validity(email))
+v = loads(validity(email))
 if v["type_mismatch"]:
     set_custom_validity(email, "Please use a valid email")
 
-data = json.loads(form_data(query("#signup")))
+data = loads(form_data(query("#signup")))
 # {"email": ["x@y.com"], "remember": ["on"]}
 ```
 
@@ -150,14 +150,14 @@ data = json.loads(form_data(query("#signup")))
 ### Files
 
 ```python
-import json
+from "http://std.edgepython.com/json.wasm" import loads
 from dom import bind_event, get_files, file_read_data_url, set_attribute
 
 bind_event(query("#picker"), "change", "picked")
 
 async def main():
     while True:
-        ev = json.loads(receive())
+        ev = loads(receive())
         if ev["msg"] == "picked":
             for h in [int(x) for x in get_files(query("#picker")).split(",") if x]:
                 file_read_data_url(h, "loaded")
@@ -170,14 +170,14 @@ async def main():
 ### Observers
 
 ```python
-import json
+from "http://std.edgepython.com/json.wasm" import loads
 from dom import observe_intersection
 
 observe_intersection(query("#hero"), "visible", '{"threshold": 0.5}')
 
 async def main():
     while True:
-        ev = json.loads(receive())
+        ev = loads(receive())
         if ev["msg"] == "visible" and ev["intersecting"]:
             set_attribute(query("#hero img"), "src", "/large.jpg")
 ```
@@ -237,14 +237,14 @@ append_child(query("svg"), circle)
 Async errors in DOM callbacks (event listeners, observer callbacks, swallowed promise rejections in `media_play` / `request_fullscreen` / `request_pointer_lock` / `animate`) go to the browser console by default. Bind a message to surface them as ordinary Python events:
 
 ```python
-import json
+from "http://std.edgepython.com/json.wasm" import loads
 from dom import bind_global_error
 
 bind_global_error("err")
 
 async def main():
     while True:
-        ev = json.loads(receive())
+        ev = loads(receive())
         if ev["msg"] == "err":
             print(f"[{ev['where']}] {ev['error']}")
             continue
