@@ -41,12 +41,23 @@ Declarative alternative to `createWorker`: include the script, drop a tag, and a
 <edge-python entry="./app/main.py" packages="./app/packages.json"></edge-python>
 ```
 
-Importing `element.js` auto-registers the tag. On connect, the element reads its attributes, loads the modules declared in `packages.json` (below), spawns the worker, fetches `entry`, and runs it. `compiler_lib.wasm` loads from the CDN automatically.
+Importing `element.js` auto-registers the tag. On connect, the element reads its attributes, loads the modules declared in `packages.json` (below), spawns the worker, runs `entry` if present, then fires a `ready` event. `compiler_lib.wasm` loads from the CDN automatically.
 
 | Attribute | Description |
 |---|---|
-| `entry` | URL of the `.py` file to fetch and run. Resolved against the document. |
+| `entry` | Optional URL of a `.py` file to run on connect. Omit it to drive the worker via `run()`. Resolved against the document. |
 | `packages` | Optional `packages.json` URL. Its `host` and `imports` fields declare the modules to load (see below). |
+
+### Programmatic use
+
+The element keeps its worker on `el.worker`, so you can drive the same VM from JS after `ready` fires; `run(src, opts?)` and `onOutput(cb)` proxy the worker.
+
+```js
+const el = document.querySelector("edge-python");
+await new Promise((r) => el.addEventListener("ready", r, { once: true }));
+el.onOutput((line) => console.log(line));
+await el.run("print(1 + 1)"); // 2
+```
 
 ### Registration
 

@@ -1,5 +1,6 @@
 [
     { "script": "render(str(add(2, 3) + sub(10, 4) + mul(2, 5)))", "expect": "21" },
     { "script": "render(upper('hola'))", "expect": "HOLA" },
-    { "script": "render(f'{2 ** 10}')", "expect": "1024" }
+    { "script": "render(f'{2 ** 10}')", "expect": "1024" },
+    { "script": "render(str(10 // 0))", "error": "ZeroDivisionError" }
 ]

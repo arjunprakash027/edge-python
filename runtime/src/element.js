@@ -26,14 +26,22 @@ export class EdgePythonElement extends HTMLElement {
             }
         }
 
-        const worker = await createWorker({
+        // Kept on the element so callers can drive the same worker after the declarative run.
+        this.worker = await createWorker({
             wasmUrl: "https://runtime.edgepython.com/js/compiler_lib.wasm",
             mainThreadModules,
             imports,
         });
-        const code = await fetch(file).then(r => r.text());
-        await worker.run(code);
+        // `entry` is optional: omit it to just spin up the worker and drive it via run().
+        if (file) await this.worker.run(await fetch(file).then(r => r.text()));
+        this.dispatchEvent(new Event("ready"));
     }
+
+    // Run a Python source string on the element's worker. Resolves with { out, ms }.
+    run(src, opts) { return this.worker.run(src, opts); }
+
+    // Register a streaming stdout handler; fires once per print() line.
+    onOutput(handler) { this.worker.onOutput(handler); }
 }
 
 export function defineElement( tag = 'edge-python' ) {
