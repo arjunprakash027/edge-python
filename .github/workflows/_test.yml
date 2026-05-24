@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       capability:
-        description: Capability directory whose tests/ folder to run (e.g. dom).
+        description: Capability directory whose corpus to drive through tests/ (e.g. dom).
         required: true
         type: string
 
@@ -39,8 +39,8 @@ jobs:
       - name: Install Chromium
         run: deno run -A npm:playwright install --with-deps chromium
 
-      # `HOSTCAP` narrows sandbox discovery so this shard only drives its own corpus through Chromium.
-      - name: Test sandbox/
+      # `HOSTCAP` narrows test discovery so this shard only drives its own corpus through Chromium.
+      - name: Test tests/
         env:
           HOSTCAP: ${{ inputs.capability }}
-        run: deno test --allow-all sandbox/
+        run: deno test --allow-all tests/

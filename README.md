@@ -8,10 +8,10 @@ Official JS modules for [Edge Python](https://edgepython.com) exposing host APIs
 dom/      — src/, dom.json, README.md
 network/  — src/, network.json, README.md
 storage/  — src/, storage.json, README.md
-sandbox/  — shared browser shell + agnostic Deno + Playwright runner
+tests/    — agnostic Deno + Playwright runner driving the <edge-python> tag
 ```
 
-One folder per capability. Each ships a `<name>/<name>.json` corpus; the shared sandbox at the repo root walks for them and drives every case through headless Chromium.
+One folder per capability. Each ships a `<name>/<name>.json` corpus; the shared runner in `tests/` walks for them and drives every case through headless Chromium.
 
 ## Usage
 

@@ -8,7 +8,7 @@ lint -> test (matrix-fanned per capability)
 |----------|------|
 | `pipeline.yml` | Orchestrator. Defines the capability matrix once via YAML anchor (`&capability-matrix`), aliased by both `_lint` and `_test`. Test is gated on lint |
 | `_lint.yml` | `deno lint` against the capability's `src/` |
-| `_test.yml` | Deno + cached Chromium; runs `deno test --allow-all sandbox/` with `HOSTCAP=<capability>` so the shared runner only drives that capability's corpus |
+| `_test.yml` | Deno + cached Chromium; runs `deno test --allow-all tests/` with `HOSTCAP=<capability>` so the shared runner only drives that capability's corpus |
 
 Triggers: push to `main`, tags `v*`, PRs against `main`.
 
@@ -23,7 +23,7 @@ lint:
       capability: [dom, forms] # <- edit only here; `test` aliases via *capability-matrix
 ```
 
-GitHub Actions supports YAML anchors (since Sep 2025), so the alias on the `test` job picks up the change automatically. `_lint.yml` runs against `${{ inputs.capability }}/src/`; `_test.yml` drives `sandbox/` with `HOSTCAP=${{ inputs.capability }}` so the shared runner narrows to that capability's `<name>.json` corpus — no per-capability config beyond the array entry.
+GitHub Actions supports YAML anchors (since Sep 2025), so the alias on the `test` job picks up the change automatically. `_lint.yml` runs against `${{ inputs.capability }}/src/`; `_test.yml` drives `tests/` with `HOSTCAP=${{ inputs.capability }}` so the shared runner narrows to that capability's `<name>.json` corpus, no per-capability config beyond the array entry.
 
 ## Caches
 
@@ -41,6 +41,6 @@ deno lint dom/src/
 # One-time setup
 deno run -A npm:playwright install chromium
 
-# Test (drives dom/dom.json through the shared sandbox)
-HOSTCAP=dom deno test --allow-all sandbox/
+# Test (drives dom/dom.json through the shared harness)
+HOSTCAP=dom deno test --allow-all tests/
 ```

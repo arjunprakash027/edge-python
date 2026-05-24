@@ -32,17 +32,17 @@ print(note["title"]) # -> "hello"
 
 ## Testing
 
-Cases live in [`storage.json`](storage.json) and run through the shared sandbox at the repo root:
+Cases live in [`storage.json`](storage.json) and run through the shared runner at the repo root:
 
 ```bash
 # One-time setup
 deno run -A npm:playwright install chromium
 
 # Run (from repo root)
-HOSTCAP=storage deno test --allow-all sandbox/
+HOSTCAP=storage deno test --allow-all tests/
 ```
 
-See [`sandbox/README.md`](../sandbox/README.md) for the corpus shape.
+See [`tests/README.md`](../tests/README.md) for the corpus shape.
 
 ## API
 

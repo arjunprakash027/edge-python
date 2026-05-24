@@ -33,17 +33,17 @@ Engine runs in a Web Worker; `dom` handlers run on the page's main thread (where
 
 ## Testing
 
-Cases live in [`dom.json`](dom.json) and run through the shared sandbox at the repo root:
+Cases live in [`dom.json`](dom.json) and run through the shared runner at the repo root:
 
 ```bash
 # One-time setup
 deno run -A npm:playwright install chromium
 
 # Run (from repo root)
-HOSTCAP=dom deno test --allow-all sandbox/
+HOSTCAP=dom deno test --allow-all tests/
 ```
 
-See [`sandbox/README.md`](../sandbox/README.md) for the corpus shape.
+See [`tests/README.md`](../tests/README.md) for the corpus shape.
 
 ## API
 
