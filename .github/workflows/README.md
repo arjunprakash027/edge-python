@@ -33,7 +33,7 @@ GitHub Actions supports YAML anchors, so the alias on `wasm` picks up the change
 | Cargo (stable) | `~/.cargo/{registry,git}`, `<pkg>/target` | `_lint.yml` | `cargo-stable-`, per-package `Cargo.toml` hash |
 | Cargo (nightly) | `~/.cargo/{registry,git}`, `<pkg>/target` | `_wasm.yml` | `cargo-nightly-`, per-package `Cargo.toml` hash |
 | Deno modules | `~/.cache/deno` | `_wasm.yml` | `deno.json` / `deno.lock` hash |
-| Playwright Chromium | `~/.cache/ms-playwright` | `_wasm.yml` | runner OS + `PLAYWRIGHT_VERSION` |
+| Playwright Chromium | `~/.cache/ms-playwright` | `_wasm.yml` | runner OS + `chromium` (~150MB, hit skips the download) |
 
 Lint (stable clippy) and wasm (nightly `build-std`) use distinct cache prefixes so their incompatible `target/` builds never collide on one key.
 
@@ -48,7 +48,7 @@ Lint (stable clippy) and wasm (nightly `build-std`) use distinct cache prefixes 
 ( cd json && cargo clippy --release --target wasm32-unknown-unknown -- -D warnings )
 
 # One-time setup
-deno run -A npm:playwright@1.49.0 install chromium
+deno run -A npm:playwright install chromium
 
 # Build + test one package
 ( cd json && cargo build --release --target wasm32-unknown-unknown )

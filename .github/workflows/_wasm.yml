@@ -10,7 +10,6 @@ on:
 
 env:
   BINARYEN_VERSION: "121"
-  PLAYWRIGHT_VERSION: "1.49.0"
   WASM: ${{ inputs.package }}/target/wasm32-unknown-unknown/release/${{ inputs.package }}.wasm
 
 jobs:
@@ -50,15 +49,15 @@ jobs:
           key: deno-${{ runner.os }}-${{ hashFiles('**/deno.json', '**/deno.lock') }}
           restore-keys: deno-${{ runner.os }}-
 
-      # Version in the key so a Playwright bump refreshes Chromium.
+      # Cached across runs; only the first pays the Chromium download.
       - name: Cache Playwright browsers
         uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}
+          key: playwright-${{ runner.os }}-chromium
 
       - name: Install Chromium
-        run: deno run -A npm:playwright@${{ env.PLAYWRIGHT_VERSION }} install --with-deps chromium
+        run: deno run -A npm:playwright install --with-deps chromium
 
       # apt ships an old binaryen, so fetch the upstream release.
       - name: Install wasm-opt
