@@ -5,7 +5,7 @@ Official `.wasm` standard-library packages for [Edge Python](https://edgepython.
 ## Layout
 
 ```
-sandbox/, shared browser shell + agnostic Deno + Playwright runner
+tests/, agnostic Deno + Playwright runner driving the <edge-python> tag
 <name>/, one folder per stdpkg crate, with src/, README.md, and <name>.json corpus
 ```
 
@@ -25,8 +25,8 @@ Each package builds independently; the agnostic runner asserts against the produ
 # Build every package's .wasm artifact.
 ( cd json && cargo build --release --target wasm32-unknown-unknown )
 
-# One command, drives all corpora through the shared sandbox.
-deno test --allow-all sandbox/
+# One command, drives all corpora through the shared runner.
+deno test --allow-all tests/
 ```
 
 The runner discovers packages by walking the repo root for `<name>/<name>.json` corpora. CI runs this matrix via `.github/workflows/`.
@@ -36,9 +36,9 @@ The runner discovers packages by walking the repo root for `<name>/<name>.json` 
 1. Create `<name>/` at the repo root with `Cargo.toml` (`name = "<name>"`, `crate-type = ["cdylib"]`, `wasm-pdk` dep) and a `src/lib.rs` exporting via `#[plugin_fn]`.
 2. Drop `<name>/<name>.json` with the corpus (Edge Python source + expected `output` / `error` per case).
 3. Run `cargo build --release --target wasm32-unknown-unknown` inside the package folder.
-4. Run `deno test --allow-all sandbox/` from the repo root.
+4. Run `deno test --allow-all tests/` from the repo root.
 
-No edits to `sandbox/`.
+No edits to `tests/`.
 
 ## License
 

@@ -8,7 +8,7 @@ lint -> test (matrix-fanned per stdpkg)
 |----------|------|
 | `pipeline.yml` | Orchestrator. Defines the package matrix once via YAML anchor (`&package-matrix`), aliased by both `_lint` and `_test`. Test is gated on lint |
 | `_lint.yml` | `cargo clippy` against the stdpkg's `src/` on `wasm32-unknown-unknown` with `-D warnings` (cdylib only, not `--all-targets`) |
-| `_test.yml` | Builds the package's `.wasm`, then drives its corpus through `sandbox/` in cached Chromium |
+| `_test.yml` | Builds the package's `.wasm`, then drives its corpus through `tests/` in cached Chromium |
 
 Triggers: push to `main`, tags `v*`, PRs against `main`.
 
@@ -23,7 +23,7 @@ lint:
       package: [json, re] # <- edit only here; `test` aliases via *package-matrix
 ```
 
-GitHub Actions supports YAML anchors (since Sep 2025), so the alias on the `test` job picks up the change automatically. The reusable workflows run against `${{ inputs.package }}/src/` for clippy and pass `STDPKG=${{ inputs.package }}` to `sandbox/run.test.js` so that shard's Chromium only drives its own corpus.
+GitHub Actions supports YAML anchors (since Sep 2025), so the alias on the `test` job picks up the change automatically. The reusable workflows run against `${{ inputs.package }}/src/` for clippy and pass `STDPKG=${{ inputs.package }}` to `tests/std.test.js` so that shard's Chromium only drives its own corpus.
 
 ## Caches
 
@@ -44,8 +44,8 @@ deno run -A npm:playwright install chromium
 
 # Build + test one package
 ( cd json && cargo build --release --target wasm32-unknown-unknown )
-STDPKG=json deno test --allow-all sandbox/
+STDPKG=json deno test --allow-all tests/
 
 # Or test every package the runner discovers (no STDPKG)
-deno test --allow-all sandbox/
+deno test --allow-all tests/
 ```

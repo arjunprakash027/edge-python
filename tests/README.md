@@ -1,0 +1,34 @@
+# Tests
+
+Shared test harness for every stdpkg, modeled on [`edge-python/runtime/tests`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime/tests). `index.html` is pure markup: it loads the runtime's `<edge-python>` tag and nothing else. `std.test.js` boots one tag per package and drives it through the tag's programmatic API (`run`, `onOutput`).
+
+## Layout
+
+```
+tests/
+  index.html   — pure markup; loads the runtime <edge-python> tag
+  std.test.js  — Playwright driver: discovers <pkg>/<pkg>.json, drives each corpus
+```
+
+The `<pkg>/` folders and their `<pkg>.json` corpora stay agnostic to testing. The driver synthesizes the `packages.json` and prepends `from <pkg> import *\n`, so a corpus only holds the code under test.
+
+## How it works
+
+The driver serves the repo over `http://localhost` (a secure context, so the runtime's integrity check works), synthesizes a `packages.json` (the package wasm), and boots one `<edge-python packages="...">`. After its `ready` event it captures stdout with `el.onOutput(...)` and runs each snippet with `el.run(src)`, reading the trace for error cases. One worker is reused for the whole corpus, so the whole real system (runtime + `compiler_lib.wasm` + the package wasm) is exercised end to end.
+
+```bash
+( cd json && cargo build --release --target wasm32-unknown-unknown )
+deno test --allow-all tests/
+```
+
+`STDPKG=<name>` narrows discovery to a single package; CI uses it to fan out the matrix.
+
+## Corpus shape
+
+Each `<pkg>/<pkg>.json` is an array of cases. Per case:
+
+| Field | Type | Purpose |
+|---|---|---|
+| `src` | string | Edge Python source. Driver prepends `from <pkg> import *\n`. |
+| `output` | string[] | Expected stdout lines. |
+| `error` | string | Expected substring of the trace (use instead of `output`). |

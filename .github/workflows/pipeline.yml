@@ -20,7 +20,7 @@ jobs:
       package: ${{ matrix.package }}
     secrets: inherit
 
-  # Build the package's .wasm and drive its corpus through the shared sandbox in headless Chromium. Gated on lint so a broken crate never reaches the (slower) Chromium-backed test stage.
+  # Build the package's .wasm and drive its corpus through the shared runner in headless Chromium. Gated on lint so a broken crate never reaches the (slower) Chromium-backed test stage.
   test:
     name: Test (${{ matrix.package }})
     needs: lint
