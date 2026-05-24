@@ -1,6 +1,6 @@
 # Edge Python Runtime
 
-JS half of Edge Python: hosts `compiler_lib.wasm` in a Web Worker, resolves and registers `.py` / `.wasm` modules, dispatches native calls.
+JS half of Edge Python: hosts `compiler_lib.wasm` in a Web Worker, resolves and registers `.py` / `.wasm` modules, dispatches native calls. Drive it programmatically with `createWorker`, or declaratively with the `<edge-python>` HTML element.
 
 ## Install
 
@@ -30,6 +30,54 @@ set_text(query("#app"), "hello")
 
 worker.dispose();
 ```
+
+## HTML element (`<edge-python>`)
+
+Declarative alternative to `createWorker`: include the script, drop a tag, and a `.py` file runs. The element wraps `createWorker` on the page's main thread.
+
+```html
+<script type="module" src="https://runtime.edgepython.com/js/src/element.js"></script>
+
+<edge-python entry="./app/main.py" packages="./app/packages.json"></edge-python>
+```
+
+Importing `element.js` auto-registers the tag. On connect, the element reads its attributes, loads the modules declared in `packages.json` (below), spawns the worker, fetches `entry`, and runs it. `compiler_lib.wasm` loads from the CDN automatically.
+
+| Attribute | Description |
+|---|---|
+| `entry` | URL of the `.py` file to fetch and run. Resolved against the document. |
+| `packages` | Optional `packages.json` URL. Its `host` and `imports` fields declare the modules to load (see below). |
+
+### Registration
+
+Where `customElements` is absent (Cloudflare Workers, Deno, SSR), append `?setElement=false` to the script URL to skip the auto-call, then register manually with the exported `defineElement(tag = "edge-python")`, where custom tags must contain a hyphen:
+
+```js
+import { defineElement } from "https://runtime.edgepython.com/js/src/element.js?setElement=false";
+defineElement("edge-py");
+```
+
+### Importing host libraries
+
+Host libraries (DOM, etc.) are plain-JS modules whose handlers run on the **page's main thread**, because they touch `document` / `window`, which the worker can't reach. Declare them in the `host` field of `packages.json`:
+
+```json
+{
+  "host": {
+    "dom": "/edge-python-host/dom/src/index.js"
+  }
+}
+```
+
+For each entry the element dynamically `import()`s the URL (resolved against the `packages.json` location) and registers its named exports, every export except `default`, as [main-thread modules](#main-thread-modules). The export name is the module name Python imports, so `export const dom` becomes `from dom import ...`:
+
+```python
+# app/main.py
+from dom import query, set_text
+set_text(query("#app"), "hello")
+```
+
+The element reads the same `packages.json` for the standard `imports` field too: those bare-name `.py` / `.wasm` modules are passed to `createWorker`'s `imports`. So one manifest drives both directions, `host` to the main thread and `imports` to the worker. Together they are the declarative form of the [`mainThreadModules`](#main-thread-modules) and `imports` options.
 
 ## API
 
@@ -156,6 +204,7 @@ When the runtime is cross-origin (page on `demo.edgepython.com`, runtime on `run
 │   ├── cache
 │   │   ├── idb.js
 │   │   └── memory.js
+│   ├── element.js
 │   ├── env.js
 │   ├── fetch.js
 │   ├── index.js
@@ -173,6 +222,7 @@ When the runtime is cross-origin (page on `demo.edgepython.com`, runtime on `run
 | Path | Purpose |
 |---|---|
 | `src/index.js` | Public API. `createWorker` factory (main-thread). |
+| `src/element.js` | Public `<edge-python>` custom element. Wraps `createWorker`, loads modules from `packages.json` (`host` and `imports`). |
 | `worker/engine.js` | Internal orchestrator (Worker only). `load`, `run`, `pushEvent`, `reset`, `clearCache`, `dispose`, `setHostCallDelegate`. |
 | `src/env.js` | The 4 `env.*` imports `compiler_lib` declares: `host_print`, `host_call_native`, `host_fetch_bytes`, `host_now_ns`. |
 | `src/native.js` | Native module loader extension point + built-in Path A (wasm-pdk) loader + `nativeTable`. |
