@@ -1,6 +1,6 @@
 /* Agnostic driver: feeds each <pkg>/<pkg>.json corpus to the <edge-python> tag. Run: deno test --allow-all tests/ */
 
-import { chromium } from "npm:playwright";
+import { chromium } from "npm:playwright@1.49.0";
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 
 const ROOT = new URL("../", import.meta.url).pathname;
