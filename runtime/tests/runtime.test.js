@@ -1,79 +1,58 @@
 /*
-Runtime tester. Cases live in `./runtime.json` (table-driven, mirrors `compiler/tests/cases/vm.json`).
-Serves runtime/ from disk, drives `createWorker(...)` in Chromium, uses CDN wasm to decouple from local builds.
-Run: `deno test --allow-all runtime/tests/runtime.test.js` (one-time: `deno run -A npm:playwright install chromium`).
+Drives <edge-python> through index.html, comparing #app to each runtime.json case.
+Run: deno test --allow-all runtime/tests/runtime.test.js
 */
 
 import { chromium } from "npm:playwright@latest";
 import { readFileSync } from "node:fs";
 
-const REPO = new URL("../../", import.meta.url).pathname; // edge-python/
-const WASM_URL = "https://runtime.edgepython.com/js/compiler_lib.wasm";
+const REPO = new URL("../../", import.meta.url).pathname; // edge-python/ repo root
 const cases = JSON.parse(readFileSync(new URL("./runtime.json", import.meta.url)));
-
-/* Named handler fixtures referenced by `runtime.json` main_thread blocks, kept in JS because handler bodies are functions (not JSON-serializable). Each case lists fixture names; the harness rehydrates them inside the browser. */
-const FIXTURES = {
-    uppercase: "(s) => s.toUpperCase()",
-    double: "(n) => Number(n) * 2",
-    halve: "(n) => Number(n) / 2",
-    negate: "(b) => !b",
-    pass_none: "() => null",
-    join: "(a, b, c) => `${a}|${b}|${c}`",
-    echo_async: "async (s) => { await new Promise(r => setTimeout(r, 10)); return 'echo:' + s; }",
+const PKG = JSON.parse(readFileSync(new URL("./app/packages.json", import.meta.url)));
+// star-import every module key, recursing through the imports/host category containers
+const star = (m) => Object.entries(m).flatMap(([k, v]) => (k === "imports" || k === "host" ? star(v) : `from ${k} import *`));
+const PRELUDE = star(PKG).join("\n") + "\n";
+const TYPES = {
+    ".js": "text/javascript", ".wasm": "application/wasm", ".html": "text/html",
+    ".py": "text/x-python", ".json": "application/json",
 };
 
-const TYPES = { ".js": "text/javascript", ".wasm": "application/wasm", ".html": "text/html" };
-
-Deno.test("runtime: cases produce expected output and traces", async () => {
+Deno.test("runtime: <edge-python> runs the corpus through index.html", async () => {
     const browser = await chromium.launch();
     const page = await browser.newPage();
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 
-    /* Intercept only the local-virtual host; let external URLs (CDN wasm, Anthropic runtime) pass through. */
-    await page.route("**/*", (route) => {
-        const url = new URL(route.request().url());
-        if (url.host !== "x") return route.continue();
-        const p = url.pathname;
-        if (p === "/") return route.fulfill({ contentType: "text/html", body: "<!doctype html><body></body>" });
-        if (p.startsWith("/runtime/")) {
-            try {
-                const ext = p.slice(p.lastIndexOf("."));
-                return route.fulfill({ contentType: TYPES[ext] ?? "application/octet-stream", body: readFileSync(REPO + p.slice(1)) });
-            } catch { return route.fulfill({ status: 404 }); }
-        }
-        return route.fulfill({ status: 404 });
+    let script = "";
+    await page.route("**/*", (r) => {
+        const u = new URL(r.request().url());
+        if (u.host !== "localhost") return r.continue(); // CDN wasm passes through
+        if (u.pathname === "/case.py") return r.fulfill({ contentType: "text/x-python", body: script });
+        const ext = u.pathname.slice(u.pathname.lastIndexOf("."));
+        try { return r.fulfill({ contentType: TYPES[ext] ?? "application/octet-stream", body: readFileSync(REPO + u.pathname.slice(1)) }); }
+        catch { return r.fulfill({ status: 404 }); }
     });
-    await page.goto("http://x/");
+    await page.goto("http://localhost/runtime/tests/index.html");
 
     try {
         for (const c of cases) {
-            const result = await page.evaluate(async ({ c, FIXTURES, WASM_URL }) => {
-                const { createWorker } = await import("/runtime/src/index.js");
-                /* Rehydrate handler fixtures (source strings -> functions) inside the browser. */
-                const handlers = Object.fromEntries(
-                    Object.entries(FIXTURES).map(([k, src]) => [k, new Function(`return (${src});`)()]),
-                );
-                const mainThreadModules = {};
-                for (const [mod, fns] of Object.entries(c.main_thread ?? {})) {
-                    mainThreadModules[mod] = () => Object.fromEntries(fns.map((f) => [f, handlers[f]]));
-                }
-                const worker = await createWorker({ wasmUrl: WASM_URL, mainThreadModules });
-                const out = [];
-                worker.onOutput((line) => out.push(line));
-                for (const e of c.events ?? []) worker.pushEvent(e);
-                const run = await worker.run(c.script);
-                worker.dispose();
-                return { out, trace: run.out ?? "" };
-            }, { c, FIXTURES, WASM_URL });
-
-            if (c.output) {
-                const got = JSON.stringify(result.out);
-                const want = JSON.stringify(c.output);
-                if (got !== want) {
-                    throw new Error(`output mismatch for script:\n${c.script}\n  got:  ${got}\n  want: ${want}\n  trace: ${result.trace}`);
-                }
-            }
-            if (c.error && !result.trace.includes(c.error)) {
-                throw new Error(`expected error containing '${c.error}' for script:\n${c.script}\n  got trace: ${result.trace || "(none)"}, output: ${JSON.stringify(result.out)}`);
+            script = PRELUDE + c.script; // served as /case.py
+            errors.length = 0;
+            const got = await page.evaluate(async () => {
+                document.querySelectorAll("edge-python").forEach((e) => e.remove());
+                const app = document.querySelector("#app");
+                app.textContent = "";
+                const el = document.createElement("edge-python");
+                el.setAttribute("entry", "/case.py");
+                el.setAttribute("packages", "./app/packages.json");
+                document.body.appendChild(el);
+                const end = Date.now() + 30000;
+                while (!app.textContent && Date.now() < end) await new Promise((res) => setTimeout(res, 50));
+                return app.textContent;
+            });
+            if (got !== c.expect) {
+                throw new Error(`script:\n${c.script}\n  got:  ${JSON.stringify(got)}\n  want: ${JSON.stringify(c.expect)}\n  errors: ${errors.join(" | ") || "(none)"}`);
             }
         }
     } finally {

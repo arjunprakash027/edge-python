@@ -26,6 +26,30 @@ cargo wasm # -> target/wasm32-unknown-unknown/release/compiler_lib.wasm
 
 Rust consumers can let cargo fetch the release artifact via `DEP_COMPILER_LIB_WASM` (see the repo README). No native CLI, `compiler_lib.wasm` is the artifact and the host owns I/O, network, time, module fetching. Full ABI: [What it is, Where it runs](/getting-started/what-it-is#where-it-runs).
 
+### Drop-in HTML element
+
+In the browser, the runtime's `<edge-python>` element runs a `.py` file declaratively, no JS wiring. With a host library like the DOM (declared in `packages.json`), the script renders straight into the page:
+
+```html
+<div id="app"></div>
+
+<script type="module" src="https://runtime.edgepython.com/js/src/element.js"></script>
+<edge-python entry="./hello.py" packages="./packages.json"></edge-python>
+```
+
+```json
+// packages.json
+{ "host": { "dom": "./dom/src/index.js" } }
+```
+
+```python
+# hello.py
+from dom import query, set_text
+set_text(query("#app"), "Hello from Python")
+```
+
+`dom` is the reference [host library](https://github.com/dylan-sutton-chavez/edge-python-host), served as JS sources alongside your app. See the [runtime README](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) for all attributes and the `imports` field for `.py` / `.wasm` modules.
+
 ## Your first program
 
 Open the [playground](https://demo.edgepython.com) and try the SimplePerceptron Rosenblatt implementation or try a Python snippet:
