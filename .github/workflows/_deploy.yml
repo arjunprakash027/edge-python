@@ -21,10 +21,10 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           pattern: wasm-*
-          path: _site/js/
+          path: _site/
           merge-multiple: true
 
-      # Pages serves the wasm at runtime.edgepython.com/js/*.
+      # Pages serves the wasm at std.edgepython.com/*.
       - name: Deploy
         uses: cloudflare/wrangler-action@v4
         with:

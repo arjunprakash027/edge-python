@@ -39,7 +39,7 @@ Lint (stable clippy) and wasm (nightly `build-std`) use distinct cache prefixes 
 
 ## Deploy
 
-`_deploy.yml` runs only on pushes to `main`. It downloads each `wasm-<pkg>` artifact into `_site/js/`, then runs `wrangler pages deploy _site` pinned to the production `--branch=main`. No checkout is needed: unlike the host runtime (which bundles JS sources), this project serves only the bare `.wasm` at `runtime.edgepython.com/js/<pkg>.wasm`. Credentials come from the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets.
+`_deploy.yml` runs only on pushes to `main`. It downloads each `wasm-<pkg>` artifact into `_site/`, then runs `wrangler pages deploy _site` pinned to the production `--branch=main`. No checkout is needed: unlike the host runtime (which bundles JS sources), this project serves only the bare `.wasm` at `std.edgepython.com/<pkg>.wasm`. Credentials come from the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets.
 
 ## Local parity
 
