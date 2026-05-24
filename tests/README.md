@@ -5,9 +5,8 @@ Shared test harness for every stdpkg, modeled on [`edge-python/runtime/tests`](h
 ## Layout
 
 ```
-tests/
-  index.html   — pure markup; loads the runtime <edge-python> tag
-  std.test.js  — Playwright driver: discovers <pkg>/<pkg>.json, drives each corpus
+├── index.html
+└── std.test.js
 ```
 
 The `<pkg>/` folders and their `<pkg>.json` corpora stay agnostic to testing. The driver synthesizes the `packages.json` and prepends `from <pkg> import *\n`, so a corpus only holds the code under test.

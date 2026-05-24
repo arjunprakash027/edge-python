@@ -5,12 +5,12 @@ JSON serialization, deserialization, and round-tripping shipped as a `.wasm` plu
 ```python
 from json import dumps, loads
 
-# Parse — JSON text -> native Python value.
+# Parse, JSON text -> native Python value.
 data = loads('{"name":"ada","tags":["math","cs"],"score":91.5}')
 print(data["name"])
 print(data["tags"][0])
 
-# Serialize — native value -> JSON text.
+# Serialize, native value -> JSON text.
 print(dumps({"k": [1, 2, 3], "ok": True}))
 ```
 
