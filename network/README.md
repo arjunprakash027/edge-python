@@ -5,7 +5,7 @@ HTTP, WebSocket, and SSE shipped as a plain ESM module. Scripts see `network` as
 ```python
 from network import fetch_json, ws_open, ws_send
 
-import json
+from "http://std.edgepython.com/json.wasm" import loads
 
 # HTTP, yields and resumes when the response arrives. Composes with gather / with_timeout.
 data = fetch_json("https://api.example.com/users")
@@ -15,7 +15,7 @@ sock = ws_open("wss://example.com/socket", "msg")
 ws_send(sock, "hello")
 async def main():
     while True:
-        ev = json.loads(receive())
+        ev = loads(receive())
         if ev["type"] == "message":
             print(ev["data"])
 ```
