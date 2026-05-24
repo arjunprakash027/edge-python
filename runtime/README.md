@@ -134,10 +134,10 @@ export default {
 
     /** Load the module and return its callable surface. */
     async load(module, ctx) {
-        // ctx.compilerExports  — compiler_lib.wasm instance exports (wasm_alloc, host_edge_*, etc.)
-        // ctx.rt  — handle codec helpers (decodeStr, encodeInt, ...)
-        // ctx.fetchedSources  — Map of already-fetched spec -> bytes
-        // ctx.loaders  — full loader list (in order)
+        // ctx.compilerExports, compiler_lib.wasm instance exports (wasm_alloc, host_edge_*, etc.)
+        // ctx.rt, handle codec helpers (decodeStr, encodeInt, ...)
+        // ctx.fetchedSources, Map of already-fetched spec -> bytes
+        // ctx.loaders, full loader list (in order)
 
         return {
             kind: 'wasmpdk' | 'capability',

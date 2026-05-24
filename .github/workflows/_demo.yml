@@ -17,18 +17,14 @@ jobs:
         with:
           node-version: "22"
 
-      # Download the .wasm for hashing only; the demo loads it from the CDN at runtime
-      # (https://runtime.edgepython.com/js/compiler_lib.wasm), so it does not ship inside demo/.
+      # Download the .wasm for hashing only; the demo loads it from the CDN at runtime (https://runtime.edgepython.com/js/compiler_lib.wasm), so it does not ship inside demo/.
       - name: Download wasm artifact
         uses: actions/download-artifact@v8
         with:
           name: compiler_lib_wasm
           path: /tmp/wasm/
 
-      # Hash everything the demo's worker actually loads:
-      #   - compiler_lib.wasm (served by edge-python-runtime)
-      #   - runtime/ JS sources (served by edge-python-runtime)
-      #   - demo/runtime/ Python entry files (served by edge-python-demo)
+      # Hash all worker dependencies: the compiler_lib.wasm binary, runtime JS sources from edge-python-runtime, and Python entry files from edge-python-demo
       - name: Write version manifest
         run: |
           HASH=$( { sha256sum /tmp/wasm/compiler_lib.wasm; \

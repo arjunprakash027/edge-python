@@ -85,7 +85,7 @@ print(1_000_000)
 Underscores are validated, `1_`, `1__2`, `0x_1`, `1e_5` -> `SyntaxError`. Must sit between two digits.
 
 ```python
-# Floats — IEEE-754 doubles
+# Floats: IEEE-754 doubles
 print(3.14)
 print(1e-5)
 print(.5)
@@ -350,7 +350,7 @@ def add(a: int, b: int) -> int:
     return a + b
 
 print(add(3, 4))
-print(add("a", "b")) # annotations don't enforce — int+str logic decides
+print(add("a", "b")) # annotations don't enforce: int+str logic decides
 ```
 
 ```text Output

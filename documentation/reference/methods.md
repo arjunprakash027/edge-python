@@ -289,7 +289,7 @@ print(list(d.items()))
 # Snapshot is detached from the dict
 k = d.keys()
 d["d"] = 4
-print(k) # ['a', 'b', 'c'] — pre-mutation
+print(k) # ['a', 'b', 'c'] pre-mutation
 ```
 
 ```text Output

@@ -24,7 +24,7 @@ Outside `+/-2^127` raises `OverflowError`. Promotion is automatic, user code doe
 
 ```python
 print(140737488355327) # inline, fast path
-print(2 ** 47) # 140737488355328 — auto-promotes to LongInt
+print(2 ** 47) # 140737488355328: auto-promotes to LongInt
 print(2 ** 100) # 1267650600228229401496703205376
 try:
     print(2 ** 127) # past the i128 cap
@@ -63,7 +63,7 @@ hit max depth
 ```
 
 ```python
-# Heap quota — a tight loop allocating new objects
+# Heap quota, a tight loop allocating new objects
 try:
     xs = []
     while True:

@@ -8,7 +8,7 @@ Cooperative concurrency via `async def` coroutines and `await` / `yield`. No pre
 No `asyncio` module. Primitives, `run`, `sleep`, `frame`, `gather`, `with_timeout`, `cancel`, `receive`, are top-level builtins.
 
 ```python
-import asyncio   # ModuleNotFoundError — there is no asyncio
+import asyncio # ModuleNotFoundError: there is no asyncio
 ```
 
 ```python
@@ -143,7 +143,7 @@ A coroutine in a tight synchronous loop without `await`/`sleep` cannot be cancel
 ```python
 async def loop_forever():
     for i in range(1_000_000):
-        pass # no yield — not cancellable here
+        pass # no yield, not cancellable here
     sleep(0) # cancellable from this point on
 ```
 

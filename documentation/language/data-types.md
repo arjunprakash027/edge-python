@@ -137,8 +137,8 @@ data = b"hello"
 print(data)
 print(type(data))
 print(len(data))
-print(data[0]) # int — the byte value
-print(data[1:4]) # bytes — slice
+print(data[0]) # int, the byte value
+print(data[1:4]) # bytes, slice
 ```
 
 ```text Output

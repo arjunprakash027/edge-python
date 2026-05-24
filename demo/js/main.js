@@ -52,7 +52,7 @@ let pendingSrc = null;
 const setBusy = (b) => { busy = b; el.btn.disabled = b; };
 
 async function runPython(src) {
-    if (!worker) { pendingSrc = src; ok('Queued — runtime not ready'); return; }
+    if (!worker) { pendingSrc = src; ok('Queued: runtime not ready'); return; }
     if (busy) return;
     setBusy(true);
     ok('Running...');

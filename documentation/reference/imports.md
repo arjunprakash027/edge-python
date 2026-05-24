@@ -19,11 +19,11 @@ Native modules also cover host packages, bindings shipped by the embedder (DOM i
 ## Syntax
 
 ```python
-# Bare-name imports — resolved via the host's import map / packages.json
+# Bare-name imports, resolved via the host's import map / packages.json
 from json import dumps, loads
 from utils import normalize
 
-# String-form imports — explicit URLs or local paths, no map needed
+# String-form imports, explicit URLs or local paths, no map needed
 from "./lib/helpers.py" import slugify
 from "https://example.com/utils.py" import normalize
 from "https://example.com/math.wasm" import add
@@ -32,18 +32,18 @@ from "https://example.com/math.wasm" import add
 from math import sqrt as root
 from utils import normalize as n
 
-# Parenthesized name lists — multi-line, optional trailing comma
+# Parenthesized name lists, multi-line, optional trailing comma
 from utils import (
     slugify,
     normalize as n,
     titlecase,
 )
 
-# Plain `import X` — binds the module under its name; access exports via `.`
+# Plain `import X`, binds the module under its name; access exports via `.`
 import math
 print(math.sqrt(2.0))
 
-# Star imports — every export becomes a flat name in scope
+# Star imports, every export becomes a flat name in scope
 from utils import *
 print(slugify("Hello world"))
 ```

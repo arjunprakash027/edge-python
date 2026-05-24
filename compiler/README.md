@@ -23,27 +23,22 @@ Full rationale, NaN-box patterns, IC thresholds, GC roots, and intentional omiss
 ## Layout
 
 ```text
-src/
-  abi.rs, lib.rs
-  main/        — abi_bridge, errors, exports, resolver
-  modules/
-    lexer/     — scan.rs, tables.rs
-    parser/    — control, expr, imports, literals, stmt, types
-    packages/  — manifest, mod
-    vm/
-      builtins/         — async_ops, attr, container, conversion, …
-      handlers/         — arith, dunder, format, function, methods, …
-        builtin_methods/  — bytes, dict, list, set, string
-      cache.rs, dispatch.rs, gc.rs, optimizer.rs, ops.rs
-      types/            — coro, eq, err, math
-  util/        — fstr, fx, sha256
-tests/         — cases/*.json + lexer.rs, parser.rs, vm.rs, packages.rs, main.rs
+├── src
+│   ├── main
+│   ├── modules
+│   │   ├── lexer
+│   │   ├── packages
+│   │   ├── parser
+│   │   └── vm
+│   └── util
+└── tests
+    └── cases
 ```
 
 ## Quick start
 
 ```bash
-cargo wasm           # release WASM artifact -> target/wasm32-unknown-unknown/release/compiler_lib.wasm
+cargo wasm # release WASM artifact -> target/wasm32-unknown-unknown/release/compiler_lib.wasm
 cargo test --release # host-side test suite
 ```
 
@@ -66,7 +61,7 @@ edge-python = { git = "https://github.com/dylan-sutton-chavez/edge-python", tag 
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");
     let wasm = std::env::var("DEP_COMPILER_LIB_WASM")
-        .expect("`DEP_COMPILER_LIB_WASM` unset — upstream `edge-python` must declare `links = \"compiler_lib\"`");
+        .expect("`DEP_COMPILER_LIB_WASM` unset, upstream `edge-python` must declare `links = \"compiler_lib\"`");
     std::fs::copy(&wasm, "runtime/compiler_lib.wasm").expect("copy failed");
 }
 ```

@@ -309,7 +309,7 @@ pub unsafe extern "C" fn run(len: usize) -> usize {
             Ok(_) => String::new(),
             // Legacy `run` cannot suspend; embedders that need `sleep(n>0)` / `frame()` / `receive()` must drive `run_start` + `run_resume`.
             Err(VmErr::HostYield(_)) => String::from(
-                "RuntimeError: scheduler suspended; this build's legacy `run` entry has no resume — drive `run_start` / `run_resume` instead.",
+                "RuntimeError: scheduler suspended; this build's legacy `run` entry has no resume, drive `run_start` / `run_resume` instead.",
             ),
             Err(e) => e.render_traceback(
                 &src, vm.error_pos(), None,

@@ -12,13 +12,14 @@ Edge Python is distributed as a WebAssembly module, `compiler.wasm`, around 170 
 Cargo workspace; commands work from any directory.
 
 ```text
-compiler/        — bytecode compiler + VM (the .wasm artifact)
-runtime/         — JS host (Web Worker, module loader, IDB cache)
-demo/            — playground at demo.edgepython.com
-documentation/   — language and reference docs
-wasm-abi/        — sealed v1 wire spec (no_std, zero deps)
-wasm-pdk/        — Rust author-side PDK (#[plugin_fn], macros)
-starter-module/  — minimal plugin example
+├── compiler
+├── demo
+├── documentation
+├── runtime
+├── starter-module
+├── target
+├── wasm-abi
+└── wasm-pdk
 ```
 
 ```bash
@@ -69,7 +70,7 @@ edge-python = { git = "https://github.com/dylan-sutton-chavez/edge-python", tag 
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");
     let wasm = std::env::var("DEP_COMPILER_LIB_WASM")
-        .expect("`DEP_COMPILER_LIB_WASM` unset — upstream must declare `links = \"compiler_lib\"`");
+        .expect("`DEP_COMPILER_LIB_WASM` unset, upstream must declare `links = \"compiler_lib\"`");
     std::fs::copy(&wasm, "runtime/compiler_lib.wasm").expect("copy failed");
 }
 ```

@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Edge Python Plugin Development Kit — author-side runtime for writing native `.wasm` modules importable from Edge Python scripts. Provides `#[plugin_fn]` proc-macro, Handle/Value/Error types, and From/IntoValue traits over the v1 wasm-abi."
+description = "Edge Python Plugin Development Kit, author-side runtime for writing native `.wasm` modules importable from Edge Python scripts. Provides `#[plugin_fn]` proc-macro, Handle/Value/Error types, and From/IntoValue traits over the v1 wasm-abi."
 
 [lib]
 crate-type = ["rlib"]
@@ -14,6 +14,6 @@ doctest = false
 wasm-abi = { workspace = true }
 wasm-pdk-macros = { path = "macros" }
 
-# Re-exported only so `wasm_pdk::module!()` can refer to the symbol path. Plugin authors who skip the macro and declare their own #[global_allocator] do not pay for this — Rust drops unused crates from the cdylib.
+# Re-exported only so `wasm_pdk::module!()` can refer to the symbol path. Plugin authors who skip the macro and declare their own #[global_allocator] do not pay for this, Rust drops unused crates from the cdylib.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 lol_alloc = "0.4"
