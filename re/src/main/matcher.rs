@@ -7,6 +7,14 @@ use super::ast::*;
 /* Capture slots, index 0 is the whole match. */
 pub type Caps = Vec<Option<(usize, usize)>>;
 
+/* Bundled repetition spec, keeps the recursive helpers small. */
+struct Rep<'a> {
+    node: &'a Node,
+    min: usize,
+    max: Option<usize>,
+    greedy: bool,
+}
+
 pub struct Matcher<'a> {
     input: &'a [char],
     flags: Flags,
@@ -91,7 +99,8 @@ impl<'a> Matcher<'a> {
                 })
             }
             Node::Repeat { node: inner, min, max, greedy } => {
-                self.repeat(inner, *min, *max, *greedy, pos, 0, caps, k)
+                let rep = Rep { node: inner, min: *min, max: *max, greedy: *greedy };
+                self.repeat(&rep, pos, 0, caps, k)
             }
             Node::Backref(n) => self.backref(*n, pos, caps, k),
             Node::Look { node: inner, behind, negative } => {
@@ -111,26 +120,26 @@ impl<'a> Matcher<'a> {
     }
 
     /* Repetition. Single codepoint atoms run iteratively to bound recursion. */
-    fn repeat(&self, inner: &Node, min: usize, max: Option<usize>, greedy: bool, pos: usize, count: usize, caps: &mut Caps, k: &mut dyn FnMut(usize, &mut Caps) -> bool) -> bool {
-        if is_single(inner) {
-            return self.repeat_single(inner, min, max, greedy, pos, caps, k);
+    fn repeat(&self, rep: &Rep, pos: usize, count: usize, caps: &mut Caps, k: &mut dyn FnMut(usize, &mut Caps) -> bool) -> bool {
+        if is_single(rep.node) {
+            return self.repeat_single(rep, pos, caps, k);
         }
-        let can_more = max.map_or(true, |m| count < m);
-        if greedy {
+        let can_more = rep.max.is_none_or(|m| count < m);
+        if rep.greedy {
             if can_more {
-                let stepped = self.m(inner, pos, caps, &mut |p, c| {
+                let stepped = self.m(rep.node, pos, caps, &mut |p, c| {
                     if p == pos { return false; } // stop zero width expansion
-                    self.repeat(inner, min, max, greedy, p, count + 1, c, k)
+                    self.repeat(rep, p, count + 1, c, k)
                 });
                 if stepped { return true; }
             }
-            count >= min && k(pos, caps)
+            count >= rep.min && k(pos, caps)
         } else {
-            if count >= min && k(pos, caps) { return true; }
+            if count >= rep.min && k(pos, caps) { return true; }
             if can_more {
-                return self.m(inner, pos, caps, &mut |p, c| {
+                return self.m(rep.node, pos, caps, &mut |p, c| {
                     if p == pos { return false; }
-                    self.repeat(inner, min, max, greedy, p, count + 1, c, k)
+                    self.repeat(rep, p, count + 1, c, k)
                 });
             }
             false
@@ -138,23 +147,23 @@ impl<'a> Matcher<'a> {
     }
 
     /* Iterative repeat for atoms that consume exactly one codepoint. */
-    fn repeat_single(&self, inner: &Node, min: usize, max: Option<usize>, greedy: bool, pos: usize, caps: &mut Caps, k: &mut dyn FnMut(usize, &mut Caps) -> bool) -> bool {
+    fn repeat_single(&self, rep: &Rep, pos: usize, caps: &mut Caps, k: &mut dyn FnMut(usize, &mut Caps) -> bool) -> bool {
         let mut n = 0;
         let mut p = pos;
-        while max.map_or(true, |m| n < m) && p < self.input.len() && self.single_match(inner, p) {
+        while rep.max.is_none_or(|m| n < m) && p < self.input.len() && self.single_match(rep.node, p) {
             p += 1;
             n += 1;
         }
-        if n < min { return false; }
-        if greedy {
+        if n < rep.min { return false; }
+        if rep.greedy {
             let mut i = n;
             loop {
                 if k(pos + i, caps) { return true; }
-                if i == min { return false; }
+                if i == rep.min { return false; }
                 i -= 1;
             }
         } else {
-            let mut i = min;
+            let mut i = rep.min;
             loop {
                 if k(pos + i, caps) { return true; }
                 if i == n { return false; }

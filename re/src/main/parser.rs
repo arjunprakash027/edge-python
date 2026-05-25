@@ -337,9 +337,7 @@ impl<'a> Parser<'a> {
 }
 
 fn single(item: ClassItem) -> Vec<ClassItem> {
-    let mut v = Vec::with_capacity(1);
-    v.push(item);
-    v
+    alloc::vec![item]
 }
 
 fn is_flag_char(c: char) -> bool {
