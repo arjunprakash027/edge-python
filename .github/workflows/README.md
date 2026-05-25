@@ -1,16 +1,17 @@
 # Edge Python Host CI/CD
 
 ```
-lint -> test (matrix-fanned per capability)
+lint -> test -> deploy (lint and test fan out per capability)
 ```
 
 | Workflow | Role |
 |----------|------|
-| `pipeline.yml` | Orchestrator. Defines the capability matrix once via YAML anchor (`&capability-matrix`), aliased by both `_lint` and `_test`. Test is gated on lint |
+| `pipeline.yml` | Orchestrator. Defines the capability matrix once via YAML anchor (`&capability-matrix`), aliased by both `_lint` and `_test`. Chains `lint -> test -> deploy` |
 | `_lint.yml` | `deno lint` against the capability's `src/` |
 | `_test.yml` | Deno + cached Chromium; runs `deno test --allow-all tests/` with `HOSTCAP=<capability>` so the shared runner only drives that capability's corpus |
+| `_deploy.yml` | Assembles every capability's `src/` into `_site/<cap>/src` and publishes it to Cloudflare Pages |
 
-Triggers: push to `main`, tags `v*`, PRs against `main`.
+Triggers: push to `main`, tags `v*`, PRs against `main`. `lint` and `test` run on all of these; `deploy` runs only on pushes to `main`, so PRs and tags never publish (the next `main` push refreshes the CDN).
 
 ## Adding a capability
 
@@ -31,6 +32,10 @@ GitHub Actions supports YAML anchors (since Sep 2025), so the alias on the `test
 |-------|------|---------|-----|
 | Deno modules | `~/.cache/deno` | `_lint.yml`, `_test.yml` | `deno.json` / `deno.lock` hash; invalidates on dep changes |
 | Playwright Chromium | `~/.cache/ms-playwright` | `_test.yml` | `runner.os + chromium`; ~150MB binary, hit makes `playwright install` a no-op |
+
+## Deploy
+
+`_deploy.yml` runs only on pushes to `main`. It checks out the tree and copies each capability's `src/` into `_site/<cap>/src`, then runs `wrangler pages deploy _site` pinned to the production `--branch=main` for the `edge-python-host` project. Unlike std (which uploads bare `.wasm` artifacts and needs no checkout), the host serves its ESM sources directly, so consumers import `https://host.edgepython.com/<cap>/src/index.js`. The assembly globs `*/src`, so any new capability dir publishes without editing the deploy workflow. Credentials come from the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets.
 
 ## Local parity
 

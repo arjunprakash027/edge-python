@@ -29,3 +29,11 @@ jobs:
     with:
       capability: ${{ matrix.capability }}
     secrets: inherit
+
+  # Publish every capability's ESM to Cloudflare Pages on pushes to main only.
+  deploy:
+    name: Deploy
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/_deploy.yml
+    secrets: inherit
