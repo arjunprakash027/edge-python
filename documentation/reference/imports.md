@@ -48,6 +48,8 @@ from utils import *
 print(slugify("Hello world"))
 ```
 
+The names above (`json`, `utils`, `math`) are illustrative, none are built-in. `json` is an [official standard package](/reference/packages#json); the rest stand in for your own modules. Every bare name must be declared in `packages.json` or supplied as a quoted path/URL.
+
 ## How resolution works
 
 1. Compiler scans the source for every `from <spec> ...`.
@@ -67,9 +69,9 @@ Bare-name imports resolve through an import map in `packages.json` (next to the 
 ```json
 {
   "imports": {
-    "utils":   "./lib/utils.py",
+    "utils": "./lib/utils.py",
     "helpers": "https://example.com/helpers.py",
-    "math":    "./vendor/math.wasm"
+    "math": "./vendor/math.wasm"
   }
 }
 ```
@@ -79,6 +81,7 @@ Schema:
 - Top-level value is a JSON object. Empty `{}` is valid.
 - `imports` (optional): alias -> spec string.
 - `extends` (optional): directory whose `packages.json` is consulted when an alias isn't found locally.
+- `host` (optional): name -> JS module URL. Read by the browser runtime's `<edge-python>` element to load [host libraries](/reference/packages#host-libraries-edge-python-host) on the main thread (DOM, network, storage,...). The compiler itself ignores it (it's one of the silently-ignored keys below); the runtime consumes it. See the [runtime README](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime).
 - Unknown top-level keys silently ignored (forward-compatible).
 - Booleans, numbers, arrays at any level are rejected.
 - String escapes: `\"`, `\\`, `\/`, `\n`, `\t`, `\r`. `\uXXXX` not supported, paste UTF-8 literally.

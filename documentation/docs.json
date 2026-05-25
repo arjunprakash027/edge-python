@@ -20,6 +20,10 @@
       {
         "label": "Host",
         "href": "https://github.com/dylan-sutton-chavez/edge-python-host"
+      },
+      {
+        "label": "Std",
+        "href": "https://github.com/dylan-sutton-chavez/edge-python-std"
       }
     ]
   },
@@ -49,6 +53,7 @@
         "pages": [
           "reference/builtins",
           "reference/methods",
+          "reference/packages",
           "reference/imports",
           "reference/writing-modules",
           "reference/wasm-abi",

@@ -48,7 +48,7 @@ from dom import query, set_text
 set_text(query("#app"), "Hello from Python")
 ```
 
-`dom` is the reference [host library](https://github.com/dylan-sutton-chavez/edge-python-host), served as JS sources alongside your app. See the [runtime README](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) for all attributes and the `imports` field for `.py` / `.wasm` modules.
+`dom` is one of the official [host libraries](/reference/packages#host-libraries-edge-python-host) (`dom`, `network`, `storage` and more), served as JS sources alongside your app; standard `.wasm` packages like [`json`](/reference/packages#json) ship alongside too. See [Official packages](/reference/packages) for the full catalog, and the [runtime README](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) for all `<edge-python>` attributes and the `imports` field for `.py` / `.wasm` modules.
 
 ## Your first program
 
@@ -108,5 +108,8 @@ print(fib(20))
   </Card>
   <Card title="Methods" icon="list" href="/reference/methods">
     String, list, and dict methods.
+  </Card>
+  <Card title="Packages" icon="boxes" href="/reference/packages">
+    Ready-made modules: `json`, `dom`, `network`, `storage` and more.
   </Card>
 </CardGroup>

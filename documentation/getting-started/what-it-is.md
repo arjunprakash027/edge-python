@@ -23,7 +23,7 @@ Reads like Python (parses Python syntax). Runs differently, what it executes is 
 * **Walrus operator**: `:=` in expressions (Name target only).
 * **Type annotations**: parsed and discarded, no runtime `__annotations__`, no enforcement.
 * **Module identity**: `__name__` is bound to `"__main__"` in the entry chunk and to the module's spec inside imported modules, so the canonical `if __name__ == "__main__":` guard works as expected.
-* **Modules**: `import`, `from <spec> import names`, and `from <spec> import *` resolve at parse time through a host-injected resolver, with optional `#sha256-<hex>` integrity on URL specs. Two flavors: `.py` source modules and native modules, see [Imports](/reference/imports) for resolution semantics and [Writing modules](/reference/writing-modules) for the four delivery paths.
+* **Modules**: `import`, `from <spec> import names`, and `from <spec> import *` resolve at parse time through a host-injected resolver, with optional `#sha256-<hex>` integrity on URL specs. Two flavors: `.py` source modules and native modules, see [Imports](/reference/imports) for resolution semantics, [Writing modules](/reference/writing-modules) for the three delivery paths, and [Official packages](/reference/packages) for the ready-made modules (`json`, `dom`, `network`, `storage` and more).
 
 ## What it doesn't support
 
