@@ -177,7 +177,7 @@ fn push_group(idx: usize, chars: &[char], caps: &Caps, out: &mut String) {
 
 /* Signals that backtracking degraded, so the author can rewrite the pattern. */
 fn too_complex() -> ReError {
-    ReError::TooComplex(String::from("catastrophic backtracking: this pattern degrades to superlinear time (O(n^2) or worse) on the given input and exceeded the step budget; rewrite it to avoid nested or overlapping quantifiers such as (a+)+"))
+    ReError::TooComplex(String::from("catastrophic backtracking: O(n^2) time or worse on this input, simplify nested quantifiers"))
 }
 
 /* Reject lookbehind whose width is not fixed, which the engine cannot run. */

@@ -99,7 +99,7 @@ Unicode property classes `\p{...}`, named character escapes `\N{...}`, atomic gr
 Backtracking has no linear time guarantee. A step budget proportional to the input watches the work, and when a pattern explodes the budget the engine raises instead of hanging:
 
 ```text
-error: catastrophic backtracking, pattern needs O(n^2) time or worse on this input
+error: catastrophic backtracking: O(n^2) time or worse on this input, simplify nested quantifiers
   --> <input>:1:8
   |
 1 | search(r'(a+)+$', user_input)
