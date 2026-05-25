@@ -14,8 +14,8 @@ pub enum CoroState {
     WaitingFrame,
     /// Parked in `receive()` with an empty queue; resumed when the host pushes a message.
     WaitingEvent,
-    /// Parked mid-`CallExtern`; resumed when the host calls `set_host_result`.
-    WaitingHostCall,
+    /// Parked mid-`CallExtern` with its correlation id; resumed when the host calls `set_host_result_by_id(id)`.
+    WaitingHostCall(u64),
     /// Parked in `run(...)` / `gather(...)` / `with_timeout(...)` until `tasks` all terminate; `kind` selects how to finalize.
     WaitingForChildren { tasks: Vec<Val>, kind: WaitKind },
     /// Next resume injects a `CancelledError` raise.

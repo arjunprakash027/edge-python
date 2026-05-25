@@ -22,6 +22,7 @@ const STATUS_PENDING_FRAME = 2;
 const STATUS_PENDING_EVENT = 3;
 const STATUS_ERROR = 4;
 const STATUS_PENDING_HOST_CALL = 5;
+const ERR_RUNTIME = 2; // wasm-abi error_kind::RUNTIME, for failed deferred host calls
 
 // Worker-lifetime state
 let wasmModule = null;
@@ -34,8 +35,8 @@ let importsMap = null;
 let eventWaiter = null;
 // Events `pushEvent`'d before the VM was ready (no `compilerExports`, or no paused run yet). Drained at the next `PENDING_EVENT` yield.
 const pendingEvents = [];
-/* Captured by env.host_call_native on DEFERRED; consumed by the PENDING_HOST_CALL driver branch. */
-let pendingHostCall = null;
+/* Deferred host calls captured by env.host_call_native, keyed by the VM-assigned call_id; drained concurrently in the PENDING_HOST_CALL branch. */
+const pendingHostCalls = new Map();
 /* (name, args) => Promise<value>. Set by worker.js (postMessage round-trip) or by a main-thread embedder. */
 let hostCallDelegate = null;
 // Source/missing caches persist across runs so the BFS skips refetching modules and re-probing 404'd `packages.json` paths on every Run press. Wiped by `clearCache()`.
@@ -95,7 +96,7 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
         lockfile,
         integrityActive,
         rt,
-        captureHostCall: (call) => { pendingHostCall = call; },
+        captureHostCall: (id, call) => { pendingHostCalls.set(id, call); },
     });
 
     const { exports } = await WebAssembly.instantiate(wasmModule, { env });
@@ -156,6 +157,7 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
 
     // Driver loop: `run_start` then `run_resume` after each host wake-up until Done / Error.
     const t0 = performance.now();
+    pendingHostCalls.clear(); // drop any stale captures from a prior run
     let status = exports.run_start(srcBytes.length);
     while (true) {
         const kind = (status >>> STATUS_KIND_SHIFT) & 7;
@@ -178,14 +180,23 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
                 await new Promise(r => { eventWaiter = r; });
             }
         } else if (kind === STATUS_PENDING_HOST_CALL) {
-            const call = pendingHostCall;
-            pendingHostCall = null;
-            if (!call) throw new Error('PENDING_HOST_CALL without captured args (compiler/runtime drift)');
-            if (!hostCallDelegate) throw new Error(`native '${call.module}.${call.name}' deferred but setHostCallDelegate() never set`);
-            const value = await hostCallDelegate(call.module, call.name, call.args);
-            const handle = rt.encodeAny(value);
-            const rv = exports.set_host_result(handle);
-            if (rv !== 0) throw new Error(`set_host_result returned ${rv} for '${call.module}.${call.name}'`);
+            if (pendingHostCalls.size === 0) throw new Error('PENDING_HOST_CALL without captured args (compiler/runtime drift)');
+            if (!hostCallDelegate) throw new Error('native deferred but setHostCallDelegate() never set');
+            const batch = [...pendingHostCalls];
+            pendingHostCalls.clear();
+            // a failed call raises only in its own coro, so one bad fetch can't sink the batch
+            const outcomes = await Promise.allSettled(batch.map(async ([id, call]) => {
+                let rv;
+                try {
+                    const handle = rt.encodeAny(await hostCallDelegate(call.module, call.name, call.args));
+                    rv = exports.set_host_result_by_id(id, handle);
+                } catch (e) {
+                    rv = exports.set_host_error_by_id(id, ERR_RUNTIME, rt.encodeAny(e?.message ?? String(e)));
+                }
+                if (rv !== 0) throw new Error(`host-call ${id} delivery returned ${rv} for '${call.module}.${call.name}'`);
+            }));
+            const drift = outcomes.find((o) => o.status === 'rejected');
+            if (drift) throw drift.reason;
         } else {
             // Unknown kind, bail out instead of looping forever.
             break;
@@ -241,7 +252,7 @@ export function setHostCallDelegate(fn) {
 export function reset() {
     if (compilerExports) compilerExports.reset_modules();
     resetNativeTable();
-    pendingHostCall = null;
+    pendingHostCalls.clear();
 }
 
 export async function clearCache() {
@@ -259,7 +270,7 @@ export function dispose() {
     fetchedSources.clear();
     knownMissing.clear();
     resetNativeTable();
-    pendingHostCall = null;
+    pendingHostCalls.clear();
     hostCallDelegate = null;
     mainThreadManifests = [];
 }

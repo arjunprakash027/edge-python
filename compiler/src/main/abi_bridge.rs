@@ -336,10 +336,11 @@ pub(super) fn make_native_binding(name: String, id: u32) -> NativeBinding {
         argv.push(kwargs.map_or(0, put_val));
         let mut out_handle: u32 = 0;
 
-        /* 2. Call guest export through the host shim. */
+        // call_id is what call_extern will park with on defer; lets the host route the result back.
+        let call_id = with_vm(|vm| vm.next_host_call_id as u32).unwrap_or(0);
         let status = unsafe {
             host_call_native(
-                id,
+                id, call_id,
                 argv.as_ptr(), argv.len() as u32,
                 &mut out_handle as *mut u32,
             )

@@ -113,6 +113,29 @@ except ValueError:
 caught
 ```
 
+### Concurrent host calls
+
+Deferred host calls (e.g. `network.fetch`) run concurrently under `gather`: each parks its coroutine, the host resolves them in parallel, and every result is routed back to the exact coroutine that issued it. A failed call raises only in its own coroutine, so a `try/except` lets the rest of the batch finish.
+
+```python
+from network import fetch_text
+
+async def status(url):
+    try:
+        fetch_text(url)
+        return "ok"
+    except:
+        return "failed"
+
+# The bad URL raises inside its own coroutine; the others still resolve.
+print(gather(status("https://example.com/a"),
+             status("https://nope.invalid/x")))
+```
+
+```text Output
+['ok', 'failed']
+```
+
 ## with_timeout
 
 `with_timeout(seconds, coro)` runs `coro` or raises `TimeoutError` on deadline; coro cancelled on timeout.

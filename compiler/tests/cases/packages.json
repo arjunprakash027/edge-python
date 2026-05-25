@@ -513,10 +513,15 @@
     "output": ["got:dark"]
   },
   {
-    "comment": "bug(host-call): inject wakes the first waiter, not the call's coro. Out-of-order results misroute. Red until correlated by call_id.",
     "src": "from m import host_defer\nasync def a():\n    print('a:' + host_defer())\nasync def b():\n    print('b:' + host_defer())\ngather(a(), b())",
     "modules": { "m": { "native": ["host_defer"] } },
-    "host_results": ["B", "A"],
+    "host_deliveries": [{"id": 1, "value": "B"}, {"id": 0, "value": "A"}],
     "output": ["b:B", "a:A"]
+  },
+  {
+    "src": "from m import host_defer\nasync def a():\n    try:\n        host_defer()\n        print('a: ok')\n    except:\n        print('a: caught')\nasync def b():\n    print('b: ' + host_defer())\ngather(a(), b())",
+    "modules": { "m": { "native": ["host_defer"] } },
+    "host_deliveries": [{"id": 1, "value": "V"}, {"id": 0, "error": "boom"}],
+    "output": ["b: V", "a: caught"]
   }
 ]
