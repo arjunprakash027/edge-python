@@ -57,7 +57,7 @@ See [`tests/README.md`](../tests/README.md) for the corpus shape.
 - **WebSocket/SSE use push-events** (like `dom`'s `bind_event`). Connections open with a `msg` tag; every wire event arrives via `receive()` as JSON.
 - **Handles are integer IDs.**
 - **Options are JSON strings**, `fetch(url, '{"method":"POST","body":"..."}')`.
-- **Response bodies are strings.** Parse JSON with `json.loads`, `json` is auto-registered by the runtime.
+- **Response bodies are strings.** Parse JSON with the [`json`](https://github.com/dylan-sutton-chavez/edge-python-std) standard package. It isn't built-in, declare it via a `packages.json` alias or import it by URL, as the examples below do.
 
 ### HTTP
 

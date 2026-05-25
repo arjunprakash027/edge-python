@@ -56,7 +56,7 @@ See [`tests/README.md`](../tests/README.md) for the corpus shape.
 - Async payloads carry a correlation handle so the consumer can route results back to the originating call: `target_handle` (events, observers), `file_handle` (file_read_*), `animation_handle` (animate finish).
 - Cleanup is automatic. Detaching nodes (`remove`, `replace_children`, `set_html`, `set_text`) sweeps the subtree's handles, event bindings, and active animations. `file_read_*` releases its file handle on completion. Animations auto-release on finish or cancel, except `iterations: "Infinity"` loops, which need `animation_dispose(h)`.
 
-**Parsing JSON returns.** The runtime auto-registers `json`, `from json import loads, dumps` works with zero setup. Examples below assume it.
+**Parsing JSON returns.** Several handlers return JSON strings; parse them with the [`json`](https://github.com/dylan-sutton-chavez/edge-python-std) standard package. It isn't built-in, declare it via a `packages.json` alias or import it by URL, as the examples below do.
 
 ### Selection and traversal
 
