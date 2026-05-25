@@ -19,7 +19,7 @@ jobs:
     strategy: &package-matrix
       fail-fast: false
       matrix:
-        package: [json]
+        package: [json, re]
     uses: ./.github/workflows/_lint.yml
     with:
       package: ${{ matrix.package }}

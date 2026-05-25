@@ -16,6 +16,7 @@ The folder name IS the package name IS the wasm artifact name (e.g. `json/` -> `
 | Folder | Description |
 |--------|-------------|
 | `json` | JSON serialization/deserialization, see [`json/README.md`](json/README.md) |
+| `re` | Regular expressions, a subset with capture, backreferences, lookaround, and a ReDoS step budget, see [`re/README.md`](re/README.md) |
 
 ## Build + test
 
