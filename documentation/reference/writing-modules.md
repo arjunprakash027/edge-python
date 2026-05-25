@@ -69,6 +69,8 @@ Scripts still see two flavors (code and native, see [Imports](/reference/imports
 
 Browsers run the engine in a Web Worker (no `document`, no `window`). Path C bridges: a capability ships as plain JavaScript, registers with `createWorker({ mainThreadModules })`, runs on the main thread. The runtime synthesises the native module registration so Python can `from <name> import ...`; each call is decoded in the Worker, shipped to main via `postMessage`, executed against `document`/`window`/etc., and the result encoded back. Python sees a synchronous call.
 
+Async handlers (returning a `Promise`) run concurrently when several coroutines call them under `gather`: each result is routed back to the coroutine that issued it, and a rejected handler raises a catchable exception in that one coroutine without disturbing its peers.
+
 No `.wasm`, no Rust, no build step.
 
 ### Sketch

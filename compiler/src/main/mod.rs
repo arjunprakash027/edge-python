@@ -20,8 +20,8 @@ mod resolver;
 unsafe extern "C" {
     pub(super) fn host_print(ptr: *const u8, len: usize);
 
-    /* CallExtern dispatch for register_native_module. Host owns argv; guest writes return into out. */
-    pub(super) fn host_call_native(id: u32, argv_ptr: *const u32, argc: u32, out: *mut u32) -> i32;
+    /* CallExtern dispatch for register_native_module. Host owns argv; guest writes return into out. `call_id` correlates a deferred result back to its coro via `set_host_result_by_id`. */
+    pub(super) fn host_call_native(id: u32, call_id: u32, argv_ptr: *const u32, argc: u32, out: *mut u32) -> i32;
 
     /* Host-cached bytes for `spec`. Non-null `hash_ptr` is a 32-byte expected sha-256. */
     pub(super) fn host_fetch_bytes(spec_ptr: *const u8, spec_len: u32, hash_ptr: *const u8, out_len: *mut u32) -> *mut u8;

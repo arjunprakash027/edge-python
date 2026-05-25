@@ -66,6 +66,18 @@ mod test {
         /* String values injected one-at-a-time after each PendingHostCall yield, simulating the JS bridge's `set_host_result`. */
         #[serde(default)]
         host_results: Vec<String>,
+        /* Per-call deliveries (by call_id) simulating out-of-order host resolution: `value` -> set_host_result_by_id, `error` -> set_host_error_by_id. */
+        #[serde(default)]
+        host_deliveries: Vec<Delivery>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Delivery {
+        id: u32,
+        #[serde(default)]
+        value: Option<String>,
+        #[serde(default)]
+        error: Option<String>,
     }
 
     fn build_resolver(modules: &HashMap<String, ModuleDef>, aliases: &HashMap<String, String>, manifests: &HashMap<String, ManifestDef>) -> TestResolver {
@@ -146,6 +158,14 @@ mod test {
             let result = loop {
                 match vm.run() {
                     Ok(v) => break Ok(v),
+                    Err(VmErr::HostYield(SchedulerStatus::PendingHostCall)) if hr_idx < case.host_deliveries.len() => {
+                        let d = &case.host_deliveries[hr_idx];
+                        match &d.error {
+                            Some(msg) => { vm.push_host_error_by_id(d.id.into(), msg); }
+                            None => { vm.push_host_result_by_id(d.id.into(), d.value.as_deref().unwrap_or("")).expect("push_host_result_by_id"); }
+                        }
+                        hr_idx += 1;
+                    }
                     Err(VmErr::HostYield(SchedulerStatus::PendingHostCall)) if hr_idx < case.host_results.len() => {
                         vm.push_host_result(&case.host_results[hr_idx]).expect("push_host_result");
                         hr_idx += 1;

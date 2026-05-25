@@ -255,7 +255,7 @@ impl<'a> VM<'a> {
     }
 
     // Pop a try-frame from the outer's saved exception_frames and stage a raise: truncate saved stack/iter to the frame, push the exception instance, set IP to the handler. If no frame is active, the outer transitions to Errored and propagation continues.
-    fn raise_into_outer(&mut self, outer: Val, e: VmErr) -> CoroState {
+    pub(crate) fn raise_into_outer(&mut self, outer: Val, e: VmErr) -> CoroState {
         let frame_opt = if let HeapObj::Coroutine(_, _, _, _, _, _, ef) = self.heap.get_mut(outer) {
             ef.pop()
         } else { None };
@@ -307,7 +307,7 @@ impl<'a> VM<'a> {
                     }
                     CoroState::WaitingFrame => { any_frame = true; alive = true; }
                     CoroState::WaitingEvent => { any_event = true; alive = true; }
-                    CoroState::WaitingHostCall => { any_host_call = true; alive = true; }
+                    CoroState::WaitingHostCall(_) => { any_host_call = true; alive = true; }
                     CoroState::WaitingForChildren { .. } => { alive = true; }
                     CoroState::Done(_) | CoroState::Errored(_) | CoroState::Cancelled => {}
                 }
@@ -371,7 +371,7 @@ impl<'a> VM<'a> {
                 } else if core::mem::replace(&mut self.pending.event_wait_request, false) {
                     CoroState::WaitingEvent
                 } else if core::mem::replace(&mut self.pending.host_call_request, false) {
-                    CoroState::WaitingHostCall
+                    CoroState::WaitingHostCall(self.pending.host_call_id)
                 } else if let Some((tasks, kind)) = self.pending.waiting_for_children.take() {
                     self.waiting_for_children_count += 1;
                     CoroState::WaitingForChildren { tasks, kind }

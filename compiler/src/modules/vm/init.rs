@@ -81,24 +81,55 @@ impl<'a> VM<'a> {
         }
     }
 
-    /* Inject `val` into the first `WaitingHostCall` waiter's saved stack and mark it Ready; returns false if no waiter exists. Shared by the WASM `set_host_result` ABI and Rust hosts/tests that drive deferred host-calls. */
+    /* Inject `val` into the first `WaitingHostCall` waiter and mark it Ready; false if none. Uncorrelated path for hosts/tests that don't track call ids. */
     pub fn inject_host_result(&mut self, val: Val) -> bool {
-        let waiter = self.scheduler.iter().enumerate()
-            .find(|(_, h)| matches!(h.state, crate::modules::vm::types::CoroState::WaitingHostCall))
-            .map(|(i, h)| (i, h.coro));
-        let Some((idx, coro)) = waiter else { return false; };
+        match self.scheduler.iter().position(|h| matches!(h.state, crate::modules::vm::types::CoroState::WaitingHostCall(_))) {
+            Some(idx) => { self.deliver_host_result(idx, val); true }
+            None => false,
+        }
+    }
+
+    /* Inject `val` into the `WaitingHostCall(id)` waiter and mark it Ready; false if no coro is parked on `id`. Lets the host resolve concurrent calls out of order. */
+    pub fn inject_host_result_by_id(&mut self, id: u64, val: Val) -> bool {
+        match self.scheduler.iter().position(|h| matches!(h.state, crate::modules::vm::types::CoroState::WaitingHostCall(w) if w == id)) {
+            Some(idx) => { self.deliver_host_result(idx, val); true }
+            None => false,
+        }
+    }
+
+    /* Shared tail: write `val` over the parked coro's saved-stack top and mark it Ready. */
+    fn deliver_host_result(&mut self, idx: usize, val: Val) {
+        let coro = self.scheduler[idx].coro;
         if let crate::modules::vm::types::HeapObj::Coroutine(_, _, saved_stack, _, _, sub_frames, _) = self.heap.get_mut(coro) {
             let target_stack = if let Some(frame) = sub_frames.last_mut() { &mut frame.stack_delta } else { saved_stack };
             if let Some(top) = target_stack.last_mut() { *top = val; } else { target_stack.push(val); }
         }
         self.scheduler[idx].state = crate::modules::vm::types::CoroState::Ready;
-        true
     }
 
     /* String form of `inject_host_result`: allocates `message` on the heap and injects it. Used by Rust hosts that return text bodies (and test fixtures simulating that path). */
     pub fn push_host_result(&mut self, message: &str) -> Result<bool, VmErr> {
         let val = self.heap.alloc(crate::modules::vm::types::HeapObj::Str(message.into()))?;
         Ok(self.inject_host_result(val))
+    }
+
+    /* String form of `inject_host_result_by_id`. */
+    pub fn push_host_result_by_id(&mut self, id: u64, message: &str) -> Result<bool, VmErr> {
+        let val = self.heap.alloc(crate::modules::vm::types::HeapObj::Str(message.into()))?;
+        Ok(self.inject_host_result_by_id(id, val))
+    }
+
+    /* Raise `e` inside the `WaitingHostCall(id)` coro at its saved try-frame, or mark it Errored if none; false if no coro is parked on `id`. A failed host call wakes only its coro, leaving siblings untouched. */
+    pub fn inject_host_error_by_id(&mut self, id: u64, e: VmErr) -> bool {
+        let Some(idx) = self.scheduler.iter().position(|h| matches!(h.state, crate::modules::vm::types::CoroState::WaitingHostCall(w) if w == id)) else { return false; };
+        let coro = self.scheduler[idx].coro;
+        self.scheduler[idx].state = self.raise_into_outer(coro, e);
+        true
+    }
+
+    /* Test/host helper: raise a generic error (`VmErr::Raised(message)`) into host call `id`. */
+    pub fn push_host_error_by_id(&mut self, id: u64, message: &str) -> bool {
+        self.inject_host_error_by_id(id, VmErr::Raised(message.into()))
     }
 
     /* Push a string event onto the event queue; consumed by the next `receive()` call. Mirrors what `run_push_event` does for WASM hosts. */

@@ -254,6 +254,38 @@ pub unsafe extern "C" fn set_host_result(handle: u32) -> i32 {
     })
 }
 
+/* Wake the `WaitingHostCall(id)` coro with `handle`'s Val; lets the host resolve concurrent calls out of order. Same return codes as `set_host_result`. */
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn set_host_result_by_id(id: u32, handle: u32) -> i32 {
+    let val = match super::get_val(handle) {
+        Some(v) => v,
+        None => return 1,
+    };
+    super::with_runtime(|rt| { rt.handles.release(handle); });
+    super::with_runtime(|rt| {
+        let Some(paused) = rt.paused_run.as_mut() else { return 3; };
+        let Some(vm) = paused.vm.as_mut() else { return 3; };
+        if vm.inject_host_result_by_id(id as u64, val) { 0 } else { 2 }
+    })
+}
+
+/* Raise an error into the `WaitingHostCall(id)` coro so its try/except can catch it; one failed host call affects only its coro. `msg_handle` is a string Val (via `encodeAny`). Same return codes as `set_host_result`. */
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn set_host_error_by_id(id: u32, kind: u32, msg_handle: u32) -> i32 {
+    let Some(val) = super::get_val(msg_handle) else { return 1; };
+    super::with_runtime(|rt| { rt.handles.release(msg_handle); });
+    super::with_runtime(|rt| {
+        let Some(paused) = rt.paused_run.as_mut() else { return 3; };
+        let Some(vm) = paused.vm.as_mut() else { return 3; };
+        let msg = match vm.heap.get(val) {
+            crate::modules::vm::types::HeapObj::Str(s) => s.clone(),
+            _ => alloc::string::String::new(),
+        };
+        let e = super::errors::error_from_kind(kind, msg);
+        if vm.inject_host_error_by_id(id as u64, e) { 0 } else { 2 }
+    })
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn last_yield_deadline_ns() -> u64 {
     with_runtime(|rt| rt.paused_run.as_ref().map(|p| p.last_yield_deadline_ns).unwrap_or(0))

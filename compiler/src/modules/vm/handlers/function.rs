@@ -577,9 +577,12 @@ impl<'a> VM<'a> {
         if !pure { self.mark_impure(); }
         match func(&mut self.heap, &positional, kwargs) {
             Ok(result) => { self.push(result); Ok(()) }
-            // Native deferred; park with a `None` placeholder that `set_host_result` overwrites before resume.
+            // Native deferred; assign a correlation id and park with a `None` placeholder that
+            // `set_host_result_by_id` overwrites before resume.
             Err(VmErr::HostCallDeferred) => {
                 self.push(Val::none());
+                self.pending.host_call_id = self.next_host_call_id;
+                self.next_host_call_id += 1;
                 self.pending.host_call_request = true;
                 self.yielded = true;
                 Ok(())

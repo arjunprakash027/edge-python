@@ -16,7 +16,7 @@ export function makeCompilerEnv({ getExports, onLine, fetchedSources, lockfile, 
         host_print: (ptr, len) => onLine(readStr(ptr, len)),
 
         /* wasmpdk stages argv in guest memory; capability calls a JS handler directly. */
-        host_call_native: (id, argv_ptr, argc, out_ptr) => {
+        host_call_native: (id, call_id, argv_ptr, argc, out_ptr) => {
             const fn = nativeTable[id];
             if (!fn) {
                 stashError(getExports(), `native id ${id} not registered`);
@@ -28,7 +28,7 @@ export function makeCompilerEnv({ getExports, onLine, fetchedSources, lockfile, 
             if (fn.__edge_kind === 'capability') {
                 /* Host appends a trailing kwargs handle (0 = no kwargs); JS capabilities don't model kwargs so drop it. */
                 const handles = Array.from(new Uint32Array(exports.memory.buffer, argv_ptr, Math.max(0, argc - 1)));
-                /* Marked main-thread: decode args to JS, defer via captureHostCall; driver wakes us with set_host_result. */
+                /* Marked main-thread: decode args to JS, defer via captureHostCall; driver wakes us with set_host_result_by_id. */
                 if (fn.__edge_main_thread) {
                     if (!captureHostCall || !rt) {
                         stashError(exports, `native '${fn.__edge_module}.${fn.__edge_name}' marked main-thread but no host-call delegate wired`);
@@ -36,7 +36,7 @@ export function makeCompilerEnv({ getExports, onLine, fetchedSources, lockfile, 
                     }
                     try {
                         const args = handles.map((h) => rt.decodeAny(h));
-                        captureHostCall({ module: fn.__edge_module, name: fn.__edge_name, args });
+                        captureHostCall(call_id, { module: fn.__edge_module, name: fn.__edge_name, args });
                         return 2;
                     } catch (e) {
                         stashError(exports, e?.message ?? String(e));
