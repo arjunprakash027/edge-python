@@ -36,7 +36,7 @@ let eventWaiter = null;
 // Events `pushEvent`'d before the VM was ready (no `compilerExports`, or no paused run yet). Drained at the next `PENDING_EVENT` yield.
 const pendingEvents = [];
 /* Deferred host calls captured by env.host_call_native, keyed by the VM-assigned call_id; drained concurrently in the PENDING_HOST_CALL branch. */
-let pendingHostCalls = new Map();
+const pendingHostCalls = new Map();
 /* (name, args) => Promise<value>. Set by worker.js (postMessage round-trip) or by a main-thread embedder. */
 let hostCallDelegate = null;
 // Source/missing caches persist across runs so the BFS skips refetching modules and re-probing 404'd `packages.json` paths on every Run press. Wiped by `clearCache()`.
