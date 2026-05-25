@@ -281,11 +281,11 @@
   },
   {
     "src": "match = 5",
-    "tokens": ["Match", "Equal", "Int", "Endmarker"]
+    "tokens": ["Name", "Equal", "Int", "Endmarker"]
   },
   {
     "src": "case = True",
-    "tokens": ["Case", "Equal", "True", "Endmarker"]
+    "tokens": ["Name", "Equal", "True", "Endmarker"]
   },
   {
     "src": "type = None",

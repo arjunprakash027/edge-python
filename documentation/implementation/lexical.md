@@ -16,8 +16,8 @@ A leading UTF-8 BOM (`EF BB BF`) is stripped before tokenisation so the first id
 The token set tracks Python 3.13.12 closely. Categories implemented:
 
 - **Keywords**: `False`, `None`, `True`, `and`, `as`, `assert`, `async`, `await`, `break`, `class`, `continue`, `def`, `del`, `elif`, `else`, `except`, `finally`, `for`, `from`, `global`, `if`, `import`, `in`, `is`, `lambda`, `nonlocal`, `not`, `or`, `pass`, `raise`, `return`, `try`, `while`, `with`, `yield`.
-- **Hard pattern keywords**: `match` and `case` are emitted as hard keywords because in Edge Python they only appear at statement start. Underscore (`_`) gets its own `Underscore` token (the parser distinguishes wildcard from name use).
-- **Soft keyword**: `type` is the only true soft keyword; it is demoted to `Name` when followed by `(`, `:`, `=`, `,`, `)`, `]`, `Newline`, or `EOF` to avoid colliding with the `type()` builtin and identifiers named `type`.
+- **Soft keywords**: `type`, `match`, and `case` demote to `Name` when followed by `(`, `:`, `=`, `,`, `)`, `]`, `Newline`, or `EOF`, so `type()`, `match(...)`, and identifiers named like them stay usable; at statement start (`match x:`) they keep keyword force.
+- **Wildcard**: Underscore (`_`) gets its own `Underscore` token; the parser distinguishes wildcard from name use.
 - **Operators**: 1-, 2-, and 3-character operator forms (`+`, `==`, `**=`, `//=`, etc.).
 - **Delimiters**: `( ) [ ] { } :, ; .`.
 - **Literals**: `Name`, `Int`, `Float`, `String`, `Bytes`. There is no `Complex` token, a trailing `j` / `J` is **not** lexed as a complex suffix; `1j` tokenises as `Int(1)` followed by `Name("j")`.
@@ -126,17 +126,16 @@ At EOF the lexer drains remaining levels off `indent_stack` for clean block clos
 
 ## Soft-keyword disambiguation
 
-Only `type` is a true soft keyword. `match` and `case` are emitted as hard keywords (they only appear at statement start, so no ambiguity).
-
-`type` collides with the `type()` builtin and `type` attribute names, the lexer disambiguates by peeking the next token:
+`type`, `match`, and `case` are soft keywords. Each collides with a builtin or identifier use (`type()`, a function named `match`, a `case` variable), so the lexer disambiguates by peeking the next token:
 
 ```python
 type X = int # 'type' is a keyword (alias declaration)
 type = None # 'type' is an identifier
-obj.type # 'type' is an identifier (attribute)
+match x: # 'match' is a keyword (statement)
+match(s, p) # 'match' is an identifier (call)
 ```
 
-If the token following `type` is one of `(`, `:`, `=`, `,`, `)`, `]`, `Newline`, or `EOF`, it downgrades to `Name`. Otherwise it stays a `Type` keyword.
+If the token following the word is one of `(`, `:`, `=`, `,`, `)`, `]`, `Newline`, or `EOF`, it downgrades to `Name`. Otherwise it stays a keyword. A statement subject like `match x:` starts with a name or literal, so it keeps keyword force; a parenthesized subject like `match (a, b):` is the one case this heuristic misreads as a call.
 
 `_` always emits as `Underscore`; the parser distinguishes wildcard from name use grammatically.
 

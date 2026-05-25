@@ -87,8 +87,8 @@ pub fn lex(source: &str) -> (Vec<Token>, Vec<LexError>) {
         if ended { break; }
         if tok == TokenType::Endmarker { ended = true; }
 
-        /* `type` is the lone soft keyword: stays soft to avoid colliding with the `type()` builtin and attributes named `type`. */
-        let is_soft = matches!(tok, TokenType::Type);
+        /* Soft keywords demote to Name by the next token, so `match(...)`, `case(...)`, `type(...)` parse as calls not statements. */
+        let is_soft = matches!(tok, TokenType::Type | TokenType::Match | TokenType::Case);
         let next_demotes = matches!(
             raw.get(i + 1),
             Some(&(
