@@ -236,8 +236,8 @@ print(dict(a=1, b=2))
 ```text Output
 ['a', 'b', 'c']
 (0, 1, 2)
-{'a', 'b'}
-frozenset({1, 2, 3})
+{'b', 'a'}
+frozenset({2, 3, 1})
 {'a': 1, 'b': 2}
 ```
 

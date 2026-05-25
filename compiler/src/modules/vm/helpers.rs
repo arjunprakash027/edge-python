@@ -115,8 +115,7 @@ impl<'a> VM<'a> {
             HeapObj::Tuple(v) => IterFrame::Seq { items: v.clone(), idx: 0 },
             HeapObj::Dict(p) => IterFrame::Seq { items: p.borrow().keys().collect(), idx: 0 },
             HeapObj::Set(s) => {
-                let mut items: Vec<Val> = s.borrow().iter().cloned().collect();
-                self.sort_set_items(&mut items);
+                let items: Vec<Val> = s.borrow().iter().cloned().collect();
                 IterFrame::Seq { items, idx: 0 }
             },
             HeapObj::Str(s) => {

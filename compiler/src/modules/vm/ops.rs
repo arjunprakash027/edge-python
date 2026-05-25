@@ -229,9 +229,8 @@ impl<'a> VM<'a> {
                 }
             }
             HeapObj::Set(s) => {
-                let mut items: Vec<Val> = s.borrow().iter().cloned().collect();
+                let items: Vec<Val> = s.borrow().iter().cloned().collect();
                 if items.is_empty() { return "set()".into(); }
-                self.sort_set_items(&mut items);
                 let mut out = String::new();
                 out.push('{');
                 self.append_reprs(&mut out, items.iter());
@@ -239,9 +238,8 @@ impl<'a> VM<'a> {
                 out
             }
             HeapObj::FrozenSet(s) => {
-                let mut items: Vec<Val> = s.iter().cloned().collect();
+                let items: Vec<Val> = s.iter().cloned().collect();
                 if items.is_empty() { return "frozenset()".into(); }
-                self.sort_set_items(&mut items);
                 let mut out = String::from("frozenset({");
                 self.append_reprs(&mut out, items.iter());
                 out.push_str("})");
@@ -255,22 +253,6 @@ impl<'a> VM<'a> {
     pub fn repr(&self, v: Val) -> String {
         if v.is_heap() && let HeapObj::Str(s) = self.heap.get(v) { return s!("'", str s, "'"); }
         self.display(v)
-    }
-
-    // Stable set ordering: numerics ascending, then non-numerics by repr.
-    pub(crate) fn sort_set_items(&self, items: &mut [Val]) {
-        items.sort_by(|a, b| {
-            match (a.is_int() || a.is_float(), b.is_int() || b.is_float()) {
-                (true, true) => {
-                    let fa = if a.is_int() { a.as_int() as f64 } else { a.as_float() };
-                    let fb = if b.is_int() { b.as_int() as f64 } else { b.as_float() };
-                    fa.partial_cmp(&fb).unwrap_or(core::cmp::Ordering::Equal)
-                }
-                (true, false) => core::cmp::Ordering::Less,
-                (false, true) => core::cmp::Ordering::Greater,
-                (false, false) => self.repr(*a).cmp(&self.repr(*b)),
-            }
-        });
     }
 
     pub fn lt_vals(&self, a: Val, b: Val) -> Result<bool, VmErr> {

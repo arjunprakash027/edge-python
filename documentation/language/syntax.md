@@ -323,7 +323,7 @@ print({x % 3 for x in range(10)})
 [0, 2, 4, 6, 8]
 [(0, 0), (0, 1), (1, 0), (1, 1)]
 {0: 0, 1: 1, 2: 4, 3: 9}
-{0, 1, 2}
+{1, 2, 0}
 ```
 
 Generator expressions consumed by reducers:

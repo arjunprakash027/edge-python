@@ -21,6 +21,27 @@ mod test {
         interactive_events: Vec<String>,
     }
 
+    /* Sets iterate in hash order, so canonicalize a set/frozenset line by sorting
+       its elements. Assumes scalar elements with no nested ", ". Non-sets pass through. */
+    fn normalize_set(line: &str) -> String {
+        let (prefix, inner, suffix) = if let Some(i) =
+            line.strip_prefix("frozenset({").and_then(|r| r.strip_suffix("})")) {
+            ("frozenset({", i, "})")
+        } else if line.starts_with('{') && line.ends_with('}') && line.len() > 2 && !line.contains(": ") {
+            ("{", &line[1..line.len() - 1], "}")
+        } else {
+            return line.to_string();
+        };
+        let mut elems: Vec<&str> = inner.split(", ").collect();
+        elems.sort_unstable();
+        format!("{}{}{}", prefix, elems.join(", "), suffix)
+    }
+
+    // Apply set normalization line-by-line so both sides compare order-independent.
+    fn normalize(lines: &[String]) -> Vec<String> {
+        lines.iter().map(|l| normalize_set(l)).collect()
+    }
+
     // Resume on each PendingEvent by pushing the next interactive_events entry.
     fn drive(vm: &mut VM, interactive: &[String]) -> Result<(), VmErr> {
         let mut idx = 0;
@@ -57,7 +78,7 @@ mod test {
             let result = drive(&mut vm, &case.interactive_events);
 
             match result {
-                Ok(_obj) => { assert_eq!(vm.output, case.output, "output mismatch on: {:?}", case.src); }
+                Ok(_obj) => { assert_eq!(normalize(&vm.output), normalize(&case.output), "output mismatch on: {:?}", case.src); }
                 Err(e) => match &case.error {
                     Some(expected) => assert!(e.to_string().contains(expected.as_str()), "wrong error on {:?}: got '{}', expected '{}'", case.src, e, expected),
                     None => panic!("VM error on {:?}: {}", case.src, e),
@@ -113,7 +134,7 @@ mod test {
             match drive(&mut vm, &case.interactive_events) {
                 Ok(_) => {
                     assert!(!expects_input_error, "expected input() to error under strict mode for: {:?}", case.src);
-                    assert_eq!(vm.output, case.output, "output mismatch on: {:?}", case.src);
+                    assert_eq!(normalize(&vm.output), normalize(&case.output), "output mismatch on: {:?}", case.src);
                 }
                 Err(e) => match &case.error {
                     Some(expected) => assert!(e.to_string().contains(expected.as_str()), "wrong error on {:?}: got '{}', expected '{}'", case.src, e, expected),
