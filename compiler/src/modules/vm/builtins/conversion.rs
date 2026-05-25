@@ -1,5 +1,3 @@
-use crate::s;
-
 use super::super::VM;
 use super::super::types::*;
 
@@ -20,7 +18,9 @@ impl<'a> VM<'a> {
 
     pub fn call_type(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
-        let s = self.type_name(o);
-        self.alloc_and_push_str(s!("<class '", str s, "'>"))
+        let name = self.type_name(o); // interned, so shares the `set`/`int` singleton
+        let t = self.heap.alloc(HeapObj::Type(name.to_string()))?;
+        self.push(t);
+        Ok(())
     }
 }

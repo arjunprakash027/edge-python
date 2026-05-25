@@ -30,6 +30,7 @@ pub fn eq_vals_with_heap(a: Val, b: Val, heap: &HeapPool) -> bool {
         (HeapObj::Set(x), HeapObj::FrozenSet(y)) => *x.borrow() == **y,
         (HeapObj::FrozenSet(x), HeapObj::Set(y)) => **x == *y.borrow(),
         (HeapObj::Dict(x), HeapObj::Dict(y)) => eq_dict(&x.borrow(), &y.borrow(), |a,b| eq_vals_with_heap(a, b, heap)),
+        (HeapObj::Type(x), HeapObj::Type(y)) => x == y, // by name; interning also makes `is` hold
         // Cross-type comparisons fall through to false. Notably `bytes == str` is False, even when the bytes are valid UTF-8 of the str.
         _ => false,
     }

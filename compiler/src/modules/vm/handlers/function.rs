@@ -4,6 +4,17 @@ use super::super::ParamKind;
 
 use crate::alloc::string::ToString;
 
+// Builtin conversion-type name -> its constructor; None for exception/other types.
+fn constructor_native(name: &str) -> Option<super::super::types::NativeFnId> {
+    use super::super::types::NativeFnId::*;
+    Some(match name {
+        "int" => Int, "float" => Float, "str" => Str, "bytes" => Bytes,
+        "bool" => Bool, "list" => List, "tuple" => Tuple, "dict" => Dict,
+        "set" => Set, "frozenset" => FrozenSet, "range" => Range, "type" => Type,
+        _ => return None,
+    })
+}
+
 impl<'a> VM<'a> {
     /* Dispatch every function-shaped opcode (Call, MakeFunction, builtins). */
     pub(crate) fn handle_function(&mut self, op: OpCode, operand: u16, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
@@ -250,9 +261,13 @@ impl<'a> VM<'a> {
             return Ok(true);
         }
 
-        // Builtin Type: build an ExcInstance for `raise X("msg")`; `e.args` is the args tuple. Conversion types (int/float/...) use specialised opcodes, so this is mostly exceptions.
         if let HeapObj::Type(name) = self.heap.get(callee) {
             let name = name.clone();
+            if let Some(id) = constructor_native(&name) {
+                self.dispatch_native(id, positional, kw_flat, chunk, slots)?; // int/set/list/... construct
+                return Ok(true);
+            }
+            // Other Type objects are exception classes: build an ExcInstance for `raise X("msg")`.
             if !kw_flat.is_empty() {
                 return Err(cold_type("exception class takes no keyword arguments"));
             }

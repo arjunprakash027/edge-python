@@ -520,13 +520,15 @@ False
 
 ### type
 
-`type(x)` returns the class-name string `"<class 'name'>"`, not a class object. No `type(...)` constructor form, no metaclass, no introspection. For display and equality checks.
+`type(x)` returns the type object for `x`, shown as `<class 'name'>`. Built-in type names (`int`, `set`, `list`, ...) are these same objects, so `type(x) is int` and `type(x) == int` hold, and calling one constructs it (`type([1])([2, 3])` gives `[2, 3]`). No metaclass, `issubclass`, or `dir`.
 
 ```python
 print(type(42))
 print(type("hi"))
 print(type([1, 2]))
 print(type(print))
+print(type(42) is int)
+print(type([1, 2, 3])([4, 5]))
 ```
 
 ```text Output
@@ -534,6 +536,8 @@ print(type(print))
 <class 'str'>
 <class 'list'>
 <class 'builtin_function_or_method'>
+True
+[4, 5]
 ```
 
 ### isinstance

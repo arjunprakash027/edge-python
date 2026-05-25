@@ -34,7 +34,7 @@ These parse for syntactic compatibility but raise at runtime, or simply don't ex
 - **Async surface**: `async def` creates real coroutines and the VM runs a cooperative scheduler, but there is no `asyncio` module; primitives are top-level builtins (`run`, `sleep`, `gather`, `with_timeout`, `cancel`, `receive`). Coroutines do not expose `.send()` / `.throw()` / `.close()`.
 - **Metaclasses, descriptor protocol, `__slots__`**: not modeled.
 - **Dynamic code**: no `exec`, no `eval`, no `compile`, no `__import__` (use the `import_module(name)` builtin to look up an already-imported module by alias).
-- **Reflection beyond `type`, `id`, `hash`, `repr`, `callable`, `getattr`, `hasattr`, `vars`, `globals`, `locals`, `isinstance`**. `type(x)` returns a string like `"<class 'int'>"`, not a type object. `issubclass` and `dir` are absent.
+- **Reflection beyond `type`, `id`, `hash`, `repr`, `callable`, `getattr`, `hasattr`, `vars`, `globals`, `locals`, `isinstance`**. `issubclass` and `dir` are absent.
 - **Relative imports**: `from . import x` is not supported; use the resolver-aware `import` / `from <spec> import` forms.
 
 ## Design philosophy

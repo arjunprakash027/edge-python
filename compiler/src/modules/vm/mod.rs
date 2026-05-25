@@ -335,8 +335,9 @@ impl<'a> VM<'a> {
             NativeFnId::Frame,
         ];
         for &id in builtin_fns {
+            let name = id.name();
+            if BUILTIN_TYPES.contains(&name) { continue; } // type names stay Type objects
             if let Ok(v) = vm.heap.alloc(HeapObj::NativeFn(id)) {
-                let name = id.name();
                 vm.globals.insert(name.to_string(), v);
                 vm.globals.insert(s!(str name, "_0"), v);
             }

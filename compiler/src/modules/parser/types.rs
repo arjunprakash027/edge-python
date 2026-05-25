@@ -507,7 +507,7 @@ fn unescape(s: &str) -> String {
 // Builtin types registered as Type heap objects at VM init.
 pub const BUILTIN_TYPES: &[&str] = &[
     "int", "float", "str", "bytes", "bool", "list",
-    "tuple", "dict", "set", "range", "type", "NoneType",
+    "tuple", "dict", "set", "frozenset", "range", "type", "NoneType",
     "Exception", "BaseException",
     "ValueError", "TypeError", "NameError", "KeyError",
     "IndexError", "AttributeError", "RuntimeError",

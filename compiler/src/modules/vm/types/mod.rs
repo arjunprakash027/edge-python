@@ -363,6 +363,8 @@ pub struct HeapPool {
     bytes_intern: HashMap<Vec<u8>, u32>,
     /* Interns LongInt by value so equal i128s share a Val and stay hash/eq consistent. */
     longints: HashMap<i128, u32>,
+    /* Interns Type objects by name so `type(x) is set` and `type(None) is type(None)` hold. */
+    types: HashMap<String, u32>,
     // Cached Ellipsis slot index so `... is ...` is True (singleton parity).
     ellipsis_idx: Option<u32>,
     // Same singleton invariant as `ellipsis_idx`, but for `NotImplemented`.
@@ -383,6 +385,7 @@ impl HeapPool {
             strings: HashMap::default(),
             bytes_intern: HashMap::default(),
             longints: HashMap::default(),
+            types: HashMap::default(),
             ellipsis_idx: None,
             notimpl_idx: None,
             mark_worklist: Vec::with_capacity(64),
@@ -402,6 +405,10 @@ impl HeapPool {
         }
         if let HeapObj::LongInt(i) = obj
             && let Some(&idx) = self.longints.get(&i) {
+                return Ok(Val::heap(idx));
+        }
+        if let HeapObj::Type(ref name) = obj
+            && let Some(&idx) = self.types.get(name) {
                 return Ok(Val::heap(idx));
         }
         // Ellipsis is a true singleton, every `...` literal returns the same Val.
@@ -430,6 +437,7 @@ impl HeapPool {
             HeapObj::Str(s) if s.len() <= 128 => { self.strings.insert(s.clone(), idx); }
             HeapObj::Bytes(b) if b.len() <= 128 => { self.bytes_intern.insert(b.clone(), idx); }
             HeapObj::LongInt(i) => { self.longints.insert(*i, idx); }
+            HeapObj::Type(name) => { self.types.insert(name.clone(), idx); }
             HeapObj::Ellipsis => { self.ellipsis_idx = Some(idx); }
             HeapObj::NotImplemented => { self.notimpl_idx = Some(idx); }
             _ => {}
@@ -475,6 +483,12 @@ impl HeapPool {
                 }
                 Some(HeapObj::LongInt(i)) => {
                     self.longints.remove(i);
+                    slot.obj = None;
+                    self.free_list.push(idx as u32);
+                    self.live -= 1;
+                }
+                Some(HeapObj::Type(name)) => {
+                    self.types.remove(name);
                     slot.obj = None;
                     self.free_list.push(idx as u32);
                     self.live -= 1;
