@@ -1,6 +1,6 @@
 ---
 title: "Official packages"
-description: "The ready-made modules maintained alongside Edge Python: json, dom, network, storage. What they are, where they live, and how to import them."
+description: "The ready-made modules maintained alongside Edge Python, what they are, where they live, and how to import them."
 ---
 
 Edge Python ships no bundled stdlib (see [What it is](/getting-started/what-it-is)), every module is external. This page is the catalog of the **official, ready-to-use packages** maintained alongside the compiler. You don't have to write these yourself, import them and go. To build your own, see [Writing modules](/reference/writing-modules).
@@ -47,6 +47,20 @@ from json import dumps, loads
 Pre-built `.wasm` is published on the [`edge-python-std` releases](https://github.com/dylan-sutton-chavez/edge-python-std). Full API: [`json/README.md`](https://github.com/dylan-sutton-chavez/edge-python-std/tree/main/json).
 
 > **`json` is not built-in.** Examples elsewhere in these docs write `from json import ...` for brevity, but `json` is this external package, you must declare it (alias or URL) like any other module.
+
+### `re`
+
+Regular expressions, a CPython `re` subset on a compact backtracking engine. Unicode aware `\d` `\w` `\s` and `(?i)` without shipping Unicode tables, plus capture groups, backreferences, lookahead, and fixed width lookbehind. A step budget raises `RuntimeError` on catastrophic backtracking instead of hanging, so a degrading pattern is reported rather than freezing the worker.
+
+```python
+from "https://std.edgepython.com/re.wasm" import search, sub, findall
+
+print(search(r'(\d+)-(\d+)', 'order 12-34')) # 12-34
+print(sub(r'\s+', '_', 'a  b   c')) # a_b_c
+print(findall(r'\w+', 'one two three')) # ['one', 'two', 'three']
+```
+
+Functions: `match`, `search`, `fullmatch`, `findall`, `groups`, `span`, `sub`; flags go inline (`(?i)`, `(?s)`, `(?m)`). The same `packages.json` alias trick lets scripts write the bare `from re import ...`. Pre-built `.wasm` is published on the [`edge-python-std` releases](https://github.com/dylan-sutton-chavez/edge-python-std). Full API: [`re/README.md`](https://github.com/dylan-sutton-chavez/edge-python-std/tree/main/re).
 
 ## Host libraries (`edge-python-host`)
 
