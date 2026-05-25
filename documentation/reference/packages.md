@@ -116,4 +116,3 @@ One manifest drives both directions: `imports` for worker-side `.py` / `.wasm` m
 - [Imports](/reference/imports), import syntax, `packages.json`, integrity verification.
 - [Writing modules](/reference/writing-modules), build your own package (the three delivery paths).
 - [WASM module ABI](/reference/wasm-abi), the contract standard `.wasm` packages implement.
-</content>

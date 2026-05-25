@@ -21,7 +21,7 @@ Worked examples (with and without the SDK), encoding tables, and language-specif
 
 ```python
 from "./my_edge_mod.wasm" import add
-print(add(2, 3))   # -> 5
+print(add(2, 3)) # -> 5
 ```
 
 ## Path B: host capability
@@ -33,8 +33,8 @@ A host capability is shipped as part of a custom embedder. The embedder declares
 Precedent: `print(...)` calls the embedder's `host_print` import; `input()` drains a buffer the host fills via `set_input`. The same shape generalises, a browser-host distribution can register `dom` as a native module whose `query`, `set_text`, `append_child` operations bridge to JS through embedder-specific host imports. A WASI-host distribution can register `fs` against `wasi_snapshot_preview1`. Scripts see them as ordinary native modules:
 
 ```python
-from dom import document, query     # browser host
-from fs  import read_text, write    # WASI host
+from dom import document, query # browser host
+from fs import read_text, write # WASI host
 ```
 
 ### What ships in a host-capability distribution
