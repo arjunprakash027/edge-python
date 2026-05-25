@@ -169,11 +169,7 @@ fn dispatch_iter(recv_h: u32) -> Result<Val, VmErr> {
         let items: Vec<Val> = match vm.heap.get(recv) {
             HeapObj::List(rc) => rc.borrow().clone(),
             HeapObj::Tuple(t) => t.clone(),
-            HeapObj::Set(rc) => {
-                let mut v: Vec<Val> = rc.borrow().iter().copied().collect();
-                vm.sort_set_items(&mut v);
-                v
-            }
+            HeapObj::Set(rc) => rc.borrow().iter().copied().collect(),
             HeapObj::Dict(rc) => rc.borrow().keys().collect(),
             HeapObj::Range(s, e, st) => {
                 let mut out = Vec::new();

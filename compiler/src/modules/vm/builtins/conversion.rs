@@ -1,5 +1,6 @@
 use super::super::VM;
 use super::super::types::*;
+use crate::alloc::string::ToString;
 
 impl<'a> VM<'a> {
 
