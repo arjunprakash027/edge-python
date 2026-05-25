@@ -207,6 +207,8 @@ When the runtime is cross-origin (page on `demo.edgepython.com`, runtime on `run
 
 `load` runs once per Worker; `run` can be called many times. `compiler_lib.wasm` is compiled once at `load`; a fresh instance is created per `run` so VM state cannot leak. Module bytes (`.py` / `.wasm` / `packages.json`) are cached across runs in the same Worker, BFS prefetch skips fetched specs, 404'd manifests are remembered. Use `clearCache()` to drop both caches.
 
+A spec the prefetch can't fetch or register (wrong scheme, a `.wasm` served as HTML, a malformed binary) aborts the run before it starts with a clear error, with an `https://` hint for `http://` or schemeless URL specs, instead of letting the VM fail later with `not registered`.
+
 ## Layout
 
 ```

@@ -32,6 +32,15 @@ export async function fetchWithLockfile(spec, lockfile, ctx) {
         return null;
     }
 
+    // A .wasm answered with HTML/text is a schemeless spec resolved relative and hitting an SPA fallback, not a module.
+    if (spec.endsWith('.wasm')) {
+        const ct = (resp.headers.get('content-type') || '').toLowerCase();
+        if (ct.includes('html') || ct.startsWith('text/')) {
+            console.warn(`[edge-python] '${spec}' served as '${ct || 'no content-type'}', not a wasm module`);
+            return null;
+        }
+    }
+
     const bytes = new Uint8Array(await resp.arrayBuffer());
 
     if (integrityActive) {

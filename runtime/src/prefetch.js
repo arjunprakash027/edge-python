@@ -9,10 +9,27 @@ import { dirOf, joinRel, scanStringImports } from './specs.js';
 const TD = new TextDecoder();
 const TE = new TextEncoder();
 
+/* Hint when a module spec likely can't load: insecure scheme or schemeless URL. Null when it looks fine. */
+function schemeHint(spec) {
+    if (spec.startsWith('http://')) {
+        return `'${spec}' uses http://; browsers block http subresources from an https page `
+             + `(mixed content), so the fetch never leaves. Use https:// (an SSL connection).`;
+    }
+    // No scheme but a dotted first segment looks like a domain, yet the host treats it as a relative path.
+    const relative = spec.startsWith('.') || spec.startsWith('/') || spec.includes('://');
+    if (!relative && spec.split('/')[0].includes('.')) {
+        return `'${spec}' has no scheme, so it resolved as a path on your own origin. `
+             + `If it's a URL, prefix it with https://.`;
+    }
+    return null;
+}
+
 export async function bfsPrefetch(rootSrc, exports, lockfile, ctx) {
     const { fetchedSources, knownMissing, importsMap, mainThreadSpecs } = ctx;
     const visited = new Set();
     const queue = [];
+    // Module specs that never registered; thrown together at the end so the user sees a clear cause, not the VM's later "not registered".
+    const failures = [];
 
     const writeBytes = (bytes) => {
         const ptr = exports.wasm_alloc(Math.max(1, bytes.length));
@@ -50,7 +67,11 @@ export async function bfsPrefetch(rootSrc, exports, lockfile, ctx) {
             bytes = fetchedSources.get(spec);
         } else {
             bytes = await fetchWithLockfile(spec, lockfile, ctx);
-            if (!bytes) continue;
+            if (!bytes) {
+                // packages.json probes are opportunistic 404s; only a real module import is worth flagging.
+                if (!spec.endsWith('packages.json')) failures.push(schemeHint(spec) ?? `could not fetch module '${spec}'`);
+                continue;
+            }
             fetchedSources.set(spec, bytes);
         }
 
@@ -68,7 +89,14 @@ export async function bfsPrefetch(rootSrc, exports, lockfile, ctx) {
         }
 
         if (spec.endsWith('.wasm')) {
-            const { names, fns } = await loadNativeModule(spec, bytes, ctx);
+            let names, fns;
+            try {
+                ({ names, fns } = await loadNativeModule(spec, bytes, ctx));
+            } catch (e) {
+                // Bytes fetched but the module won't load (bad ABI / corrupt wasm); a scheme issue would have failed earlier at fetch, so surface the real error.
+                failures.push(`'${spec}' failed to load as a wasm module: ${e?.message ?? e}`);
+                continue;
+            }
             const baseId = nativeTable.length;
             for (const fn of fns) nativeTable.push(fn);
 
@@ -90,5 +118,9 @@ export async function bfsPrefetch(rootSrc, exports, lockfile, ctx) {
         const dir = dirOf(spec);
         for (const q of scanStringImports(TD.decode(bytes))) queue.push(joinRel(dir, q));
         enqueueManifestSibling(spec);
+    }
+
+    if (failures.length) {
+        throw new Error(`could not pre-fetch every imported module:\n  ${failures.join('\n  ')}`);
     }
 }

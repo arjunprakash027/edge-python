@@ -318,12 +318,13 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
     // Text mutation outside `apply()` invalidates the auto-pair marker so manually-typed pairs don't collapse on backspace.
     ed.addEventListener('input', () => { autoPairCaret = -1; });
 
+    // Capture phase: preventDefault before CodeJar's bubble paste, which skips when defaultPrevented; otherwise both insert and the paste doubles.
     ed.addEventListener('paste', (e) => {
         const raw = (e.clipboardData ?? window.clipboardData)?.getData('text');
         if (raw == null) return;
         e.preventDefault();
         insertNormalized(raw);
-    });
+    }, true);
 
     // Drag-and-drop of text or .py files. Fires `drop`, not `paste`.
     const hasTextOrFiles = (dt) => {
@@ -376,9 +377,11 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
         const p = copyPayload(); if (p) writeClipboard(e, p);
     });
 
+    // Capture + stop: CodeJar's bubble cut ignores defaultPrevented, so beat it here or the selection deletes twice.
     ed.addEventListener('cut', (e) => {
         const p = copyPayload(); if (!p) return;
         writeClipboard(e, p);
+        e.stopImmediatePropagation();
         // Now remove source. Collapsed-cut deletes the whole line (newline included) so consecutive cuts compact upward.
         const text = jar.toString();
         const pos = jar.save();
@@ -393,7 +396,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
             caret = pos.start;
         }
         writeAndRestore(next, caret);
-    });
+    }, true);
 
     jar.onUpdate(syncLines);
     jar.updateCode(defaultCode);
