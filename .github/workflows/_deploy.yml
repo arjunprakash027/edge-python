@@ -19,17 +19,17 @@ jobs:
       # Unlike std (bare .wasm artifacts), the host serves its ESM sources, so checkout the tree.
       - uses: actions/checkout@v6
 
-      # Mirror each capability's src/ into _site/<cap>/src so imports keep their ./<cap>/src/index.js shape.
+      # Flatten each capability's src/ into _site/<cap> so the public path is <cap>/index.js; siblings move together, so relative imports stay valid.
       - name: Assemble site
         run: |
           mkdir -p _site
           for dir in */src; do
             cap="${dir%/src}"
             mkdir -p "_site/$cap"
-            cp -r "$dir" "_site/$cap/src"
+            cp -r "$dir"/. "_site/$cap/"
           done
 
-      # Pages serves the modules at host.edgepython.com/<cap>/src/*.
+      # Pages serves the modules at host.edgepython.com/<cap>/*.
       - name: Deploy
         uses: cloudflare/wrangler-action@v4
         with:
