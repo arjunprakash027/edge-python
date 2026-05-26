@@ -126,6 +126,11 @@
     "error_span_covers": "missing"
   },
   {
+    "src": "from json import dumps\nprint(dumps(True))",
+    "error": "no packages.json above '' declares 'json'",
+    "error_span_covers": "json"
+  },
+  {
     "src": "from m import nope\nprint(nope())",
     "modules": { "m": { "native": ["add"] } },
     "error": "has no export 'nope'"
