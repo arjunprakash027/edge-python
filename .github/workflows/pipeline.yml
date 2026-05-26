@@ -14,7 +14,7 @@ jobs:
     strategy: &capability-matrix
       fail-fast: false
       matrix:
-        capability: [dom, network, storage]
+        capability: [dom, network, storage, time]
     uses: ./.github/workflows/_lint.yml
     with:
       capability: ${{ matrix.capability }}
