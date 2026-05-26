@@ -108,6 +108,20 @@ idb_put(db, "items", "1", '{"title":"hello"}')
 
 Handlers: `local_get/set/remove/clear/keys`, `session_*` (same surface), `idb_open`, `idb_put`, `idb_get`, `idb_delete`, `idb_keys`, `idb_close`. Full API: [`storage/README.md`](https://github.com/dylan-sutton-chavez/edge-python-host/tree/main/storage).
 
+### `time`
+
+Wall and monotonic clocks, sleep, and calendar formatting, a sandbox-friendly subset of CPython's `time`. Clock reads are synchronous; `sleep` suspends the coroutine like `network`'s `fetch`, composing with `gather` / `with_timeout`. A `struct_time` crosses as a JSON nine-tuple string, decode it with `json` to read fields.
+
+```python
+from time import time, sleep, strftime, gmtime
+
+print(time()) # seconds since the epoch
+sleep(0.1) # suspends, resumes after ~100ms
+print(strftime("%Y-%m-%d", gmtime(0))) # 1970-01-01
+```
+
+Handlers: `time`, `time_ns`, `monotonic`, `monotonic_ns`, `perf_counter`, `perf_counter_ns`, `sleep`, `gmtime`, `localtime`, `mktime`, `strftime`, `strptime`, `asctime`, `ctime`, `timezone`, `altzone`, `daylight`, `tzname`. CPU, thread, and POSIX clocks (`process_time`, `clock_gettime`, `tzset`, the `CLOCK_*` constants) are intentionally out of scope. Full API: [`time/README.md`](https://github.com/dylan-sutton-chavez/edge-python-host/tree/main/time).
+
 ## How to load them
 
 | You have... | Do |
