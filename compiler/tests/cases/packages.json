@@ -523,5 +523,11 @@
     "modules": { "m": { "native": ["host_defer"] } },
     "host_deliveries": [{"id": 1, "value": "V"}, {"id": 0, "error": "boom"}],
     "output": ["b: V", "a: caught"]
+  },
+  {
+    "src": "from m import host_defer\nasync def t(name):\n    print(name + ':' + host_defer())\ngather(t('a'), t('b'), t('c'), t('d'))",
+    "modules": { "m": { "native": ["host_defer"] } },
+    "host_deliveries": [{"id": 2, "value": "C"}, {"id": 0, "value": "A"}, {"id": 3, "value": "D"}, {"id": 1, "value": "B"}],
+    "output": ["c:C", "a:A", "d:D", "b:B"]
   }
 ]
