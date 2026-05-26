@@ -2,6 +2,8 @@
 Public entry. `createWorker(opts)` spawns a Web Worker around `engine.js` and returns a proxy whose methods round-trip via postMessage. See README for options.
 */
 
+import { DEFAULT_HOST, DEFAULT_IMPORTS } from './defaults.js';
+
 export async function createWorker(opts) {
     // Chromium blocks `new Worker(crossOriginUrl)` even with `type:'module'`; cross-origin runtimes need the Blob bootstrap below.
     const workerUrl = new URL('../worker/worker.js', import.meta.url);
@@ -28,6 +30,24 @@ export async function createWorker(opts) {
         }
     }
 
+    /* Lazy host modules: name -> ESM url, imported only when the worker reports the bare name is used. Base defaults sit under user entries; `defaults:false` opts out. */
+    const hostUrls = { ...(opts?.defaults !== false ? DEFAULT_HOST : {}), ...(opts?.hostModules || {}) };
+    const loadedHosts = new Map(); // name -> export names, memoized across runs
+    const loadHostModule = async (name) => {
+        if (loadedHosts.has(name)) return loadedHosts.get(name);
+        const url = hostUrls[name];
+        if (!url) throw new Error(`no host module registered for '${name}'`);
+        const mod = await import(url);
+        const factory = mod[name] ?? mod.default;
+        const handlers = typeof factory === 'function' ? factory({ pushEvent }) : factory;
+        for (const [fnName, handler] of Object.entries(handlers)) {
+            mainThreadHandlers[`${name}:${fnName}`] = handler;
+        }
+        const exports = Object.keys(handlers);
+        loadedHosts.set(name, exports);
+        return exports;
+    };
+
     worker.onmessage = async ({ data }) => {
         if (data.type === 'line') {
             if (outputHandler) outputHandler(data.text);
@@ -44,6 +64,15 @@ export async function createWorker(opts) {
                 worker.postMessage({ type: 'host-call-response', reqId: data.reqId, value });
             } catch (e) {
                 worker.postMessage({ type: 'host-call-response', reqId: data.reqId, error: e?.message ?? String(e) });
+            }
+            return;
+        }
+        if (data.type === 'load-host') {
+            try {
+                const exports = await loadHostModule(data.name);
+                worker.postMessage({ type: 'load-host-response', reqId: data.reqId, exports });
+            } catch (e) {
+                worker.postMessage({ type: 'load-host-response', reqId: data.reqId, error: e?.message ?? String(e) });
             }
             return;
         }
@@ -66,9 +95,14 @@ export async function createWorker(opts) {
         worker.postMessage({ type, reqId, ...payload });
     });
 
-    /* Strip mainThreadModules before crossing postMessage: factories/handlers aren't structured-cloneable. Send only the manifests. */
-    const { mainThreadModules: _drop, ...workerOpts } = opts || {};
-    const ready = await send('load', { opts: workerOpts, mainThreadManifests: manifests });
+    /* Strip mainThreadModules/hostModules before crossing postMessage: not structured-cloneable / loaded on the page. The worker only needs eager manifests and the lazy host names. */
+    const { mainThreadModules: _drop, hostModules: _dropHosts, ...workerOpts } = opts || {};
+    /* Fold the std .wasm defaults into imports here so the worker engine stays embedder-neutral; `defaults:false` opts out. */
+    const imports = { ...(opts?.defaults !== false ? DEFAULT_IMPORTS : {}), ...(opts?.imports || {}) };
+    const ready = await send('load', {
+        opts: { ...workerOpts, imports, availableHosts: Object.keys(hostUrls) },
+        mainThreadManifests: manifests,
+    });
 
     /* Browser bridges fire `CustomEvent("edge-python-event")` on the global; route the detail to the Worker. Gated on `document` to skip Workers / Deno where this listener has no meaning. */
     if (typeof document !== 'undefined') {

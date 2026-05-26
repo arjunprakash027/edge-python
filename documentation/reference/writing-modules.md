@@ -71,7 +71,7 @@ Browsers run the engine in a Web Worker (no `document`, no `window`). Path C bri
 
 Async handlers (returning a `Promise`) run concurrently when several coroutines call them under `gather`: each result is routed back to the coroutine that issued it, and a rejected handler raises a catchable exception in that one coroutine without disturbing its peers.
 
-No `.wasm`, no Rust, no build step.
+Three ways to register: pass the imported object to `mainThreadModules` (eager, shown below); give a URL to `hostModules` or the `packages.json` `host` field, imported lazily the first time a run uses it; or, for the official libraries, rely on the runtime [defaults](/reference/packages#defaults) with no config. No `.wasm`, no Rust, no build step.
 
 ### Sketch
 

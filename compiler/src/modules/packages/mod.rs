@@ -6,6 +6,7 @@ use alloc::{boxed::Box, string::{String, ToString}, sync::Arc, vec::Vec};
 
 use crate::s;
 use crate::modules::vm::types::{HeapPool, Val, VmErr};
+use crate::modules::lexer::{lex, Token, TokenType};
 
 pub mod manifest;
 pub use manifest::{Manifest, parse_manifest, walk_up_dirs, dir_of, join_relative};
@@ -101,19 +102,76 @@ pub(crate) fn binding_to_extern(b: &NativeBinding) -> crate::modules::vm::types:
     }
 }
 
-/* Scans source for quoted from-import specs; WASM host uses results to pre-fetch URLs before compile. */
-pub fn scan_string_imports(src: &str) -> Vec<String> {
+/* A scanned import: Quoted is a direct URL/path; Bare is a name resolved against the manifest chain. */
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImportSpec {
+    Quoted(String),
+    Bare(String),
+}
+
+/* Content between the first quote and its matching close; tolerates string prefixes (r, b, f). Specs carry no escapes, so a raw slice suffices. */
+fn unquote(raw: &str) -> String {
+    let bytes = raw.as_bytes();
+    let Some(open) = bytes.iter().position(|&c| c == b'"' || c == b'\'') else { return raw.to_string() };
+    let quote = bytes[open] as char;
+    match raw[open + 1..].rfind(quote) {
+        Some(rel) => raw[open + 1..open + 1 + rel].to_string(),
+        None => raw.to_string(),
+    }
+}
+
+/* Reads the module spec at token `j`: a quoted string or a dotted bare name. Returns (spec, index past it). */
+fn read_spec(src: &str, tokens: &[Token], j: usize) -> Option<(ImportSpec, usize)> {
+    let t = tokens.get(j)?;
+    match t.kind {
+        TokenType::String => Some((ImportSpec::Quoted(unquote(&src[t.start..t.end])), j + 1)),
+        TokenType::Name => {
+            let mut name = src[t.start..t.end].to_string();
+            let mut k = j + 1;
+            // Dotted segments: a.b.c.
+            while tokens.get(k).map(|x| x.kind) == Some(TokenType::Dot) {
+                let Some(seg) = tokens.get(k + 1).filter(|s| s.kind == TokenType::Name) else { break };
+                name.push('.');
+                name.push_str(&src[seg.start..seg.end]);
+                k += 2;
+            }
+            Some((ImportSpec::Bare(name), k))
+        }
+        _ => None,
+    }
+}
+
+/* Every import spec, classified Bare vs Quoted, via the lexer so a `from`/`import` inside a comment or string is never a false hit. */
+pub fn scan_imports(src: &str) -> Vec<ImportSpec> {
+    let (tokens, _errs) = lex(src);
     let mut out = Vec::new();
-    for line in src.lines() {
-        let t = line.trim_start();
-        if !t.starts_with("from ") { continue; }
-        let rest = &t[5..].trim_start();
-        let bytes = rest.as_bytes();
-        if bytes.is_empty() || bytes[0] != b'"' { continue; }
-        let mut end = 1;
-        while end < bytes.len() && bytes[end] != b'"' { end += 1; }
-        if end < bytes.len() {
-            out.push(rest[1..end].to_string());
+    let mut i = 0;
+    while i < tokens.len() {
+        match tokens[i].kind {
+            TokenType::From => {
+                if let Some((spec, next)) = read_spec(src, &tokens, i + 1) {
+                    out.push(spec);
+                    // Step past the `import` of this from-statement so it isn't read as a fresh statement.
+                    i = if tokens.get(next).map(|x| x.kind) == Some(TokenType::Import) { next + 1 } else { next };
+                } else {
+                    i += 1;
+                }
+            }
+            TokenType::Import => {
+                // `import a, b as c`: comma-separated specs, each with an optional `as` alias.
+                let mut j = i + 1;
+                while let Some((spec, next)) = read_spec(src, &tokens, j) {
+                    out.push(spec);
+                    j = next;
+                    if tokens.get(j).map(|x| x.kind) == Some(TokenType::As) {
+                        j += if tokens.get(j + 1).map(|x| x.kind) == Some(TokenType::Name) { 2 } else { 1 };
+                    }
+                    if tokens.get(j).map(|x| x.kind) != Some(TokenType::Comma) { break; }
+                    j += 1;
+                }
+                i = j.max(i + 1);
+            }
+            _ => i += 1,
         }
     }
     out

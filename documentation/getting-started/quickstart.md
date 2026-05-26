@@ -48,7 +48,7 @@ from dom import query, set_text
 set_text(query("#app"), "Hello from Python")
 ```
 
-`dom` is one of the official [host libraries](/reference/packages#host-libraries-edge-python-host) (`dom`, `network`, `storage` and more), served as JS sources alongside your app; standard `.wasm` packages like [`json`](/reference/packages#json) ship alongside too. See [Official packages](/reference/packages) for the full catalog, and the [runtime README](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) for all `<edge-python>` attributes and the `imports` field for `.py` / `.wasm` modules.
+`dom` is one of the official [host libraries](/reference/packages#host-libraries-edge-python-host) (`dom`, `network`, `storage` and more); standard `.wasm` packages like [`json`](/reference/packages#json) sit alongside them. The `packages.json` above declares `dom` explicitly, but the browser runtime also resolves the official packages by bare name with no manifest at all (see [Defaults](/reference/packages#defaults)), fetching each lazily on first import. See [Official packages](/reference/packages) for the full catalog, and the [runtime README](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) for all `<edge-python>` attributes and the `imports` field for `.py` / `.wasm` modules.
 
 ## Your first program
 

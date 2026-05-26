@@ -87,15 +87,26 @@ fn read_src(len: usize) -> Result<String, core::str::Utf8Error> {
     })
 }
 
+/* Pre-fetch feed: each import as `b<TAB>name` (bare, resolve via manifest) or `q<TAB>spec` (quoted URL/path), one per line. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn extract_imports(len: usize) -> usize {
+    use crate::modules::packages::{scan_imports, ImportSpec};
     let src = match read_src(len) {
         Ok(s) => s,
         Err(_) => return unsafe { write_out("") },
     };
-    let specs = crate::modules::packages::scan_string_imports(&src);
-    let joined = specs.join("\n");
-    unsafe { write_out(&joined) }
+    let mut buf = alloc::string::String::new();
+    for spec in scan_imports(&src) {
+        if !buf.is_empty() { buf.push('\n'); }
+        let (kind, name) = match &spec {
+            ImportSpec::Bare(n) => ('b', n),
+            ImportSpec::Quoted(u) => ('q', u),
+        };
+        buf.push(kind);
+        buf.push('\t');
+        buf.push_str(name);
+    }
+    unsafe { write_out(&buf) }
 }
 
 /* Drive one segment of execution; on `Pending*` re-stash the VM into the recycled `PausedRun` box. */

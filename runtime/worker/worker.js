@@ -16,6 +16,16 @@ engine.setHostCallDelegate((module, name, args) => new Promise((resolve, reject)
     self.postMessage({ type: 'host-call', reqId, module, name, args });
 }));
 
+/* Lazy host load: post `{type:'load-host', reqId, name}` to main and await `{type:'load-host-response'}` with export names. */
+let nextLoadHostReqId = 0;
+const pendingLoadHost = new Map();
+
+engine.setLoadHostDelegate((name) => new Promise((resolve, reject) => {
+    const reqId = ++nextLoadHostReqId;
+    pendingLoadHost.set(reqId, { resolve, reject });
+    self.postMessage({ type: 'load-host', reqId, name });
+}));
+
 const handlers = {
     load: (data) => engine.load(data.opts, data.mainThreadManifests),
     run: (data) => engine.run({ ...data, onLine }),
@@ -32,6 +42,14 @@ const handlers = {
         if (data.error) cb.reject(new Error(data.error));
         else cb.resolve(data.value);
     },
+    /* Main thread loaded a lazy host module; resolve with its export names. */
+    'load-host-response': (data) => {
+        const cb = pendingLoadHost.get(data.reqId);
+        if (!cb) return;
+        pendingLoadHost.delete(data.reqId);
+        if (data.error) cb.reject(new Error(data.error));
+        else cb.resolve(data.exports);
+    },
 };
 
 self.onmessage = async ({ data }) => {
@@ -43,7 +61,7 @@ self.onmessage = async ({ data }) => {
     try {
         const result = await handler(data);
         /* Fire-and-forget message types skip the response post; only reply when an outer reqId was attached. */
-        if (data.reqId != null && data.type !== 'host-call-response' && data.type !== 'push-event') {
+        if (data.reqId != null && data.type !== 'host-call-response' && data.type !== 'load-host-response' && data.type !== 'push-event') {
             self.postMessage({ type: 'response', reqId: data.reqId, result });
         }
     } catch (e) {

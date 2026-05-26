@@ -24,10 +24,22 @@ Deno.test("runtime: <edge-python> runs the corpus through index.html", async () 
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
     page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+    const requested = [];
+    page.on("request", (q) => requested.push(q.url()));
 
+    const STD_JSON = new URL("../../../edge-python-std/json/target/wasm32-unknown-unknown/release/json.wasm", import.meta.url).pathname;
+    const HOST_REPO = new URL("../../../edge-python-host", import.meta.url).pathname;
     await page.route("**/*", (r) => {
         const u = new URL(r.request().url());
-        if (u.host !== "localhost") return r.continue(); // CDN wasm passes through
+        // Point the std/host defaults at the existing artifacts in the sibling repos (no new fixtures).
+        if (u.href.includes("std.edgepython.com/json.wasm")) return r.fulfill({ contentType: "application/wasm", body: readFileSync(STD_JSON) });
+        if (u.host === "host.edgepython.com") {
+            // Production (Pages) flattens <cap>/src/* to <cap>/*; map back to the repo layout.
+            const repoPath = u.pathname.replace(/^\/([^/]+)\//, "/$1/src/");
+            try { return r.fulfill({ contentType: "text/javascript", body: readFileSync(HOST_REPO + repoPath) }); }
+            catch { return r.fulfill({ status: 404 }); }
+        }
+        if (u.host !== "localhost") return r.continue(); // any other CDN asset passes through
         const ext = u.pathname.slice(u.pathname.lastIndexOf("."));
         try { return r.fulfill({ contentType: TYPES[ext] ?? "application/octet-stream", body: readFileSync(REPO + u.pathname.slice(1)) }); }
         catch { return r.fulfill({ status: 404 }); }
@@ -44,6 +56,10 @@ Deno.test("runtime: <edge-python> runs the corpus through index.html", async () 
             await ready;
             globalThis.el = el;
         });
+
+        const reqd = (frag) => requested.some((u) => u.includes(frag));
+        // Lazy host: a host ESM must not load at boot, only when a run first imports it.
+        if (reqd("/app/ui.js")) throw new Error("host ui.js loaded at boot; host modules must be lazy");
 
         for (const c of cases) {
             errors.length = 0;
@@ -62,6 +78,13 @@ Deno.test("runtime: <edge-python> runs the corpus through index.html", async () 
                 throw new Error(`script:\n${c.script}\n  got:  ${JSON.stringify(got.app)}\n  want: ${JSON.stringify(c.expect)}\n  errors: ${errors.join(" | ") || "(none)"}`);
             }
         }
+
+        // Laziness: only what the corpus imports gets fetched; declared-but-unused stays untouched.
+        if (!reqd("/app/ui.js")) throw new Error("host ui was used but ui.js never loaded");
+        if (!reqd("json.wasm")) throw new Error("json default imported but json.wasm never fetched");
+        if (!reqd("host.edgepython.com/time")) throw new Error("time host default imported but never loaded");
+        if (reqd("re.wasm")) throw new Error("re default never imported yet re.wasm was fetched (not lazy)");
+        if (reqd("host.edgepython.com/network")) throw new Error("network host default never imported yet fetched (not lazy)");
     } finally {
         await browser.close();
     }
