@@ -1,0 +1,46 @@
+[
+    {
+        "src": "print(time() > 1700000000)",
+        "output": ["True"]
+    },
+    {
+        "src": "a = monotonic()\nsleep(0.05)\nprint(monotonic() - a >= 0.04)",
+        "output": ["True"]
+    },
+    {
+        "src": "print(gmtime(0))",
+        "output": ["[1970,1,1,0,0,0,3,1,-1]"]
+    },
+    {
+        "src": "print(strftime('%Y-%m-%d %H:%M:%S', gmtime(0)))",
+        "output": ["1970-01-01 00:00:00"]
+    },
+    {
+        "src": "print(strftime('%a %b %d', gmtime(0)))",
+        "output": ["Thu Jan 01"]
+    },
+    {
+        "src": "print(strptime('2021-06-15', '%Y-%m-%d'))",
+        "output": ["[2021,6,15,0,0,0,1,166,-1]"]
+    },
+    {
+        "src": "print(strptime('Jun 15 2021', '%b %d %Y'))",
+        "output": ["[2021,6,15,0,0,0,1,166,-1]"]
+    },
+    {
+        "src": "print(asctime(gmtime(0)))",
+        "output": ["Thu Jan  1 00:00:00 1970"]
+    },
+    {
+        "src": "print(mktime(localtime(1000000)) == 1000000)",
+        "output": ["True"]
+    },
+    {
+        "src": "print(monotonic_ns() >= 0 and perf_counter() >= 0)",
+        "output": ["True"]
+    },
+    {
+        "src": "print(daylight() == 0 or daylight() == 1)",
+        "output": ["True"]
+    }
+]
