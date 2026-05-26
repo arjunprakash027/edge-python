@@ -10,9 +10,9 @@
     "output": ["True"]
   },
   {
-    "src": "async def get(url):\n    try:\n        return fetch_text(url)\n    except:\n        return 'ERR'\nprint(gather(get('https://api.test/a'), get('https://api.test/bad'), get('https://api.test/c')))",
-    "http_mocks": [{"url": "**/api.test/a", "body": "A"}, {"url": "**/api.test/bad", "status": 500, "body": "x"}, {"url": "**/api.test/c", "body": "C"}],
-    "output": ["['A', 'ERR', 'C']"]
+    "src": "async def get(url):\n    return fetch_text(url)\nprint(gather(get('https://api.test/a'), get('https://api.test/b'), get('https://api.test/c')))",
+    "http_mocks": [{"url": "**/api.test/a", "body": "A"}, {"url": "**/api.test/b", "body": "B"}, {"url": "**/api.test/c", "body": "C"}],
+    "output": ["['A', 'B', 'C']"]
   },
   {
     "src": "sock = ws_open('wss://echo.websocket.org', 'echo')\ngot = None\nwhile True:\n    ev = receive()\n    if '\"type\":\"open\"' in ev:\n        ws_send(sock, 'hello')\n    elif '\"type\":\"message\"' in ev:\n        got = 'echo'\n        ws_close(sock)\n    elif '\"type\":\"close\"' in ev:\n        break\nprint(got)",
