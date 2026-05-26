@@ -48,7 +48,7 @@ from utils import *
 print(slugify("Hello world"))
 ```
 
-The names above (`json`, `utils`, `math`) are illustrative, none are built-in. `json` is an [official standard package](/reference/packages#json); the rest stand in for your own modules. Every bare name must be declared in `packages.json` or supplied as a quoted path/URL.
+The names above (`json`, `utils`, `math`) are illustrative. `json` is an [official standard package](/reference/packages#json) that the browser runtime resolves by [default](/reference/packages#defaults); `utils` and `math` stand in for your own modules. Apart from the official defaults, every bare name must be declared in `packages.json` or supplied as a quoted path/URL.
 
 ## How resolution works
 
@@ -88,7 +88,7 @@ Schema:
 
 `from utils import x` resolves to `./lib/utils.py` relative to the entry script; `from math import add` loads `.wasm` per the [wire format](/reference/wasm-abi).
 
-`packages.json` is optional, scripts can use string-form paths directly without project config.
+`packages.json` is optional, scripts can use string-form paths directly without project config, and the browser runtime resolves the [official packages](/reference/packages#defaults) by bare name without it.
 
 ### Walk-up resolution
 

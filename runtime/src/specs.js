@@ -2,6 +2,9 @@
 Spec/URL helpers. Mirror `compiler_lib::modules::packages::manifest` so transitive imports canonicalize identically on both sides.
 */
 
+/* Byte cap on any source handed to the compiler; mirrors the wasm SRC buffer (compiler SZ). */
+export const SOURCE_LIMIT = 1 << 20;
+
 export const sha256Hex = async (bytes) => {
     const digest = await crypto.subtle.digest('SHA-256', bytes);
     return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -37,7 +40,3 @@ export const joinRel = (base, target) => {
     }
     return b + t;
 };
-
-/* Quoted-form imports (`from "<spec>" import ...`); bare names route through packages.json walk-up. */
-export const scanStringImports = (src) =>
-    [...src.matchAll(/^[ \t]*from [ \t]*"([^"]+)"/gm)].map(m => m[1]);

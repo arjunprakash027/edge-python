@@ -8,8 +8,9 @@ import { bfsPrefetch } from '../src/prefetch.js';
 import { makeCompilerEnv } from '../src/env.js';
 import { makeRt } from '../src/rt.js';
 import { nativeTable, resetNativeTable } from '../src/native.js';
+import { DEFAULT_IMPORTS } from '../src/defaults.js';
+import { SOURCE_LIMIT } from '../src/specs.js';
 
-const SOURCE_LIMIT = 1 << 20; // 1 MiB
 const TE = new TextEncoder();
 const TD = new TextDecoder();
 
@@ -31,6 +32,8 @@ let cache = null;
 let integrityActive = false;
 let loaders = [];
 let importsMap = null;
+// Seed the resolution table with the official base packages unless the embedder opts out.
+let useDefaults = true;
 // Resolves run()'s current `await` when a `PendingEvent` wake-up arrives via `pushEvent`.
 let eventWaiter = null;
 // Events `pushEvent`'d before the VM was ready (no `compilerExports`, or no paused run yet). Drained at the next `PENDING_EVENT` yield.
@@ -39,15 +42,20 @@ const pendingEvents = [];
 const pendingHostCalls = new Map();
 /* (name, args) => Promise<value>. Set by worker.js (postMessage round-trip) or by a main-thread embedder. */
 let hostCallDelegate = null;
+/* Host modules resolvable by bare name but loaded on demand; (name) => Promise<exportNames>. */
+let loadHostDelegate = null;
+let lazyHostNames = [];
 // Source/missing caches persist across runs so the BFS skips refetching modules and re-probing 404'd `packages.json` paths on every Run press. Wiped by `clearCache()`.
 const fetchedSources = new Map();
 const knownMissing = new Set();
 /* Synthetic native modules (handlers live on main thread). Re-applied at every `run` since `resetNativeTable` clears them. */
 let mainThreadManifests = [];
 
-export async function load({ wasmUrl, integrity = true, loaders: loaderUrls = [], imports = null, version = null }, manifests = []) {
+export async function load({ wasmUrl, integrity = true, loaders: loaderUrls = [], imports = null, version = null, defaults = true, availableHosts = [] }, manifests = []) {
     const t0 = performance.now();
     importsMap = imports;
+    useDefaults = defaults;
+    lazyHostNames = availableHosts;
 
     cache = await openCache(integrity);
     integrityActive = cache instanceof MemoryCache ? false : Boolean(integrity);
@@ -110,29 +118,36 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
         return ptr;
     };
 
-    /* Synthetic main-thread modules: register at `mt:<name>` specs and graft `<name> -> mt:<name>` into importsMap so the bare name resolves via the synthesized packages.json. */
-    const mainThreadSpecs = new Set();
-    const augmentedImports = { ...(importsMap || {}) };
-    for (const m of mainThreadManifests) {
+    /* Register a main-thread module at `mt:<name>`: push a stub per export (the real call defers to the page) and tell the compiler its export names. */
+    const registerHost = (name, exportNames) => {
         const baseId = nativeTable.length;
-        for (const fnName of m.exports) {
+        for (const fnName of exportNames) {
             const stub = () => {};
             stub.__edge_kind = 'capability';
             stub.__edge_main_thread = true;
             stub.__edge_name = fnName;
-            stub.__edge_module = m.name;
+            stub.__edge_module = name;
             nativeTable.push(stub);
         }
-        const spec = `mt:${m.name}`;
-        mainThreadSpecs.add(spec);
-        augmentedImports[m.name] = spec;
-        const specBytes = TE.encode(spec);
-        const namesBytes = TE.encode(m.exports.join('\n'));
+        const specBytes = TE.encode(`mt:${name}`);
+        const namesBytes = TE.encode(exportNames.join('\n'));
         exports.register_native_module(
             writeBytes(specBytes), specBytes.length,
             writeBytes(namesBytes), namesBytes.length,
             baseId,
         );
+    };
+
+    /* Both kinds graft `<name> -> mt:<name>` so the bare name resolves; eager ones (programmatic objects) register now, lazy ones (urls) load on first import during prefetch. */
+    const mainThreadSpecs = new Set();
+    const augmentedImports = { ...(useDefaults ? DEFAULT_IMPORTS : {}), ...(importsMap || {}) };
+    for (const m of mainThreadManifests) {
+        registerHost(m.name, m.exports);
+        mainThreadSpecs.add(`mt:${m.name}`);
+        augmentedImports[m.name] = `mt:${m.name}`;
+    }
+    for (const name of lazyHostNames) {
+        if (!mainThreadSpecs.has(`mt:${name}`)) augmentedImports[name] = `mt:${name}`;
     }
 
     const writeSrc = () => new Uint8Array(exports.memory.buffer).set(srcBytes, exports.src_ptr());
@@ -143,13 +158,19 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
         baseUrl,
         entryDir,
         knownMissing,
-        importsMap: mainThreadManifests.length ? augmentedImports : importsMap,
+        importsMap: augmentedImports,
         mainThreadSpecs,
         integrityActive,
         fetchedSources,
         compilerExports: exports,
         rt,
         loaders,
+        // Lazy host: fetch export names from the page, then register the mt: stubs here.
+        loadHost: (name) => {
+            if (!loadHostDelegate) throw new Error(`host '${name}' imported but no main-thread loader is wired`);
+            return loadHostDelegate(name);
+        },
+        registerHost,
     });
 
     // `wasm_alloc` during prefetch may have grown memory and detached our src view.
@@ -249,6 +270,11 @@ export function setHostCallDelegate(fn) {
     hostCallDelegate = fn;
 }
 
+/* Register the lazy host loader: (name) => Promise<exportNames>. worker.js wires the postMessage round-trip. */
+export function setLoadHostDelegate(fn) {
+    loadHostDelegate = fn;
+}
+
 export function reset() {
     if (compilerExports) compilerExports.reset_modules();
     resetNativeTable();
@@ -272,6 +298,8 @@ export function dispose() {
     resetNativeTable();
     pendingHostCalls.clear();
     hostCallDelegate = null;
+    loadHostDelegate = null;
+    lazyHostNames = [];
     mainThreadManifests = [];
 }
 

@@ -41,7 +41,7 @@ Declarative alternative to `createWorker`: include the script, drop a tag, and a
 <edge-python entry="./app/main.py" packages="./app/packages.json"></edge-python>
 ```
 
-Importing `element.js` auto-registers the tag. On connect, the element reads its attributes, loads the modules declared in `packages.json` (below), spawns the worker, runs `entry` if present, then fires a `ready` event. `compiler_lib.wasm` loads from the CDN automatically.
+Importing `element.js` auto-registers the tag. On connect, the element reads its attributes and `packages.json`, spawns the worker, runs `entry` if present, then fires a `ready` event. `compiler_lib.wasm` loads from the CDN automatically. Modules load lazily: only what a run actually imports is fetched, host libraries included.
 
 | Attribute | Description |
 |---|---|
@@ -80,7 +80,7 @@ Host libraries (DOM, etc.) are plain-JS modules whose handlers run on the **page
 }
 ```
 
-For each entry the element dynamically `import()`s the URL (resolved against the `packages.json` location) and registers its named exports, every export except `default`, as [main-thread modules](#main-thread-modules). The export name is the module name Python imports, so `export const dom` becomes `from dom import ...`:
+Each `host` entry maps a name to an ESM URL (resolved against the `packages.json` location). The element passes these to `createWorker` as `hostModules`; the module is `import()`ed lazily the first time a run imports that name, never at connect, so an unused host library is never fetched. The ESM exports its handler factory under the host name (or as `default`), so `export const dom` answers `from dom import ...`:
 
 ```python
 # app/main.py
@@ -102,7 +102,9 @@ Spawns a Web Worker, loads `compiler_lib.wasm` inside it, returns a proxy.
 | `integrity` | `boolean` | `true` | When `true`, use IDB + lockfile to cache and verify fetched module bytes. Falls back to in-memory cache (with `console.warn`) if IDB is unavailable. |
 | `imports` | `Record<string, string>` | `null` | Bare-name shortcut: maps Python bare names (`from <name> import ...`) to URLs of `.py` / `.wasm` modules. Replaces the need for a physical `packages.json` for simple projects. |
 | `loaders` | `string[]` | `[]` | URLs of module loader plugins. Each loader is a `.js` file with a default export `{ match, load }`. See [Writing a loader](#writing-a-loader). |
-| `mainThreadModules` | `Record<string, factory \| object>` | `{}` | Synthetic native modules whose handlers run on the main thread. Each entry registers `from <name> import ...` for Python. See [Main-thread modules](#main-thread-modules). |
+| `mainThreadModules` | `Record<string, factory \| object>` | `{}` | Main-thread modules supplied as in-memory factories/objects, registered eagerly. Use `hostModules` instead when you have URLs and want lazy loading. See [Main-thread modules](#main-thread-modules). |
+| `hostModules` | `Record<string, string>` | `{}` | Main-thread host libraries by URL (`name -> ESM url`), `import()`ed lazily the first time a run imports the name. The `<edge-python>` element fills this from the `host` field. |
+| `defaults` | `boolean` | `true` | Seed the resolution table with the official packages so they resolve by bare name without a `packages.json`: std `json` / `re` (worker `.wasm`) and host `dom` / `network` / `storage` / `time` (main-thread ESM). Lazy, an unused default is never fetched. Set `false` to opt out. URLs live in `src/defaults.js`. |
 | `version` | `string` | `null` | Optional lockfile version key. When present, mismatches with the stored version invalidate the cache before run. Useful to pin cache to a deploy/commit. |
 
 ### `Worker`
@@ -205,7 +207,7 @@ When the runtime is cross-origin (page on `demo.edgepython.com`, runtime on `run
 
 ## Module fetch lifecycle
 
-`load` runs once per Worker; `run` can be called many times. `compiler_lib.wasm` is compiled once at `load`; a fresh instance is created per `run` so VM state cannot leak. Module bytes (`.py` / `.wasm` / `packages.json`) are cached across runs in the same Worker, BFS prefetch skips fetched specs, 404'd manifests are remembered. Use `clearCache()` to drop both caches.
+`load` runs once per Worker; `run` can be called many times. `compiler_lib.wasm` is compiled once at `load`; a fresh instance is created per `run` so VM state cannot leak. Resolution is lazy: the compiler classifies each import and only the modules a run actually uses get fetched. Bare names resolve against the manifest chain (built-in defaults < user `packages.json`); manifests are resolution tables, not download lists, so a declared-but-unused package is never downloaded. Module bytes (`.py` / `.wasm` / `packages.json`) are cached across runs in the same Worker, prefetch skips fetched specs, 404'd manifests are remembered. Use `clearCache()` to drop both caches.
 
 A spec the prefetch can't fetch or register (wrong scheme, a `.wasm` served as HTML, a malformed binary) aborts the run before it starts with a clear error, with an `https://` hint for `http://` or schemeless URL specs, instead of letting the VM fail later with `not registered`.
 
@@ -235,11 +237,12 @@ A spec the prefetch can't fetch or register (wrong scheme, a `.wasm` served as H
 | Path | Purpose |
 |---|---|
 | `src/index.js` | Public API. `createWorker` factory (main-thread). |
-| `src/element.js` | Public `<edge-python>` custom element. Wraps `createWorker`, loads modules from `packages.json` (`host` and `imports`). |
-| `worker/engine.js` | Internal orchestrator (Worker only). `load`, `run`, `pushEvent`, `reset`, `clearCache`, `dispose`, `setHostCallDelegate`. |
+| `src/element.js` | Public `<edge-python>` custom element. Wraps `createWorker`; reads `host` / `imports` from `packages.json` (host libraries load lazily on first import). |
+| `worker/engine.js` | Internal orchestrator (Worker only). `load`, `run`, `pushEvent`, `reset`, `clearCache`, `dispose`, `setHostCallDelegate`, `setLoadHostDelegate`. |
 | `src/env.js` | The 4 `env.*` imports `compiler_lib` declares: `host_print`, `host_call_native`, `host_fetch_bytes`, `host_now_ns`. |
 | `src/native.js` | Native module loader extension point + built-in Path A (wasm-pdk) loader + `nativeTable`. |
-| `src/prefetch.js` | BFS over the dependency graph; pre-fetches and registers all `.py` / `.wasm` / `packages.json`. |
+| `src/prefetch.js` | Lazy BFS over the dependency graph; resolves each imported name and registers only the `.py` / `.wasm` / host modules a run uses. |
+| `src/defaults.js` | Built-in base manifest: official std (`json`, `re`) and host (`dom`, ...) packages, resolvable by bare name without `packages.json`. |
 | `src/fetch.js` | CAS-backed fetch with lockfile integrity check. |
 | `src/specs.js` | URL/spec helpers mirroring `compiler_lib::modules::packages::manifest`. |
 | `src/rt.js` | Handle codec wrappers (`decodeStr`, `encodeInt`, ...) for loaders. |

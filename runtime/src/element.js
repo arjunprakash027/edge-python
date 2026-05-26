@@ -10,15 +10,14 @@ export class EdgePythonElement extends HTMLElement {
         const file = this.getAttribute('entry');
         const pkg = this.getAttribute('packages');
 
-        // host -> main-thread modules, imports -> worker .py/.wasm modules
-        const mainThreadModules = {};
+        // host -> main-thread modules (lazy: name -> url, imported on first use), imports -> worker .py/.wasm modules
+        const hostModules = {};
         let imports;
         if (pkg) {
             const base = new URL(pkg, location.href);
             const manifest = await fetch(base).then(r => r.json());
-            for (const url of Object.values(manifest.host ?? {})) {
-                const { default: _, ...mods } = await import(new URL(url, base).href);
-                Object.assign(mainThreadModules, mods);
+            for (const [name, url] of Object.entries(manifest.host ?? {})) {
+                hostModules[name] = new URL(url, base).href;
             }
             if (manifest.imports) {
                 imports = {};
@@ -29,7 +28,7 @@ export class EdgePythonElement extends HTMLElement {
         // Kept on the element so callers can drive the same worker after the declarative run.
         this.worker = await createWorker({
             wasmUrl: "https://runtime.edgepython.com/js/compiler_lib.wasm",
-            mainThreadModules,
+            hostModules,
             imports,
         });
         // `entry` is optional: omit it to just spin up the worker and drive it via run().

@@ -2,5 +2,8 @@
     { "script": "render(str(add(2, 3) + sub(10, 4) + mul(2, 5)))", "expect": "21" },
     { "script": "render(upper('hola'))", "expect": "HOLA" },
     { "script": "render(f'{2 ** 10}')", "expect": "1024" },
-    { "script": "render(str(10 // 0))", "error": "ZeroDivisionError" }
+    { "script": "render(str(10 // 0))", "error": "ZeroDivisionError" },
+    { "script": "import calc\nrender(str(calc.add(2, 3)))", "expect": "5" },
+    { "script": "from json import dumps\nrender(dumps(True))", "expect": "true" },
+    { "script": "from time import strftime, gmtime\nrender(strftime('%Y-%m-%d', gmtime(0)))", "expect": "1970-01-01" }
 ]
