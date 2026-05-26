@@ -2,7 +2,7 @@
 Public entry. `createWorker(opts)` spawns a Web Worker around `engine.js` and returns a proxy whose methods round-trip via postMessage. See README for options.
 */
 
-import { DEFAULT_HOST } from './defaults.js';
+import { DEFAULT_HOST, DEFAULT_IMPORTS } from './defaults.js';
 
 export async function createWorker(opts) {
     // Chromium blocks `new Worker(crossOriginUrl)` even with `type:'module'`; cross-origin runtimes need the Blob bootstrap below.
@@ -97,8 +97,10 @@ export async function createWorker(opts) {
 
     /* Strip mainThreadModules/hostModules before crossing postMessage: not structured-cloneable / loaded on the page. The worker only needs eager manifests and the lazy host names. */
     const { mainThreadModules: _drop, hostModules: _dropHosts, ...workerOpts } = opts || {};
+    /* Fold the std .wasm defaults into imports here so the worker engine stays embedder-neutral; `defaults:false` opts out. */
+    const imports = { ...(opts?.defaults !== false ? DEFAULT_IMPORTS : {}), ...(opts?.imports || {}) };
     const ready = await send('load', {
-        opts: { ...workerOpts, availableHosts: Object.keys(hostUrls) },
+        opts: { ...workerOpts, imports, availableHosts: Object.keys(hostUrls) },
         mainThreadManifests: manifests,
     });
 

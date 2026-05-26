@@ -27,13 +27,10 @@ Deno.test("runtime: <edge-python> runs the corpus through index.html", async () 
     const requested = [];
     page.on("request", (q) => requested.push(q.url()));
 
-    const LOCAL_WASM = REPO + "target/wasm32-unknown-unknown/release/compiler_lib.wasm";
     const STD_JSON = new URL("../../../edge-python-std/json/target/wasm32-unknown-unknown/release/json.wasm", import.meta.url).pathname;
     const HOST_REPO = new URL("../../../edge-python-host", import.meta.url).pathname;
     await page.route("**/*", (r) => {
         const u = new URL(r.request().url());
-        // Serve this branch's compiler (it carries the export the runtime now needs), not the published CDN one.
-        if (u.href.includes("compiler_lib.wasm")) return r.fulfill({ contentType: "application/wasm", body: readFileSync(LOCAL_WASM) });
         // Point the std/host defaults at the existing artifacts in the sibling repos (no new fixtures).
         if (u.href.includes("std.edgepython.com/json.wasm")) return r.fulfill({ contentType: "application/wasm", body: readFileSync(STD_JSON) });
         if (u.host === "host.edgepython.com") {

@@ -51,7 +51,7 @@ export async function bfsPrefetch(rootSrc, exports, lockfile, ctx) {
     // Bare-name -> target spec. Seeded from importsMap (defaults + user); physical packages.json merge in as discovered.
     const table = { ...(importsMap || {}) };
     // Bare names scanned before a manifest declared them; retried after each manifest merge.
-    const pendingBare = new Map(); // name -> importer dir, for relative targets
+    const pendingBare = new Map(); // name -> importer dirs, for relative targets
 
     const writeBytes = (bytes) => {
         const ptr = exports.wasm_alloc(Math.max(1, bytes.length));
@@ -68,12 +68,12 @@ export async function bfsPrefetch(rootSrc, exports, lockfile, ctx) {
         if (!imp.bare) { queue.push(joinRel(dir, imp.spec)); return; }
         const target = table[imp.spec];
         if (target !== undefined) queue.push(joinRel(dir, target));
-        else pendingBare.set(imp.spec, dir); // a later manifest may declare it
+        else { const ds = pendingBare.get(imp.spec); ds ? ds.push(dir) : pendingBare.set(imp.spec, [dir]); } // a later manifest may declare it
     };
     const retryPending = () => {
-        for (const [name, dir] of [...pendingBare]) {
+        for (const [name, dirs] of [...pendingBare]) {
             const target = table[name];
-            if (target !== undefined) { queue.push(joinRel(dir, target)); pendingBare.delete(name); }
+            if (target !== undefined) { for (const dir of dirs) queue.push(joinRel(dir, target)); pendingBare.delete(name); }
         }
     };
 

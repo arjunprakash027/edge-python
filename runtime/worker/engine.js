@@ -8,7 +8,6 @@ import { bfsPrefetch } from '../src/prefetch.js';
 import { makeCompilerEnv } from '../src/env.js';
 import { makeRt } from '../src/rt.js';
 import { nativeTable, resetNativeTable } from '../src/native.js';
-import { DEFAULT_IMPORTS } from '../src/defaults.js';
 import { SOURCE_LIMIT } from '../src/specs.js';
 
 const TE = new TextEncoder();
@@ -32,8 +31,6 @@ let cache = null;
 let integrityActive = false;
 let loaders = [];
 let importsMap = null;
-// Seed the resolution table with the official base packages unless the embedder opts out.
-let useDefaults = true;
 // Resolves run()'s current `await` when a `PendingEvent` wake-up arrives via `pushEvent`.
 let eventWaiter = null;
 // Events `pushEvent`'d before the VM was ready (no `compilerExports`, or no paused run yet). Drained at the next `PENDING_EVENT` yield.
@@ -51,10 +48,9 @@ const knownMissing = new Set();
 /* Synthetic native modules (handlers live on main thread). Re-applied at every `run` since `resetNativeTable` clears them. */
 let mainThreadManifests = [];
 
-export async function load({ wasmUrl, integrity = true, loaders: loaderUrls = [], imports = null, version = null, defaults = true, availableHosts = [] }, manifests = []) {
+export async function load({ wasmUrl, integrity = true, loaders: loaderUrls = [], imports = null, version = null, availableHosts = [] }, manifests = []) {
     const t0 = performance.now();
     importsMap = imports;
-    useDefaults = defaults;
     lazyHostNames = availableHosts;
 
     cache = await openCache(integrity);
@@ -140,7 +136,7 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
 
     /* Both kinds graft `<name> -> mt:<name>` so the bare name resolves; eager ones (programmatic objects) register now, lazy ones (urls) load on first import during prefetch. */
     const mainThreadSpecs = new Set();
-    const augmentedImports = { ...(useDefaults ? DEFAULT_IMPORTS : {}), ...(importsMap || {}) };
+    const augmentedImports = { ...(importsMap || {}) }; // defaults already folded in by the embedder (index.js)
     for (const m of mainThreadManifests) {
         registerHost(m.name, m.exports);
         mainThreadSpecs.add(`mt:${m.name}`);
