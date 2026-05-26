@@ -101,6 +101,24 @@ except TimeoutError:
     print("too slow")
 ```
 
+### Asynchronous fan-out
+
+An `async def` call returns a coroutine without running it, so a comprehension builds the batch and `gather(*...)` runs it. Each coroutine parks at its own `fetch` (a deferred host call tagged with a unique id); the host resolves the in-flight requests concurrently and delivers every response back to the coroutine that issued it. A rejected request raises in that one coroutine, so `try/except` isolates it from the batch.
+
+```python
+async def load(url):
+    try:
+        return fetch_text(url)
+    except:
+        return None # failed requests don't abort the batch
+
+urls = [f"https://api.example.com/item/{i}" for i in range(1000)]
+bodies = gather(*[load(u) for u in urls])
+print(sum(1 for b in bodies if b is not None), "ok")
+```
+
+This is concurrency, not parallelism: the VM runs on one thread, so requests overlap while in flight but coroutines resume one at a time. Throughput is bounded by the browser's per-host connection limit (~6 on HTTP/1.1, multiplexed on HTTP/2), memory (one parked coroutine per in-flight request), and bandwidth, not by the scheduler.
+
 ### WebSocket
 
 ```python
