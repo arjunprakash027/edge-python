@@ -1,6 +1,6 @@
 # Edge Python time
 
-Wall and monotonic clocks, sleep, and calendar formatting shipped as a plain ESM module. Scripts see `time` as ordinary, a sandbox-friendly subset of CPython's `time`.
+Wall and monotonic clocks, sleep, and calendar formatting shipped as a plain ESM module. Scripts see `time` as ordinary, a subset of `time`.
 
 ```python
 from time import time, sleep, strftime, gmtime
@@ -54,15 +54,21 @@ See [`tests/README.md`](../tests/README.md) for the corpus shape.
 ### Clocks
 
 ```python
-from time import time, time_ns, monotonic, perf_counter
+from time import time, time_ns, monotonic, monotonic_ns, perf_counter, perf_counter_ns
 
 print(time()) # float seconds since the epoch, UTC wall clock
 print(int(time_ns())) # nanoseconds since the epoch (crosses as a string)
-start = monotonic()
-print(monotonic() - start >= 0) # elapsed seconds, never steps backward
+
+start = perf_counter() # highest-resolution timer, for benchmarking a block
+# ... work to measure ...
+print(perf_counter() - start >= 0) # elapsed seconds
+print(perf_counter_ns() >= 0) # same, as integer nanoseconds
+
+print(monotonic() >= 0) # seconds, never steps backward
+print(monotonic_ns() >= 0) # same, as integer nanoseconds
 ```
 
-`time`, `time_ns`, `monotonic`, `monotonic_ns`, `perf_counter`, `perf_counter_ns`. In a browser `monotonic` and `perf_counter` share one source (`performance.now()`).
+`time`, `time_ns`, `monotonic`, `monotonic_ns`, `perf_counter`, `perf_counter_ns`. In a browser `monotonic` and `perf_counter` share one source (`performance.now()`); reach for `perf_counter` when timing a block, `monotonic` for general elapsed-time checks.
 
 ### Sleep
 
@@ -108,6 +114,7 @@ from time import strftime, strptime, asctime, ctime
 print(strftime("%Y-%m-%d %H:%M:%S", gmtime(0))) # 1970-01-01 00:00:00
 print(strftime("%a %b %d", gmtime(0))) # Thu Jan 01
 print(asctime(gmtime(0))) # Thu Jan  1 00:00:00 1970
+print(ctime(0)) # readable local time, e.g. Thu Jan  1 00:00:00 1970
 print(strptime("2021-06-15", "%Y-%m-%d")) # struct_time tuple for that date
 ```
 
@@ -121,6 +128,7 @@ Supported directives: `%Y %y %m %d %H %M %S %I %p %j %w %a %A %b %B %%`. Any lit
 from time import timezone, altzone, daylight, tzname
 
 print(timezone()) # seconds west of UTC, standard (non-DST) offset
+print(altzone()) # seconds west of UTC during DST
 print(daylight()) # 1 if the zone observes DST, else 0
 print(tzname()) # IANA zone name, e.g. "America/Bogota"
 ```
