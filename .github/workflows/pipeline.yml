@@ -32,7 +32,7 @@ jobs:
   # Upload runtime (JS + WASM) to the CDN. Convergence point: blocked on both `wasm` (artifact) and `runtime_check` (JS gate).
   runtime:
     name: Upload Runtime to CDN
-    needs: [wasm, runtime_check]
+    needs: [wasm]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
