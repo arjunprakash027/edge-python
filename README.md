@@ -23,7 +23,7 @@ Cargo workspace; commands work from any directory.
 ```
 
 ```bash
-cargo wasm           # release .wasm (the distributed artifact)
+cargo wasm # release .wasm (the distributed artifact)
 cargo build --release # host .rlib + cdylib for Rust embedders
 cargo test --release  # full test suite
 ```
