@@ -35,22 +35,16 @@ Native modules ship via three delivery paths (CDN `.wasm`, host capability, JS h
 ### Browser
 
 ```html
-<script type="module">
-    import { createWorker } from 'https://runtime.edgepython.com/js/src/index.js';
-
-    const worker = await createWorker({
-        wasmUrl: 'https://runtime.edgepython.com/js/compiler_lib.wasm',
-        imports: { "math": "https://example.com/math.wasm" }
-    });
-    worker.onOutput(line => console.log(line));
-
-    await worker.run(`
-        from math import add
-        from "https://example.com/utils.py" import normalize
-        print(add(2, 3))
-        print(normalize("  hi  "))
-    `);
-</script>
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <script type="module" src="https://runtime.edgepython.com/js/src/element.js"></script>
+</head>
+<body>
+    <edge-python entry="./app/main.py" packages="./app/packages.json"></edge-python>
+</body>
+</html>
 ```
 
 The runtime spawns a Web Worker that pre-fetches imports, dispatches native calls, and streams `print()` output back. Build the WASM yourself with `cargo wasm` (output around 390 KB unstripped; optionally `wasm-opt -Oz` to shrink).

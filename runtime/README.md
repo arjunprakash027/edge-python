@@ -24,8 +24,8 @@ const worker = await createWorker({
 worker.onOutput((line) => console.log(line));
 
 const { out, ms } = await worker.run(`
-from dom import query, set_text
-set_text(query("#app"), "hello")
+    from dom import query, set_text
+    set_text(query("#app"), "hello")
 `);
 
 worker.dispose();
@@ -36,9 +36,16 @@ worker.dispose();
 Declarative alternative to `createWorker`: include the script, drop a tag, and a `.py` file runs. The element wraps `createWorker` on the page's main thread.
 
 ```html
-<script type="module" src="https://runtime.edgepython.com/js/src/element.js"></script>
-
-<edge-python entry="./app/main.py" packages="./app/packages.json"></edge-python>
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <script type="module" src="https://runtime.edgepython.com/js/src/element.js"></script>
+</head>
+<body>
+    <edge-python entry="./app/main.py" packages="./app/packages.json"></edge-python>
+</body>
+</html>
 ```
 
 Importing `element.js` auto-registers the tag. On connect, the element reads its attributes and `packages.json`, spawns the worker, runs `entry` if present, then fires a `ready` event. `compiler_lib.wasm` loads from the CDN automatically. Modules load lazily: only what a run actually imports is fetched, host libraries included.
