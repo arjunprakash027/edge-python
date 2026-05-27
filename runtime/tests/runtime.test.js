@@ -31,13 +31,16 @@ Deno.test("runtime: <edge-python> runs the corpus through index.html", async () 
     const HOST_REPO = new URL("../../../edge-python-host", import.meta.url).pathname;
     await page.route("**/*", (r) => {
         const u = new URL(r.request().url());
-        // Point the std/host defaults at the existing artifacts in the sibling repos (no new fixtures).
-        if (u.href.includes("std.edgepython.com/json.wasm")) return r.fulfill({ contentType: "application/wasm", body: readFileSync(STD_JSON) });
+        // Prefer the sibling repos' artifacts; if absent (CI checks out only this repo), fall back to the CDN-deployed copy.
+        if (u.href.includes("std.edgepython.com/json.wasm")) {
+            try { return r.fulfill({ contentType: "application/wasm", body: readFileSync(STD_JSON) }); }
+            catch { return r.continue(); } // no sibling std repo: use the deployed wasm
+        }
         if (u.host === "host.edgepython.com") {
             // Production (Pages) flattens <cap>/src/* to <cap>/*; map back to the repo layout.
             const repoPath = u.pathname.replace(/^\/([^/]+)\//, "/$1/src/");
             try { return r.fulfill({ contentType: "text/javascript", body: readFileSync(HOST_REPO + repoPath) }); }
-            catch { return r.fulfill({ status: 404 }); }
+            catch { return r.continue(); } // no sibling host repo: use the deployed module
         }
         if (u.host !== "localhost") return r.continue(); // any other CDN asset passes through
         const ext = u.pathname.slice(u.pathname.lastIndexOf("."));
