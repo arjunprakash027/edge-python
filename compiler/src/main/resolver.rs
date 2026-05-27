@@ -1,4 +1,4 @@
-use crate::modules::packages::{NativeBinding, NativeClass, Resolved, Resolver, parse_manifest, walk_up_dirs, dir_of, join_relative};
+use crate::modules::packages::{NativeBinding, Resolved, Resolver, partition_bindings, parse_manifest, walk_up_dirs, dir_of, join_relative};
 use crate::util::fx::FxHashSet;
 use alloc::{boxed::Box, string::{String, ToString}, vec::Vec};
 use crate::s;
@@ -128,46 +128,11 @@ impl WasmHostResolver {
                 canonical: spec.to_string(),
             }),
             ModuleEntry::Native(funcs) => {
-                let (bindings, classes) = partition_plugin_exports(&funcs);
-                Ok(Resolved::Native {
-                    bindings,
-                    classes,
-                    canonical: spec.to_string(),
-                })
+                let all: Vec<NativeBinding> = funcs.iter().map(|(n, id)| make_native_binding(n.clone(), *id)).collect();
+                let (bindings, classes, consts) = partition_bindings(all);
+                Ok(Resolved::Native { bindings, classes, consts, canonical: spec.to_string() })
             }
         }
     }
 }
 
-/* Splits plugin exports by the __class_<Name>_<method> convention; remaining exports become free functions. */
-fn partition_plugin_exports(funcs: &[(String, u32)]) -> (Vec<NativeBinding>, Vec<NativeClass>) {
-    let mut bindings: Vec<NativeBinding> = Vec::new();
-    let mut class_map: Vec<(String, Vec<NativeBinding>)> = Vec::new();
-    for (name, id) in funcs {
-        if let Some((class_name, method)) = parse_class_export(name) {
-            let binding = make_native_binding(method.to_string(), *id);
-            if let Some(entry) = class_map.iter_mut().find(|(n, _)| n == class_name) {
-                entry.1.push(binding);
-            } else {
-                class_map.push((class_name.to_string(), alloc::vec![binding]));
-            }
-        } else {
-            bindings.push(make_native_binding(name.clone(), *id));
-        }
-    }
-    let classes = class_map.into_iter()
-        .map(|(name, methods)| NativeClass { name, methods })
-        .collect();
-    (bindings, classes)
-}
-
-/* Returns (class_name, method_name) when export matches `__class_<Name>_<method>`; else None. */
-fn parse_class_export(export: &str) -> Option<(&str, &str)> {
-    let rest = export.strip_prefix("__class_")?;
-    let sep = rest.find('_')?;
-    let (class_name, method_part) = rest.split_at(sep);
-    if class_name.is_empty() { return None; }
-    let method = &method_part[1..];
-    if method.is_empty() { return None; }
-    Some((class_name, method))
-}

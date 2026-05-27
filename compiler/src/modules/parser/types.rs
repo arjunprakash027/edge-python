@@ -109,7 +109,7 @@ pub struct NativeClassEntry {
 #[derive(Clone)]
 pub enum ImportKind {
     Code(alloc::rc::Rc<SSAChunk>),
-    Native { funcs: Vec<crate::modules::vm::types::ExternFn>, classes: Vec<NativeClassEntry> },
+    Native { funcs: Vec<crate::modules::vm::types::ExternFn>, classes: Vec<NativeClassEntry>, consts: Vec<crate::modules::vm::types::ExternFn> },
 }
 
 // SSA chunk: instructions, constant/name pools, Phi metadata, nested functions/classes.

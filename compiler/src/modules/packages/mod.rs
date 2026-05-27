@@ -43,7 +43,43 @@ pub struct NativeClass {
 #[derive(Clone)]
 pub enum Resolved {
     Code { src: alloc::string::String, canonical: alloc::string::String },
-    Native { bindings: Vec<NativeBinding>, classes: Vec<NativeClass>, canonical: alloc::string::String },
+    Native { bindings: Vec<NativeBinding>, classes: Vec<NativeClass>, consts: Vec<NativeBinding>, canonical: alloc::string::String },
+}
+
+/* Splits native bindings by export-name convention: `__class_` methods, `__const_` values, rest free functions. */
+pub fn partition_bindings(all: Vec<NativeBinding>) -> (Vec<NativeBinding>, Vec<NativeClass>, Vec<NativeBinding>) {
+    let mut bindings = Vec::new();
+    let mut class_map: Vec<(String, Vec<NativeBinding>)> = Vec::new();
+    let mut consts = Vec::new();
+    for b in all {
+        if let Some(name) = b.name.strip_prefix("__const_") {
+            let name = name.to_string();
+            consts.push(NativeBinding { name, ..b });
+        } else if let Some((class_name, method)) = parse_class_export(&b.name) {
+            let (class_name, method) = (class_name.to_string(), method.to_string());
+            let m = NativeBinding { name: method, ..b };
+            if let Some(e) = class_map.iter_mut().find(|(n, _)| *n == class_name) {
+                e.1.push(m);
+            } else {
+                class_map.push((class_name, alloc::vec![m]));
+            }
+        } else {
+            bindings.push(b);
+        }
+    }
+    let classes = class_map.into_iter().map(|(name, methods)| NativeClass { name, methods }).collect();
+    (bindings, classes, consts)
+}
+
+/* Returns (class_name, method_name) when export matches `__class_<Name>_<method>`, else None. */
+fn parse_class_export(export: &str) -> Option<(&str, &str)> {
+    let rest = export.strip_prefix("__class_")?;
+    let sep = rest.find('_')?;
+    let (class_name, method_part) = rest.split_at(sep);
+    if class_name.is_empty() { return None; }
+    let method = &method_part[1..];
+    if method.is_empty() { return None; }
+    Some((class_name, method))
 }
 
 /* Host-injected trait; resolve called once per import statement. &mut self allows internal caching. */

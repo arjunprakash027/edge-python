@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 use compiler_lib::util::fx::FxHashMap;
 use compiler_lib::modules::packages::{
-    NativeBinding, Resolved, Resolver,
+    NativeBinding, Resolved, Resolver, partition_bindings,
     Manifest, walk_up_dirs, dir_of, join_relative,
 };
 use compiler_lib::modules::vm::types::{HeapObj, HeapPool, Val, VmErr};
@@ -52,9 +52,11 @@ impl TestResolver {
     }
 
     pub fn with_native(self, spec: &str, bindings: Vec<NativeBinding>) -> Self {
+        // Partition by export-name convention, mirroring the real WASM host resolver.
+        let (bindings, classes, consts) = partition_bindings(bindings);
         self.state.borrow_mut().modules.insert(
             spec.to_string(),
-            Resolved::Native { bindings, classes: Vec::new(), canonical: spec.to_string() },
+            Resolved::Native { bindings, classes, consts, canonical: spec.to_string() },
         );
         self
     }
@@ -249,6 +251,11 @@ fn host_defer(_: &mut HeapPool, _args: &[Val], _kw: Option<Val>) -> Result<Val, 
     Err(VmErr::HostCallDeferred)
 }
 
+/* Const fixture: zero-arg export materialised at init, bound as a module value attr. */
+fn const_pi(_: &mut HeapPool, _args: &[Val], _kw: Option<Val>) -> Result<Val, VmErr> {
+    Ok(Val::float(core::f64::consts::PI))
+}
+
 /* Pure: bool, int -> int. Mixes types to confirm per-arg decode is correct. */
 fn pick(_: &mut HeapPool, args: &[Val], _kw: Option<Val>) -> Result<Val, VmErr> {
     if args.len() != 3 || !args[0].is_bool() || !args[1].is_int() || !args[2].is_int() {
@@ -272,6 +279,7 @@ pub fn test_native(name: &str) -> Option<NativeBinding> {
         "negate" => (negate, true),
         "pick" => (pick, true),
         "host_defer" => (host_defer, false),
+        "__const_pi" => (const_pi, true),
         _ => return None,
     };
     Some(NativeBinding::from_fn(name, func, pure))

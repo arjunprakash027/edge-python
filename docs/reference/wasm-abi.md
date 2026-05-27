@@ -233,6 +233,34 @@ print(s.build()) # -> hello
 
 Method returns of `T`, `Option<T>`, and `Result<T>` are all supported. Instances live until the worker run ends; no `__del__` dispatch.
 
+### Exposing module constants
+
+A `.wasm` exports only functions, so a value attribute like `math.pi` ships as a zero-arg `#[plugin_const]` export. The host calls it once at import and binds the result as a module attribute (a value, not a callable):
+
+```rust
+#[plugin_const]
+fn pi() -> f64 { core::f64::consts::PI }
+```
+
+```python
+import math
+print(math.pi) # -> 3.141592653589793 (a float, not a call)
+from math import tau # also works under `from ... import *`
+```
+
+### Variadic functions
+
+A trailing `Args` param captures every positional past the fixed ones, for `*args`-style signatures:
+
+```rust
+#[plugin_fn]
+fn hypot(coords: Args) -> Result<f64> {
+    let mut sum = 0.0;
+    for h in &coords.0 { let x = f64::from_handle(h.raw())?; sum += x * x; }
+    Ok(libm::sqrt(sum))
+}
+```
+
 ### Consuming `wasm-pdk` from your own crate
 
 Not on crates.io, depend from GitHub, pinned to a release tag:
@@ -340,10 +368,12 @@ For `from "<url>" import <names>` with a `.wasm` URL: the host fetches bytes (ve
 The `wasm-pdk` crate (Plugin Development Kit), bundled in this repo, publishable independently of `compiler.wasm`, provides:
 
 * `#[plugin_fn]`, typed Rust function -> wire-conformant export.
+* `#[plugin_const]`, zero-arg fn -> module constant via the `__const_<name>` export convention; the host calls it once at import and binds the value as a module attribute.
 * `#[plugin_class]` / `#[plugin_methods]` / `#[plugin_ctor]`, expose a Rust struct as a Python class via the `__class_<Name>_<method>` export convention.
 * `module!()`, expands to `#[global_allocator]` + `#[panic_handler]`.
 * `FromValue` / `IntoValue` with primitive impls (`i64`, `i128`, `f64`, `bool`, `String`, `&str`, `Bytes`, `Option<T>`, `Handle`). `i64` rejects out-of-range values with `ValueError`; use `i128` for the full range. `Bytes` maps to Python `bytes` over `tag::RAW`.
 * `Handle` with `Drop`-driven release plus `call`, `get_attr` / `set_attr`, `get_item` / `set_item`, `len`, `iter` / `iter_next`, `new_dict` / `new_list`, `new_tuple` / `new_set` / `new_frozenset`, `type_of`.
+* `Args`, trailing variadic positional params as borrowed handles; declare it as the last param before any `Kwargs`.
 * `Kwargs`, thin wrapper around the trailing kwargs handle with `get::<T>(name)` for primitive kwargs and `get_handle(name)` for callables, tuples, dicts.
 * `PluginCell<T>`, single-threaded interior mutability cell for static plugin state.
 * `__edge_alloc` + `__edge_abi_version` emitted automatically.

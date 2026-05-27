@@ -15,11 +15,11 @@ fn slugify(s: String) -> String {
 
 extern crate alloc;
 
-pub use wasm_pdk_macros::{plugin_fn, plugin_class, plugin_methods, plugin_ctor};
+pub use wasm_pdk_macros::{plugin_fn, plugin_const, plugin_class, plugin_methods, plugin_ctor};
 
 /// Curated import surface; hides `__internals` / `__edge_alloc` from glob users.
 pub mod prelude {
-    pub use crate::{plugin_fn, plugin_class, plugin_methods, plugin_ctor, Handle, Value, Bytes, Error, Result, FromValue, IntoValue, Kwargs, PluginCell};
+    pub use crate::{plugin_fn, plugin_const, plugin_class, plugin_methods, plugin_ctor, Handle, Value, Bytes, Args, Error, Result, FromValue, IntoValue, Kwargs, PluginCell};
 }
 
 /* Plugin bootstrap */
@@ -411,6 +411,19 @@ impl FromValue for Bytes {
 }
 impl IntoValue for Bytes {
     fn into_handle(self) -> Result<Handle> { encode(Value::Raw(self.0)) }
+}
+
+/// Trailing variadic params of a `#[plugin_fn]`, captured as borrowed handles.
+pub struct Args(pub Vec<Handle>);
+
+impl Args {
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize { self.0.len() }
+    pub fn is_empty(&self) -> bool { self.0.is_empty() }
+    /// Decode the i-th arg as `T`, `None` when out of range.
+    pub fn get<T: FromValue>(&self, i: usize) -> Option<Result<T>> {
+        self.0.get(i).map(|h| T::from_handle(h.raw()))
+    }
 }
 
 impl<T: FromValue> FromValue for Option<T> {

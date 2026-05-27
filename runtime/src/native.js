@@ -86,7 +86,9 @@ async function builtinWasmPdkLoader(module, ctx) {
     const names = [];
     const fns = [];
     for (const [k, v] of Object.entries(instance.exports)) {
-        if (k === 'memory' || k.startsWith('__') || typeof v !== 'function') continue;
+        if (k === 'memory' || typeof v !== 'function') continue;
+        // Keep convention exports, drop ABI internals like __edge_alloc.
+        if (k.startsWith('__') && !k.startsWith('__class_') && !k.startsWith('__const_')) continue;
         names.push(k);
         v.__edge_alloc = instance.exports.__edge_alloc;
         v.__edge_memory = instance.exports.memory;

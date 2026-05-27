@@ -47,21 +47,71 @@ pub fn plugin_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
     };
     let is_result = matches!(&return_ty, syn::Type::Path(p) if p.path.segments.last().map(|s| s.ident == "Result").unwrap_or(false));
 
-    // Host always appends a trailing kwargs slot. If user declared `Kwargs` as last param, that slot IS their arg (FromValue maps h=0 -> None); else expect one extra argv entry and drop it.
-    let last_is_kwargs = bindings.last()
-        .map(|(_, ty)| matches!(ty, Type::Path(p) if p.path.segments.last().map(|s| s.ident == "Kwargs").unwrap_or(false)))
-        .unwrap_or(false);
-    let argc_expected = if last_is_kwargs { bindings.len() } else { bindings.len() + 1 };
+    // Host always appends a trailing kwargs slot. Param order: fixed positionals, optional `Args`, optional `Kwargs`.
+    let type_named = |ty: &syn::Type, n: &str| matches!(ty, Type::Path(p) if p.path.segments.last().map(|s| s.ident == n).unwrap_or(false));
+    let last_is_kwargs = bindings.last().map(|(_, ty)| type_named(ty, "Kwargs")).unwrap_or(false);
+    let args_idx = bindings.iter().position(|(_, ty)| type_named(ty, "Args"));
+    let has_args = args_idx.is_some();
+    // Fixed positionals precede the optional variadic `Args` and the optional trailing `Kwargs`.
+    let num_fixed = bindings.len() - (has_args as usize) - (last_is_kwargs as usize);
+
+    if args_idx.is_some_and(|idx| idx != num_fixed) {
+        return TokenStream::from(quote! { compile_error!("#[plugin_fn] `Args` must follow the fixed params, before any `Kwargs`"); });
+    }
+    if bindings.iter().take(bindings.len().saturating_sub(1)).any(|(_, ty)| type_named(ty, "Kwargs")) {
+        return TokenStream::from(quote! { compile_error!("#[plugin_fn] `Kwargs` must be the final parameter"); });
+    }
+
     let decodes: Vec<TokenStream2> = bindings.iter().enumerate().map(|(i, (name, ty))| {
-        quote! {
-            let h = unsafe { *argv.add(#i) };
-            let #name: #ty = match <#ty as ::wasm_pdk::FromValue>::from_handle(h) {
-                Ok(v) => v,
-                Err(e) => { ::wasm_pdk::__internals::stash_error(e); return 1; }
-            };
+        if type_named(ty, "Kwargs") {
+            // The kwargs handle is always the final argv slot.
+            quote! {
+                let h = unsafe { *argv.add((argc as usize) - 1) };
+                let #name: #ty = match <#ty as ::wasm_pdk::FromValue>::from_handle(h) {
+                    Ok(v) => v,
+                    Err(e) => { ::wasm_pdk::__internals::stash_error(e); return 1; }
+                };
+            }
+        } else if type_named(ty, "Args") {
+            // Absorb every positional past the fixed params, excluding the trailing kwargs slot.
+            quote! {
+                let mut __args: ::alloc::vec::Vec<::wasm_pdk::Handle> = ::alloc::vec::Vec::new();
+                let mut __k = #num_fixed;
+                let __pos_end = (argc as usize) - 1;
+                while __k < __pos_end {
+                    __args.push(::wasm_pdk::Handle::borrow(unsafe { *argv.add(__k) }));
+                    __k += 1;
+                }
+                let #name: ::wasm_pdk::Args = ::wasm_pdk::Args(__args);
+            }
+        } else {
+            quote! {
+                let h = unsafe { *argv.add(#i) };
+                let #name: #ty = match <#ty as ::wasm_pdk::FromValue>::from_handle(h) {
+                    Ok(v) => v,
+                    Err(e) => { ::wasm_pdk::__internals::stash_error(e); return 1; }
+                };
+            }
         }
     }).collect();
     let arg_names: Vec<&syn::Ident> = bindings.iter().map(|(n, _)| n).collect();
+
+    // With `Args` the positional count is a lower bound, otherwise exact. The kwargs slot is always present.
+    let argc_check = if has_args {
+        quote! {
+            if (argc as usize) < #num_fixed + 1 {
+                ::wasm_pdk::__internals::stash_error(::wasm_pdk::Error::Type(::alloc::format!("{} expects at least {} positional args, got {}", stringify!(#user_name), #num_fixed, (argc as usize).saturating_sub(1))));
+                return 1;
+            }
+        }
+    } else {
+        quote! {
+            if (argc as usize) != #num_fixed + 1 {
+                ::wasm_pdk::__internals::stash_error(::wasm_pdk::Error::Type(::alloc::format!("{} expects {} positional args, got {}", stringify!(#user_name), #num_fixed, (argc as usize).saturating_sub(1))));
+                return 1;
+            }
+        }
+    };
 
     let invoke = if is_result {
         quote! {
@@ -82,10 +132,7 @@ pub fn plugin_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
         #[unsafe(no_mangle)]
         #[allow(clippy::not_unsafe_ptr_arg_deref)]
         pub extern "C" fn #user_name(argv: *const u32, argc: u32, out: *mut u32) -> i32 {
-            if (argc as usize) != #argc_expected {
-                ::wasm_pdk::__internals::stash_error(::wasm_pdk::Error::Type(::alloc::format!("{} expects {} positional args, got {}", stringify!(#user_name), #argc_expected, argc)));
-                return 1;
-            }
+            #argc_check
             #(#decodes)*
             let __value = { #invoke };
             // Fully-qualified IntoValue path so user code doesn't need to import the trait.
@@ -100,6 +147,17 @@ pub fn plugin_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     expanded.into()
+}
+
+/// Exposes a zero-arg fn as a module constant via the `__const_<name>` export convention.
+#[proc_macro_attribute]
+pub fn plugin_const(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let mut input = parse_macro_input!(item as ItemFn);
+    if !input.sig.inputs.is_empty() {
+        return TokenStream::from(quote! { compile_error!("#[plugin_const] takes no parameters"); });
+    }
+    input.sig.ident = format_ident!("__const_{}", input.sig.ident);
+    plugin_fn(TokenStream::new(), TokenStream::from(quote!(#input)))
 }
 
 #[proc_macro_attribute]

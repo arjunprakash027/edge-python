@@ -534,5 +534,21 @@
     "modules": { "m": { "native": ["host_defer"] } },
     "host_deliveries": [{"id": 2, "value": "C"}, {"id": 0, "value": "A"}, {"id": 3, "value": "D"}, {"id": 1, "value": "B"}],
     "output": ["c:C", "a:A", "d:D", "b:B"]
+  },
+  {
+    "src": "from m import pi\nprint(pi)",
+    "output": ["3.141592653589793"],
+    "modules": { "m": { "native": ["__const_pi"] } },
+    "expect_externs": 0
+  },
+  {
+    "src": "import m\nprint(m.pi)",
+    "output": ["3.141592653589793"],
+    "modules": { "m": { "native": ["__const_pi"] } }
+  },
+  {
+    "src": "from m import *\nprint(pi)",
+    "output": ["3.141592653589793"],
+    "modules": { "m": { "native": ["__const_pi"] } }
   }
 ]

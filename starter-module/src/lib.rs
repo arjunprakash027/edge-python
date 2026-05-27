@@ -1,5 +1,5 @@
 /*
-Reference `wasm-pdk` module showcasing #[plugin_class]. Build with `cargo build --release --target wasm32-unknown-unknown -p slugify-mod`.
+Reference `wasm-pdk` module showcasing #[plugin_class], #[plugin_const], and variadic Args. Build with `cargo build --release --target wasm32-unknown-unknown -p slugify-mod`.
 */
 
 #![no_std]
@@ -15,6 +15,21 @@ static A: lol_alloc::LeakingPageAllocator = lol_alloc::LeakingPageAllocator;
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! { core::arch::wasm32::unreachable() }
+
+/// Module constant materialised once at import. Showcases #[plugin_const].
+#[plugin_const]
+fn version() -> i64 { 1 }
+
+/// Variadic join over `parts`, separated by `sep`. Showcases the trailing `Args` param.
+#[plugin_fn]
+fn join_all(sep: String, parts: Args) -> Result<String> {
+    let mut out = String::new();
+    for (i, h) in parts.0.iter().enumerate() {
+        if i > 0 { out.push_str(&sep); }
+        out.push_str(&String::from_handle(h.raw())?);
+    }
+    Ok(out)
+}
 
 /// Accumulates slug parts across calls; exercises mutable state and Option/Result returns.
 #[plugin_class]
