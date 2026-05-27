@@ -14,7 +14,7 @@ Cargo workspace; commands work from any directory.
 ```text
 ├── compiler
 ├── demo
-├── documentation
+├── docs
 ├── runtime
 ├── starter-module
 ├── target
