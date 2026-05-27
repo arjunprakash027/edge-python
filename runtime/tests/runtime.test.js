@@ -6,6 +6,11 @@ Run: deno test --allow-all runtime/tests/runtime.test.js
 
 import { chromium } from "npm:playwright@latest";
 import { readFileSync } from "node:fs";
+import { DEFAULT_IMPORTS, DEFAULT_HOST } from "../src/defaults.js";
+
+// Domains follow the manifest instead of being hardcoded; the std/host families each share one host.
+const STD_HOST = new URL(Object.values(DEFAULT_IMPORTS)[0]).host;
+const HOST_HOST = new URL(Object.values(DEFAULT_HOST)[0]).host;
 
 const REPO = new URL("../../", import.meta.url).pathname; // edge-python/ repo root
 const cases = JSON.parse(readFileSync(new URL("./runtime.json", import.meta.url)));
@@ -27,16 +32,19 @@ Deno.test("runtime: <edge-python> runs the corpus through index.html", async () 
     const requested = [];
     page.on("request", (q) => requested.push(q.url()));
 
-    const STD_JSON = new URL("../../../edge-python-std/json/target/wasm32-unknown-unknown/release/json.wasm", import.meta.url).pathname;
+    const STD_REPO = new URL("../../../edge-python-std", import.meta.url).pathname;
     const HOST_REPO = new URL("../../../edge-python-host", import.meta.url).pathname;
     await page.route("**/*", (r) => {
         const u = new URL(r.request().url());
         // Prefer the sibling repos' artifacts; if absent (CI checks out only this repo), fall back to the CDN-deployed copy.
-        if (u.href.includes("std.edgepython.com/json.wasm")) {
-            try { return r.fulfill({ contentType: "application/wasm", body: readFileSync(STD_JSON) }); }
+        if (u.host === STD_HOST) {
+            // std/<name>.wasm lives at <name>/target/wasm32-unknown-unknown/release/ in the repo.
+            const name = u.pathname.slice(1).replace(/\.wasm$/, "");
+            const file = `${STD_REPO}/${name}/target/wasm32-unknown-unknown/release/${name}.wasm`;
+            try { return r.fulfill({ contentType: "application/wasm", body: readFileSync(file) }); }
             catch { return r.continue(); } // no sibling std repo: use the deployed wasm
         }
-        if (u.host === "host.edgepython.com") {
+        if (u.host === HOST_HOST) {
             // Production (Pages) flattens <cap>/src/* to <cap>/*; map back to the repo layout.
             const repoPath = u.pathname.replace(/^\/([^/]+)\//, "/$1/src/");
             try { return r.fulfill({ contentType: "text/javascript", body: readFileSync(HOST_REPO + repoPath) }); }

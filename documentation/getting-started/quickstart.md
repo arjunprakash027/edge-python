@@ -31,10 +31,17 @@ Rust consumers can let cargo fetch the release artifact via `DEP_COMPILER_LIB_WA
 In the browser, the runtime's `<edge-python>` element runs a `.py` file declaratively, no JS wiring. With a host library like the DOM (declared in `packages.json`), the script renders straight into the page:
 
 ```html
-<div id="app"></div>
-
-<script type="module" src="https://runtime.edgepython.com/js/src/element.js"></script>
-<edge-python entry="./hello.py" packages="./packages.json"></edge-python>
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <script type="module" src="https://runtime.edgepython.com/js/src/element.js"></script>
+</head>
+<body>
+    <div id="app"></div>
+    <edge-python entry="./app/hellp.py" packages="./app/packages.json"></edge-python>
+</body>
+</html>
 ```
 
 ```json
