@@ -116,7 +116,7 @@ Stash an error visible after the guest returns `1`, used when an error did not o
 | `NewSet` | 12 | construct set from `argv` items; unhashable item -> error |
 | `NewFrozenSet` | 13 | construct frozenset from `argv` items; unhashable item -> error |
 
-`Op::Iter` materialises the receiver into an opaque iterator handle (dict yields keys; str splits to single-char strings); advance it only via `Op::IterNext`, its internal layout is not part of the contract. `NewDict` / `NewList` construct empty composites; `NewTuple` / `NewSet` / `NewFrozenSet` construct from the `argv` items in one call. `TypeOf` returns names matching the Python builtin: `"int"`, `"float"`, `"str"`, `"bytes"`, `"list"`, `"dict"`, `"set"`, `"tuple"`, `"NoneType"`, `"bool"`, `"object"` (user instance), etc. Values `14..u32::MAX` reserved, old hosts return `1` with `kind=Runtime`.
+`Op::Iter` materialises the receiver into a List handle (set sorted via `vm.sort_set_items`; dict yields keys; str splits to single-char strings); `Op::IterNext` advances it. `NewDict` / `NewList` construct empty composites; `NewTuple` / `NewSet` / `NewFrozenSet` construct from the `argv` items in one call. `TypeOf` returns names matching the Python builtin: `"int"`, `"float"`, `"str"`, `"bytes"`, `"list"`, `"dict"`, `"set"`, `"tuple"`, `"NoneType"`, `"bool"`, `"object"` (user instance), etc. Values `14..u32::MAX` reserved, old hosts return `1` with `kind=Runtime`.
 
 ## Tags (for `edge_encode` / `edge_decode`)
 

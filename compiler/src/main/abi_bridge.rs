@@ -192,9 +192,6 @@ fn dispatch_iter(recv_h: u32) -> Result<Val, VmErr> {
             }
             _ => return Err(VmErr::TypeMsg(s!("object of type '", str vm.type_name(recv), "' is not iterable"))),
         };
-        // IterNext pops from the back, so store reversed for O(1) forward steps.
-        let mut items = items;
-        items.reverse();
         vm.heap.alloc(HeapObj::List(Rc::new(RefCell::new(items))))
     })
 }
@@ -203,10 +200,11 @@ fn dispatch_iter(recv_h: u32) -> Result<Val, VmErr> {
 fn dispatch_iter_next(recv_h: u32) -> Result<Val, VmErr> {
     with_recv("edge_op iter_next: invalid receiver handle", recv_h, |vm, recv| {
         if let HeapObj::List(rc) = vm.heap.get(recv) {
-            match rc.borrow_mut().pop() {
-                Some(v) => Ok(v),
-                None => Err(VmErr::Raised(s!("StopIteration"))),
+            let mut v = rc.borrow_mut();
+            if v.is_empty() {
+                return Err(VmErr::Raised(s!("StopIteration")));
             }
+            Ok(v.remove(0))
         } else {
             Err(VmErr::TypeMsg(s!("iter_next expects a List iterator (produced by Op::Iter), got '", str vm.type_name(recv), "'")))
         }

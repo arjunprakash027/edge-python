@@ -612,7 +612,8 @@ impl Handle {
         };
         if r != 0 {
             let e = last_error();
-            if e.message().starts_with("StopIteration") { return Ok(None); }
+            // Host renders the sentinel as "Exception: StopIteration", so match anywhere.
+            if e.message().contains("StopIteration") { return Ok(None); }
             return Err(e);
         }
         Ok(Some(Handle::from_raw(out)))
