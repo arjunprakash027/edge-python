@@ -19,7 +19,7 @@ pub use wasm_pdk_macros::{plugin_fn, plugin_class, plugin_methods, plugin_ctor};
 
 /// Curated import surface; hides `__internals` / `__edge_alloc` from glob users.
 pub mod prelude {
-    pub use crate::{plugin_fn, plugin_class, plugin_methods, plugin_ctor, Handle, Value, Error, Result, FromValue, IntoValue, Kwargs, PluginCell};
+    pub use crate::{plugin_fn, plugin_class, plugin_methods, plugin_ctor, Handle, Value, Bytes, Error, Result, FromValue, IntoValue, Kwargs, PluginCell};
 }
 
 /* Plugin bootstrap */
@@ -253,6 +253,7 @@ pub fn decode(h: u32) -> Result<Value> {
                     Value::Float(f64::from_le_bytes(a))
                 }
                 4 => Value::Bytes(buf),
+                5 => Value::Raw(buf),
                 _ => return Err(Error::Type(alloc::string::String::from("unknown tag"))),
             });
         }
@@ -278,6 +279,7 @@ pub fn encode(v: Value) -> Result<Handle> {
             unsafe { edge_encode(tag::FLOAT, buf.as_ptr(), 8) }
         }
         Value::Bytes(b) => unsafe { edge_encode(tag::BYTES, b.as_ptr(), b.len() as u32) },
+        Value::Raw(b) => unsafe { edge_encode(tag::RAW, b.as_ptr(), b.len() as u32) },
     };
     if raw == 0 { Err(Error::Runtime(alloc::string::String::from("encode failed"))) }
     else { Ok(Handle::from_raw(raw)) }
@@ -290,8 +292,10 @@ pub enum Value {
     Bool(bool),
     Int(i128),
     Float(f64),
-    /// UTF-8 when produced from a `str`; raw bytes otherwise.
+    /// UTF-8 transit; the host materialises a `str`.
     Bytes(Vec<u8>),
+    /// Opaque bytes transit; the host materialises a `bytes`.
+    Raw(Vec<u8>),
 }
 
 /* FromValue / IntoValue */
@@ -387,6 +391,26 @@ impl IntoValue for alloc::borrow::Cow<'_, str> {
     fn into_handle(self) -> Result<Handle> {
         encode(Value::Bytes(self.into_owned().into_bytes()))
     }
+}
+
+/// Python `bytes`; transits raw, never decoded as UTF-8. Deref reads it as a slice.
+pub struct Bytes(pub Vec<u8>);
+
+impl core::ops::Deref for Bytes {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] { &self.0 }
+}
+
+impl FromValue for Bytes {
+    fn from_handle(h: u32) -> Result<Self> {
+        match decode(h)? {
+            Value::Raw(b) => Ok(Bytes(b)),
+            v => Err(Error::Type(alloc::format!("expected bytes, got {:?}", v))),
+        }
+    }
+}
+impl IntoValue for Bytes {
+    fn into_handle(self) -> Result<Handle> { encode(Value::Raw(self.0)) }
 }
 
 impl<T: FromValue> FromValue for Option<T> {
@@ -523,6 +547,25 @@ impl Handle {
         let mut out: u32 = 0;
         let r = unsafe {
             edge_op(op::NEW_LIST, 0, core::ptr::null(), 0, core::ptr::null(), 0, &mut out as *mut u32)
+        };
+        if r != 0 { return Err(last_error()); }
+        Ok(Handle::from_raw(out))
+    }
+
+    /// Construct a tuple from item handles in one host call.
+    pub fn new_tuple(items: &[u32]) -> Result<Handle> { Self::new_composite(op::NEW_TUPLE, items) }
+
+    /// Construct a set from item handles; unhashable items raise `TypeError`.
+    pub fn new_set(items: &[u32]) -> Result<Handle> { Self::new_composite(op::NEW_SET, items) }
+
+    /// Construct a frozenset from item handles; unhashable items raise `TypeError`.
+    pub fn new_frozenset(items: &[u32]) -> Result<Handle> { Self::new_composite(op::NEW_FROZENSET, items) }
+
+    // Shared constructor: passes item handles as argv to a NEW_* op.
+    fn new_composite(op: u32, items: &[u32]) -> Result<Handle> {
+        let mut out: u32 = 0;
+        let r = unsafe {
+            edge_op(op, 0, core::ptr::null(), 0, items.as_ptr(), items.len() as u32, &mut out as *mut u32)
         };
         if r != 0 { return Err(last_error()); }
         Ok(Handle::from_raw(out))

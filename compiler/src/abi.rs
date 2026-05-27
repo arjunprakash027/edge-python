@@ -25,6 +25,9 @@ pub enum Op {
     NewDict = wasm_abi::op::NEW_DICT,
     NewList = wasm_abi::op::NEW_LIST,
     TypeOf = wasm_abi::op::TYPE_OF,
+    NewTuple = wasm_abi::op::NEW_TUPLE,
+    NewSet = wasm_abi::op::NEW_SET,
+    NewFrozenSet = wasm_abi::op::NEW_FROZENSET,
 }
 
 impl Op {
@@ -41,6 +44,9 @@ impl Op {
             wasm_abi::op::NEW_DICT => Some(Self::NewDict),
             wasm_abi::op::NEW_LIST => Some(Self::NewList),
             wasm_abi::op::TYPE_OF => Some(Self::TypeOf),
+            wasm_abi::op::NEW_TUPLE => Some(Self::NewTuple),
+            wasm_abi::op::NEW_SET => Some(Self::NewSet),
+            wasm_abi::op::NEW_FROZENSET => Some(Self::NewFrozenSet),
             _ => None,
         }
     }
@@ -58,6 +64,8 @@ pub enum Tag {
     Float = wasm_abi::tag::FLOAT,
     // UTF-8 bytes: encoder builds a str, decoder returns its bytes.
     Bytes = wasm_abi::tag::BYTES,
+    // Opaque bytes: no UTF-8 validation, maps to Python `bytes`.
+    Raw = wasm_abi::tag::RAW,
 }
 
 impl Tag {
@@ -68,6 +76,7 @@ impl Tag {
             wasm_abi::tag::INT => Some(Self::Int),
             wasm_abi::tag::FLOAT => Some(Self::Float),
             wasm_abi::tag::BYTES => Some(Self::Bytes),
+            wasm_abi::tag::RAW => Some(Self::Raw),
             _ => None,
         }
     }
@@ -196,10 +205,11 @@ impl ErrorStash {
 
 /* Primitive codec helpers */
 
-// edge_encode outcome: Direct (Val bits), AllocStr / AllocLongInt (host alloc), or Invalid.
+// edge_encode outcome: Direct (Val bits), AllocStr / AllocBytes / AllocLongInt (host alloc), or Invalid.
 pub enum EncodeRequest<'a> {
     Direct(u64),
     AllocStr(&'a str),
+    AllocBytes(&'a [u8]),
     AllocLongInt(i128),
     Invalid,
 }
@@ -241,6 +251,8 @@ pub fn classify_encode(tag: u32, bytes: &[u8]) -> EncodeRequest<'_> {
             Ok(s) => EncodeRequest::AllocStr(s),
             Err(_) => EncodeRequest::Invalid,
         },
+        // Raw bytes bypass UTF-8 validation and become a Python `bytes`.
+        Some(Tag::Raw) => EncodeRequest::AllocBytes(bytes),
         None => EncodeRequest::Invalid,
     }
 }

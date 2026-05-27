@@ -38,7 +38,7 @@ impl<'a> VM<'a> {
 
     /* Allocate a Tuple and push. */
     pub(crate) fn alloc_and_push_tuple(&mut self, items: Vec<Val>) -> Result<(), VmErr> {
-        let v = self.heap.alloc(HeapObj::Tuple(items))?;
+        let v = self.tuple_from_items(items)?;
         self.push(v); Ok(())
     }
 
@@ -48,10 +48,28 @@ impl<'a> VM<'a> {
         self.heap.alloc(HeapObj::Set(Rc::new(RefCell::new(set))))
     }
 
+    // Build a tuple Val from items. Shared by the VM and the plugin ABI.
+    pub(crate) fn tuple_from_items(&mut self, items: Vec<Val>) -> Result<Val, VmErr> {
+        self.heap.alloc(HeapObj::Tuple(items))
+    }
+
+    // Build a set Val from items, rejecting unhashable elements first.
+    pub(crate) fn set_from_items(&mut self, items: Vec<Val>) -> Result<Val, VmErr> {
+        for v in &items { self.require_hashable(*v)?; }
+        self.alloc_set(items)
+    }
+
+    // Build a frozenset Val from items, rejecting unhashable elements first.
+    pub(crate) fn frozenset_from_items(&mut self, items: Vec<Val>) -> Result<Val, VmErr> {
+        for v in &items { self.require_hashable(*v)?; }
+        let mut set = HashSet::with_capacity_and_hasher(items.len(), Default::default());
+        for v in items { set.insert(v); }
+        self.heap.alloc(HeapObj::FrozenSet(Rc::new(set)))
+    }
+
     pub fn build_set(&mut self, op: u16) -> Result<(), VmErr> {
         let items = self.pop_n(op as usize)?;
-        for v in &items { self.require_hashable(*v)?; }
-        let val = self.alloc_set(items)?;
+        let val = self.set_from_items(items)?;
         self.push(val); Ok(())
     }
 
@@ -117,9 +135,7 @@ impl<'a> VM<'a> {
             1 => self.iter_to_vec_general(args[0])?,
             _ => return Err(cold_type("frozenset() takes 0 or 1 argument")),
         };
-        let mut s = HashSet::with_capacity_and_hasher(items.len(), Default::default());
-        for v in items { s.insert(v); }
-        let v = self.heap.alloc(HeapObj::FrozenSet(Rc::new(s)))?;
+        let v = self.frozenset_from_items(items)?;
         self.push(v); Ok(())
     }
 

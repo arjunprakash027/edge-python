@@ -34,6 +34,10 @@ pub mod op {
     pub const NEW_DICT: u32 = 8;
     pub const NEW_LIST: u32 = 9;
     pub const TYPE_OF: u32 = 10;
+    // Construct composites from argv items in one call.
+    pub const NEW_TUPLE: u32 = 11;
+    pub const NEW_SET: u32 = 12;
+    pub const NEW_FROZENSET: u32 = 13;
 }
 
 /* Tags for `edge_encode` / `edge_decode` primitive transit. */
@@ -44,6 +48,8 @@ pub mod tag {
     pub const FLOAT: u32 = 3;
     /* UTF-8 bytes: encoder builds a str, decoder returns its bytes. */
     pub const BYTES: u32 = 4;
+    // Opaque bytes: skips UTF-8 validation, maps to Python `bytes`.
+    pub const RAW: u32 = 5;
 }
 
 /* Sentinel from `edge_decode` for invalid handles or non-primitives, callers should reach the value via `edge_op` instead. */

@@ -112,8 +112,11 @@ Stash an error visible after the guest returns `1`, used when an error did not o
 | `NewDict` | 8 | construct empty dict; recv and name ignored, argc=0 -> handle |
 | `NewList` | 9 | construct empty list; recv and name ignored, argc=0 -> handle |
 | `TypeOf` | 10 | runtime type of recv -> handle (Str with the type name) |
+| `NewTuple` | 11 | construct tuple from `argv` items; recv and name ignored -> handle |
+| `NewSet` | 12 | construct set from `argv` items; unhashable item -> error |
+| `NewFrozenSet` | 13 | construct frozenset from `argv` items; unhashable item -> error |
 
-`Op::Iter` materialises the receiver into a List handle (set sorted via `vm.sort_set_items`; dict yields keys; str splits to single-char strings); `Op::IterNext` advances it. `NewDict` and `NewList` let plugins construct fresh composites without obtaining a type handle. `TypeOf` returns names matching the Python builtin: `"int"`, `"float"`, `"str"`, `"bytes"`, `"list"`, `"dict"`, `"set"`, `"tuple"`, `"NoneType"`, `"bool"`, `"object"` (user instance), etc. Values `11..u32::MAX` reserved, old hosts return `1` with `kind=Runtime`.
+`Op::Iter` materialises the receiver into an opaque iterator handle (dict yields keys; str splits to single-char strings); advance it only via `Op::IterNext`, its internal layout is not part of the contract. `NewDict` / `NewList` construct empty composites; `NewTuple` / `NewSet` / `NewFrozenSet` construct from the `argv` items in one call. `TypeOf` returns names matching the Python builtin: `"int"`, `"float"`, `"str"`, `"bytes"`, `"list"`, `"dict"`, `"set"`, `"tuple"`, `"NoneType"`, `"bool"`, `"object"` (user instance), etc. Values `14..u32::MAX` reserved, old hosts return `1` with `kind=Runtime`.
 
 ## Tags (for `edge_encode` / `edge_decode`)
 
@@ -123,9 +126,10 @@ Stash an error visible after the guest returns `1`, used when an error did not o
 | Bool | 1 | 1 byte (0/1) |
 | Int | 2 | 16 bytes little-endian i128 |
 | Float | 3 | 8 bytes IEEE 754 little-endian |
-| Bytes | 4 | UTF-8 -> `str`; non-UTF-8 -> `bytes` |
+| Bytes | 4 | UTF-8 bytes -> `str`; non-UTF-8 is rejected |
+| Raw | 5 | bytes -> `bytes`, no UTF-8 validation |
 
-Composites (list, dict, set, instance, callable, iterator) are not encodable. Construct via `edge_op(Call, type_handle, ...)` and operate via indexing ops.
+List and dict construct via `NewList` / `NewDict`; tuple, set, frozenset via `NewTuple` / `NewSet` / `NewFrozenSet`. Remaining composites (instance, callable, iterator) construct via `edge_op(Call, type_handle, ...)` and operate via indexing ops.
 
 ## Error kinds (for `edge_take_error`)
 
@@ -338,8 +342,8 @@ The `wasm-pdk` crate (Plugin Development Kit), bundled in this repo, publishable
 * `#[plugin_fn]`, typed Rust function -> wire-conformant export.
 * `#[plugin_class]` / `#[plugin_methods]` / `#[plugin_ctor]`, expose a Rust struct as a Python class via the `__class_<Name>_<method>` export convention.
 * `module!()`, expands to `#[global_allocator]` + `#[panic_handler]`.
-* `FromValue` / `IntoValue` with primitive impls (`i64`, `i128`, `f64`, `bool`, `String`, `&str`, `Option<T>`, `Handle`). `i64` rejects out-of-range values with `ValueError`; use `i128` for the full range.
-* `Handle` with `Drop`-driven release plus `call`, `get_attr` / `set_attr`, `get_item` / `set_item`, `len`, `iter` / `iter_next`, `new_dict` / `new_list`, `type_of`.
+* `FromValue` / `IntoValue` with primitive impls (`i64`, `i128`, `f64`, `bool`, `String`, `&str`, `Bytes`, `Option<T>`, `Handle`). `i64` rejects out-of-range values with `ValueError`; use `i128` for the full range. `Bytes` maps to Python `bytes` over `tag::RAW`.
+* `Handle` with `Drop`-driven release plus `call`, `get_attr` / `set_attr`, `get_item` / `set_item`, `len`, `iter` / `iter_next`, `new_dict` / `new_list`, `new_tuple` / `new_set` / `new_frozenset`, `type_of`.
 * `Kwargs`, thin wrapper around the trailing kwargs handle with `get::<T>(name)` for primitive kwargs and `get_handle(name)` for callables, tuples, dicts.
 * `PluginCell<T>`, single-threaded interior mutability cell for static plugin state.
 * `__edge_alloc` + `__edge_abi_version` emitted automatically.

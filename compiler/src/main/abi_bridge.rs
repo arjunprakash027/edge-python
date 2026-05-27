@@ -27,6 +27,9 @@ pub unsafe extern "C" fn host_edge_op(op: u32, recv: u32, name_ptr: *const u8, n
         Some(Op::NewDict) => dispatch_new_dict(),
         Some(Op::NewList) => dispatch_new_list(),
         Some(Op::TypeOf) => dispatch_type_of(recv),
+        Some(Op::NewTuple) => dispatch_new_tuple(&args),
+        Some(Op::NewSet) => dispatch_new_set(&args),
+        Some(Op::NewFrozenSet) => dispatch_new_frozenset(&args),
         None => Err(VmErr::Raised(s!("edge_op: unsupported op ", int op as i64))),
     };
 
@@ -189,6 +192,9 @@ fn dispatch_iter(recv_h: u32) -> Result<Val, VmErr> {
             }
             _ => return Err(VmErr::TypeMsg(s!("object of type '", str vm.type_name(recv), "' is not iterable"))),
         };
+        // IterNext pops from the back, so store reversed for O(1) forward steps.
+        let mut items = items;
+        items.reverse();
         vm.heap.alloc(HeapObj::List(Rc::new(RefCell::new(items))))
     })
 }
@@ -197,11 +203,10 @@ fn dispatch_iter(recv_h: u32) -> Result<Val, VmErr> {
 fn dispatch_iter_next(recv_h: u32) -> Result<Val, VmErr> {
     with_recv("edge_op iter_next: invalid receiver handle", recv_h, |vm, recv| {
         if let HeapObj::List(rc) = vm.heap.get(recv) {
-            let mut v = rc.borrow_mut();
-            if v.is_empty() {
-                return Err(VmErr::Raised(s!("StopIteration")));
+            match rc.borrow_mut().pop() {
+                Some(v) => Ok(v),
+                None => Err(VmErr::Raised(s!("StopIteration"))),
             }
-            Ok(v.remove(0))
         } else {
             Err(VmErr::TypeMsg(s!("iter_next expects a List iterator (produced by Op::Iter), got '", str vm.type_name(recv), "'")))
         }
@@ -216,6 +221,21 @@ fn dispatch_new_dict() -> Result<Val, VmErr> {
 fn dispatch_new_list() -> Result<Val, VmErr> {
     with_vm(|vm| vm.heap.alloc(HeapObj::List(Rc::new(RefCell::new(Vec::new())))))
         .ok_or(VmErr::Runtime("edge_op new_list called outside run()"))?
+}
+
+fn dispatch_new_tuple(args: &[Val]) -> Result<Val, VmErr> {
+    with_vm(|vm| vm.tuple_from_items(args.to_vec()))
+        .ok_or(VmErr::Runtime("edge_op new_tuple called outside run()"))?
+}
+
+fn dispatch_new_set(args: &[Val]) -> Result<Val, VmErr> {
+    with_vm(|vm| vm.set_from_items(args.to_vec()))
+        .ok_or(VmErr::Runtime("edge_op new_set called outside run()"))?
+}
+
+fn dispatch_new_frozenset(args: &[Val]) -> Result<Val, VmErr> {
+    with_vm(|vm| vm.frozenset_from_items(args.to_vec()))
+        .ok_or(VmErr::Runtime("edge_op new_frozenset called outside run()"))?
 }
 
 fn dispatch_type_of(recv_h: u32) -> Result<Val, VmErr> {
@@ -234,6 +254,14 @@ pub unsafe extern "C" fn host_edge_encode(tag: u32, ptr: *const u8, len: u32) ->
         EncodeRequest::AllocStr(s) => {
             let owned = s.to_string();
             let v = with_vm(|vm| vm.heap.alloc(HeapObj::Str(owned)).ok()).flatten();
+            match v {
+                Some(val) => put_val(val),
+                None => 0,
+            }
+        }
+        EncodeRequest::AllocBytes(b) => {
+            let owned = b.to_vec();
+            let v = with_vm(|vm| vm.heap.alloc(HeapObj::Bytes(owned)).ok()).flatten();
             match v {
                 Some(val) => put_val(val),
                 None => 0,
@@ -277,15 +305,17 @@ pub unsafe extern "C" fn host_edge_decode(h: u32, out_tag: *mut u32, dst: *mut u
             PrimitiveBytes::Sixteen(a) => copy_into(tag, &a),
         },
         DecodeBits::Heap => {
-            // Str and LongInt decode to primitives; other composites must go through `edge_op`.
-            enum Decoded { Str(alloc::string::String), LongInt(i128), Other }
+            // Str, Bytes and LongInt decode to primitives; other composites must go through `edge_op`.
+            enum Decoded { Str(alloc::string::String), Bytes(Vec<u8>), LongInt(i128), Other }
             let decoded = with_vm(|vm| match vm.heap.get(v) {
                 HeapObj::Str(s) => Decoded::Str(s.clone()),
+                HeapObj::Bytes(b) => Decoded::Bytes(b.clone()),
                 HeapObj::LongInt(i) => Decoded::LongInt(*i),
                 _ => Decoded::Other,
             }).unwrap_or(Decoded::Other);
             match decoded {
                 Decoded::Str(s) => copy_into(crate::abi::Tag::Bytes as u32, s.as_bytes()),
+                Decoded::Bytes(b) => copy_into(crate::abi::Tag::Raw as u32, &b),
                 Decoded::LongInt(i) => copy_into(crate::abi::Tag::Int as u32, &i.to_le_bytes()),
                 Decoded::Other => { unsafe { *out_tag = TAG_INVALID; } 0 }
             }
