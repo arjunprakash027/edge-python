@@ -1,4 +1,4 @@
-# Edge Python re
+# Edge Python Re
 
 Regular expressions shipped as a `.wasm` plugin. Scripts see `re` as ordinary.
 
