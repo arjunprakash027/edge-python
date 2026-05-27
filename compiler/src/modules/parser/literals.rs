@@ -280,7 +280,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Dispatches call: print/range->dedicated opcodes; builtins->table; natives->CallExtern; else LoadName+Call. */
+    /* Dispatches call: print/range opcodes; imported natives (shadow builtins); builtins table; else LoadName+Call. */
     pub(super) fn call(&mut self, name: String) -> bool {
         let call_pos = self.last_end as u32;
         if name == "print" {
@@ -295,20 +295,21 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             return true;
         }
 
+        // Imported natives shadow builtins, matching Python `from x import *` rebinding.
+        if let Some(&extern_idx) = self.chunk.extern_index.get(&name) {
+            let (pos, kw) = self.parse_args();
+            // Operand packs extern_idx<<8 | kw<<4 | pos, same layout as Call.
+            let encoded = (extern_idx << 8) | ((kw & 0xF) << 4) | (pos & 0xF);
+            self.chunk.emit(OpCode::CallExtern, encoded);
+            self.chunk.record_call_pos(call_pos);
+            return true;
+        }
+
         if let Some((op, leaves_value)) = builtin(name.as_str()) {
             let (pos, kw) = self.parse_args();
             self.chunk.emit(op, pos + kw);
             self.chunk.record_call_pos(call_pos);
             return leaves_value;
-        }
-
-        // Native: emit CallExtern. Operand packs `extern_idx<<8 | kw<<4 | pos`: 8 bits index, 4 bits kw (<=15), 4 bits pos (<=15). Kw values sit just above pos on the stack as `name,val` pairs, same layout as Call.
-        if let Some(&extern_idx) = self.chunk.extern_index.get(&name) {
-            let (pos, kw) = self.parse_args();
-            let encoded = (extern_idx << 8) | ((kw & 0xF) << 4) | (pos & 0xF);
-            self.chunk.emit(OpCode::CallExtern, encoded);
-            self.chunk.record_call_pos(call_pos);
-            return true;
         }
 
         let i = self.push_ssa_name(&name, self.current_version(&name));

@@ -280,6 +280,8 @@ pub fn test_native(name: &str) -> Option<NativeBinding> {
         "pick" => (pick, true),
         "host_defer" => (host_defer, false),
         "__const_pi" => (const_pi, true),
+        // Registered under a builtin name to assert imported natives shadow builtins.
+        "abs" => (const_42, true),
         _ => return None,
     };
     Some(NativeBinding::from_fn(name, func, pure))

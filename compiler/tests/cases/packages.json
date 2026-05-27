@@ -550,5 +550,15 @@
     "src": "from m import *\nprint(pi)",
     "output": ["3.141592653589793"],
     "modules": { "m": { "native": ["__const_pi"] } }
+  },
+  {
+    "src": "from m import abs\nprint(abs(-5))",
+    "output": ["42"],
+    "modules": { "m": { "native": ["abs"] } }
+  },
+  {
+    "src": "from m import *\nprint(abs(-5))",
+    "output": ["42"],
+    "modules": { "m": { "native": ["abs"] } }
   }
 ]
