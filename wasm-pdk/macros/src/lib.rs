@@ -124,12 +124,20 @@ pub fn plugin_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
         quote! { #impl_name(#(#arg_names),*) }
     };
 
+    // Free fns export under `__fn_` so the wasm symbol never collides with C/build-std symbols.
+    let name_str = user_name.to_string();
+    let export_name: String = if name_str.starts_with("__const_") || name_str.starts_with("__class_") {
+        name_str
+    } else {
+        format!("__fn_{}", name_str)
+    };
+
     let expanded = quote! {
         #[doc(hidden)]
         #user_vis fn #impl_name(#user_inputs) #user_output #user_block
 
         #[doc(hidden)]
-        #[unsafe(no_mangle)]
+        #[unsafe(export_name = #export_name)]
         #[allow(clippy::not_unsafe_ptr_arg_deref)]
         pub extern "C" fn #user_name(argv: *const u32, argc: u32, out: *mut u32) -> i32 {
             #argc_check

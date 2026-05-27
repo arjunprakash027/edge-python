@@ -52,7 +52,10 @@ pub fn partition_bindings(all: Vec<NativeBinding>) -> (Vec<NativeBinding>, Vec<N
     let mut class_map: Vec<(String, Vec<NativeBinding>)> = Vec::new();
     let mut consts = Vec::new();
     for b in all {
-        if let Some(name) = b.name.strip_prefix("__const_") {
+        if let Some(name) = b.name.strip_prefix("__fn_") {
+            let name = name.to_string();
+            bindings.push(NativeBinding { name, ..b });
+        } else if let Some(name) = b.name.strip_prefix("__const_") {
             let name = name.to_string();
             consts.push(NativeBinding { name, ..b });
         } else if let Some((class_name, method)) = parse_class_export(&b.name) {
