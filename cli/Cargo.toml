@@ -1,0 +1,33 @@
+[package]
+name = "edge"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "edge"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "fs"] }
+axum = "0.8"
+tower-http = { version = "0.6", features = ["fs"] }
+tower-livereload = "0.9"
+notify = "7"
+headless_chrome = { version = "1.0", features = ["fetch"] }
+rustyline = "15"
+include_dir = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+owo-colors = "4"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Detached from the edge-python compiler workspace: own lockfile and deps.
+[workspace]
