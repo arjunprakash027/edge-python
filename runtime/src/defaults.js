@@ -7,6 +7,7 @@ Lowest precedence (user `imports` win) and lazy: an unused default is never fetc
 export const DEFAULT_IMPORTS = {
     json: 'https://std.edgepython.com/json.wasm',
     re: 'https://std.edgepython.com/re.wasm',
+    math: 'https://std.edgepython.com/math.wasm',
 };
 
 /* Main-thread host libraries (ESM). Pages flattens each `<name>/src/` to `host.edgepython.com/<name>/`. Same lazy + opt-out rules; merged under any user `host` entries. */

@@ -48,6 +48,21 @@ print(findall(r'\w+', 'one two three')) # ['one', 'two', 'three']
 
 Functions: `match`, `search`, `fullmatch`, `findall`, `groups`, `span`, `sub`; flags go inline (`(?i)`, `(?s)`, `(?m)`). Pre-built `.wasm` is published on the [`edge-python-std` releases](https://github.com/dylan-sutton-chavez/edge-python-std). Full API: [`re/README.md`](https://github.com/dylan-sutton-chavez/edge-python-std/tree/main/re).
 
+### `math`
+
+CPython-style `math`, scalar transcendentals on `libm` (no platform libc) with CPython domain errors (`sqrt(-1)` raises `ValueError: math domain error`). Module constants `pi`, `e`, `tau`, `inf`, `nan`; integer helpers `factorial`, `gcd`, `lcm`, `isqrt`, `comb`, `perm`; tuple returns `modf`, `frexp`; variadic `hypot` and `gcd`. A packed-f64 batch path (`sqrt_all`, `fsum_all`, and friends) processes a whole `bytes` buffer in one host crossing for bulk work.
+
+```python
+from math import sqrt, pi, hypot, factorial
+
+print(sqrt(2)) # 1.4142135623730951
+print(pi) # 3.141592653589793 (a value, not a call)
+print(hypot(3, 4, 12)) # 13.0
+print(factorial(5)) # 120
+```
+
+Integers are bounded by the VM's `i128`, so `factorial`, `comb`, `perm`, and `lcm` raise `ValueError` past that range, and there is no `complex` / `cmath`. Pre-built `.wasm` is published on the [`edge-python-std` releases](https://github.com/dylan-sutton-chavez/edge-python-std). Full API: [`math/README.md`](https://github.com/dylan-sutton-chavez/edge-python-std/tree/main/math).
+
 ## Host libraries (`edge-python-host`)
 
 Plain-JS capabilities that run on the browser's main thread, registered declaratively via the `host` field of [`packages.json`](/reference/imports#packages-json) (with the `<edge-python>` element), programmatically via `createWorker({ hostModules })`, or resolved by default with no config at all (see [Defaults](#defaults)). No `.wasm`, no Rust, no build step. Each call defers to the main thread over `postMessage` (around 0.1 to 0.4 ms); Python sees a synchronous call. The ESM loads lazily, the first time a run imports it.
@@ -128,7 +143,7 @@ One manifest drives both directions: `imports` for worker-side `.py` / `.wasm` m
 
 ### Defaults
 
-The browser runtime ships a built-in base manifest, so the official packages resolve by bare name with **no `packages.json` at all**: the std `.wasm` packages (`json`, `re`) and the host libraries (`dom`, `network`, `storage`, `time`). Three rules:
+The browser runtime ships a built-in base manifest, so the official packages resolve by bare name with **no `packages.json` at all**: the std `.wasm` packages (`json`, `re`, `math`) and the host libraries (`dom`, `network`, `storage`, `time`). Three rules:
 
 - **Lazy.** A default is fetched only when a run actually imports it. Unused defaults never hit the network.
 - **Overridable.** Your `packages.json` (or `imports` / `hostModules`) wins for the same name, so you can pin a specific version or URL.
