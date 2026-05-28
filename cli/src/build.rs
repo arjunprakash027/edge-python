@@ -34,7 +34,11 @@ const INDEX_HTML: &str = include_str!("templates/dist.html");
 pub fn run(manifest_path: &Path, out_dir: PathBuf) -> Result<()> {
     let t0 = Instant::now();
     let manifest = Manifest::load(manifest_path)?;
-    let project = manifest_path.parent().unwrap_or(Path::new(".")).to_path_buf();
+    // `Path::parent` returns Some("") for a bare filename, so collapse that to "." explicitly.
+    let project = match manifest_path.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+        _ => PathBuf::from("."),
+    };
 
     fs::create_dir_all(&out_dir).with_context(|| format!("creating {}", out_dir.display()))?;
 

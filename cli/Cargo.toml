@@ -24,6 +24,10 @@ rustyline = "15"
 # HTTPS fetcher used by `edge build` to vendor the runtime, compiler.wasm, and packages.
 ureq = "3"
 
+[dev-dependencies]
+# Per-test tempdir; auto-cleans on drop so cases don't leak state into the project.
+tempfile = "3"
+
 [profile.release]
 opt-level = "z"
 lto = true

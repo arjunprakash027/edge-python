@@ -1,0 +1,59 @@
+/*
+JSON-driven CLI suite. Each case in `cli.json` is one tempdir + one spawn of the `edge` binary.
+Engine-tagged cases (run/repl/build) need Chromium + network; gated behind EDGE_E2E=1.
+*/
+
+use serde::Deserialize;
+use std::{collections::BTreeMap, process::Command};
+
+#[derive(Deserialize)]
+struct Case {
+    #[serde(default)] given: BTreeMap<String, String>,
+    run: Vec<String>,
+    #[serde(default)] stdout: Vec<String>,
+    #[serde(default)] stderr: Vec<String>,
+    #[serde(default)] fails: Option<Vec<String>>,
+    #[serde(default)] creates: Vec<String>,
+    #[serde(default)] contains: BTreeMap<String, String>,
+    #[serde(default)] tags: Vec<String>,
+}
+
+#[test]
+fn cli_suite() {
+    let cases: Vec<Case> = serde_json::from_str(include_str!("cli.json")).expect("cli.json parse");
+    let bin = env!("CARGO_BIN_EXE_edge");
+    let e2e = std::env::var_os("EDGE_E2E").is_some();
+    let mut failed = vec![];
+    for c in &cases {
+        if c.tags.iter().any(|t| t == "engine") && !e2e { continue; }
+        if let Err(e) = check(bin, c) { failed.push(format!("[edge {}] {e}", c.run.join(" "))); }
+    }
+    assert!(failed.is_empty(), "\n{}", failed.join("\n"));
+}
+
+fn check(bin: &str, c: &Case) -> Result<(), String> {
+    let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
+    for (p, v) in &c.given {
+        let path = dir.path().join(p);
+        if let Some(d) = path.parent() { let _ = std::fs::create_dir_all(d); }
+        std::fs::write(path, v).map_err(|e| e.to_string())?;
+    }
+    let out = Command::new(bin).args(&c.run).current_dir(&dir).output().map_err(|e| e.to_string())?;
+    let so = String::from_utf8_lossy(&out.stdout);
+    let se = String::from_utf8_lossy(&out.stderr);
+    let exit = out.status.code().unwrap_or(-1);
+    let want_fail = c.fails.is_some();
+    if (exit != 0) != want_fail {
+        return Err(format!("exit {exit}; want {}; stderr: {se}", if want_fail { "non-zero" } else { "0" }));
+    }
+    for n in c.stderr.iter().chain(c.fails.iter().flatten()) {
+        if !se.contains(n.as_str()) { return Err(format!("stderr missing {n:?}; got: {se}")); }
+    }
+    for n in &c.stdout { if !so.contains(n) { return Err(format!("stdout missing {n:?}; got: {so}")); } }
+    for f in &c.creates { if !dir.path().join(f).exists() { return Err(format!("file missing: {f}")); } }
+    for (f, n) in &c.contains {
+        let t = std::fs::read_to_string(dir.path().join(f)).map_err(|e| e.to_string())?;
+        if !t.contains(n) { return Err(format!("{f} missing {n:?}; got: {t}")); }
+    }
+    Ok(())
+}
