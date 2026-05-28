@@ -20,7 +20,7 @@ pub struct Manifest {
 
 impl Manifest {
     /// Load the manifest, or an empty one when the file is absent.
-    fn load(path: &Path) -> Result<Self> {
+    pub fn load(path: &Path) -> Result<Self> {
         if !path.exists() {
             return Ok(Self::default());
         }

@@ -6,10 +6,14 @@ mod ui;
 mod init;
 mod pkg;
 mod serve;
+mod engine;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+use pkg::Manifest;
 
 #[derive(Parser)]
 #[command(name = "edge", version, about = "The Edge Python developer CLI")]
@@ -68,14 +72,32 @@ fn main() -> Result<()> {
         Cmd::Add { pkgs } => pkg::add(&manifest, &pkgs),
         Cmd::Remove { pkgs } => pkg::remove(&manifest, &pkgs),
         Cmd::Serve { port, open } => serve::run(PathBuf::from("."), port, open),
-        // These need the runtime engine (headless browser + script host), landing next.
-        Cmd::Run { .. } | Cmd::Repl | Cmd::Test { .. } | Cmd::Build { .. } => {
+        Cmd::Run { file } => run_script(&manifest, file.as_deref()),
+        // These build on the engine but still need their own driver, landing next.
+        Cmd::Repl | Cmd::Test { .. } | Cmd::Build { .. } => {
             bail!("not wired yet: this command needs the runtime engine")
         }
     };
 
     if let Err(e) = result {
         ui::error(&e);
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+/// Read a script from `file` (or stdin when absent) and run it; a script that raises exits non-zero.
+fn run_script(manifest_path: &Path, file: Option<&Path>) -> Result<()> {
+    let src = match file {
+        Some(p) => std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display()))?,
+        None => {
+            let mut s = String::new();
+            std::io::stdin().read_to_string(&mut s).context("reading stdin")?;
+            s
+        }
+    };
+    let manifest = Manifest::load(manifest_path)?;
+    if !engine::run(&src, &manifest)? {
         std::process::exit(1);
     }
     Ok(())

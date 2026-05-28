@@ -1,3 +1,6 @@
+# Empty table: this crate is its own workspace root, not part of the parent compiler workspace.
+[workspace]
+
 [package]
 name = "edge"
 version = "0.1.0"
@@ -14,6 +17,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
 owo-colors = "4"
+# `fetch` downloads a known-good Chromium on first use; `run`/`test`/`repl` host the runtime in it.
+headless_chrome = { version = "1.0.21", features = ["fetch"] }
 
 [profile.release]
 opt-level = "z"

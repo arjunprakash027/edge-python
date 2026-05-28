@@ -71,11 +71,16 @@ pub fn serve_banner(port: u16, dir: &Path) {
     }
 }
 
-/// Render an error to stderr.
+/// Print a script's traceback to stderr, verbatim from the runtime.
+pub fn traceback(msg: &str) {
+    eprintln!("{msg}");
+}
+
+/// Render an error to stderr. `{:#}` joins the cause chain so the root reason isn't swallowed.
 pub fn error(e: &anyhow::Error) {
     if plain() {
-        eprintln!("error: {e}");
+        eprintln!("error: {e:#}");
     } else {
-        eprintln!("{} {e}", "error:".red());
+        eprintln!("{} {e:#}", "error:".red());
     }
 }
