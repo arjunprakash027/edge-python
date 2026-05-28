@@ -118,19 +118,19 @@ fn launch() -> Result<Browser> {
     Browser::new(options).map_err(|e| anyhow!("{e}"))
 }
 
-/// Returns a path to drive, or None to let the x86_64 fetcher download; `EDGE_CHROME_PATH` always wins.
+/// Prefer env override, then any Chrome on PATH; fall back to the bundled x86_64 fetcher.
 fn resolve_chrome() -> Result<Option<PathBuf>> {
     if let Some(p) = std::env::var_os("EDGE_CHROME_PATH") {
         return Ok(Some(PathBuf::from(p)));
-    }
-    if cfg!(target_arch = "x86_64") {
-        return Ok(None);
     }
     if let Ok(p) = headless_chrome::browser::default_executable() {
         return Ok(Some(p));
     }
     if let Some(p) = playwright_chrome() {
         return Ok(Some(p));
+    }
+    if cfg!(target_arch = "x86_64") {
+        return Ok(None);
     }
     bail!("no Chrome on {}; install Chrome/Chromium or set EDGE_CHROME_PATH", std::env::consts::ARCH);
 }
