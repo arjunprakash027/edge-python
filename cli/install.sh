@@ -20,10 +20,10 @@ esac
 
 target="${arch}-${os}"
 
-if [ "$target" != "x86_64-unknown-linux-gnu" ]; then
-  echo "no prebuilt for $target yet; build from source with 'cargo install --path cli'" >&2
-  exit 1
-fi
+case "$target" in
+  x86_64-unknown-linux-gnu|aarch64-unknown-linux-gnu) ;;
+  *) echo "no prebuilt for $target yet; build from source with 'cargo install --path cli'" >&2; exit 1 ;;
+esac
 
 mkdir -p "$INSTALL_DIR"
 curl -fsSL "${BASE}/edge-${target}.tar.gz" | tar -xz -C "$INSTALL_DIR" edge
