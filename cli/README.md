@@ -180,7 +180,7 @@ $ edge remove network
   updated packages.json
 ```
 
-Pin a version or a custom URL with `edge add math@0.2.0` or `edge add foo=https://example.com/foo.wasm`.
+Point a package at a custom URL with `edge add foo=https://example.com/foo.wasm`.
 
 ---
 

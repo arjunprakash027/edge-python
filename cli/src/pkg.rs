@@ -100,12 +100,12 @@ pub fn remove(path: &Path, pkgs: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Parse `name`, `name@version` (version ignored for now), or `name=url`.
+/// Parse `name` or `name=url`.
 fn parse_spec(spec: &str) -> (&str, Option<String>) {
     if let Some((name, url)) = spec.split_once('=') {
         return (name, Some(url.to_string()));
     }
-    (spec.split('@').next().unwrap_or(spec), None)
+    (spec, None)
 }
 
 /// A `.wasm` url is a worker-side std package; anything else is a host library.
