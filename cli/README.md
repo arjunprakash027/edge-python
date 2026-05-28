@@ -1,4 +1,4 @@
-# `edge`
+# Edge Python CLI
 
 The Edge Python developer CLI. Write `.py`, run it, serve it, test it, ship it.
 
@@ -6,21 +6,21 @@ You never compile anything: `edge` hosts the Edge Python runtime in a headless b
 
 ```bash
 edge run app.py # run a script
-edge serve      # dev server with live reload
-edge repl       # interactive shell
-edge test       # run your *_test.py files (not implemented yet)
+edge serve # dev server with live reload
+edge repl # interactive shell
+edge test # run your *_test.py files (not implemented yet)
 edge init my-app # scaffold a project
 edge add network # manage packages.json
-edge build      # bundle to dist/
+edge build # bundle to dist/
 ```
 
 ## Install
 
 ```bash
-# Prebuilt binary (Linux x86_64; recommended)
+# Prebuilt binary (recommended)
 curl -fsSL https://dylan-sutton-chavez.github.io/edge-python/install.sh | sh
 
-# Or from source (any platform with a Rust toolchain)
+# Or from source (any platform with a Rust and Cargo tools)
 cargo install --path cli
 ```
 
@@ -30,7 +30,7 @@ The first command that needs a browser downloads a known-good Chromium into the 
 
 ---
 
-## `edge run <file.py>`
+## Run a Python File
 
 Run a script and stream its output to the terminal. Imports resolve through `packages.json`; uncaught errors print a traceback to stderr and exit with code 1.
 
@@ -54,7 +54,7 @@ Flags: `--packages <file>` (custom manifest). Reads from stdin when no file is g
 
 ---
 
-## `edge repl`
+## Start an Edge Python Shell (Demo)
 
 An interactive Edge Python shell for quick experiments.
 
@@ -73,9 +73,11 @@ History (arrow keys) and multi-line blocks (a line ending in `:` continues until
 
 State is preserved by **recompiling and rerunning the accumulated session on every prompt**. The runtime resets its VM on each `run_start`, so imports and definitions only persist by replay. Trade-offs: side effects (`time()`, `random()`, network, IO) re-fire on every input, the runtime's chunk heap grows linearly with session length, and each eval pays the recompile cost. A first-class incremental compile path in the VM is the proper fix and tracked for a future runtime change; for long sessions or side-effect-heavy code, prefer `edge run` on a script.
 
+*Under development, this is just a demo because actual cost is o(n^2)*
+
 ---
 
-## `edge serve`
+## Setup a Local Server for your Browser App
 
 A dev server for browser apps. Serves your project directory and reloads the page on any file change via an injected polling client.
 
@@ -89,13 +91,13 @@ Flags: `--port <n>` (default `5173`), `--open` (open the browser).
 
 ---
 
-## `edge test [path]`
+## Edge Python Test
 
 Not implemented yet.
 
 ---
 
-## `edge init [name]`
+## Initialize a Workspace
 
 Scaffolds a ready-to-run project: an entry script, an HTML host page, and a manifest.
 
@@ -114,7 +116,7 @@ $ edge init my-app
 
 ---
 
-## `edge add <pkg>...`  ·  `edge remove <pkg>...`
+## Packages Manager
 
 Manage `packages.json` by name. `edge` knows the official std (`json`, `re`, `math`) and host (`dom`, `network`, `storage`, `time`) packages, so you do not paste URLs.
 
@@ -137,7 +139,7 @@ Point a package at a custom URL with `edge add foo=https://example.com/foo.wasm`
 
 ---
 
-## `edge build`
+## Build an Application to Create a Portable Version
 
 Bundles your app into a self-contained `dist/` for offline use or self-hosting: the runtime, the `compiler.wasm`, your scripts, and every package vendored locally so nothing is fetched at runtime.
 
