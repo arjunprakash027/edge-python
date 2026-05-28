@@ -7,6 +7,8 @@ mod init;
 mod pkg;
 mod serve;
 mod engine;
+mod repl;
+mod build;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -65,18 +67,18 @@ enum Cmd {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     ui::init(cli.no_color);
-    let manifest = cli.packages.unwrap_or_else(|| PathBuf::from("packages.json"));
+    let manifest_path = cli.packages.unwrap_or_else(|| PathBuf::from("packages.json"));
 
     let result = match cli.cmd {
         Cmd::Init { name, bare } => init::run(name.as_deref(), bare),
-        Cmd::Add { pkgs } => pkg::add(&manifest, &pkgs),
-        Cmd::Remove { pkgs } => pkg::remove(&manifest, &pkgs),
+        Cmd::Add { pkgs } => pkg::add(&manifest_path, &pkgs),
+        Cmd::Remove { pkgs } => pkg::remove(&manifest_path, &pkgs),
         Cmd::Serve { port, open } => serve::run(PathBuf::from("."), port, open),
-        Cmd::Run { file } => run_script(&manifest, file.as_deref()),
-        // These build on the engine but still need their own driver, landing next.
-        Cmd::Repl | Cmd::Test { .. } | Cmd::Build { .. } => {
-            bail!("not wired yet: this command needs the runtime engine")
-        }
+        Cmd::Run { file } => run_script(&manifest_path, file.as_deref()),
+        Cmd::Repl => repl::run(&manifest_path),
+        Cmd::Build { out } => build::run(&manifest_path, out.unwrap_or_else(|| PathBuf::from("dist"))),
+        // Last one standing: needs a `test` module + discovery + reporter on top of the engine.
+        Cmd::Test { .. } => bail!("not wired yet: edge test"),
     };
 
     if let Err(e) = result {

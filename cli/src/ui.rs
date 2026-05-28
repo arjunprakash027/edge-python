@@ -76,6 +76,22 @@ pub fn traceback(msg: &str) {
     eprintln!("{msg}");
 }
 
+/// Summary printed by `edge build` after vendoring runtime + packages + scripts into dist/.
+pub fn build_report(dir: &std::path::Path, runtime_files: usize, packages: usize, scripts: usize, size: u64, elapsed: std::time::Duration) {
+    println!();
+    if plain() {
+        println!("  bundled to {}/", dir.display());
+    } else {
+        println!("  bundled to {}/", dir.display().to_string().cyan());
+    }
+    println!();
+    println!("  {runtime_files} runtime files + compiler.wasm");
+    println!("  {packages} packages");
+    println!("  {scripts} scripts");
+    println!();
+    println!("  {:.2} MB · {:.1}s", size as f64 / 1_000_000.0, elapsed.as_secs_f64());
+}
+
 /// Render an error to stderr. `{:#}` joins the cause chain so the root reason isn't swallowed.
 pub fn error(e: &anyhow::Error) {
     if plain() {

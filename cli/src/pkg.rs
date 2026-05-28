@@ -36,7 +36,7 @@ impl Manifest {
 }
 
 /* Official package registry. Mirrors the runtime's built-in default manifest. */
-enum Kind {
+pub enum Kind {
     Std,
     Host,
 }
@@ -44,7 +44,8 @@ enum Kind {
 const STD: [&str; 3] = ["json", "re", "math"];
 const HOST: [&str; 4] = ["dom", "network", "storage", "time"];
 
-fn lookup(name: &str) -> Option<(Kind, String)> {
+/// Resolve a bare name against the official registry; user manifest overrides go through `resolve`.
+pub fn registry(name: &str) -> Option<(Kind, String)> {
     if STD.contains(&name) {
         Some((Kind::Std, format!("https://std.edgepython.com/{name}.wasm")))
     } else if HOST.contains(&name) {
@@ -52,6 +53,17 @@ fn lookup(name: &str) -> Option<(Kind, String)> {
     } else {
         None
     }
+}
+
+/// Resolve `name` for the runtime: user manifest entry first, registry fallback.
+pub fn resolve(name: &str, manifest: &Manifest) -> Option<(Kind, String)> {
+    if let Some(url) = manifest.imports.get(name) {
+        return Some((Kind::Std, url.clone()));
+    }
+    if let Some(url) = manifest.host.get(name) {
+        return Some((Kind::Host, url.clone()));
+    }
+    registry(name)
 }
 
 pub fn add(path: &Path, pkgs: &[String]) -> Result<()> {
@@ -63,7 +75,7 @@ pub fn add(path: &Path, pkgs: &[String]) -> Result<()> {
         let (name, url_override) = parse_spec(spec);
         let (kind, url) = match url_override {
             Some(u) => (kind_from_url(&u), u),
-            None => lookup(name).ok_or_else(|| anyhow!("unknown package '{name}'; give a url with {name}=<url>"))?,
+            None => registry(name).ok_or_else(|| anyhow!("unknown package '{name}'; give a url with {name}=<url>"))?,
         };
         match kind {
             Kind::Std => {

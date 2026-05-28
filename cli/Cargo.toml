@@ -19,6 +19,10 @@ anyhow = "1"
 owo-colors = "4"
 # `fetch` downloads a known-good Chromium on first use; `run`/`test`/`repl` host the runtime in it.
 headless_chrome = { version = "1.0.21", features = ["fetch"] }
+# Line editor + history for `edge repl`.
+rustyline = "15"
+# HTTPS fetcher used by `edge build` to vendor the runtime, compiler.wasm, and packages.
+ureq = "3"
 
 [profile.release]
 opt-level = "z"

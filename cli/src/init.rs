@@ -8,21 +8,10 @@ use std::path::Path;
 
 const MAIN_PY: &str = "print(\"hello from edge python\")\n";
 const PACKAGES_JSON: &str = "{}\n";
+const INDEX_HTML: &str = include_str!("templates/scaffold.html");
 
 fn index_html(title: &str) -> String {
-    format!(
-        "<!DOCTYPE html>\n\
-         <html>\n\
-         <head>\n  \
-           <meta charset=\"UTF-8\">\n  \
-           <title>{title}</title>\n  \
-           <script type=\"module\" src=\"https://runtime.edgepython.com/js/src/element.js\"></script>\n\
-         </head>\n\
-         <body>\n  \
-           <edge-python src=\"main.py\" packages=\"packages.json\"></edge-python>\n\
-         </body>\n\
-         </html>\n"
-    )
+    INDEX_HTML.replace("__EDGE_TITLE__", title)
 }
 
 pub fn run(name: Option<&str>, bare: bool) -> Result<()> {
