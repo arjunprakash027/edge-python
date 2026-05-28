@@ -9,7 +9,7 @@ cli (parallel) ────────┘
 | Workflow | Role |
 |----------|------|
 | `_check.yml` | `cargo shear` + `clippy` (host and wasm targets) |
-| `_cli.yml` | Builds and tests the `cli/` workspace (`cargo build` + `cargo test`); engine-tagged cases stay off, no Chromium needed |
+| `_cli.yml` | Builds and tests the `cli/` workspace (`cargo build` + `cargo test`); on `main` pushes also publishes the release binary + `install.sh` to GitHub Pages |
 | `_wasm.yml` | Builds and optimizes `compiler_lib.wasm`. On tags, attaches the `.wasm` to the GitHub Release |
 | `_runtime_check.yml` | JS-side gate: `deno lint runtime/` + `deno test runtime/tests/` (Playwright + Chromium driving `createWorker` against the CDN-deployed wasm). Independent branch, runs in parallel with the Rust pipeline; only the CDN upload below blocks on it |
 | `_runtime.yml` | Bundles `runtime/` + `compiler_lib.wasm` and deploys them to Cloudflare Pages |

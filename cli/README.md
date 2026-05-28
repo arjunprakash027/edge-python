@@ -17,12 +17,14 @@ edge build      # bundle to dist/
 ## Install
 
 ```bash
-# Prebuilt binary (recommended)
-curl -fsSL https://edgepython.com/install.sh | sh
+# Prebuilt binary (Linux x86_64; recommended)
+curl -fsSL https://dylan-sutton-chavez.github.io/edge-python/install.sh | sh
 
-# Or from source
+# Or from source (any platform with a Rust toolchain)
 cargo install --path cli
 ```
+
+`install.sh` drops the binary at `~/.local/bin/edge` and appends that directory to your `~/.bashrc` or `~/.zshrc` if it is not already on `PATH`. Open a new shell (or `source` the file it printed) and `edge --version` should work. Re-run the same `curl … | sh` line any time to upgrade.
 
 The first command that needs a browser downloads a known-good Chromium into the cache automatically. Non-x86_64 platforms (aarch64, ARM, Apple Silicon) need a system Chrome or `EDGE_CHROME_PATH` set; see [Running on non-x86_64](#running-on-non-x86_64).
 
