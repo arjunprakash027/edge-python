@@ -34,17 +34,20 @@ jobs:
         working-directory: cli
         run: cargo test
 
-  pages:
-    name: Publish to GitHub Pages
+  # One native build per target; GitHub's free ARM runners avoid the cross-compile pain.
+  build_release:
+    name: Build release (${{ matrix.target }})
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build_test
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - uses: actions/checkout@v6
@@ -55,22 +58,51 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: cli -> cli/target
+          key: ${{ matrix.target }}
 
-      - name: Build release binary
+      - name: Build release
         working-directory: cli
         run: cargo build --release
 
-      # Stage everything the install.sh expects under the site root.
-      - name: Stage Pages site
+      - name: Tar
         working-directory: cli
+        run: tar -C target/release -czf edge-${{ matrix.target }}.tar.gz edge
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: edge-${{ matrix.target }}
+          path: cli/edge-${{ matrix.target }}.tar.gz
+
+  pages:
+    name: Publish to GitHub Pages
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build_release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Collect tarballs and stage Pages site
         run: |
           mkdir -p _site
-          tar -C target/release -czf _site/edge-x86_64-unknown-linux-gnu.tar.gz edge
-          cp install.sh _site/install.sh
+          cp cli/install.sh _site/install.sh
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: _site
+          pattern: edge-*
+          merge-multiple: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: cli/_site
+          path: _site
 
       - id: deploy
         uses: actions/deploy-pages@v4
