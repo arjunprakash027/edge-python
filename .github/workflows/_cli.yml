@@ -21,9 +21,9 @@ jobs:
 
       - name: Build
         working-directory: cli
-        run: cargo build --locked
+        run: cargo build
 
       # Engine-tagged cases need Chromium + network and stay off by default; CI runs the rest.
       - name: Test
         working-directory: cli
-        run: cargo test --locked
+        run: cargo test
