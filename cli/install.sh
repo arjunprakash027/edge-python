@@ -7,7 +7,7 @@ BASE="${EDGE_INSTALL_BASE:-https://dylan-sutton-chavez.github.io/edge-python}"
 INSTALL_DIR="${EDGE_INSTALL_DIR:-$HOME/.local/bin}"
 
 case "$(uname -s)" in
-  Linux) os="unknown-linux-gnu" ;;
+  Linux) os="unknown-linux-musl" ;;
   Darwin) os="apple-darwin" ;;
   *) echo "unsupported OS: $(uname -s)" >&2; exit 1 ;;
 esac
@@ -21,7 +21,7 @@ esac
 target="${arch}-${os}"
 
 case "$target" in
-  x86_64-unknown-linux-gnu|aarch64-unknown-linux-gnu) ;;
+  x86_64-unknown-linux-musl|aarch64-unknown-linux-musl) ;;
   *) echo "no prebuilt for $target yet; build from source with 'cargo install --path cli'" >&2; exit 1 ;;
 esac
 
