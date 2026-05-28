@@ -98,9 +98,29 @@ fn resolve_chrome() -> Result<Option<PathBuf>> {
     if cfg!(target_arch = "x86_64") {
         return Ok(None);
     }
-    headless_chrome::browser::default_executable().map(Some).map_err(|e| {
-        anyhow!("no Chrome on {}; bundled fetcher is x86_64-only. Install Chrome or set EDGE_CHROME_PATH ({e})", std::env::consts::ARCH)
-    })
+    if let Ok(p) = headless_chrome::browser::default_executable() {
+        return Ok(Some(p));
+    }
+    if let Some(p) = playwright_chrome() {
+        return Ok(Some(p));
+    }
+    bail!("no Chrome on {}; install Chrome/Chromium or set EDGE_CHROME_PATH", std::env::consts::ARCH);
+}
+
+/// Best-effort lookup of a Playwright-installed Chromium under `~/.cache/ms-playwright/chromium-*/chrome-linux/chrome`.
+fn playwright_chrome() -> Option<PathBuf> {
+    let root = PathBuf::from(std::env::var_os("HOME")?).join(".cache/ms-playwright");
+    let mut best: Option<PathBuf> = None;
+    for entry in std::fs::read_dir(&root).ok()?.flatten() {
+        let name = entry.file_name();
+        let name = name.to_str()?;
+        if !name.starts_with("chromium-") { continue; }
+        let candidate = entry.path().join("chrome-linux/chrome");
+        if candidate.is_file() && best.as_ref().is_none_or(|b| candidate > *b) {
+            best = Some(candidate);
+        }
+    }
+    best
 }
 
 /// Block until the harness has set `window.__edgeReady = true` (worker created, ready for evals).
