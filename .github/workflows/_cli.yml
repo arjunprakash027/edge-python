@@ -1,0 +1,29 @@
+name: _CLI
+
+on:
+  workflow_call:
+
+jobs:
+  build_test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # `cli/` is a separate workspace; key the cache off its Cargo.lock and target dir.
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli -> cli/target
+
+      - name: Build
+        working-directory: cli
+        run: cargo build --locked
+
+      # Engine-tagged cases need Chromium + network and stay off by default; CI runs the rest.
+      - name: Test
+        working-directory: cli
+        run: cargo test --locked
