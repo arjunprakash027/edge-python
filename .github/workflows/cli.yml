@@ -1,7 +1,13 @@
-name: _CLI
+name: CLI
 
 on:
-  workflow_call:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   build_test:
