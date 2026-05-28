@@ -6,10 +6,12 @@ You never compile anything: `edge` hosts the Edge Python runtime in a headless b
 
 ```bash
 edge run app.py # run a script
-edge serve # dev server with live reload
-edge test # run your *_test.py files
+edge serve      # dev server with live reload
+edge repl       # interactive shell
+edge test       # run your *_test.py files (not implemented yet)
 edge init my-app # scaffold a project
 edge add network # manage packages.json
+edge build      # bundle to dist/
 ```
 
 ## Install
@@ -22,13 +24,13 @@ curl -fsSL https://edgepython.com/install.sh | sh
 cargo install --path cli
 ```
 
-The first command that needs a browser downloads a known-good Chromium into the cache automatically. Nothing else to set up.
+The first command that needs a browser downloads a known-good Chromium into the cache automatically. Non-x86_64 platforms (aarch64, ARM, Apple Silicon) need a system Chrome or `EDGE_CHROME_PATH` set; see [Running on non-x86_64](#running-on-non-x86_64).
 
 ---
 
 ## `edge run <file.py>`
 
-Run a script and stream its output to the terminal, like `python app.py`. Imports resolve through `packages.json`; uncaught errors print a traceback and exit non-zero.
+Run a script and stream its output to the terminal. Imports resolve through `packages.json`; uncaught errors print a traceback to stderr and exit with code 1.
 
 ```text
 $ edge run hello.py
@@ -38,13 +40,15 @@ the sum is 42
 
 ```text
 $ edge run broken.py
-Traceback (most recent call last):
-  broken.py:3  in <module>
-    print(1 / 0)
-ZeroDivisionError: division by zero
+before
+error: ZeroDivisionError: division by zero
+  --> <input>:2:1
+  |
+2 | x = 1 / 0
+  | ^
 ```
 
-Flags: `--packages <file>` (custom manifest), trailing args are passed to the script, reads from stdin when no file is given.
+Flags: `--packages <file>` (custom manifest). Reads from stdin when no file is given.
 
 ---
 
@@ -56,89 +60,34 @@ An interactive Edge Python shell for quick experiments.
 $ edge repl
 Edge Python 0.1.0  ·  type .exit to quit
 >>> from math import sqrt, pi
->>> sqrt(2)
+>>> print(sqrt(2))
 1.4142135623730951
->>> [n * n for n in range(5)]
+>>> print([n * n for n in range(5)])
 [0, 1, 4, 9, 16]
 >>> .exit
 ```
 
-History and multi-line blocks (functions, loops) are supported.
+History (arrow keys) and multi-line blocks (a line ending in `:` continues until a blank line) are supported. `.exit` quits; `.reset` wipes runtime state. Expression results are not auto-printed; use `print()` explicitly.
 
 ---
 
 ## `edge serve`
 
-A dev server for browser apps, the ones that use `dom`, events, `network`, and friends. It serves your `index.html` + `<edge-python>` + scripts and reloads the page the moment you save.
+A dev server for browser apps. Serves your project directory and reloads the page on any file change via an injected polling client.
 
 ```text
 $ edge serve
-  http://localhost:5173   ready in 238ms
-  watching ./
+  http://localhost:5173
+  watching .
 ```
 
-```text
-# after editing main.py:
-  main.py changed, reload
-```
-
-Flags: `--port <n>`, `--open` (open the browser), `--no-reload`.
+Flags: `--port <n>` (default `5173`), `--open` (open the browser).
 
 ---
 
 ## `edge test [path]`
 
-Runs your test files (`*_test.py`, or a `tests/` directory). Tests register with the `@test` decorator from the built-in `test` module; `edge` runs each one in isolation and reports per test, continuing past failures. The `test` module is provided by `edge`, so you never add it to `packages.json`.
-
-```python
-# math_test.py
-from test import test, expect, raises
-from math import sqrt, factorial
-
-@test
-def sqrt_of_square():
-    expect(sqrt(16)).eq(4.0)
-    expect(sqrt(2)).gt(1.41)
-
-@test
-def factorial_base():
-    expect(factorial(5)).eq(120)
-
-@test
-def negative_raises():
-    with raises(ValueError):
-        sqrt(-1)
-```
-
-`expect(x).eq(y)` (and `.ne` / `.gt` / `.lt` / `.truthy()`) report both values on failure; `with raises(Exc):` asserts the error. Tests run against the runtime in the same headless browser as `edge run`.
-
-```text
-$ edge test
-  math_test.py
-
-  sqrt_of_square
-  factorial_base
-  negative_raises
-
-  3 passed   0.04s
-```
-
-On failure, only the failing test is marked, with the assertion and both sides:
-
-```text
-$ edge test
-  math_test.py
-
-  sqrt_of_square
-  factorial_base   failed
-    expect(factorial(5)).eq(120)
-    math_test.py:12   720 != 120
-  negative_raises
-
-  2 passed · 1 failed   0.18s
-```
-
-Flags: `--filter <substr>` (run a subset), `--watch` (rerun on change), `--bail` (stop at first failure).
+Not implemented yet.
 
 ---
 
@@ -167,8 +116,8 @@ Manage `packages.json` by name. `edge` knows the official std (`json`, `re`, `ma
 
 ```text
 $ edge add math network
-  + math      std
-  + network   host
+  + math       std
+  + network    host
 
   updated packages.json
 ```
@@ -190,16 +139,16 @@ Bundles your app into a self-contained `dist/` for offline use or self-hosting: 
 
 ```text
 $ edge build
-  bundling to dist/
+  bundled to dist/
 
-  runtime + compiler.wasm
-  2 packages   math, network
+  13 runtime files + compiler.wasm
+  2 packages
   3 scripts
 
-  dist/   1.24 MB
+  1.24 MB · 5.3s
 ```
 
-Flags: `--out <dir>` (default `dist/`), `--minify`.
+Flags: `--out <dir>` (default `dist/`).
 
 ---
 
@@ -208,9 +157,12 @@ Flags: `--out <dir>` (default `dist/`), `--minify`.
 | Flag | Effect |
 |------|--------|
 | `--packages <file>` | Use a specific manifest instead of `./packages.json` |
-| `--quiet` / `-q` | Only program output, no `edge` chrome |
 | `--no-color` | Disable colored output |
 | `--version` / `-V` | Print version |
+
+## Running on non-x86_64
+
+The bundled Chromium fetcher only ships x86_64 builds. On aarch64, ARM, or Apple Silicon, either install a system Chrome/Chromium (one of `chromium`, `google-chrome`, `microsoft-edge` on `PATH`) or set `EDGE_CHROME_PATH=/path/to/chrome` before `edge run` / `edge repl` / `edge build`.
 
 ## How it runs (the short version)
 
