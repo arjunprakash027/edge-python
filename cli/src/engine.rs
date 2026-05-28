@@ -38,10 +38,12 @@ pub struct Outcome {
     pub err: Option<String>,
 }
 
-/// A live runtime session: browser, tab and harness stay up so successive `eval` calls share state.
+/// A live session: each eval recompiles + reruns the accumulated history so imports/defs persist.
 pub struct Session {
     _browser: Browser,
     tab: Arc<headless_chrome::Tab>,
+    history: String,
+    history_lines: usize,
 }
 
 impl Session {
@@ -56,19 +58,37 @@ impl Session {
         tab.navigate_to(&url).map_err(|e| anyhow!("navigating to the harness: {e}"))?;
         tab.wait_until_navigated().map_err(|e| anyhow!("waiting for page load: {e}"))?;
         wait_ready(&tab)?;
-        Ok(Self { _browser: browser, tab })
+        Ok(Self { _browser: browser, tab, history: String::new(), history_lines: 0 })
     }
 
-    /// Run `src` on the worker. Incremental mode in the runtime preserves prior imports/defs across calls.
+    /// Recompile prior history with `src` so imports and defs persist; only new lines reach `on_line`.
     pub fn eval<F: FnMut(&str)>(&mut self, src: &str, mut on_line: F) -> Result<Outcome> {
-        let literal = serde_json::to_string(src)?;
+        let full = if self.history.is_empty() {
+            src.to_string()
+        } else {
+            format!("{}\n{}", self.history, src)
+        };
+        let literal = serde_json::to_string(&full)?;
         let expr = format!("__edgeRun({literal})");
         self.tab.evaluate(&expr, false).map_err(|e| anyhow!("starting eval: {e}"))?;
-        drain(&self.tab, &mut on_line)
+
+        let mut all: Vec<String> = Vec::new();
+        let outcome = drain(&self.tab, &mut |line| all.push(line.to_string()))?;
+        for line in all.iter().skip(self.history_lines) {
+            on_line(line);
+        }
+        if outcome.err.is_none() {
+            if !self.history.is_empty() { self.history.push('\n'); }
+            self.history.push_str(src);
+            self.history_lines = all.len();
+        }
+        Ok(outcome)
     }
 
-    /// Wipe runtime modules without tearing down the browser; next eval starts in a fresh namespace.
+    /// Wipe accumulated history and runtime modules; next eval starts in a fresh namespace.
     pub fn reset(&mut self) -> Result<()> {
+        self.history.clear();
+        self.history_lines = 0;
         self.tab.evaluate("__edgeReset()", false).map_err(|e| anyhow!("resetting runtime: {e}"))?;
         Ok(())
     }

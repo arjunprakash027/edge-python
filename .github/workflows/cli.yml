@@ -25,11 +25,17 @@ jobs:
         with:
           workspaces: cli -> cli/target
 
+      # Engine tests drive a real Chromium; cache the headless_chrome fetcher dir between runs.
+      - name: Cache Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/headless-chrome
+          key: chromium-${{ runner.os }}-headless_chrome-1.0.21
+
       - name: Build
         working-directory: cli
         run: cargo build
 
-      # Engine-tagged cases need Chromium + network and stay off by default; CI runs the rest.
       - name: Test
         working-directory: cli
         run: cargo test

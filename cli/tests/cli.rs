@@ -1,6 +1,6 @@
 /*
 JSON-driven CLI suite. Each case in `cli.json` is one tempdir + one spawn of the `edge` binary.
-Engine-tagged cases (run/repl/build) need Chromium + network; gated behind EDGE_E2E=1.
+Every case runs unconditionally so a real bug can't hide behind a tag.
 */
 
 use serde::Deserialize;
@@ -18,17 +18,14 @@ struct Case {
     #[serde(default)] fails: Option<Vec<String>>,
     #[serde(default)] creates: Vec<String>,
     #[serde(default)] contains: BTreeMap<String, String>,
-    #[serde(default)] tags: Vec<String>,
 }
 
 #[test]
 fn cli_suite() {
     let cases: Vec<Case> = serde_json::from_str(include_str!("cli.json")).expect("cli.json parse");
     let bin = env!("CARGO_BIN_EXE_edge");
-    let e2e = std::env::var_os("EDGE_E2E").is_some();
     let mut failed = vec![];
     for c in &cases {
-        if c.tags.iter().any(|t| t == "engine") && !e2e { continue; }
         if let Err(e) = check(bin, c) { failed.push(format!("[edge {}] {e}", c.run.join(" "))); }
     }
     assert!(failed.is_empty(), "\n{}", failed.join("\n"));

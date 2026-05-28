@@ -15,7 +15,7 @@
       // Drive the worker ourselves (no `entry`) so we attach onOutput once and reuse across evals.
       while (!el.worker) await new Promise((r) => setTimeout(r, 10));
       el.onOutput((line) => st.lines.push(line));
-      // CLI calls this per input; runs incrementally so prior imports/defs persist in the same VM.
+      // CLI calls this per input with replayed history; runtime recompiles each time.
       window.__edgeRun = async (src) => {
         st.lines = []; st.done = false; st.ok = false; st.err = "";
         try {

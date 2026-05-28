@@ -69,7 +69,9 @@ Edge Python 0.1.0  ·  type .exit to quit
 >>> .exit
 ```
 
-History (arrow keys) and multi-line blocks (a line ending in `:` continues until a blank line) are supported. `.exit` quits; `.reset` wipes runtime state. Expression results are not auto-printed; use `print()` explicitly.
+History (arrow keys) and multi-line blocks (a line ending in `:` continues until a blank line) are supported. `.exit` quits; `.reset` wipes the accumulated session. Expression results are not auto-printed; use `print()` explicitly.
+
+State is preserved by **recompiling and rerunning the accumulated session on every prompt**. The runtime resets its VM on each `run_start`, so imports and definitions only persist by replay. Trade-offs: side effects (`time()`, `random()`, network, IO) re-fire on every input, the runtime's chunk heap grows linearly with session length, and each eval pays the recompile cost. A first-class incremental compile path in the VM is the proper fix and tracked for a future runtime change; for long sessions or side-effect-heavy code, prefer `edge run` on a script.
 
 ---
 
