@@ -1,0 +1,70 @@
+name: _CLI
+
+on:
+  workflow_call:
+
+jobs:
+  build_test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # `cli/` is a separate workspace; key the cache off its Cargo.lock and target dir.
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli -> cli/target
+
+      - name: Build
+        working-directory: cli
+        run: cargo build
+
+      # Engine-tagged cases need Chromium + network and stay off by default; CI runs the rest.
+      - name: Test
+        working-directory: cli
+        run: cargo test
+
+  pages:
+    name: Publish to GitHub Pages
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build_test
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli -> cli/target
+
+      - name: Build release binary
+        working-directory: cli
+        run: cargo build --release
+
+      # Stage everything the install.sh expects under the site root.
+      - name: Stage Pages site
+        working-directory: cli
+        run: |
+          mkdir -p _site
+          tar -C target/release -czf _site/edge-x86_64-unknown-linux-gnu.tar.gz edge
+          cp install.sh _site/install.sh
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: cli/_site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,36 @@
+# Empty table: this crate is its own workspace root, not part of the parent compiler workspace.
+[workspace]
+
+[package]
+name = "edge"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "edge"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+tiny_http = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+owo-colors = "4"
+# `fetch` downloads a known-good Chromium on first use; `run`/`test`/`repl` host the runtime in it.
+headless_chrome = { version = "1.0.21", features = ["fetch"] }
+# Line editor + history for `edge repl`.
+rustyline = "15"
+# HTTPS fetcher used by `edge build` to vendor the runtime, compiler.wasm, and packages.
+ureq = "3"
+
+[dev-dependencies]
+# Per-test tempdir; auto-cleans on drop so cases don't leak state into the project.
+tempfile = "3"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

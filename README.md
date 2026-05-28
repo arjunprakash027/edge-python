@@ -12,6 +12,7 @@ Edge Python is distributed as a WebAssembly module, `compiler.wasm`, around 170 
 Cargo workspace; commands work from any directory.
 
 ```text
+├── cli
 ├── compiler
 ├── demo
 ├── docs
@@ -31,6 +32,16 @@ cargo test --release  # full test suite
 Native modules ship via three delivery paths (CDN `.wasm`, host capability, JS host module), see [Writing modules](https://edgepython.com/reference/writing-modules).
 
 ## Quick start
+
+### CLI
+
+```bash
+cargo install --path cli
+edge init my-app && cd my-app
+edge run main.py
+```
+
+`edge` hosts the runtime in a headless Chromium it downloads on first use; see [`cli/README.md`](cli/README.md) for `serve`, `repl`, `build`.
 
 ### Browser
 
@@ -73,7 +84,7 @@ Pin to a tag for reproducible builds; use `branch = "main"` for unreleased chang
 
 ### Server / edge runtimes (Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute, Spin)
 
-Edge Python is a `cdylib`, your host instantiates `compiler_lib.wasm` and calls its exports. The same `.wasm` you serve to browsers is the server-side artifact; the host owns I/O, fetching, and output (WASI / runtime APIs instead of `fetch` / `postMessage`). No built-in CLI, embed `compiler_lib.wasm` in around 50 LOC wasmtime shell for local dev.
+Edge Python is a `cdylib`, your host instantiates `compiler_lib.wasm` and calls its exports. The same `.wasm` you serve to browsers is the server-side artifact; the host owns I/O, fetching, and output (WASI / runtime APIs instead of `fetch` / `postMessage`). No server-side CLI ships here (the `cli/` tool targets the browser runtime), so embed `compiler_lib.wasm` in around 50 LOC wasmtime shell for local dev.
 
 ## What it is
 

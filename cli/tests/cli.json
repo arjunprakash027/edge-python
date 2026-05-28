@@ -1,0 +1,112 @@
+[
+  {
+    "run": ["init", "myapp"],
+    "stdout": ["created myapp/"],
+    "creates": ["myapp/main.py", "myapp/packages.json", "myapp/index.html"]
+  },
+  {
+    "run": ["init", "myapp", "--bare"],
+    "creates": ["myapp/main.py", "myapp/packages.json"]
+  },
+  {
+    "given": { "myapp/.keep": "" },
+    "run": ["init", "myapp"],
+    "fails": ["already exists"]
+  },
+  {
+    "run": ["init"],
+    "stdout": ["created project/"],
+    "creates": ["main.py", "packages.json", "index.html"]
+  },
+  {
+    "given": { "packages.json": "{}\n" },
+    "run": ["add", "math"],
+    "stdout": ["+ math", "std"],
+    "contains": { "packages.json": "std.edgepython.com/math.wasm" }
+  },
+  {
+    "given": { "packages.json": "{}\n" },
+    "run": ["add", "network"],
+    "stdout": ["+ network", "host"],
+    "contains": { "packages.json": "host.edgepython.com/network/index.js" }
+  },
+  {
+    "given": { "packages.json": "{}\n" },
+    "run": ["add", "foo=https://example.com/foo.wasm"],
+    "contains": { "packages.json": "example.com/foo.wasm" }
+  },
+  {
+    "given": { "packages.json": "{}\n" },
+    "run": ["add", "mystery"],
+    "fails": ["unknown package 'mystery'"]
+  },
+  {
+    "given": { "packages.json": "{}\n" },
+    "run": ["add", "math", "mystery"],
+    "fails": ["unknown package 'mystery'"],
+    "contains": { "packages.json": "{}\n" }
+  },
+  {
+    "run": ["add"],
+    "fails": ["nothing to add"]
+  },
+  {
+    "given": { "packages.json": "{\"imports\":{\"math\":\"https://std.edgepython.com/math.wasm\"}}\n" },
+    "run": ["remove", "math"],
+    "stdout": ["- math"]
+  },
+  {
+    "given": { "packages.json": "{}\n" },
+    "run": ["remove", "math"],
+    "fails": ["not in"]
+  },
+  {
+    "given": { "packages.json": "{\"imports\":{\"math\":\"https://std.edgepython.com/math.wasm\"}}\n" },
+    "run": ["remove", "math", "mystery"],
+    "fails": ["not in"],
+    "contains": { "packages.json": "math.wasm" }
+  },
+  {
+    "run": ["remove"],
+    "fails": ["nothing to remove"]
+  },
+  {
+    "given": { "custom.json": "{}\n" },
+    "run": ["--packages", "custom.json", "add", "math"],
+    "contains": { "custom.json": "std.edgepython.com/math.wasm" }
+  },
+  {
+    "run": ["run", "no_such.py"],
+    "fails": ["reading no_such.py"]
+  },
+  {
+    "run": ["runn"],
+    "fails": ["unrecognized subcommand"]
+  },
+  {
+    "run": ["test"],
+    "fails": ["not wired yet"]
+  },
+  {
+    "run": ["--version"],
+    "stdout": ["edge 0.1.0"]
+  },
+  {
+    "tags": ["engine"],
+    "given": { "t.py": "print('hi from edge')\n" },
+    "run": ["run", "t.py"],
+    "stdout": ["hi from edge"]
+  },
+  {
+    "tags": ["engine"],
+    "given": { "boom.py": "x = 1 / 0\n" },
+    "run": ["run", "boom.py"],
+    "fails": ["ZeroDivisionError"]
+  },
+  {
+    "tags": ["engine"],
+    "given": { "main.py": "print('ok')\n", "packages.json": "{}\n" },
+    "run": ["build"],
+    "creates": ["dist/index.html", "dist/main.py", "dist/compiler_lib.wasm"]
+  }
+]

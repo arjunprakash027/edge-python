@@ -14,6 +14,12 @@ jobs:
     uses: ./.github/workflows/_check.yml
     secrets: inherit
 
+  # CLI build + test (separate workspace under cli/); runs in parallel with `check`.
+  cli:
+    name: CLI
+    uses: ./.github/workflows/_cli.yml
+    secrets: inherit
+
   # Build the release WebAssembly artifact.
   wasm:
     name: WebAssembly

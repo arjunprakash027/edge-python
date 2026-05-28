@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>edge app</title>
+</head>
+<body>
+  <script type="module">
+    // Self-contained launcher; bypasses <edge-python> since its wasmUrl is hardcoded to the CDN.
+    import { createWorker } from "./runtime/src/index.js";
+    const pkgs = await fetch("./packages.json").then((r) => r.json());
+    const src = await fetch("./__EDGE_ENTRY__").then((r) => r.text());
+    const worker = await createWorker({
+      wasmUrl: "./compiler_lib.wasm",
+      imports: pkgs.imports || {},
+      hostModules: pkgs.host || {},
+      defaults: false,
+    });
+    worker.onOutput((line) => console.log(line));
+    await worker.run(src, { baseUrl: location.href });
+  </script>
+</body>
+</html>
