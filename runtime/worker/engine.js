@@ -78,7 +78,7 @@ export async function load({ wasmUrl, integrity = true, loaders: loaderUrls = []
     return { integrityActive, loadMs: performance.now() - t0 };
 }
 
-export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
+export async function run({ src, entryDir = '', baseUrl = null, onLine, incremental = false }) {
     if (!wasmModule) throw new Error('engine.load() must be called before run()');
 
     const srcBytes = TE.encode(src);
@@ -93,20 +93,25 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
     /* rt built first (lazy getter) so makeCompilerEnv can decode handles during deferred host calls. */
     const rt = makeRt(() => compilerExports);
 
-    const env = makeCompilerEnv({
-        getExports: () => compilerExports,
-        onLine: onLine ?? (() => {}),
-        fetchedSources,
-        lockfile,
-        integrityActive,
-        rt,
-        captureHostCall: (id, call) => { pendingHostCalls.set(id, call); },
-    });
-
-    const { exports } = await WebAssembly.instantiate(wasmModule, { env });
-    compilerExports = exports;
-    exports.reset_modules();
-    resetNativeTable();
+    /* Incremental mode reuses the existing wasm instance so module-level state (imports, defs) persists across runs. `onLine` lives in worker.js and is stable, so old env closures still post correctly. */
+    let exports;
+    if (incremental && compilerExports) {
+        exports = compilerExports;
+    } else {
+        const env = makeCompilerEnv({
+            getExports: () => compilerExports,
+            onLine: onLine ?? (() => {}),
+            fetchedSources,
+            lockfile,
+            integrityActive,
+            rt,
+            captureHostCall: (id, call) => { pendingHostCalls.set(id, call); },
+        });
+        ({ exports } = await WebAssembly.instantiate(wasmModule, { env }));
+        compilerExports = exports;
+        exports.reset_modules();
+        resetNativeTable();
+    }
 
     const writeBytes = (bytes) => {
         const ptr = exports.wasm_alloc(Math.max(1, bytes.length));
@@ -134,11 +139,11 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine }) {
         );
     };
 
-    /* Both kinds graft `<name> -> mt:<name>` so the bare name resolves; eager ones (programmatic objects) register now, lazy ones (urls) load on first import during prefetch. */
+    /* Both kinds graft `<name> -> mt:<name>` so the bare name resolves; eager ones (programmatic objects) register now, lazy ones (urls) load on first import during prefetch. In incremental mode the native table is preserved, so skip re-registration. */
     const mainThreadSpecs = new Set();
     const augmentedImports = { ...(importsMap || {}) }; // defaults already folded in by the embedder (index.js)
     for (const m of mainThreadManifests) {
-        registerHost(m.name, m.exports);
+        if (!incremental) registerHost(m.name, m.exports);
         mainThreadSpecs.add(`mt:${m.name}`);
         augmentedImports[m.name] = `mt:${m.name}`;
     }

@@ -4,12 +4,15 @@ Engine-tagged cases (run/repl/build) need Chromium + network; gated behind EDGE_
 */
 
 use serde::Deserialize;
-use std::{collections::BTreeMap, process::Command};
+use std::collections::BTreeMap;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 #[derive(Deserialize)]
 struct Case {
     #[serde(default)] given: BTreeMap<String, String>,
     run: Vec<String>,
+    #[serde(default)] stdin: String,
     #[serde(default)] stdout: Vec<String>,
     #[serde(default)] stderr: Vec<String>,
     #[serde(default)] fails: Option<Vec<String>>,
@@ -38,7 +41,14 @@ fn check(bin: &str, c: &Case) -> Result<(), String> {
         if let Some(d) = path.parent() { let _ = std::fs::create_dir_all(d); }
         std::fs::write(path, v).map_err(|e| e.to_string())?;
     }
-    let out = Command::new(bin).args(&c.run).current_dir(&dir).output().map_err(|e| e.to_string())?;
+    let mut child = Command::new(bin).args(&c.run).current_dir(&dir)
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+        .spawn().map_err(|e| e.to_string())?;
+    if !c.stdin.is_empty() {
+        child.stdin.as_mut().unwrap().write_all(c.stdin.as_bytes()).map_err(|e| e.to_string())?;
+    }
+    drop(child.stdin.take()); // close stdin so the process sees EOF
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
     let so = String::from_utf8_lossy(&out.stdout);
     let se = String::from_utf8_lossy(&out.stderr);
     let exit = out.status.code().unwrap_or(-1);

@@ -36,8 +36,8 @@ pub fn run(manifest_path: &Path) -> Result<()> {
         match trimmed {
             ".exit" => break,
             ".reset" => {
-                // Drop and reopen the session to wipe runtime state.
-                session = Session::open(&manifest)?;
+                // Wipe runtime modules in place; the browser keeps running.
+                session.reset()?;
                 continue;
             }
             _ => {}

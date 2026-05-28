@@ -108,5 +108,23 @@
     "given": { "main.py": "print('ok')\n", "packages.json": "{}\n" },
     "run": ["build"],
     "creates": ["dist/index.html", "dist/main.py", "dist/compiler_lib.wasm"]
+  },
+  {
+    "tags": ["engine"],
+    "run": ["repl"],
+    "stdin": "from math import sqrt\ndef double(n):\n    return sqrt(n) * 2\n\nprint(double(4))\n.exit\n",
+    "stdout": ["4.0"]
+  },
+  {
+    "tags": ["engine"],
+    "run": ["repl"],
+    "stdin": "x = 42\n.reset\nprint(x)\n.exit\n",
+    "stderr": ["NameError"]
+  },
+  {
+    "tags": ["engine"],
+    "run": ["repl"],
+    "stdin": "from time import sleep\nsleep(0.05)\nprint(\"done\")\n.exit\n",
+    "stdout": ["done"]
   }
 ]

@@ -59,12 +59,18 @@ impl Session {
         Ok(Self { _browser: browser, tab })
     }
 
-    /// Run `src` on the existing worker; stream each printed line through `on_line` and report errors.
+    /// Run `src` on the worker. Incremental mode in the runtime preserves prior imports/defs across calls.
     pub fn eval<F: FnMut(&str)>(&mut self, src: &str, mut on_line: F) -> Result<Outcome> {
         let literal = serde_json::to_string(src)?;
         let expr = format!("__edgeRun({literal})");
         self.tab.evaluate(&expr, false).map_err(|e| anyhow!("starting eval: {e}"))?;
         drain(&self.tab, &mut on_line)
+    }
+
+    /// Wipe runtime modules without tearing down the browser; next eval starts in a fresh namespace.
+    pub fn reset(&mut self) -> Result<()> {
+        self.tab.evaluate("__edgeReset()", false).map_err(|e| anyhow!("resetting runtime: {e}"))?;
+        Ok(())
     }
 }
 
@@ -83,6 +89,8 @@ pub fn run(src: &str, manifest: &Manifest) -> Result<bool> {
 fn launch() -> Result<Browser> {
     let mut builder = LaunchOptions::default_builder();
     builder.sandbox(false); // headless under WSL/containers typically can't sandbox
+    // Default is 30s and the REPL would drop CDP whenever the user stopped to think.
+    builder.idle_browser_timeout(Duration::from_secs(60 * 60 * 24));
     if let Some(p) = resolve_chrome()? {
         builder.path(Some(p));
     }

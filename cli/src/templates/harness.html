@@ -15,11 +15,11 @@
       // Drive the worker ourselves (no `entry`) so we attach onOutput once and reuse across evals.
       while (!el.worker) await new Promise((r) => setTimeout(r, 10));
       el.onOutput((line) => st.lines.push(line));
-      // CLI calls this for each input; reset, run, set done. Non-empty `out` means the script raised.
+      // CLI calls this per input; runs incrementally so prior imports/defs persist in the same VM.
       window.__edgeRun = async (src) => {
         st.lines = []; st.done = false; st.ok = false; st.err = "";
         try {
-          const res = await el.run(src, { baseUrl: location.href });
+          const res = await el.run(src, { baseUrl: location.href, incremental: true });
           if (res && res.out) st.err = res.out;
           else st.ok = true;
         } catch (e) {
@@ -28,6 +28,8 @@
           st.done = true;
         }
       };
+      // `.reset` calls this to wipe runtime modules without re-launching the browser.
+      window.__edgeReset = () => el.worker.reset();
       window.__edgeReady = true;
     })();
   </script>
