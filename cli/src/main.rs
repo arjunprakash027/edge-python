@@ -58,8 +58,7 @@ enum Cmd {
     },
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
     ui::init(cli.no_color);
     let manifest = cli.packages.unwrap_or_else(|| PathBuf::from("packages.json"));
@@ -68,7 +67,7 @@ async fn main() -> Result<()> {
         Cmd::Init { name, bare } => init::run(name.as_deref(), bare),
         Cmd::Add { pkgs } => pkg::add(&manifest, &pkgs),
         Cmd::Remove { pkgs } => pkg::remove(&manifest, &pkgs),
-        Cmd::Serve { port, open } => serve::run(PathBuf::from("."), port, open).await,
+        Cmd::Serve { port, open } => serve::run(PathBuf::from("."), port, open),
         // These need the runtime engine (headless browser + script host), landing next.
         Cmd::Run { .. } | Cmd::Repl | Cmd::Test { .. } | Cmd::Build { .. } => {
             bail!("not wired yet: this command needs the runtime engine")
