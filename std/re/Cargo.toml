@@ -1,3 +1,6 @@
+# Empty table: this crate is its own workspace root, not part of the parent compiler workspace.
+[workspace]
+
 [package]
 name = "re"
 version = "0.1.0"
