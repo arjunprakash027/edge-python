@@ -48,7 +48,7 @@ See [`tests/README.md`](../tests/README.md) for the corpus shape.
 - Clock reads are sync. They return numbers, no `await` and no `receive()`.
 - `sleep(secs)` yields, so it composes with the concurrency builtins (`gather`, `with_timeout`, `run`) exactly like `fetch`.
 - Nanosecond counts that exceed JS's safe-integer range cross as strings. `time_ns()` returns a numeric string (epoch nanoseconds overflow), parse it with `int()`. `monotonic_ns()` and `perf_counter_ns()` fit and return integers.
-- A `struct_time` is a JSON nine-tuple string in CPython order: `[tm_year, tm_mon, tm_mday, tm_hour, tm_min, tm_sec, tm_wday, tm_yday, tm_isdst]`. `gmtime`, `localtime`, and `strptime` produce it. `strftime`, `asctime`, and `mktime` consume it directly. To read individual fields, decode it with the [`json`](https://github.com/dylan-sutton-chavez/edge-python-std) package.
+- A `struct_time` is a JSON nine-tuple string in CPython order: `[tm_year, tm_mon, tm_mday, tm_hour, tm_min, tm_sec, tm_wday, tm_yday, tm_isdst]`. `gmtime`, `localtime`, and `strptime` produce it. `strftime`, `asctime`, and `mktime` consume it directly. To read individual fields, decode it with the [`json`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/json) package.
 - `tm_wday` is Monday=0 through Sunday=6, `tm_yday` is 1 based, `tm_isdst` is always -1 (unknown).
 
 ### Clocks

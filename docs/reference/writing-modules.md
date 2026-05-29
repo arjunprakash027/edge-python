@@ -136,7 +136,7 @@ Handlers take decoded JS values and return plain JS values. Supported tags: `Non
 
 Pick Path C when the capability needs main-thread browser surface (DOM, dialogs, observers, FileReader) and per-op latency is acceptable, invisible for UI-rate workloads (around 50 to 200 ops/frame). Reach for Path B when tight per-frame loops dominate or the capability lives in a non-browser host (WASI, native).
 
-Reference implementation: [`edge-python-host`](https://github.com/dylan-sutton-chavez/edge-python-host).
+Reference implementation: [`host/`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/host).
 
 ## Choosing between the three paths
 

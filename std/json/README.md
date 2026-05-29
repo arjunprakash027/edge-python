@@ -141,7 +141,7 @@ Plugin memory is recycled per call: each `loads`/`dumps` returns its scratch all
 
 ## Distribution
 
-Pre-built `.wasm` published with each release on the `edge-python-stdpkg` GitHub releases page. Host runtimes resolve the URL via their cache (browser worker auto-caches in IndexedDB; other hosts can mirror).
+Pre-built `.wasm` is served from `https://std.edgepython.com/json.wasm`, deployed by the `Std` workflow in the `edge-python` repo. Host runtimes resolve the URL via their cache (browser worker auto-caches in IndexedDB; other hosts can mirror).
 
 ## License
 

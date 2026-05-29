@@ -19,11 +19,11 @@
       },
       {
         "label": "Host",
-        "href": "https://github.com/dylan-sutton-chavez/edge-python-host"
+        "href": "https://github.com/dylan-sutton-chavez/edge-python/tree/main/host"
       },
       {
         "label": "Std",
-        "href": "https://github.com/dylan-sutton-chavez/edge-python-std"
+        "href": "https://github.com/dylan-sutton-chavez/edge-python/tree/main/std"
       }
     ]
   },

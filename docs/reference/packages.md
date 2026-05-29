@@ -7,14 +7,14 @@ Edge Python ships no bundled stdlib (see [What it is](/getting-started/what-it-i
 
 There are two families, matching two of the three [delivery paths](/reference/writing-modules):
 
-| Family | Repo | Form | Where it runs | Path |
+| Family | Source | Form | Where it runs | Path |
 |---|---|---|---|---|
-| **Standard packages** | [`edge-python-std`](https://github.com/dylan-sutton-chavez/edge-python-std) | `.wasm` (Rust) | Inside the WASM sandbox, any host | [Path A](/reference/writing-modules#path-a-wasm-module-by-url) |
-| **Host libraries** | [`edge-python-host`](https://github.com/dylan-sutton-chavez/edge-python-host) | Plain ESM (JS) | Browser main thread | [Path C](/reference/writing-modules#path-c-js-host-module) |
+| **Standard packages** | [`std/`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std) | `.wasm` (Rust) | Inside the WASM sandbox, any host | [Path A](/reference/writing-modules#path-a-wasm-module-by-url) |
+| **Host libraries** | [`host/`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/host) | Plain ESM (JS) | Browser main thread | [Path C](/reference/writing-modules#path-c-js-host-module) |
 
 Standard packages are host-agnostic (they run wherever WASM runs). Host libraries are browser-only, they reach `document` / `window` / `localStorage`, surfaces that don't exist in a non-browser host.
 
-## Standard packages (`edge-python-std`)
+## Standard packages
 
 Language-agnostic `.wasm` plugins over the [WASM module ABI](/reference/wasm-abi). Import by bare name (the browser runtime resolves the official ones by default, see [Defaults](#defaults)), by URL, or via a `packages.json` alias; the host fetches the `.wasm` and treats its exports as native bindings.
 
@@ -30,7 +30,7 @@ print(data["name"]) # ada
 print(dumps({"k": [1, 2, 3], "ok": True})) # {"k":[1,2,3],"ok":true}
 ```
 
-Pre-built `.wasm` is published on the [`edge-python-std` releases](https://github.com/dylan-sutton-chavez/edge-python-std). Full API: [`json/README.md`](https://github.com/dylan-sutton-chavez/edge-python-std/tree/main/json).
+Pre-built `.wasm` is served from `https://std.edgepython.com/json.wasm`. Full API: [`std/json/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/json).
 
 > **`json` is an external package, but the browser runtime resolves it by default.** It isn't compiled into `compiler_lib.wasm`, it's this `.wasm` package. In the browser runtime you can write `from json import ...` with no `packages.json` (a built-in [default](#defaults), fetched lazily on first import). Other hosts, or `defaults: false`, need it declared (alias or URL) like any other module.
 
@@ -46,7 +46,7 @@ print(sub(r'\s+', '_', 'a  b   c')) # a_b_c
 print(findall(r'\w+', 'one two three')) # ['one', 'two', 'three']
 ```
 
-Functions: `match`, `search`, `fullmatch`, `findall`, `groups`, `span`, `sub`; flags go inline (`(?i)`, `(?s)`, `(?m)`). Pre-built `.wasm` is published on the [`edge-python-std` releases](https://github.com/dylan-sutton-chavez/edge-python-std). Full API: [`re/README.md`](https://github.com/dylan-sutton-chavez/edge-python-std/tree/main/re).
+Functions: `match`, `search`, `fullmatch`, `findall`, `groups`, `span`, `sub`; flags go inline (`(?i)`, `(?s)`, `(?m)`). Pre-built `.wasm` is served from `https://std.edgepython.com/re.wasm`. Full API: [`std/re/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/re).
 
 ### `math`
 
@@ -61,9 +61,9 @@ print(hypot(3, 4, 12)) # 13.0
 print(factorial(5)) # 120
 ```
 
-Integers are bounded by the VM's `i128`, so `factorial`, `comb`, `perm`, and `lcm` raise `ValueError` past that range, and there is no `complex` / `cmath`. Pre-built `.wasm` is published on the [`edge-python-std` releases](https://github.com/dylan-sutton-chavez/edge-python-std). Full API: [`math/README.md`](https://github.com/dylan-sutton-chavez/edge-python-std/tree/main/math).
+Integers are bounded by the VM's `i128`, so `factorial`, `comb`, `perm`, and `lcm` raise `ValueError` past that range, and there is no `complex` / `cmath`. Pre-built `.wasm` is served from `https://std.edgepython.com/math.wasm`. Full API: [`std/math/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/math).
 
-## Host libraries (`edge-python-host`)
+## Host libraries
 
 Plain-JS capabilities that run on the browser's main thread, registered declaratively via the `host` field of [`packages.json`](/reference/imports#packages-json) (with the `<edge-python>` element), programmatically via `createWorker({ hostModules })`, or resolved by default with no config at all (see [Defaults](#defaults)). No `.wasm`, no Rust, no build step. Each call defers to the main thread over `postMessage` (around 0.1 to 0.4 ms); Python sees a synchronous call. The ESM loads lazily, the first time a run imports it.
 
@@ -78,7 +78,7 @@ set_text(query("#title"), "Hello")
 bind_event(query("#btn"), "click", "clicked")
 ```
 
-Representative handlers: `query`, `query_all`, `create_element`, `append_child`, `set_text`, `set_html`, `set_attribute`, `add_class`, `set_style`, `rect`, `bind_event`, `form_data`, `validity`, `get_files`, `file_read_text`, `observe_intersection`, `animate`, `media_play`, `show_modal`. Full API: [`dom/README.md`](https://github.com/dylan-sutton-chavez/edge-python-host/tree/main/dom).
+Representative handlers: `query`, `query_all`, `create_element`, `append_child`, `set_text`, `set_html`, `set_attribute`, `add_class`, `set_style`, `rect`, `bind_event`, `form_data`, `validity`, `get_files`, `file_read_text`, `observe_intersection`, `animate`, `media_play`, `show_modal`. Full API: [`host/dom/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/host/dom).
 
 ### `network`
 
@@ -92,7 +92,7 @@ sock = ws_open("wss://example.com/socket", "ws")
 ws_send(sock, "hello")
 ```
 
-Handlers: `fetch`, `fetch_text`, `fetch_json`, `abort_request`, `ws_open`, `ws_send`, `ws_close`, `ws_state`, `sse_open`, `sse_close`, `sse_state`. Full API: [`network/README.md`](https://github.com/dylan-sutton-chavez/edge-python-host/tree/main/network).
+Handlers: `fetch`, `fetch_text`, `fetch_json`, `abort_request`, `ws_open`, `ws_send`, `ws_close`, `ws_state`, `sse_open`, `sse_close`, `sse_state`. Full API: [`host/network/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/host/network).
 
 ### `storage`
 
@@ -107,7 +107,7 @@ db = idb_open("notes", 1, '{"stores":["items"]}')
 idb_put(db, "items", "1", '{"title":"hello"}')
 ```
 
-Handlers: `local_get/set/remove/clear/keys`, `session_*` (same surface), `idb_open`, `idb_put`, `idb_get`, `idb_delete`, `idb_keys`, `idb_close`. Full API: [`storage/README.md`](https://github.com/dylan-sutton-chavez/edge-python-host/tree/main/storage).
+Handlers: `local_get/set/remove/clear/keys`, `session_*` (same surface), `idb_open`, `idb_put`, `idb_get`, `idb_delete`, `idb_keys`, `idb_close`. Full API: [`host/storage/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/host/storage).
 
 ### `time`
 
@@ -121,7 +121,7 @@ sleep(0.1) # suspends, resumes after ~100ms
 print(strftime("%Y-%m-%d", gmtime(0))) # 1970-01-01
 ```
 
-Handlers: `time`, `time_ns`, `monotonic`, `monotonic_ns`, `perf_counter`, `perf_counter_ns`, `sleep`, `gmtime`, `localtime`, `mktime`, `strftime`, `strptime`, `asctime`, `ctime`, `timezone`, `altzone`, `daylight`, `tzname`. CPU, thread, and POSIX clocks (`process_time`, `clock_gettime`, `tzset`, the `CLOCK_*` constants) are intentionally out of scope. Full API: [`time/README.md`](https://github.com/dylan-sutton-chavez/edge-python-host/tree/main/time).
+Handlers: `time`, `time_ns`, `monotonic`, `monotonic_ns`, `perf_counter`, `perf_counter_ns`, `sleep`, `gmtime`, `localtime`, `mktime`, `strftime`, `strptime`, `asctime`, `ctime`, `timezone`, `altzone`, `daylight`, `tzname`. CPU, thread, and POSIX clocks (`process_time`, `clock_gettime`, `tzset`, the `CLOCK_*` constants) are intentionally out of scope. Full API: [`host/time/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/host/time).
 
 ## How to load them
 

@@ -82,7 +82,7 @@ Host libraries (DOM, etc.) are plain-JS modules whose handlers run on the **page
 ```json
 {
   "host": {
-    "dom": "/edge-python-host/dom/src/index.js"
+    "dom": "/host/dom/src/index.js"
   }
 }
 ```

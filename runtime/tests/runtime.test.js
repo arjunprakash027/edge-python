@@ -32,23 +32,23 @@ Deno.test("runtime: <edge-python> runs the corpus through index.html", async () 
     const requested = [];
     page.on("request", (q) => requested.push(q.url()));
 
-    const STD_REPO = new URL("../../../edge-python-std", import.meta.url).pathname;
-    const HOST_REPO = new URL("../../../edge-python-host", import.meta.url).pathname;
+    const STD_DIR = new URL("../../std", import.meta.url).pathname;
+    const HOST_DIR = new URL("../../host", import.meta.url).pathname;
     await page.route("**/*", (r) => {
         const u = new URL(r.request().url());
-        // Prefer the sibling repos' artifacts; if absent (CI checks out only this repo), fall back to the CDN-deployed copy.
+        // Prefer the in-tree std/ and host/ artifacts; if absent (CI checks out only the runtime/ subset), fall back to the CDN-deployed copy.
         if (u.host === STD_HOST) {
-            // std/<name>.wasm lives at <name>/target/wasm32-unknown-unknown/release/ in the repo.
+            // std/<name>.wasm lives at <name>/target/wasm32-unknown-unknown/release/ in the tree.
             const name = u.pathname.slice(1).replace(/\.wasm$/, "");
-            const file = `${STD_REPO}/${name}/target/wasm32-unknown-unknown/release/${name}.wasm`;
+            const file = `${STD_DIR}/${name}/target/wasm32-unknown-unknown/release/${name}.wasm`;
             try { return r.fulfill({ contentType: "application/wasm", body: readFileSync(file) }); }
-            catch { return r.continue(); } // no sibling std repo: use the deployed wasm
+            catch { return r.continue(); } // no local std build: use the deployed wasm
         }
         if (u.host === HOST_HOST) {
-            // Production (Pages) flattens <cap>/src/* to <cap>/*; map back to the repo layout.
+            // Production (Pages) flattens <cap>/src/* to <cap>/*; map back to the tree layout.
             const repoPath = u.pathname.replace(/^\/([^/]+)\//, "/$1/src/");
-            try { return r.fulfill({ contentType: "text/javascript", body: readFileSync(HOST_REPO + repoPath) }); }
-            catch { return r.continue(); } // no sibling host repo: use the deployed module
+            try { return r.fulfill({ contentType: "text/javascript", body: readFileSync(HOST_DIR + repoPath) }); }
+            catch { return r.continue(); } // no local host source: use the deployed module
         }
         if (u.host !== "localhost") return r.continue(); // any other CDN asset passes through
         const ext = u.pathname.slice(u.pathname.lastIndexOf("."));
