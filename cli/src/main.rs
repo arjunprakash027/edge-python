@@ -9,6 +9,7 @@ mod serve;
 mod engine;
 mod repl;
 mod build;
+mod uninstall;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -62,6 +63,8 @@ enum Cmd {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Remove the edge binary, its PATH entry, and optionally Chromium.
+    Uninstall,
 }
 
 fn main() -> Result<()> {
@@ -79,6 +82,7 @@ fn main() -> Result<()> {
         Cmd::Run { file } => run_script(&manifest_path, file.as_deref()),
         Cmd::Repl => repl::run(&manifest_path),
         Cmd::Build { out } => build::run(&manifest_path, out.unwrap_or_else(|| PathBuf::from("dist"))),
+        Cmd::Uninstall => uninstall::run(),
         // Last one standing: needs a `test` module + discovery + reporter on top of the engine.
         Cmd::Test { .. } => bail!("not wired yet: edge test"),
     };

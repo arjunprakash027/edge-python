@@ -19,8 +19,8 @@ anyhow = "1"
 owo-colors = "4"
 # Catches Ctrl+C in non-REPL commands so they shut down cleanly.
 ctrlc = "3"
-# `fetch` downloads a known-good Chromium on first use; `run`/`test`/`repl` host the runtime in it.
-headless_chrome = { version = "1.0.21", features = ["fetch"] }
+# Drives a system-installed Chrome/Chromium via CDP; the install.sh provisions the browser.
+headless_chrome = "1.0.21"
 # Line editor + history for `edge repl`.
 rustyline = "15"
 # HTTPS fetcher used by `edge build` to vendor the runtime, compiler.wasm, and packages.

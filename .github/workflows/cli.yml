@@ -25,13 +25,7 @@ jobs:
         with:
           workspaces: cli -> cli/target
 
-      # Engine tests drive a real Chromium; cache the headless_chrome fetcher dir between runs.
-      - name: Cache Chromium
-        uses: actions/cache@v4
-        with:
-          path: ~/.local/share/headless-chrome
-          key: chromium-${{ runner.os }}-headless_chrome-1.0.21
-
+      # Engine tests drive a real Chromium; ubuntu-latest ships google-chrome-stable preinstalled.
       - name: Build
         working-directory: cli
         run: cargo build
@@ -40,7 +34,7 @@ jobs:
         working-directory: cli
         run: cargo test
 
-  # One native build per target; GitHub's free ARM runners avoid the cross-compile pain.
+  # One native build per target; GitHub's free ARM/macOS runners avoid the cross-compile pain.
   build_release:
     name: Build release (${{ matrix.target }})
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -53,6 +47,10 @@ jobs:
             runner: ubuntu-latest
           - target: aarch64-unknown-linux-musl
             runner: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            runner: macos-13
+          - target: aarch64-apple-darwin
+            runner: macos-14
     runs-on: ${{ matrix.runner }}
 
     steps:
@@ -63,6 +61,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Install musl tools
+        if: contains(matrix.target, 'linux-musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Cache Rust
@@ -103,7 +102,7 @@ jobs:
       - name: Collect tarballs and stage Pages site
         run: |
           mkdir -p _site
-          cp cli/install.sh _site/install.sh
+          cp cli/setup/*.sh _site/
 
       - uses: actions/download-artifact@v4
         with:

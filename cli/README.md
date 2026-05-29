@@ -2,7 +2,7 @@
 
 The Edge Python developer CLI. Write `.py`, run it, serve it, test it, ship it.
 
-You never compile anything: `edge` hosts the Edge Python runtime in a headless browser it downloads on first use, then runs your code against it. You just point it at a file.
+You never compile anything: `edge` hosts the Edge Python runtime in a headless browser provisioned by `install.sh`, then runs your code against it. You just point it at a file.
 
 ```bash
 edge run app.py # run a script
@@ -10,8 +10,10 @@ edge serve # dev server with live reload
 edge repl # interactive shell
 edge test # run your *_test.py files (not implemented yet)
 edge init my-app # scaffold a project
-edge add network # manage packages.json
+edge add network # add a package to packages.json
+edge remove network # remove a package from packages.json
 edge build # bundle to dist/
+edge uninstall # remove the binary, PATH entry, optionally Chromium
 ```
 
 ## Install
@@ -24,9 +26,9 @@ curl -fsSL https://dylan-sutton-chavez.github.io/edge-python/install.sh | sh
 cargo install --path cli
 ```
 
-`install.sh` drops the binary at `~/.local/bin/edge` and appends that directory to your `~/.bashrc` or `~/.zshrc` if it is not already on `PATH`. Open a new shell (or `source` the file it printed) and `edge --version` should work. Re-run the same `curl … | sh` line any time to upgrade.
+`install.sh` drops the binary at `~/.local/bin/edge` and appends that directory to your `~/.bashrc` or `~/.zshrc` if it is not already on `PATH`. Open a new shell (or `source` the file it printed) and `edge --version` should work. Re-run the same `curl … | sh` line any time to upgrade. To remove everything later: `curl -fsSL https://dylan-sutton-chavez.github.io/edge-python/uninstall.sh | sh` (asks before touching Chromium).
 
-The first command that needs a browser downloads a known-good Chromium into the cache automatically. Non-x86_64 platforms (aarch64, ARM, Apple Silicon) need a system Chrome or `EDGE_CHROME_PATH` set; see [Running on non-x86_64](#running-on-non-x86_64).
+`install.sh` also provisions Chromium if it is not already on `PATH`. It reads `/etc/os-release` and uses the host's package manager (`apt`, `dnf`, `pacman`, `zypper`, `apk`, or `brew --cask` on macOS); `sudo` is invoked only when not running as root. If your distro is unsupported, install Chrome/Chromium manually or set `EDGE_CHROME_PATH=/path/to/chrome`.
 
 ---
 
@@ -172,12 +174,12 @@ Flags: `--out <dir>` (default `dist/`).
 
 `Ctrl+C` cancels any running command cleanly.
 
-## Running on non-x86_64
+## Bring your own browser
 
-The bundled Chromium fetcher only ships x86_64 builds. On aarch64, ARM, or Apple Silicon, either install a system Chrome/Chromium (one of `chromium`, `google-chrome`, `microsoft-edge` on `PATH`) or set `EDGE_CHROME_PATH=/path/to/chrome` before `edge run` / `edge repl` / `edge build`.
+`edge` drives whatever system Chrome/Chromium is on `PATH` (`chromium`, `chromium-browser`, `google-chrome`, or `microsoft-edge`). `install.sh` provisions it for you on supported distros and macOS; on anything else, install it manually or point `EDGE_CHROME_PATH=/path/to/chrome` at the binary.
 
 ## How it runs (the short version)
 
-`edge` never asks you to compile. It downloads a known-good Chromium on first use, serves the Edge Python runtime alongside your code, and runs everything in that headless browser, streaming output back to your terminal. `edge serve` opens the same setup in your own browser for development.
+`edge` never asks you to compile. It launches a system Chromium headless, serves the Edge Python runtime alongside your code, and runs everything in that headless browser, streaming output back to your terminal. `edge serve` opens the same setup in your own browser for development.
 
 The Edge Python runtime does the actual work; `edge` is the loop around it.

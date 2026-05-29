@@ -12,7 +12,7 @@ check -> wasm -> runtime -> demo
 | `_runtime_check.yml` | JS-side gate: `deno lint runtime/` + `deno test runtime/tests/` (Playwright + Chromium driving `createWorker` against the CDN-deployed wasm). Independent branch, runs in parallel with the Rust pipeline; only the CDN upload below blocks on it |
 | `_runtime.yml` | Bundles `runtime/` + `compiler_lib.wasm` and deploys them to Cloudflare Pages |
 | `_demo.yml` | Hashes `compiler_lib.wasm` into `version.json` (cache-busting) and deploys `demo/` to Cloudflare Pages |
-| `cli.yml` | Standalone (not part of the pipeline above): builds and tests `cli/`; on `main` pushes also publishes the release binary + `install.sh` to GitHub Pages |
+| `cli.yml` | Standalone (not part of the pipeline above): builds and tests `cli/`; on `main` pushes also publishes the release binary + `cli/setup/` scripts (`install.sh`, `uninstall.sh`) to GitHub Pages |
 
 ## Cloudflare Pages
 

@@ -105,44 +105,29 @@ pub fn run(src: &str, manifest: &Manifest) -> Result<bool> {
     Ok(true)
 }
 
-/// Launch headless Chromium; arch decides between the bundled x86_64 fetcher and system Chrome.
+/// Launch headless Chromium against a system-installed browser. install.sh provisions it.
 fn launch() -> Result<Browser> {
     let mut builder = LaunchOptions::default_builder();
     builder.sandbox(false); // headless under WSL/containers typically can't sandbox
     // Default is 30s and the REPL would drop CDP whenever the user stopped to think.
     builder.idle_browser_timeout(Duration::from_secs(60 * 60 * 24));
-    let path = resolve_chrome()?;
-    let needs_fetch = path.is_none();
-    if let Some(p) = path {
-        builder.path(Some(p));
-    }
+    builder.path(Some(resolve_chrome()?));
     let options = builder.build().map_err(|e| anyhow!("building launch options: {e}"))?;
-    if needs_fetch {
-        let sp = crate::ui::spinner("fetching chromium (first run only, ~150 MB)");
-        match Browser::new(options) {
-            Ok(b) => { sp.done("chromium ready"); Ok(b) }
-            Err(e) => { sp.fail("chromium fetch failed"); Err(anyhow!("{e}")) }
-        }
-    } else {
-        Browser::new(options).map_err(|e| anyhow!("{e}"))
-    }
+    Browser::new(options).map_err(|e| anyhow!("{e}"))
 }
 
-/// Prefer env override, then any Chrome on PATH; fall back to the bundled x86_64 fetcher.
-fn resolve_chrome() -> Result<Option<PathBuf>> {
+/// Prefer env override, then any Chrome on PATH, then a Playwright-cached Chromium.
+fn resolve_chrome() -> Result<PathBuf> {
     if let Some(p) = std::env::var_os("EDGE_CHROME_PATH") {
-        return Ok(Some(PathBuf::from(p)));
+        return Ok(PathBuf::from(p));
     }
     if let Ok(p) = headless_chrome::browser::default_executable() {
-        return Ok(Some(p));
+        return Ok(p);
     }
     if let Some(p) = playwright_chrome() {
-        return Ok(Some(p));
+        return Ok(p);
     }
-    if cfg!(target_arch = "x86_64") {
-        return Ok(None);
-    }
-    bail!("no Chrome on {}; install Chrome/Chromium or set EDGE_CHROME_PATH", std::env::consts::ARCH);
+    bail!("no Chrome/Chromium found; re-run install.sh or set EDGE_CHROME_PATH");
 }
 
 /// Best-effort lookup of a Playwright-installed Chromium under `~/.cache/ms-playwright/chromium-*/chrome-linux/chrome`.
