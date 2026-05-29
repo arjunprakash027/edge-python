@@ -34,7 +34,7 @@ cargo install --path cli
 
 ## Run a Python File
 
-Run a script and stream its output to the terminal. Imports resolve through `packages.json`; uncaught errors print a traceback to stderr and exit with code 1.
+Run a script and stream its output to the terminal. Imports resolve through `packages.json`; uncaught errors print a traceback to stderr and exit with code 1. A `raise SystemExit(code)` with an integer (or no argument) exits cleanly with that code (no traceback); a string argument is reported as an error and exits 1. The REPL treats SystemExit the same and quits the session.
 
 ```text
 $ edge run hello.py

@@ -8,6 +8,20 @@ impl<'a> VM<'a> {
 
     /* Byte offset of the last propagating error, or None on success / before `run()`. */
     pub fn error_pos(&self) -> Option<usize> { self.error_byte_pos.map(|p| p as usize) }
+
+    /* Intended process exit code when the last uncaught error is `SystemExit` with an integer (or absent/None) argument. `None` means "not a plain SystemExit", so the host renders a normal traceback; a non-int argument also yields `None` so its message surfaces as an error. */
+    pub fn system_exit_code(&self) -> Option<i64> {
+        let exc = self.pending.exc_val?;
+        let HeapObj::ExcInstance(name, args) = self.heap.get(exc) else { return None; };
+        if name != "SystemExit" { return None; }
+        match args.first() {
+            None => Some(0),
+            Some(a) if a.is_none() => Some(0),
+            Some(a) if a.is_int() => Some(a.as_int()),
+            _ => None,
+        }
+    }
+
     pub fn call_stack_frames(&self) -> &[CallFrame] { &self.call_stack }
     pub fn function_names_ref(&self) -> &[String] { &self.function_names }
 

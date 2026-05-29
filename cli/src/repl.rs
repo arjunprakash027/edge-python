@@ -44,6 +44,10 @@ pub fn run(manifest_path: &Path) -> Result<()> {
         }
 
         let outcome = session.eval(&block, |line| println!("{line}"))?;
+        // `raise SystemExit` quits the session with its code, matching the one-shot runner.
+        if let Some(code) = outcome.exit_code {
+            std::process::exit(code);
+        }
         if let Some(err) = outcome.err {
             crate::ui::traceback(&err);
         }

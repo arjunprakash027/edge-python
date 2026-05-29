@@ -22,6 +22,7 @@ const STATUS_PENDING_FRAME = 2;
 const STATUS_PENDING_EVENT = 3;
 const STATUS_ERROR = 4;
 const STATUS_PENDING_HOST_CALL = 5;
+const STATUS_EXIT = 6; // uncaught SystemExit: clean termination, low 8 bits = exit code
 const ERR_RUNTIME = 2; // wasm-abi error_kind::RUNTIME, for failed deferred host calls
 
 // Worker-lifetime state
@@ -183,7 +184,7 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine, incremen
     let status = exports.run_start(srcBytes.length);
     while (true) {
         const kind = (status >>> STATUS_KIND_SHIFT) & 7;
-        if (kind === STATUS_DONE || kind === STATUS_ERROR) break;
+        if (kind === STATUS_DONE || kind === STATUS_ERROR || kind === STATUS_EXIT) break;
         if (kind === STATUS_PENDING_TIMER) {
             const deadlineNs = exports.last_yield_deadline_ns();
             const nowNs = BigInt(Date.now()) * 1_000_000n;
@@ -225,6 +226,10 @@ export async function run({ src, entryDir = '', baseUrl = null, onLine, incremen
         }
 
         status = exports.run_resume();
+    }
+    // SystemExit: low 8 bits are the exit code, not a buffer length; finish without a traceback.
+    if (((status >>> STATUS_KIND_SHIFT) & 7) === STATUS_EXIT) {
+        return { out: '', ms: performance.now() - t0, exitCode: status & 0xFF };
     }
     const len = status & STATUS_PAYLOAD_MASK;
     const ms = performance.now() - t0;

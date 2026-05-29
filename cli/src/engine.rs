@@ -31,11 +31,15 @@ struct State {
     ok: bool,
     #[serde(default)]
     err: String,
+    // Set when the script raised `SystemExit`; carries its exit code.
+    #[serde(default)]
+    code: Option<i32>,
 }
 
-/// Result of one eval: streamed lines went out via the `on_line` callback; only the error survives.
+/// Result of one eval: streamed lines went out via the `on_line` callback; only the error and exit code survive.
 pub struct Outcome {
     pub err: Option<String>,
+    pub exit_code: Option<i32>,
 }
 
 /// A live session: each eval recompiles + reruns the accumulated history so imports/defs persist.
@@ -96,15 +100,15 @@ impl Session {
     }
 }
 
-/// One-shot: open a session, eval `src`, print lines to stdout, tear down. Ok(true) on clean exit.
-pub fn run(src: &str, manifest: &Manifest) -> Result<bool> {
+/// One-shot: open a session, eval `src`, print lines to stdout, tear down. Returns the process exit code (0 clean, 1 on error, or the script's `SystemExit` code).
+pub fn run(src: &str, manifest: &Manifest) -> Result<i32> {
     let mut session = Session::open(manifest)?;
     let outcome = session.eval(src, |line| println!("{line}"))?;
     if let Some(err) = outcome.err {
         crate::ui::traceback(&err);
-        return Ok(false);
+        return Ok(1);
     }
-    Ok(true)
+    Ok(outcome.exit_code.unwrap_or(0))
 }
 
 /// Launch headless Chromium against a system-installed browser. install.sh provisions it.
@@ -184,7 +188,7 @@ fn drain<F: FnMut(&str)>(tab: &headless_chrome::Tab, on_line: &mut F) -> Result<
         }
         printed = state.lines.len();
         if state.done {
-            return Ok(Outcome { err: if state.ok { None } else { Some(state.err) } });
+            return Ok(Outcome { err: if state.ok { None } else { Some(state.err) }, exit_code: state.code });
         }
         thread::sleep(Duration::from_millis(60));
     }

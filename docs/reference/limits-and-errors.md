@@ -129,6 +129,7 @@ Raised as `VmErr`; most catchable with `try` / `except`.
 | `Raised("AssertionError")` | `AssertionError` | Failed `assert` |
 | `Raised("TimeoutError")` | `TimeoutError` | `with_timeout` deadline expired |
 | `Raised("CancelledError")` | `CancelledError` | User-thrown cancellation |
+| `Raised("SystemExit")` | `SystemExit` | `raise SystemExit(code)`; uncaught = clean host exit with that code |
 | `CallDepth` | `RecursionError` | Past `max_calls` |
 | `Heap` | `MemoryError` | Past heap limit |
 | `Budget` | `RuntimeError` | Past op limit |
@@ -137,7 +138,7 @@ Raised as `VmErr`; most catchable with `try` / `except`.
 
 #### Exception hierarchy
 
-Flat tree rooted at `BaseException -> Exception`. `except` walks parent links, `except Exception` catches `RuntimeError`, `ValueError`, `KeyError`, etc.; `except RuntimeError` catches `RecursionError`, `NotImplementedError`.
+Flat tree rooted at `BaseException -> Exception`. `except` walks parent links, `except Exception` catches `RuntimeError`, `ValueError`, `KeyError`, `AssertionError`, etc.; `except RuntimeError` catches `RecursionError`, `NotImplementedError`. `SystemExit` sits directly under `BaseException`, so `except Exception` does not catch it (use `except SystemExit` or a bare `except`).
 
 ```python
 try:

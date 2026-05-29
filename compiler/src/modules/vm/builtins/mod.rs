@@ -27,6 +27,8 @@ const EXC_PARENTS: &[(&str, &str)] = &[
     ("StopIteration", "Exception"),
     ("StopAsyncIteration", "Exception"),
     ("AssertionError", "Exception"),
+    // `SystemExit` sits under `BaseException`, so `except Exception` does not swallow it.
+    ("SystemExit", "BaseException"),
     ("NotImplementedError", "RuntimeError"),
     ("RecursionError", "RuntimeError"),
     ("MemoryError", "Exception"),

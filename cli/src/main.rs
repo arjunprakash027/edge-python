@@ -109,8 +109,9 @@ fn run_script(manifest_path: &Path, file: Option<&Path>) -> Result<()> {
         }
     };
     let manifest = Manifest::load(manifest_path)?;
-    if !engine::run(&src, &manifest)? {
-        std::process::exit(1);
+    let code = engine::run(&src, &manifest)?;
+    if code != 0 {
+        std::process::exit(code);
     }
     Ok(())
 }

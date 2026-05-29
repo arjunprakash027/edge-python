@@ -18,6 +18,8 @@ const STATUS_PENDING_FRAME: u32 = 2 << STATUS_KIND_SHIFT;
 const STATUS_PENDING_EVENT: u32 = 3 << STATUS_KIND_SHIFT;
 const STATUS_ERROR: u32 = 4 << STATUS_KIND_SHIFT;
 const STATUS_PENDING_HOST_CALL: u32 = 5 << STATUS_KIND_SHIFT;
+// Uncaught `SystemExit`: clean termination, low 8 bits carry the POSIX exit code (not a buffer length).
+const STATUS_EXIT: u32 = 6 << STATUS_KIND_SHIFT;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn src_ptr() -> *mut u8 {
@@ -149,6 +151,12 @@ fn step_vm(mut vm: VM<'static>, src: &str, prev_paused: Option<Box<PausedRun>>) 
             kind
         }
         Err(e) => {
+            // An uncaught `SystemExit` with an integer code is clean termination, not a crash.
+            if let Some(code) = vm.system_exit_code() {
+                drop(vm);
+                drop(prev_paused);
+                return STATUS_EXIT | ((code as u32) & 0xFF);
+            }
             let traceback = e.render_traceback(
                 src, vm.error_pos(), None,
                 vm.call_stack_frames(), vm.function_names_ref(),
