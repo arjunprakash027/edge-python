@@ -145,6 +145,10 @@ Bundles your app into a self-contained `dist/` for offline use or self-hosting: 
 
 ```text
 $ edge build
+  successful - vendored runtime
+  successful - fetched compiler.wasm
+  successful - vendored packages
+
   bundled to dist/
 
   13 runtime files + compiler.wasm

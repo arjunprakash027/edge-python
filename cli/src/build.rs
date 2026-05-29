@@ -42,13 +42,28 @@ pub fn run(manifest_path: &Path, out_dir: PathBuf) -> Result<()> {
 
     fs::create_dir_all(&out_dir).with_context(|| format!("creating {}", out_dir.display()))?;
 
-    vendor_runtime(&out_dir)?;
-    let compiler_bytes = fetch(COMPILER_WASM).context("fetching compiler_lib.wasm")?;
+    let sp = crate::ui::spinner("vendoring runtime");
+    match vendor_runtime(&out_dir) {
+        Ok(()) => sp.done("vendored runtime"),
+        Err(e) => { sp.fail("failed to vendor runtime"); return Err(e); }
+    }
+
+    let sp = crate::ui::spinner("fetching compiler.wasm");
+    let compiler_bytes = match fetch(COMPILER_WASM).context("fetching compiler_lib.wasm") {
+        Ok(b) => b,
+        Err(e) => { sp.fail("failed to fetch compiler.wasm"); return Err(e); }
+    };
     fs::write(out_dir.join("compiler_lib.wasm"), &compiler_bytes)?;
+    sp.done("fetched compiler.wasm");
 
     let scripts = collect_scripts(&project, &out_dir);
     let imports = crawl_imports(&scripts);
-    let (vendored_imports, vendored_host) = vendor_packages(&manifest, &imports, &out_dir)?;
+    let sp = crate::ui::spinner("vendoring packages");
+    let (vendored_imports, vendored_host) = match vendor_packages(&manifest, &imports, &out_dir) {
+        Ok(v) => v,
+        Err(e) => { sp.fail("failed to vendor packages"); return Err(e); }
+    };
+    sp.done("vendored packages");
     let script_count = copy_scripts(&scripts, &project, &out_dir)?;
 
     let rewritten = rewrite_manifest(&manifest, &vendored_imports, &vendored_host);

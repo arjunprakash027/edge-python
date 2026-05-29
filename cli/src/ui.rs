@@ -3,9 +3,12 @@ Minimalist terminal output. Color via owo-colors, off when piped, NO_COLOR, or -
 */
 
 use owo_colors::OwoColorize;
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Write};
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
+use std::time::Duration;
 
 static PLAIN: AtomicBool = AtomicBool::new(false);
 
@@ -98,5 +101,72 @@ pub fn error(e: &anyhow::Error) {
         eprintln!("error: {e:#}");
     } else {
         eprintln!("{} {e:#}", "error:".red());
+    }
+}
+
+// Braille frames used by the spinner; match the rest of the UI's unicode style.
+const SPIN_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+/// Animated stderr spinner for long operations. Falls back to a static line in plain/non-TTY mode.
+pub struct Spinner {
+    stop: Arc<AtomicBool>,
+    handle: Option<thread::JoinHandle<()>>,
+}
+
+/// Start a spinner with `label`. Drop it (or call `done`) to stop.
+pub fn spinner(label: &str) -> Spinner {
+    let stop = Arc::new(AtomicBool::new(false));
+    // No animation when colors are off or stderr is redirected; just announce the step.
+    if plain() || !std::io::stderr().is_terminal() {
+        eprintln!("  {label}...");
+        return Spinner { stop, handle: None };
+    }
+    let stop_thread = stop.clone();
+    let label = label.to_string();
+    let handle = thread::spawn(move || {
+        let mut i = 0usize;
+        while !stop_thread.load(Ordering::Relaxed) {
+            let frame = SPIN_FRAMES[i % SPIN_FRAMES.len()];
+            eprint!("\r  {} {}", frame, label.dimmed());
+            let _ = std::io::stderr().flush();
+            thread::sleep(Duration::from_millis(120));
+            i += 1;
+        }
+        // ANSI: carriage return + erase-to-end-of-line so the next print starts clean.
+        eprint!("\r\x1b[2K");
+        let _ = std::io::stderr().flush();
+    });
+    Spinner { stop, handle: Some(handle) }
+}
+
+impl Spinner {
+    /// Stop the spinner and print a `successful - {msg}` line in green.
+    pub fn done(self, msg: &str) {
+        // Drop stops the thread and clears the line; the result line goes right after.
+        drop(self);
+        if plain() {
+            eprintln!("  successful - {msg}");
+        } else {
+            eprintln!("  {} {msg}", "successful -".green());
+        }
+    }
+
+    /// Stop the spinner and print an `unsuccessful - {msg}` line in red.
+    pub fn fail(self, msg: &str) {
+        drop(self);
+        if plain() {
+            eprintln!("  unsuccessful - {msg}");
+        } else {
+            eprintln!("  {} {msg}", "unsuccessful -".red());
+        }
+    }
+}
+
+impl Drop for Spinner {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(h) = self.handle.take() {
+            let _ = h.join();
+        }
     }
 }

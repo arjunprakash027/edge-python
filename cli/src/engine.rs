@@ -111,11 +111,21 @@ fn launch() -> Result<Browser> {
     builder.sandbox(false); // headless under WSL/containers typically can't sandbox
     // Default is 30s and the REPL would drop CDP whenever the user stopped to think.
     builder.idle_browser_timeout(Duration::from_secs(60 * 60 * 24));
-    if let Some(p) = resolve_chrome()? {
+    let path = resolve_chrome()?;
+    let needs_fetch = path.is_none();
+    if let Some(p) = path {
         builder.path(Some(p));
     }
     let options = builder.build().map_err(|e| anyhow!("building launch options: {e}"))?;
-    Browser::new(options).map_err(|e| anyhow!("{e}"))
+    if needs_fetch {
+        let sp = crate::ui::spinner("fetching chromium (first run only, ~150 MB)");
+        match Browser::new(options) {
+            Ok(b) => { sp.done("chromium ready"); Ok(b) }
+            Err(e) => { sp.fail("chromium fetch failed"); Err(anyhow!("{e}")) }
+        }
+    } else {
+        Browser::new(options).map_err(|e| anyhow!("{e}"))
+    }
 }
 
 /// Prefer env override, then any Chrome on PATH; fall back to the bundled x86_64 fetcher.
@@ -154,6 +164,8 @@ fn playwright_chrome() -> Option<PathBuf> {
 /// Block until the harness has set `window.__edgeReady = true` (worker created, ready for evals).
 fn wait_ready(tab: &headless_chrome::Tab) -> Result<()> {
     let deadline = Instant::now() + READY_TIMEOUT;
+    // Held for the duration of the wait; Drop clears the line on either success or error.
+    let _sp = crate::ui::spinner("booting runtime");
     loop {
         if Instant::now() > deadline {
             bail!("timed out after {}s waiting for the runtime to load", READY_TIMEOUT.as_secs());
