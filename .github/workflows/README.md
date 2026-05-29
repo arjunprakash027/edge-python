@@ -13,17 +13,21 @@ check -> wasm -> runtime -> demo
 | `_runtime.yml` | Bundles `runtime/` + `compiler_lib.wasm` and deploys them to Cloudflare Pages |
 | `_demo.yml` | Hashes `compiler_lib.wasm` into `version.json` (cache-busting) and deploys `demo/` to Cloudflare Pages |
 | `cli.yml` | Standalone (not part of the pipeline above): builds and tests `cli/`; on `main` pushes also publishes the release binary + `cli/setup/` scripts (`install.sh`, `uninstall.sh`) to GitHub Pages |
+| `host.yml` | Standalone: deno-lints and tests each host capability (`dom`, `network`, `storage`, `time`) in headless Chromium; on `main` pushes also deploys their ESM sources to Cloudflare Pages (`edge-python-host`) |
+| `std.yml` | Standalone: clippy + build + optimize + test each stdpkg wasm (`json`, `re`, `math`); on `main` pushes also deploys the per-package `.wasm` to Cloudflare Pages (`edge-python-std`) |
 
 ## Cloudflare Pages
 
-Two **Direct Upload** projects, Actions pushes prebuilt directories via `wrangler pages deploy`; Cloudflare doesn't clone or build.
+Four **Direct Upload** projects, Actions pushes prebuilt directories via `wrangler pages deploy`; Cloudflare doesn't clone or build.
 
 | Project | Source | Production URL |
 |---------|--------|----------------|
 | `edge-python-demo` | `demo/` (wasm hashed for `version.json`, not bundled) | `https://edge-python-demo.pages.dev` |
 | `edge-python-runtime` | `runtime/` + bundled `compiler_lib.wasm` | `https://edge-python-runtime.pages.dev` |
+| `edge-python-host` | `host/<cap>/src/` for each capability, flattened to `<cap>/` | `https://edge-python-host.pages.dev` |
+| `edge-python-std` | per-package optimized `.wasm` from `std/<pkg>/` | `https://edge-python-std.pages.dev` |
 
-Both deploys run **only on pushes to `main`** (gated in `pipeline.yml`) and are pinned to the production `main` branch in `_runtime.yml` / `_demo.yml`. PRs and tags never deploy; the next `main` push refreshes both projects.
+All four deploys run **only on pushes to `main`** and are pinned to the production `main` branch in the matching workflow (`_runtime.yml` / `_demo.yml` / `host.yml` / `std.yml`). PRs and tags never deploy; the next `main` push refreshes the projects.
 
 ### Cloudflare and GitHub setup
 

@@ -18,6 +18,8 @@ Cargo workspace; commands work from any directory.
 ├── docs
 ├── runtime
 ├── starter-module
+├── host
+├── std
 ├── target
 ├── wasm-abi
 └── wasm-pdk

@@ -1,0 +1,179 @@
+name: Std
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BINARYEN_VERSION: "121"
+
+jobs:
+  # Clippy each stdpkg on wasm32. Anchors the matrix so downstream jobs reuse it.
+  lint:
+    name: Lint (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    strategy: &package-matrix
+      fail-fast: false
+      matrix:
+        package: [json, re, math]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+
+      # Stable prefix avoids the nightly job's cache. Keyed per package so each shard owns its slot.
+      - name: Cache Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            std/${{ matrix.package }}/target
+          key: cargo-stable-${{ runner.os }}-${{ matrix.package }}-${{ hashFiles(format('std/{0}/Cargo.toml', matrix.package)) }}
+          restore-keys: cargo-stable-${{ runner.os }}-${{ matrix.package }}-
+
+      # Lint only the cdylib; --all-targets clashes with its panic handler.
+      - name: Clippy src/
+        working-directory: std/${{ matrix.package }}
+        run: cargo clippy --release --target wasm32-unknown-unknown -- -D warnings
+
+  # Build, optimize, and test each package's wasm; uploads the artifact for the deploy step.
+  wasm:
+    name: WASM (${{ matrix.package }})
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy: *package-matrix
+    env:
+      WASM: std/${{ matrix.package }}/target/wasm32-unknown-unknown/release/${{ matrix.package }}.wasm
+    steps:
+      - uses: actions/checkout@v6
+
+      # build-std needs nightly plus rust-src.
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: wasm32-unknown-unknown
+          components: rust-src
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      # Nightly prefix avoids the lint job's cache.
+      - name: Cache Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            std/${{ matrix.package }}/target
+          key: cargo-nightly-${{ runner.os }}-${{ matrix.package }}-${{ hashFiles(format('std/{0}/Cargo.toml', matrix.package)) }}
+          restore-keys: cargo-nightly-${{ runner.os }}-${{ matrix.package }}-
+
+      - name: Cache Deno modules
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/deno
+          key: deno-${{ runner.os }}-${{ hashFiles('std/**/deno.json', 'std/**/deno.lock') }}
+          restore-keys: deno-${{ runner.os }}-
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium
+
+      - name: Install Chromium
+        run: deno run -A npm:playwright install --with-deps chromium
+
+      # apt ships an old binaryen, so fetch the upstream release.
+      - name: Install wasm-opt
+        run: |
+          curl -sSL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" \
+            | tar -xz --strip-components=2 -C /usr/local/bin "binaryen-version_${BINARYEN_VERSION}/bin/wasm-opt"
+          wasm-opt --version
+
+      - name: Build
+        working-directory: std/${{ matrix.package }}
+        run: |
+          RUSTFLAGS="-Z location-detail=none -Z fmt-debug=none -Z unstable-options -C panic=immediate-abort" \
+          cargo +nightly build \
+            --target wasm32-unknown-unknown \
+            --lib --release \
+            -Z build-std=std,panic_abort
+
+      - name: Size (unoptimized)
+        run: ls -lh "$WASM"
+
+      # Two passes: -Oz with traps-never-happen, then reflatten for a fresh CFG.
+      - name: Optimize
+        run: |
+          wasm-opt -Oz --converge \
+            --generate-global-effects \
+            --strip-debug --strip-producers \
+            --enable-bulk-memory-opt \
+            --enable-nontrapping-float-to-int \
+            --enable-sign-ext \
+            -tnh \
+            -o /tmp/wasm_stage1.wasm "$WASM"
+
+          wasm-opt --flatten --rereloop -Oz -Oz \
+            --enable-bulk-memory-opt \
+            --enable-nontrapping-float-to-int \
+            --enable-sign-ext \
+            -o "$WASM" /tmp/wasm_stage1.wasm
+
+          rm /tmp/wasm_stage1.wasm
+
+      - name: Size (optimized)
+        run: ls -lh "$WASM"
+
+      # STDPKG narrows Deno's test discovery to this package's corpus.
+      - name: Test
+        working-directory: std
+        env:
+          STDPKG: ${{ matrix.package }}
+        run: deno test --allow-all tests/
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: wasm-${{ matrix.package }}
+          path: ${{ env.WASM }}
+          retention-days: 1
+
+  # Publish every per-package wasm to Cloudflare Pages on pushes to main only.
+  deploy:
+    name: Deploy
+    needs: wasm
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Pull every per-package wasm uploaded by the matrix above.
+      - name: Download wasm artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: wasm-*
+          path: _site/
+          merge-multiple: true
+
+      # Pages serves the wasm at std.edgepython.com/*.
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy _site --project-name=edge-python-std --branch=main
