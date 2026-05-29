@@ -21,6 +21,15 @@ deno test --allow-all tests/
 
 `HOSTCAP=<cap>` narrows discovery to a single capability; CI uses it to fan out the matrix.
 
+## Capability kinds
+
+The synthesized manifest follows the capability's structure: a `src/entry.py` is imported as a code module (`imports`); otherwise the `src/index.js` host module is imported (`host`). The `.py` takes precedence when both exist.
+
+| Has | Imported entry |
+|---|---|
+| `src/entry.py` | the `.py` (code module) |
+| `src/index.js` (no `.py`) | the JS host module |
+
 ## Corpus shape
 
 Each `<cap>/<cap>.json` is an array of cases. Per case:

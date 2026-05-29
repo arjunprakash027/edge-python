@@ -16,11 +16,22 @@ The `<pkg>/` folders and their `<pkg>.json` corpora stay agnostic to testing. Th
 The driver serves the repo over `http://localhost` (a secure context, so the runtime's integrity check works), synthesizes a `packages.json` (the package wasm), and boots one `<edge-python packages="...">`. After its `ready` event it captures stdout with `el.onOutput(...)` and runs each snippet with `el.run(src)`, reading the trace for error cases. One worker is reused for the whole corpus, so the whole real system (runtime + `compiler_lib.wasm` + the package wasm) is exercised end to end.
 
 ```bash
-( cd json && cargo build --release --target wasm32-unknown-unknown )
+( cd json && cargo build --release --target wasm32-unknown-unknown ) # native packages only
 deno test --allow-all tests/
 ```
 
 `STDPKG=<name>` narrows discovery to a single package; CI uses it to fan out the matrix.
+
+## Package kinds
+
+The synthesized manifest follows the package's structure: a `src/entry.py` is imported as a code module; otherwise the built `<pkg>.wasm` is imported. The `.py` takes precedence when both exist.
+
+| Has | Imported entry | Needs `cargo build` |
+|---|---|---|
+| `src/entry.py` | the `.py` (code module) | no |
+| `Cargo.toml` + `src/lib.rs` (no `.py`) | the `<pkg>.wasm` | yes |
+
+A pure-Python package (e.g. `test`) ships its source; native packages (`re`, `math`, `json`) build to wasm first.
 
 ## Corpus shape
 

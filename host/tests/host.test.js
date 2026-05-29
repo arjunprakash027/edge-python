@@ -26,9 +26,17 @@ const TYPES = {
 };
 
 async function runCapability(cap) {
-    const cases = JSON.parse(readFileSync(`${ROOT}${cap}/${cap}.json`, "utf-8"));
-    // The tag's packages.json, synthesized: the capability's main-thread module keyed by name.
-    const manifest = JSON.stringify({ host: { [cap]: `/${cap}/src/index.js` } });
+    const dir = `${ROOT}${cap}`;
+    // Import the capability's `.py` entry when it has one, else the JS host module.
+    const hasPy = existsSync(`${dir}/src/entry.py`);
+
+    const cases = JSON.parse(readFileSync(`${dir}/${cap}.json`, "utf-8"));
+    // The tag's packages.json, synthesized: python -> entry.py as a code module; else the JS host module.
+    const manifest = JSON.stringify(
+        hasPy
+            ? { imports: { [cap]: `/${cap}/src/entry.py` } }
+            : { host: { [cap]: `/${cap}/src/index.js` } },
+    );
 
     const browser = await chromium.launch();
     const page = await browser.newPage();

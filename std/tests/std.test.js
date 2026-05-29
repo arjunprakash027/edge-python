@@ -20,17 +20,28 @@ const TYPES = {
     ".js": "text/javascript",
     ".wasm": "application/wasm",
     ".json": "application/json",
+    ".py": "text/plain",
 };
 
 async function runPackage(pkg) {
-    const wasm = `${ROOT}${pkg}/target/wasm32-unknown-unknown/release/${pkg}.wasm`;
-    if (!existsSync(wasm)) {
-        throw new Error(`built artifact not found for '${pkg}' at ${wasm}\nrun (from ${pkg}/): cargo build --release --target wasm32-unknown-unknown`);
+    const dir = `${ROOT}${pkg}`;
+    // Import the package's `.py` entry when it has one, else the built wasm.
+    const hasPy = existsSync(`${dir}/src/entry.py`);
+    const wasmUrl = `/${pkg}/target/wasm32-unknown-unknown/release/${pkg}.wasm`;
+
+    let entry;
+    if (hasPy) {
+        entry = `/${pkg}/src/entry.py`;
+    } else {
+        if (!existsSync(`${ROOT}${wasmUrl.slice(1)}`)) {
+            throw new Error(`built artifact not found for '${pkg}' at ${ROOT}${wasmUrl.slice(1)}\nrun (from ${pkg}/): cargo build --release --target wasm32-unknown-unknown`);
+        }
+        entry = wasmUrl;
     }
 
-    const cases = JSON.parse(readFileSync(`${ROOT}${pkg}/${pkg}.json`, "utf-8"));
-    // The tag's packages.json, synthesized: one wasm import keyed by the package name.
-    const manifest = JSON.stringify({ imports: { [pkg]: `/${pkg}/target/wasm32-unknown-unknown/release/${pkg}.wasm` } });
+    const cases = JSON.parse(readFileSync(`${dir}/${pkg}.json`, "utf-8"));
+    // The tag's packages.json, synthesized: the package keyed by name -> its .py or wasm.
+    const manifest = JSON.stringify({ imports: { [pkg]: entry } });
 
     const browser = await chromium.launch();
     const page = await browser.newPage();
