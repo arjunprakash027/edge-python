@@ -1,6 +1,6 @@
 [workspace]
-members = ["compiler", "wasm-abi", "wasm-pdk", "wasm-pdk/macros", "starter-module"]
-# `starter-module` is wasm-only: kept in `members` so it shares the lockfile and resolves path deps, but excluded from `default-members` so default workspace commands skip it. Build it explicitly with `-p starter-module --target wasm32-unknown-unknown`.
+members = ["compiler", "wasm-abi", "wasm-pdk", "wasm-pdk/macros", "wasm-pdk/example"]
+# `wasm-pdk/example` is wasm-only: kept in `members` so it shares the lockfile and resolves path deps, but excluded from `default-members` so default workspace commands skip it. Build it explicitly with `-p slugify-mod --target wasm32-unknown-unknown`.
 default-members = ["compiler", "wasm-abi", "wasm-pdk", "wasm-pdk/macros"]
 resolver = "2"
 

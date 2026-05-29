@@ -16,9 +16,8 @@ Cargo workspace; commands work from any directory.
 ├── compiler
 ├── demo
 ├── docs
-├── runtime
-├── starter-module
 ├── host
+├── runtime
 ├── std
 ├── target
 ├── wasm-abi

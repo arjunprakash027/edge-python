@@ -148,7 +148,7 @@ List and dict construct via `NewList` / `NewDict`; tuple, set, frozenset via `Ne
 The `wasm-pdk` crate provides the `#[plugin_fn]` proc macro that expands to wire-conformant exports. Authors write normal Rust:
 
 ```rust
-// starter-module/src/lib.rs
+// wasm-pdk/example/src/lib.rs
 #![no_std] #![no_main]
 extern crate alloc;
 
