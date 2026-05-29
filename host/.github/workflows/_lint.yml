@@ -1,0 +1,33 @@
+name: _Lint
+
+on:
+  workflow_call:
+    inputs:
+      capability:
+        description: Capability directory to lint (e.g. dom).
+        required: true
+        type: string
+
+jobs:
+  lint:
+    name: Deno Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      # Caches npm: and jsr: imports. Lint usually has nothing to fetch, but the cache stays consistent with `_test.yml` and protects against host packages that lint remote-imported modules.
+      - name: Cache Deno modules
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/deno
+          key: deno-${{ runner.os }}-${{ hashFiles('**/deno.json', '**/deno.lock') }}
+          restore-keys: deno-${{ runner.os }}-
+
+      - name: Lint src/
+        working-directory: ${{ inputs.capability }}
+        run: deno lint src/
