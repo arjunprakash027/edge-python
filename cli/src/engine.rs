@@ -53,6 +53,8 @@ impl Session {
         let port = serve(packages)?;
         let url = format!("http://127.0.0.1:{port}/");
 
+        // One spinner covers the whole bring-up: Chromium spawn + page load + worker boot.
+        let _sp = crate::ui::spinner("starting chromium");
         let browser = launch().context("launching headless Chromium")?;
         let tab = browser.new_tab().map_err(|e| anyhow!("opening a tab: {e}"))?;
         tab.navigate_to(&url).map_err(|e| anyhow!("navigating to the harness: {e}"))?;
@@ -149,8 +151,6 @@ fn playwright_chrome() -> Option<PathBuf> {
 /// Block until the harness has set `window.__edgeReady = true` (worker created, ready for evals).
 fn wait_ready(tab: &headless_chrome::Tab) -> Result<()> {
     let deadline = Instant::now() + READY_TIMEOUT;
-    // Held for the duration of the wait; Drop clears the line on either success or error.
-    let _sp = crate::ui::spinner("booting runtime");
     loop {
         if Instant::now() > deadline {
             bail!("timed out after {}s waiting for the runtime to load", READY_TIMEOUT.as_secs());
