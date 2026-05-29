@@ -15,20 +15,20 @@ const CONT: &str = "... ";
 pub fn run(manifest_path: &Path) -> Result<()> {
     let manifest = Manifest::load(manifest_path)?;
     let mut session = Session::open(&manifest)?;
-    println!("Edge Python {}  ·  type .exit to quit", env!("CARGO_PKG_VERSION"));
+    println!("Edge Python {}  ·  .exit, Ctrl+C or Ctrl+D to quit", env!("CARGO_PKG_VERSION"));
 
     let mut rl = DefaultEditor::new()?;
     loop {
         let first = match rl.readline(PROMPT) {
             Ok(s) => s,
-            Err(ReadlineError::Interrupted) => continue, // Ctrl-C cancels the current input
-            Err(ReadlineError::Eof) => break,            // Ctrl-D exits
+            Err(ReadlineError::Interrupted) => break, // Ctrl+C exits
+            Err(ReadlineError::Eof) => break, // Ctrl+D exits
             Err(e) => { eprintln!("repl error: {e}"); break; }
         };
         let _ = rl.add_history_entry(first.as_str());
         let block = match read_block(&mut rl, first)? {
-            Some(b) => b,
-            None => continue, // Ctrl-C inside a continuation discards the block
+            BlockResult::Done(b) => b,
+            BlockResult::Exit => break,
         };
 
         let trimmed = block.trim();
@@ -51,23 +51,28 @@ pub fn run(manifest_path: &Path) -> Result<()> {
     Ok(())
 }
 
+enum BlockResult {
+    Done(String),
+    Exit
+}
+
 /// Collect a multi-line block when the first line ends with `:`; an empty line closes it.
-fn read_block(rl: &mut DefaultEditor, first: String) -> Result<Option<String>> {
+fn read_block(rl: &mut DefaultEditor, first: String) -> Result<BlockResult> {
     if !first.trim_end().ends_with(':') {
-        return Ok(Some(first));
+        return Ok(BlockResult::Done(first));
     }
     let mut block = first;
     loop {
         match rl.readline(CONT) {
-            Ok(line) if line.is_empty() => return Ok(Some(block)),
+            Ok(line) if line.is_empty() => return Ok(BlockResult::Done(block)),
             Ok(line) => {
                 let _ = rl.add_history_entry(line.as_str());
                 block.push('\n');
                 block.push_str(&line);
             }
-            Err(ReadlineError::Interrupted) => return Ok(None),
-            Err(ReadlineError::Eof) => return Ok(Some(block)),
-            Err(e) => { eprintln!("repl error: {e}"); return Ok(None); }
+            Err(ReadlineError::Interrupted) => return Ok(BlockResult::Exit), // Ctrl+C exits
+            Err(ReadlineError::Eof) => return Ok(BlockResult::Done(block)), // Ctrl+D submits the partial block
+            Err(e) => return Err(e.into()),
         }
     }
 }

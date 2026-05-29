@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use pkg::Manifest;
 
 #[derive(Parser)]
-#[command(name = "edge", version, about = "The Edge Python developer CLI")]
+#[command(name = "edge", version, about = "The Edge Python developer CLI", after_help = "Press Ctrl+C at any time to exit cleanly.")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -36,7 +36,7 @@ struct Cli {
 enum Cmd {
     /// Run a script.
     Run { file: Option<PathBuf> },
-    /// Interactive shell.
+    /// Interactive shell. Ctrl+C, Ctrl+D, or .exit to quit.
     Repl,
     /// Dev server with live reload.
     Serve {
@@ -67,6 +67,8 @@ enum Cmd {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     ui::init(cli.no_color);
+    ctrlc::set_handler(|| std::process::exit(130)).ok();
+
     let manifest_path = cli.packages.unwrap_or_else(|| PathBuf::from("packages.json"));
 
     let result = match cli.cmd {
