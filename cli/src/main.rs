@@ -13,7 +13,7 @@ mod uninstall;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use std::io::Read;
+use std::io::{IsTerminal, Read};
 use std::path::{Path, PathBuf};
 
 use pkg::Manifest;
@@ -99,6 +99,10 @@ fn run_script(manifest_path: &Path, file: Option<&Path>) -> Result<()> {
     let src = match file {
         Some(p) => std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display()))?,
         None => {
+            // A bare `edge run` from a terminal would block on stdin forever; force an explicit pipe or path.
+            if std::io::stdin().is_terminal() {
+                bail!("no script given; pass a file path or pipe Python to stdin");
+            }
             let mut s = String::new();
             std::io::stdin().read_to_string(&mut s).context("reading stdin")?;
             s
