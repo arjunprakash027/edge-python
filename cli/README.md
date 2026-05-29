@@ -52,7 +52,7 @@ error: ZeroDivisionError: division by zero
   | ^
 ```
 
-Flags: `--packages <file>` (custom manifest). Reads from stdin when no file is given.
+Flags: `--packages <file>` (custom manifest). When no path is given, reads from stdin if it is piped (e.g., `cat hello.py | edge run`); errors out if stdin is a terminal.
 
 ---
 

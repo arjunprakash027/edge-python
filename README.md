@@ -41,7 +41,7 @@ edge init my-app && cd my-app
 edge run main.py
 ```
 
-`edge` hosts the runtime in a headless Chromium it downloads on first use; see [`cli/README.md`](cli/README.md) for `serve`, `repl`, `build`.
+`edge` hosts the runtime in a headless Chromium provisioned by `install.sh` (apt, dnf, pacman, zypper, apk, or brew on macOS); see [`cli/README.md`](cli/README.md) for `serve`, `repl`, `build`, `uninstall`.
 
 ### Browser
 
