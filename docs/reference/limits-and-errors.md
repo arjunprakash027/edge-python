@@ -126,6 +126,7 @@ Raised as `VmErr`; most catchable with `try` / `except`.
 | `Raised("KeyError")` | `KeyError` | Dict / set lookup miss |
 | `Raised("IndexError")` | `IndexError` | Sequence index out of range |
 | `Raised("StopIteration")` | `StopIteration` | Iterator exhausted |
+| `Raised("AssertionError")` | `AssertionError` | Failed `assert` |
 | `Raised("TimeoutError")` | `TimeoutError` | `with_timeout` deadline expired |
 | `Raised("CancelledError")` | `CancelledError` | User-thrown cancellation |
 | `CallDepth` | `RecursionError` | Past `max_calls` |

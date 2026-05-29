@@ -26,6 +26,7 @@ const EXC_PARENTS: &[(&str, &str)] = &[
     ("NameError", "Exception"),
     ("StopIteration", "Exception"),
     ("StopAsyncIteration", "Exception"),
+    ("AssertionError", "Exception"),
     ("NotImplementedError", "RuntimeError"),
     ("RecursionError", "RuntimeError"),
     ("MemoryError", "Exception"),

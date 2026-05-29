@@ -143,7 +143,24 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             Some(TokenType::Assert) => {
                 self.advance();
                 self.expr();
-                self.chunk.emit(OpCode::Assert, 0);
+                if self.eat_if(TokenType::Comma) {
+                    // `assert cond, msg` desugars to lazy `if not cond: raise AssertionError(msg)`.
+                    self.chunk.emit(OpCode::JumpIfFalse, 0); // false -> raise; pops cond
+                    let to_raise = self.chunk.instructions.len() - 1;
+                    self.chunk.emit(OpCode::Jump, 0); // true -> skip raise
+                    let to_end = self.chunk.instructions.len() - 1;
+                    self.patch(to_raise);
+                    let call_pos = self.last_end as u32;
+                    let idx = self.chunk.push_name("AssertionError");
+                    self.chunk.emit(OpCode::LoadName, idx);
+                    self.expr(); // message, only evaluated when the assertion fails
+                    self.chunk.emit(OpCode::Call, 1);
+                    self.chunk.record_call_pos(call_pos);
+                    self.chunk.emit(OpCode::Raise, 0);
+                    self.patch(to_end);
+                } else {
+                    self.chunk.emit(OpCode::Assert, 0);
+                }
                 false
             }
             Some(TokenType::Del) => {

@@ -784,10 +784,17 @@
     "annotations": {}
   },
   {
-    "src": "assert x > 0", 
-    "constants": ["0"], 
-    "names": ["x_0"], 
-    "instructions": [["LoadName",0], ["LoadConst",0], ["Gt",0], ["Assert",0], ["ReturnValue",0]], 
+    "src": "assert x > 0",
+    "constants": ["0"],
+    "names": ["x_0"],
+    "instructions": [["LoadName",0], ["LoadConst",0], ["Gt",0], ["Assert",0], ["ReturnValue",0]],
+    "annotations": {}
+  },
+  {
+    "src": "assert x, 'msg'",
+    "constants": ["msg"],
+    "names": ["x_0", "AssertionError"],
+    "instructions": [["LoadName",0], ["JumpIfFalse",3], ["Jump",7], ["LoadName",1], ["LoadConst",0], ["Call",1], ["Raise",0], ["ReturnValue",0]],
     "annotations": {}
   },
   {

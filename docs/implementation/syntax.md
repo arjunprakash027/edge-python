@@ -176,9 +176,10 @@ async   -> async def / for / with
 @   -> decorator stack + def or class   (peeks `class` after the @-list)
 return   -> expr + ReturnValue
 raise   -> expr + Raise / RaiseFrom
-break   -> patched at loop end
+break   -> emits Jump, back-patched to the loop exit
 continue   -> jump to current loop_start
-del / global / nonlocal / assert / pass -> direct emit
+del / global / nonlocal / pass -> direct emit
+assert   -> Assert opcode; the `, msg` form lowers to a conditional raise of AssertionError(msg)
 Name   -> name_stmt   (assignment, augmented, indexed, attribute, call)
 ```
 

@@ -31,7 +31,8 @@ impl VmErr {
             Self::CallDepth => "RecursionError".into(),
             Self::Heap => "MemoryError".into(),
             Self::Budget | Self::Runtime(_) => "RuntimeError".into(),
-            Self::Raised(s) => s.clone(),
+            // `Raised` carries "Class" or "Class: message"; the bare class name drives except-matching.
+            Self::Raised(s) => s.split(':').next().unwrap_or(s).trim().into(),
             // Unreachable in correct hosts; embedder catches HostYield before traceback rendering.
             Self::HostYield(_) => "_HostYield".into(),
             // Caught locally in call_extern; unreachable here.
@@ -62,7 +63,8 @@ impl VmErr {
         use crate::s;
         match self {
             Self::Name(n) => s!("NameError: name '", str n, "' is not defined"),
-            Self::Raised(m) => s!("Exception: ", str m),
+            // Already formatted as "Class" or "Class: message"; render verbatim (no double prefix).
+            Self::Raised(m) => m.clone(),
             Self::Type(m) => s!("TypeError: ", str m),
             Self::TypeMsg(m) => s!("TypeError: ", str m),
             Self::Value(m) => s!("ValueError: ", str m),

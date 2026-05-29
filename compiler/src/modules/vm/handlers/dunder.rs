@@ -157,7 +157,7 @@ impl<'a> VM<'a> {
                         if self.eq_op(item, v, chunk, slots)? { return Ok(true); }
                     }
                     Ok(None) => return Ok(false),
-                    Err(VmErr::Raised(ref m)) if m == "StopIteration" => return Ok(false),
+                    Err(VmErr::Raised(ref m)) if m == "StopIteration" || m.starts_with("StopIteration:") => return Ok(false),
                     Err(e) => return Err(e),
                 }
             }
@@ -181,7 +181,7 @@ impl<'a> VM<'a> {
             match self.try_call_dunder(iter, "__next__", &[], chunk, slots) {
                 Ok(Some(v)) => out.push(v),
                 Ok(None) => return Ok(Some(out)),
-                Err(VmErr::Raised(ref m)) if m == "StopIteration" => return Ok(Some(out)),
+                Err(VmErr::Raised(ref m)) if m == "StopIteration" || m.starts_with("StopIteration:") => return Ok(Some(out)),
                 Err(e) => return Err(e),
             }
         }

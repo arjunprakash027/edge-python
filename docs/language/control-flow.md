@@ -308,7 +308,7 @@ first second
 
 ```python
 def reciprocal(n):
-    assert n != 0
+    assert n != 0, "n must be non-zero"
     return 1 / n
 
 print(reciprocal(4))
@@ -318,7 +318,7 @@ print(reciprocal(4))
 0.25
 ```
 
-Failed assertion -> `RuntimeError`; catchable with `except RuntimeError`, `except Exception`, or bare `except`.
+A failed assertion raises `AssertionError`; catchable with `except AssertionError`, `except Exception`, or bare `except`. The optional message after the comma is evaluated only when the assertion fails and becomes the exception's argument (`e.args`).
 
 ## del
 

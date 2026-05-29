@@ -137,7 +137,12 @@ impl<'a> VM<'a> {
         match op {
             OpCode::Assert => {
                 let v = self.pop()?;
-                if !self.truthy_op(v, chunk, slots)? { return Err(VmErr::Runtime("AssertionError")); }
+                if !self.truthy_op(v, chunk, slots)? {
+                    // Bare `assert` raises a catchable AssertionError with empty args.
+                    let inst = self.heap.alloc(HeapObj::ExcInstance("AssertionError".into(), Vec::new()))?;
+                    self.pending.exc_val = Some(inst);
+                    return Err(VmErr::Raised("AssertionError".into()));
+                }
             }
             OpCode::Del => {
                 let slot = operand as usize;
@@ -151,12 +156,12 @@ impl<'a> VM<'a> {
                 let exc = self.pop()?;
                 // Stash the Val for `except as e` binding; non-Exc values use `display()`.
                 self.pending.exc_val = None;
-                let msg = if exc.is_heap() {
+                // Extract owned (class name, first arg) so display() can run after the heap borrow ends.
+                let info: Option<(alloc::string::String, Option<Val>)> = if exc.is_heap() {
                     match self.heap.get(exc) {
-                        HeapObj::ExcInstance(n, _) => {
-                            let n = n.clone();
+                        HeapObj::ExcInstance(n, args) => {
                             self.pending.exc_val = Some(exc);
-                            n
+                            Some((n.clone(), args.first().copied()))
                         }
                         HeapObj::Type(n) => {
                             // Bare `raise X`: build empty ExcInstance so `e.args` is `()`.
@@ -164,12 +169,18 @@ impl<'a> VM<'a> {
                             let inst = self.heap.alloc(
                                 HeapObj::ExcInstance(n.clone(), Vec::new()))?;
                             self.pending.exc_val = Some(inst);
-                            n
+                            Some((n, None))
                         }
-                        _ => self.display(exc),
+                        _ => None,
                     }
                 } else {
-                    self.display(exc)
+                    None
+                };
+                // Append the first arg so an uncaught traceback reads "Class: message".
+                let msg = match info {
+                    Some((n, Some(arg))) => { let detail = self.display(arg); crate::s!(str &n, ": ", str &detail) }
+                    Some((n, None)) => n,
+                    None => self.display(exc),
                 };
                 return Err(VmErr::Raised(msg));
             }

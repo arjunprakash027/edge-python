@@ -679,7 +679,7 @@ impl<'a> VM<'a> {
                     if op as usize > n { return Err(cold_runtime("jump target out of bounds")); }
                     *ip = op as usize;
                 }
-                Err(VmErr::Raised(m)) if m == "StopIteration" => {
+                Err(VmErr::Raised(m)) if m == "StopIteration" || m.starts_with("StopIteration:") => {
                     self.iter_stack.pop();
                     if op as usize > n { return Err(cold_runtime("jump target out of bounds")); }
                     *ip = op as usize;
