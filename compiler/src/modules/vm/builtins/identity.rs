@@ -169,4 +169,45 @@ impl<'a> VM<'a> {
         self.push(Val::bool(result));
         Ok(())
     }
+
+    /* `issubclass(C, B)`: both are classes (B may be a tuple). Walks the exception hierarchy for built-ins and the inheritance chain for user classes; unlike `isinstance`, arg 1 must itself be a class. */
+    pub fn call_issubclass(&mut self) -> Result<(), VmErr> {
+        let (arg2, sub) = (self.pop()?, self.pop()?);
+
+        // arg 1 must be a built-in/exception `Type` or a user `Class`.
+        let (sub_name, sub_class): (Option<String>, Option<Val>) = match sub.is_heap().then(|| self.heap.get(sub)) {
+            Some(HeapObj::Type(n)) => (Some(n.clone()), None),
+            Some(HeapObj::Class(..)) => (None, Some(sub)),
+            _ => return Err(VmErr::Type("issubclass() arg 1 must be a class")),
+        };
+
+        let check_one = |t: Val, heap: &HeapPool| -> Result<bool, VmErr> {
+            if !t.is_heap() {
+                return Err(VmErr::Type("issubclass() arg 2 must be a class or tuple of classes"));
+            }
+            match heap.get(t) {
+                HeapObj::Type(name2) => Ok(match &sub_name {
+                    Some(name1) => matches_exc_class(name1, name2) || (name1 == "bool" && name2 == "int"),
+                    None => false, // user class is never a subclass of a built-in type
+                }),
+                HeapObj::Class(..) => Ok(sub_class.is_some_and(|c| heap.is_subclass(c, t))),
+                _ => Err(VmErr::Type("issubclass() arg 2 must be a class or tuple of classes")),
+            }
+        };
+
+        if !arg2.is_heap() {
+            return Err(VmErr::Type("issubclass() arg 2 must be a class or tuple of classes"));
+        }
+        let result = match self.heap.get(arg2) {
+            HeapObj::Type(_) | HeapObj::Class(..) => check_one(arg2, &self.heap)?,
+            HeapObj::Tuple(items) => {
+                let items: Vec<Val> = items.clone();
+                items.iter().any(|&t| check_one(t, &self.heap).unwrap_or(false))
+            }
+            _ => return Err(VmErr::Type("issubclass() arg 2 must be a class or tuple of classes")),
+        };
+
+        self.push(Val::bool(result));
+        Ok(())
+    }
 }

@@ -23,6 +23,8 @@ pub(crate) enum AttrLookup {
     PropertyGet { recv: Val, getter: Val },
     // `prop.setter` access, `LoadAttr` materialises a `PropertySetter` value bound to the source property.
     PropertySetterRef(Val),
+    // `__name__` on a function, type, or class; `LoadAttr` materialises the str.
+    Name(String),
 }
 
 impl<'a> VM<'a> {
@@ -67,6 +69,17 @@ impl<'a> VM<'a> {
                 let ty = self.type_name(obj);
                 return Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str bare, "'")));
             }
+
+        // `__name__` on callables and types resolves to their declared name.
+        if obj.is_heap() && bare == "__name__" {
+            let resolved = match self.heap.get(obj) {
+                HeapObj::Func(fi, _, _) => self.function_names.get(*fi).cloned(),
+                HeapObj::Type(n) => Some(n.clone()),
+                HeapObj::Class(n, _, _) => Some(n.clone()),
+                _ => None,
+            };
+            if let Some(n) = resolved { return Ok(AttrLookup::Name(n)); }
+        }
 
         // Class attr: `MyClass.method` returns the unbound function (no `self` prepended).
         if obj.is_heap()
@@ -181,6 +194,11 @@ impl<'a> VM<'a> {
             }
             AttrLookup::PropertySetterRef(prop) => {
                 let v = self.heap.alloc(HeapObj::PropertySetter(prop))?;
+                self.push(v);
+                Ok(())
+            }
+            AttrLookup::Name(s) => {
+                let v = self.heap.alloc(HeapObj::Str(s))?;
                 self.push(v);
                 Ok(())
             }

@@ -295,8 +295,8 @@ impl<'a> VM<'a> {
                 let ty = self.type_name(obj);
                 Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")))
             }
-            handlers::methods::AttrLookup::ExcArgs(_) => {
-                // `e.args()` reports as missing attribute (preserved).
+            handlers::methods::AttrLookup::ExcArgs(_) | handlers::methods::AttrLookup::Name(_) => {
+                // `e.args()` / `f.__name__()`: the value isn't callable, reports as missing attribute.
                 let ty = self.type_name(obj);
                 Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")))
             }

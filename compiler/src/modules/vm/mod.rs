@@ -322,7 +322,7 @@ impl<'a> VM<'a> {
             NativeFnId::Chr, NativeFnId::Ord, NativeFnId::Range, NativeFnId::Round,
             NativeFnId::Min, NativeFnId::Max, NativeFnId::Sum, NativeFnId::Sorted,
             NativeFnId::Enumerate, NativeFnId::Zip, NativeFnId::List, NativeFnId::Tuple,
-            NativeFnId::Dict, NativeFnId::Set, NativeFnId::IsInstance, NativeFnId::Input,
+            NativeFnId::Dict, NativeFnId::Set, NativeFnId::IsInstance, NativeFnId::IsSubclass, NativeFnId::Input,
             NativeFnId::All, NativeFnId::Any, NativeFnId::Bin, NativeFnId::Oct,
             NativeFnId::Hex, NativeFnId::Divmod, NativeFnId::Pow, NativeFnId::Repr,
             NativeFnId::Reversed, NativeFnId::Callable, NativeFnId::Id, NativeFnId::Hash,

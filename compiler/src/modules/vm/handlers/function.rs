@@ -625,7 +625,7 @@ impl<'a> VM<'a> {
             | Sorted | Enumerate | List | Tuple | Bin | Oct | Hex
             | Repr | Reversed | Callable | Id | Hash | Next | Sleep
             | Iter => Some(1),
-            Divmod | IsInstance | HasAttr | Map | Filter | DelAttr => Some(2),
+            Divmod | IsInstance | IsSubclass | HasAttr | Map | Filter | DelAttr => Some(2),
             SetAttr => Some(3),
             WithTimeout => Some(2),
             Cancel => Some(1),
@@ -693,6 +693,7 @@ impl<'a> VM<'a> {
             Hash => self.call_hash(chunk, slots),
             Divmod => self.call_divmod(),
             IsInstance => self.call_isinstance(),
+            IsSubclass => self.call_issubclass(),
             HasAttr => self.call_hasattr(),
             Next => self.call_next(),
             Run => self.call_run(argc),

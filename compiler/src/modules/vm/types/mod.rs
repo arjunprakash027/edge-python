@@ -182,7 +182,7 @@ pub use crate::modules::vm::handlers::methods::BuiltinMethodId;
 pub enum NativeFnId {
     Print, Len, Abs, Str, Int, Float, Bool, Type, Chr, Ord,
     Range, Round, Min, Max, Sum, Sorted, Enumerate, Zip,
-    List, Tuple, Dict, Set, IsInstance, Input, All, Any,
+    List, Tuple, Dict, Set, IsInstance, IsSubclass, Input, All, Any,
     Bin, Oct, Hex, Divmod, Pow, Repr, Reversed, Callable, Id,
     Hash, Format, GetAttr, HasAttr, SetAttr, DelAttr, Next, Run, Sleep,
     Receive, Map, Filter, Iter, Bytes, ImportModule, Slice, Vars,
@@ -200,7 +200,7 @@ impl NativeFnId {
         const NAMES: &[&str] = &[
             "print", "len", "abs", "str", "int", "float", "bool", "type", "chr", "ord",
             "range", "round", "min", "max", "sum", "sorted", "enumerate", "zip",
-            "list", "tuple", "dict", "set", "isinstance", "input", "all", "any",
+            "list", "tuple", "dict", "set", "isinstance", "issubclass", "input", "all", "any",
             "bin", "oct", "hex", "divmod", "pow", "repr", "reversed", "callable", "id",
             "hash", "format", "getattr", "hasattr", "setattr", "delattr",
             "next", "run", "sleep",

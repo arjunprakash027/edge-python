@@ -34,7 +34,7 @@ These parse for syntactic compatibility but raise at runtime, or simply don't ex
 - **Async surface**: `async def` creates real coroutines and the VM runs a cooperative scheduler, but there is no `asyncio` module; primitives are top-level builtins (`run`, `sleep`, `gather`, `with_timeout`, `cancel`, `receive`). Coroutines do not expose `.send()` / `.throw()` / `.close()`.
 - **Metaclasses, descriptor protocol, `__slots__`**: not modeled.
 - **Dynamic code**: no `exec`, no `eval`, no `compile`, no `__import__` (use the `import_module(name)` builtin to look up an already-imported module by alias).
-- **Reflection beyond `type`, `id`, `hash`, `repr`, `callable`, `getattr`, `hasattr`, `vars`, `globals`, `locals`, `isinstance`**. `issubclass` and `dir` are absent.
+- **Reflection beyond `type`, `id`, `hash`, `repr`, `callable`, `getattr`, `hasattr`, `vars`, `globals`, `locals`, `isinstance`, `issubclass`**. `dir` is absent.
 - **Relative imports**: `from . import x` is not supported; use the resolver-aware `import` / `from <spec> import` forms.
 
 ## Design philosophy
@@ -54,11 +54,11 @@ Inherits WASM-host guarantees (no syscalls, no FS, no network, isolated linear m
 
 Single `.wasm` artifact (`compiler_lib.wasm`, 170 KB), runs anywhere WebAssembly does:
 
-- **Browser**: served alongside the [`runtime/`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) JS package, which bridges `print()` and module imports across the WASM <-> JS boundary.
+- **Browser**: served alongside the [`runtime/`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) JS package, which bridges `print()` and module imports across the `WASM <-> JS` boundary.
 - **Server / edge runtimes**: Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute, Spin. The host runtime owns I/O, fetching, and module loading.
 - **Embedded Rust apps**: load `compiler_lib.wasm` via your runtime of choice or use the `compiler_lib` rlib when cargo-linked.
 
 Two ABIs sit on top:
 
-- **Compiler<->host imports**, embedder-declared, covering output, module fetching, native dispatch, wall-clock time. Custom embedders that ship [host packages](/reference/writing-modules#path-c-host-capability) declare additional imports (DOM, FS) without touching the plugin ABI.
+- **`Compiler <-> host` imports**, embedder-declared, covering output, module fetching, native dispatch, wall-clock time. Custom embedders that ship [host packages](/reference/writing-modules#path-c-host-capability) declare additional imports (DOM, FS) without touching the plugin ABI.
 - **Plugin ABI (sealed v1)**, contract for CDN-distributed `.wasm` plugin modules. Exactly 6 `env.*` imports, never extended. See the [WASM module ABI](/reference/wasm-abi).

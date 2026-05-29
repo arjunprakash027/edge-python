@@ -19,7 +19,7 @@ p("aliased")
 aliased
 ```
 
-Edge Python is functional-first. Introspection helpers (`eval`, `exec`, `compile`, `dir`, `ascii`, `help`, `__import__`, `breakpoint`, `open`, `issubclass`) are intentionally absent: the static-import contract and lack of a writable global module table make them either impossible or inconsistent with the paradigm. `staticmethod` / `classmethod` are omitted (use the namespace pattern or free functions); `super` and `property` are supported. See [`/language/classes`](/language/classes), [`/language/dunders`](/language/dunders).
+Edge Python is functional-first. Introspection helpers (`eval`, `exec`, `compile`, `dir`, `ascii`, `help`, `__import__`, `breakpoint`, `open`) are intentionally absent: the static-import contract and lack of a writable global module table make them either impossible or inconsistent with the paradigm. `staticmethod` / `classmethod` are omitted (use the namespace pattern or free functions); `super` and `property` are supported. See [`/language/classes`](/language/classes), [`/language/dunders`](/language/dunders).
 
 ## Output
 
@@ -520,7 +520,7 @@ False
 
 ### type
 
-`type(x)` returns the type object for `x`, shown as `<class 'name'>`. Built-in type names (`int`, `set`, `list`, ...) are these same objects, so `type(x) is int` and `type(x) == int` hold, and calling one constructs it (`type([1])([2, 3])` gives `[2, 3]`). No metaclass, `issubclass`, or `dir`.
+`type(x)` returns the type object for `x`, shown as `<class 'name'>`. Built-in type names (`int`, `set`, `list`, ...) are these same objects, so `type(x) is int` and `type(x) == int` hold, and calling one constructs it (`type([1])([2, 3])` gives `[2, 3]`). No metaclass or `dir`.
 
 ```python
 print(type(42))
@@ -540,6 +540,31 @@ True
 [4, 5]
 ```
 
+Functions, type objects, and user classes expose `__name__` (the bare declared name). `type(e)` on an exception instance reports its concrete class, so `type(e).__name__` yields the exception's name.
+
+```python
+def greet():
+    pass
+
+class Box:
+    pass
+
+print(greet.__name__)
+print(int.__name__)
+print(Box.__name__)
+try:
+    1 / 0
+except Exception as e:
+    print(type(e).__name__)
+```
+
+```text Output
+greet
+int
+Box
+ZeroDivisionError
+```
+
 ### isinstance
 
 `isinstance(obj, X)`: `X` is a built-in type, exception class, user-defined `Class`, or tuple of any of those. String `X` (`isinstance(x, "str")`) -> `TypeError`. `bool` is a subtype of `int`. Exception classes walk the standard hierarchy (`isinstance(e, Exception)` matches any built-in exception). User classes walk the inheritance chain.
@@ -556,7 +581,32 @@ True
 True
 ```
 
-No `issubclass` builtin, flat class layout has nothing to walk.
+### issubclass
+
+`issubclass(C, B)`: both `C` and `B` are classes (`B` may be a tuple of classes); arg 1 must itself be a class or it raises `TypeError`. Built-in and exception classes walk the standard hierarchy (`issubclass(ZeroDivisionError, Exception)`), `bool` is a subclass of `int`, and user classes walk the inheritance chain.
+
+```python
+print(issubclass(ZeroDivisionError, Exception))
+print(issubclass(bool, int))
+print(issubclass(KeyError, (ValueError, Exception)))
+
+class A:
+    pass
+
+class B(A):
+    pass
+
+print(issubclass(B, A))
+print(issubclass(A, B))
+```
+
+```text Output
+True
+True
+True
+True
+False
+```
 
 ### callable
 

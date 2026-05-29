@@ -74,7 +74,7 @@ except MemoryError:
 
 ## Source size
 
-Source must be < 10 MiB; larger rejected at lex time.
+Source must be under 10 MiB; larger rejected at lex time.
 
 ## Token limits
 

@@ -218,7 +218,7 @@ def f(x: int) -> int:   # annotations on params and return parsed and skipped
     return x
 ```
 
-Recorded in `chunk.annotations: HashMap<String, String>` for tooling; no code emitted. `f.__annotations__` is not exposed at runtime.
+Recorded in `chunk.annotations: HashMap<String, String>` for tooling; no code emitted. `f.__annotations__` is not exposed at runtime, but `f.__name__` is (resolved in `resolve_attr`, also on type objects and classes).
 
 ## Comprehensions and generators
 
