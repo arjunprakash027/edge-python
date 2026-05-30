@@ -5,7 +5,7 @@ description: "Sandbox limits, error types, and runtime guarantees."
 
 ## Sandbox limits
 
-Two profiles via `VM::with_limits`, same `compiler.wasm` runs unsandboxed in trusted contexts, clamped in untrusted.
+Two profiles via `VM::with_limits`: the same `compiler.wasm` runs unsandboxed in trusted contexts, clamped in untrusted.
 
 | Limit | `none()` (default) | `sandbox()` | What hitting it raises |
 |----------------|--------------------|---------------|------------------------|
@@ -20,7 +20,7 @@ Two-tier:
 * **Inline (fast)**: 47-bit signed in a NaN-boxed `Val`. Range `+/-2^47` (`+/-140_737_488_355_327`). One ALU op per arithmetic, no allocation.
 * **Wide (slow)**: i128 in `HeapObj::LongInt`. Range `+/-2^127 - 1`. Auto-used when a literal exceeds 47-bit or inline arithmetic overflows.
 
-Outside `+/-2^127` raises `OverflowError`. Promotion is automatic, user code doesn't see the boundary.
+Outside `+/-2^127` raises `OverflowError`. Promotion is automatic; user code doesn't see the boundary.
 
 ```python
 print(140737488355327) # inline, fast path
@@ -43,14 +43,14 @@ overflow
 
 - **`pow(a, b, m)` modular**: modulus must be `< 2^63` (larger overflows i128 in the multiply). Hard cap without arbitrary-precision arithmetic.
 - **No CPython-style unbounded ints**: by design, edge workloads don't need wider than 128 bits; crypto-scale math is out of scope.
-- **Float vs LongInt mixing**: `==` works (LongInt -> f64), but dict/set hashing follows raw `Val` bits, `{long_int: x}` indexed by a same-magnitude float misses. Coerce explicitly.
+- **Float vs LongInt mixing**: `==` works (LongInt -> f64), but dict/set hashing follows raw `Val` bits — `{long_int: x}` indexed by a same-magnitude float misses. Coerce explicitly.
 
 ### Triggering limits
 
 ```python
 # Recursion depth
 def loop(n):
-    return loop(n + 1)
+  return loop(n + 1)
 
 try:
   loop(0)
@@ -85,7 +85,7 @@ Source must be under 10 MiB; larger rejected at lex time.
 | Max expression depth | 200 |
 | Max instructions per chunk | 65,535 |
 
-Prevent asymmetric DoS, small input producing an exponentially large parse tree.
+Prevent asymmetric DoS: small input producing an exponentially large parse tree.
 
 ## Error types
 
@@ -138,7 +138,7 @@ Raised as `VmErr`; most catchable with `try` / `except`.
 
 #### Exception hierarchy
 
-Flat tree rooted at `BaseException -> Exception`. `except` walks parent links, `except Exception` catches `RuntimeError`, `ValueError`, `KeyError`, `AssertionError`, etc.; `except RuntimeError` catches `RecursionError`, `NotImplementedError`. `SystemExit` sits directly under `BaseException`, so `except Exception` does not catch it (use `except SystemExit` or a bare `except`).
+Flat tree rooted at `BaseException -> Exception`. `except` walks parent links — `except Exception` catches `RuntimeError`, `ValueError`, `KeyError`, `AssertionError`, etc.; `except RuntimeError` catches `RecursionError`, `NotImplementedError`. `SystemExit` sits directly under `BaseException`, so `except Exception` does not catch it (use `except SystemExit` or a bare `except`).
 
 ```python
 try:
@@ -157,7 +157,7 @@ caught via parent: oops
 caught IndexError as Exception
 ```
 
-User-defined classes don't auto-extend the built-in `BaseException` tree but support single-level inheritance among themselves, `except UserBase` catches a raised `UserSub` when `UserSub` inherits from `UserBase`. `raise X from Y` raises `X`; the cause is discarded (no `__cause__` / `__context__` chaining).
+User-defined classes don't auto-extend the built-in `BaseException` tree but support single-level inheritance among themselves: `except UserBase` catches a raised `UserSub` when `UserSub` inherits from `UserBase`. `raise X from Y` raises `X`; the cause is discarded (no `__cause__` / `__context__` chaining).
 
 ### Exception arguments
 
@@ -214,7 +214,7 @@ type
 
 ### Environmental errors
 
-Failures surfaced before the source reaches the compiler, no line/column preview, no parsed code to anchor to. Emitted as plain text, uncatchable from Python.
+Failures surfaced before the source reaches the compiler: no line/column preview, no parsed code to anchor to. Emitted as plain text, uncatchable from Python.
 
 | Error | When | Resolution |
 |---------------------------------------------|-----------------------------------------------|---------------------------------------|
@@ -238,4 +238,4 @@ Exist for syntactic compatibility. For code reuse, use higher-order functions.
 
 ## Determinism
 
-Same source + input -> same output across runs and architectures (`x86_64`, `aarch64`, `wasm32`). No time, randomness, threading, or OS interaction. Heap-pool slot reuse is the only nondeterminism, observable through `id(x)` only, never `==`, `repr`, or any other operation.
+Same source + input -> same output across runs and architectures (`x86_64`, `aarch64`, `wasm32`). No time, randomness, threading, or OS interaction. Heap-pool slot reuse is the only nondeterminism: observable through `id(x)` only, never `==`, `repr`, or any other operation.
