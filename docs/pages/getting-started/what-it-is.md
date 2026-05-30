@@ -30,8 +30,8 @@ Reads like Python (parses Python syntax). Runs differently, what it executes is 
 These parse for syntactic compatibility but raise at runtime, or simply don't exist:
 
 - **Standard library**: no bundled stdlib; every module is external (see **Modules** above).
-- **I/O**: `input()` reads from a host-provided buffer. There is no file system, no network, no `os`, no `sys`, those surface only when the host runtime registers them as [host packages](/reference/writing-modules#path-c-host-capability) (the same mechanism behind `print` and `input` themselves).
-- **Async surface**: `async def` creates real coroutines and the VM runs a cooperative scheduler, but there is no `asyncio` module; primitives are top-level builtins (`run`, `sleep`, `gather`, `with_timeout`, `cancel`, `receive`). Coroutines do not expose `.send()` / `.throw()` / `.close()`.
+- **I/O**: `input()` reads from a host-provided buffer. There is no file system, no network, no `os`, no `sys`, those surface only when the host runtime registers them as [host capabilities](/reference/writing-modules#path-b-host-capability) (the same mechanism behind `print` and `input` themselves).
+- **Async surface**: `async def` creates real coroutines and the VM runs a cooperative scheduler, but there is no `asyncio` module — primitives are top-level builtins ([Async](/language/async)). Coroutines do not expose `.send()` / `.throw()` / `.close()`.
 - **Metaclasses, descriptor protocol, `__slots__`**: not modeled.
 - **Dynamic code**: no `exec`, no `eval`, no `compile`, no `__import__` (use the `import_module(name)` builtin to look up an already-imported module by alias).
 - **Reflection beyond `type`, `id`, `hash`, `repr`, `callable`, `getattr`, `hasattr`, `vars`, `globals`, `locals`, `isinstance`, `issubclass`**. `dir` is absent.
@@ -60,5 +60,5 @@ Single `.wasm` artifact (`compiler_lib.wasm`, 170 KB), runs anywhere WebAssembly
 
 Two ABIs sit on top:
 
-- **`Compiler <-> host` imports**, embedder-declared, covering output, module fetching, native dispatch, wall-clock time. Custom embedders that ship [host packages](/reference/writing-modules#path-c-host-capability) declare additional imports (DOM, FS) without touching the plugin ABI.
+- **`Compiler <-> host` imports**, embedder-declared, covering output, module fetching, native dispatch, wall-clock time. Custom embedders that ship [host capabilities](/reference/writing-modules#path-b-host-capability) declare additional imports (DOM, FS) without touching the plugin ABI.
 - **Plugin ABI (sealed v1)**, contract for CDN-distributed `.wasm` plugin modules. Exactly 6 `env.*` imports, never extended. See the [WASM module ABI](/reference/wasm-abi).

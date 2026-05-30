@@ -47,7 +47,7 @@ hello world
 
 ### abs
 
-`abs(x)`: absolute value of int or float. Non-numeric -> `TypeError`. Works on inline and `LongInt` i128; literals beyond +/-2^127 are rejected at parse time.
+`abs(x)`: absolute value of int or float. Non-numeric -> `TypeError`. Works across the full integer range (see [Integer width](/reference/limits-and-errors#integer-width)).
 
 ```python
 print(abs(-7))

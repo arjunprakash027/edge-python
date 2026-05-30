@@ -9,7 +9,7 @@ Edge Python has no bundled stdlib. Three ways to add native functionality:
 |---|---|---|---|
 | **`.wasm` module via URL** ([WASM ABI](/reference/wasm-abi)) | Publish `.wasm` to a CDN; any host loads dynamically | Primitives only (None, bool, i128, f64, bytes/str) | Reference [`wasm-pdk`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) (Rust), community PDKs, or hand-written wire boilerplate |
 | **Host capability** | Custom `compiler.wasm` (additional host imports declared) + host runtime they bridge to | Primitives + access to host services (DOM, FS, fetch) through embedder host imports | You own embedder + host runtime; bindings travel together |
-| **JS host module** | Plain ESM registered via `createWorker({ mainThreadModules })` | Primitives only (same as Path A) | Pure JS; no Rust, no `.wasm`, no build step |
+| **JS host module** | Plain ESM via `createWorker` (`mainThreadModules` eager, `hostModules` lazy) or the `host` field of `packages.json` | Primitives only (same as Path A) | Pure JS; no Rust, no `.wasm`, no build step |
 
 `.wasm` matches the marketplace pattern (`from "https://x.wasm" import f` works in any host). Host capability is for runtime distributions that own their `compiler.wasm` and expose host services to scripts (the same pattern `print` and `input` use). JS host modules keep upstream `compiler_lib.wasm` untouched while exposing main-thread surface (DOM, dialogs, FileReader, observers, anything `window.*`).
 

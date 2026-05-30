@@ -122,7 +122,7 @@ Raised as `VmErr`; most catchable with `try` / `except`.
 | `Attribute` | `AttributeError` | Attribute not found on object |
 | `Name` | `NameError` | Undefined name |
 | `ZeroDiv` | `ZeroDivisionError` | Division or modulo by zero |
-| `Overflow` | `OverflowError` | Integer arithmetic past +/-2^47 |
+| `Overflow` | `OverflowError` | Integer arithmetic past ±2^127 |
 | `Raised("KeyError")` | `KeyError` | Dict / set lookup miss |
 | `Raised("IndexError")` | `IndexError` | Sequence index out of range |
 | `Raised("StopIteration")` | `StopIteration` | Iterator exhausted |
