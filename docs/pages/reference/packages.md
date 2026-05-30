@@ -3,7 +3,7 @@ title: "Official packages"
 description: "The ready-made modules maintained alongside Edge Python, what they are, where they live, and how to import them."
 ---
 
-Edge Python ships no bundled stdlib (see [What it is](/getting-started/what-it-is)), every module is external. This page is the catalog of the **official, ready-to-use packages** maintained alongside the compiler. You don't have to write these yourself, import them and go. To build your own, see [Writing modules](/reference/writing-modules).
+Edge Python ships no bundled stdlib (see [What it is](/getting-started/what-it-is)); every module is external. This page is the catalog of the **official, ready-to-use packages** maintained alongside the compiler. You don't have to write these yourself: import them and go. To build your own, see [Writing modules](/reference/writing-modules).
 
 There are two families, matching two of the three [delivery paths](/reference/writing-modules):
 
@@ -12,11 +12,11 @@ There are two families, matching two of the three [delivery paths](/reference/wr
 | **Standard packages** | [`std/`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std) | `.wasm` (Rust) | Inside the WASM sandbox, any host | [Path A](/reference/writing-modules#path-a-wasm-module-by-url) |
 | **Host libraries** | [`host/`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/host) | Plain ESM (JS) | Browser main thread | [Path C](/reference/writing-modules#path-c-js-host-module) |
 
-Standard packages are host-agnostic (they run wherever WASM runs). Host libraries are browser-only, they reach `document` / `window` / `localStorage`, surfaces that don't exist in a non-browser host.
+Standard packages are host-agnostic (they run wherever WASM runs). Host libraries are browser-only: they reach `document` / `window` / `localStorage`, surfaces that don't exist in a non-browser host.
 
 ## Standard packages
 
-Language-agnostic `.wasm` plugins over the [WASM module ABI](/reference/wasm-abi). Import by bare name (the browser runtime resolves the official ones by default, see [Defaults](#defaults)), by URL, or via a `packages.json` alias; the host fetches the `.wasm` and treats its exports as native bindings.
+Language-agnostic `.wasm` plugins over the [WASM module ABI](/reference/wasm-abi). Import by bare name (the browser runtime resolves the official ones by default; see [Defaults](#defaults)), by URL, or via a `packages.json` alias; the host fetches the `.wasm` and treats its exports as native bindings.
 
 ### `json`
 
