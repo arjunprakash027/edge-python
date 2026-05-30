@@ -63,6 +63,33 @@ print(factorial(5)) # 120
 
 Integers are bounded by the VM's `i128`, so `factorial`, `comb`, `perm`, and `lcm` raise `ValueError` past that range, and there is no `complex` / `cmath`. Pre-built `.wasm` is served from `https://std.edgepython.com/math.wasm`. Full API: [`std/math/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/math).
 
+### `test`
+
+A tiny unit-test harness written in pure Edge Python, not a Rust `.wasm` module: fixtures, test registration, exception assertions, and a runner that reports pass/fail and sets the exit code. It leans only on language built-ins (`assert`, `issubclass`, `SystemExit`), so it needs no host capability and runs wherever the VM runs.
+
+```python
+from test import fixture, test, raises, run
+
+@fixture
+def user():
+    return {"name": "Ana"}
+
+@test("user has a name", "user")
+def test_name(user):
+    assert user["name"] == "Ana"
+
+@test("division by zero raises")
+def test_div():
+    with raises(ZeroDivisionError):
+        1 / 0
+
+run() # prints PASS/FAIL lines and a summary, then raises SystemExit(0 if all passed, else 1)
+```
+
+`@fixture` registers a `def` under its name and injects it by keyword into the tests that ask for it; `@test(description, *uses)` registers a test plus the fixtures it pulls; `raises(ExcType)` is a context manager asserting the block raises `ExcType` (a subclass, or any type in a tuple); `run()` executes every registered test, prints `PASS` / `FAIL` / `ERROR` and a summary, then raises `SystemExit(1 if any failed, else 0)` so a host can read the result as a process exit code.
+
+Unlike the other standard packages, `test` ships as **pure Edge Python source** (`src/entry.py`), not a compiled `.wasm`, so there is no `cargo` build and nothing served from `std.edgepython.com`; the browser runtime resolves it by default and imports the `.py` directly (see [Defaults](#defaults)). Full API: [`std/test/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/test).
+
 ## Host libraries
 
 Plain-JS capabilities that run on the browser's main thread, registered declaratively via the `host` field of [`packages.json`](/reference/imports#packages-json) (with the `<edge-python>` element), programmatically via `createWorker({ hostModules })`, or resolved by default with no config at all (see [Defaults](#defaults)). No `.wasm`, no Rust, no build step. Each call defers to the main thread over `postMessage` (around 0.1 to 0.4 ms); Python sees a synchronous call. The ESM loads lazily, the first time a run imports it.
@@ -143,7 +170,7 @@ One manifest drives both directions: `imports` for worker-side `.py` / `.wasm` m
 
 ### Defaults
 
-The browser runtime ships a built-in base manifest, so the official packages resolve by bare name with **no `packages.json` at all**: the std `.wasm` packages (`json`, `re`, `math`) and the host libraries (`dom`, `network`, `storage`, `time`). Three rules:
+The browser runtime ships a built-in base manifest, so the official packages resolve by bare name with **no `packages.json` at all**: the std packages (`json`, `re`, `math`, and the pure-Python `test`) and the host libraries (`dom`, `network`, `storage`, `time`). Three rules:
 
 - **Lazy.** A default is fetched only when a run actually imports it. Unused defaults never hit the network.
 - **Overridable.** Your `packages.json` (or `imports` / `hostModules`) wins for the same name, so you can pin a specific version or URL.

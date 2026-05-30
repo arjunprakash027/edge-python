@@ -14,7 +14,7 @@ check -> wasm -> runtime -> demo
 | `_demo.yml` | Hashes `compiler_lib.wasm` into `version.json` (cache-busting) and deploys `demo/` to Cloudflare Pages |
 | `cli.yml` | Standalone (not part of the pipeline above): builds and tests `cli/`; on `main` pushes also publishes the release binary + `cli/setup/` scripts (`install.sh`, `uninstall.sh`) to GitHub Pages |
 | `host.yml` | Standalone: deno-lints and tests each host capability (`dom`, `network`, `storage`, `time`) in headless Chromium; on `main` pushes also deploys their ESM sources to Cloudflare Pages (`edge-python-host`) |
-| `std.yml` | Standalone: clippy + build + optimize + test each stdpkg wasm (`json`, `re`, `math`); on `main` pushes also deploys the per-package `.wasm` to Cloudflare Pages (`edge-python-std`) |
+| `std.yml` | Standalone: clippy + build + optimize + test each stdpkg (`json`, `re`, `math` as wasm; `test` is pure Edge Python, so its steps skip the wasm build and only run the corpus); on `main` pushes also deploys the per-package `.wasm` to Cloudflare Pages (`edge-python-std`) |
 
 ## Cloudflare Pages
 

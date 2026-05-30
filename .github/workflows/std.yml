@@ -47,10 +47,11 @@ jobs:
 
       # Lint only the cdylib; --all-targets clashes with its panic handler.
       - name: Clippy src/
+        if: matrix.package != 'test'
         working-directory: std/${{ matrix.package }}
         run: cargo clippy --release --target wasm32-unknown-unknown -- -D warnings
 
-  # Build, optimize, and test each package's wasm; uploads the artifact for the deploy step.
+  # Build, optimize, and test each package; uploads the wasm artifact for the deploy step.
   wasm:
     name: WASM (${{ matrix.package }})
     needs: lint
@@ -100,12 +101,15 @@ jobs:
 
       # apt ships an old binaryen, so fetch the upstream release.
       - name: Install wasm-opt
+        if: matrix.package != 'test'
         run: |
           curl -sSL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" \
             | tar -xz --strip-components=2 -C /usr/local/bin "binaryen-version_${BINARYEN_VERSION}/bin/wasm-opt"
           wasm-opt --version
 
+      # `test` is pure Edge Python (src/entry.py): no crate to compile, so skip the wasm build/optimize/upload and let the corpus run below.
       - name: Build
+        if: matrix.package != 'test'
         working-directory: std/${{ matrix.package }}
         run: |
           RUSTFLAGS="-Z location-detail=none -Z fmt-debug=none -Z unstable-options -C panic=immediate-abort" \
@@ -115,10 +119,12 @@ jobs:
             -Z build-std=std,panic_abort
 
       - name: Size (unoptimized)
+        if: matrix.package != 'test'
         run: ls -lh "$WASM"
 
       # Two passes: -Oz with traps-never-happen, then reflatten for a fresh CFG.
       - name: Optimize
+        if: matrix.package != 'test'
         run: |
           wasm-opt -Oz --converge \
             --generate-global-effects \
@@ -138,9 +144,10 @@ jobs:
           rm /tmp/wasm_stage1.wasm
 
       - name: Size (optimized)
+        if: matrix.package != 'test'
         run: ls -lh "$WASM"
 
-      # STDPKG narrows Deno's test discovery to this package's corpus.
+      # STDPKG narrows Deno's test discovery to this package's corpus. The driver routes .py packages to src/entry.py, native ones to the built wasm.
       - name: Test
         working-directory: std
         env:
@@ -148,6 +155,7 @@ jobs:
         run: deno test --allow-all tests/
 
       - uses: actions/upload-artifact@v6
+        if: matrix.package != 'test'
         with:
           name: wasm-${{ matrix.package }}
           path: ${{ env.WASM }}
