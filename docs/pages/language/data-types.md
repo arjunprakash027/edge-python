@@ -104,11 +104,11 @@ b
 c
 ```
 
-`len(s)` and padding (`str.center` / `str.zfill`) measure in code points, not bytes, `'ñ'.center(5, '*')` -> `'**ñ**'` (5 visual chars).
+`len(s)` and padding (`str.center` / `str.zfill`) measure in code points, not bytes — `'ñ'.center(5, '*')` -> `'**ñ**'` (5 visual chars).
 
 ## Bytes
 
-Immutable sequence of bytes (each 0,255). Distinct from `str`: stores raw octets, not Unicode. Indexing returns an `int`, not a single-byte slice.
+Immutable sequence of bytes (each 0–255). Distinct from `str`: stores raw octets, not Unicode. Indexing returns an `int`, not a single-byte slice.
 
 ```python
 data = b"hello"
@@ -178,7 +178,7 @@ print(encoded, decoded)
 b'Edge Python' Edge Python
 ```
 
-`bytes` is hashable and comparable to other `bytes`; `bytes == str` is always `False` (even for valid UTF-8). Methods: `decode`, `hex`, `startswith`, `endswith`. Encodings: `"utf-8"` (default), `"ascii"`.
+`bytes` is hashable and comparable to other `bytes`; `bytes == str` is always `False` (even for valid UTF-8). Methods include `decode`, `hex`, `find`, `count`, `replace`, `split`, `startswith`, `endswith` (see [Methods](/reference/methods)). Encodings: `"utf-8"` (default), `"ascii"`.
 
 ## List
 
@@ -237,7 +237,7 @@ print(xs)
 
 ## Tuple
 
-Immutable sequence. Fastest container for fixed-size data; the only one usable as a dict key in mixed-type cases.
+Immutable sequence. Fastest container for fixed-size data, and the usual hashable container for compound dict keys (frozensets also work).
 
 ```python
 t = (1, 2, 3)
@@ -256,7 +256,7 @@ print(()) # empty
 
 ## Dict
 
-Insertion-ordered mapping. Keys must be hashable: numbers, strings, bytes, bools, `None`, frozensets, tuples of hashables. Mutable containers as keys -> `TypeError: unhashable type`. Numerically equal keys (`1`/`1.0`, `True`/`1`) collapse, second insertion overwrites.
+Insertion-ordered mapping. Keys must be hashable: numbers, strings, bytes, bools, `None`, frozensets, tuples of hashables. Mutable containers as keys -> `TypeError: unhashable type`. Numerically equal keys (`1`/`1.0`, `True`/`1`) collapse; the second insertion overwrites.
 
 ```python
 d = {"a": 1, "b": 2}
@@ -279,7 +279,7 @@ print(list(d.items()))
 ```python
 # Iteration yields keys
 for k in {"x": 1, "y": 2}:
-    print(k)
+  print(k)
 ```
 
 ```text Output
