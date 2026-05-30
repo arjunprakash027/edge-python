@@ -25,7 +25,7 @@ Edge Python is functional-first. Introspection helpers (`eval`, `exec`, `compile
 
 ### print
 
-`print(*args)`: space-separated values to stdout, trailing newline. No `sep` / `end` / `file` / `flush` kwargs, pre-join for custom separators.
+`print(*args)`: space-separated values to stdout, trailing newline. No `sep` / `end` / `file` / `flush` kwargs; pre-join for custom separators.
 
 ```python
 print(1, 2, 3)
@@ -241,7 +241,7 @@ frozenset({2, 3, 1})
 {'a': 1, 'b': 2}
 ```
 
-`dict` also accepts a mapping or kwargs; iterable-of-pairs (`dict([('a', 1)])`) is not supported, use a literal or `dict.update`.
+`dict` also accepts a mapping or kwargs; iterable-of-pairs (`dict([('a', 1)])`) is not supported; use a literal or `dict.update`.
 
 ### chr, ord
 
@@ -444,9 +444,9 @@ handle("prod", req)
 handle("dev",  req)
 ```
 
-Candidates must be imported statically somewhere, `import_module` is a runtime *lookup*, not a *fetch*. Preserves lockfile and integrity: every reachable module is verified at compile time. Unknown name -> `NameError`; non-module global -> `TypeError`.
+Candidates must be imported statically somewhere; `import_module` is a runtime *lookup*, not a *fetch*. Preserves lockfile and integrity: every reachable module is verified at compile time. Unknown name -> `NameError`; non-module global -> `TypeError`.
 
-Dynamic loading (`importlib.import_module`, `__import__`) doesn't exist by design, static-import + runtime-dispatch replaces it.
+Dynamic loading (`importlib.import_module`, `__import__`) doesn't exist by design; static-import + runtime-dispatch replaces it.
 
 ### bytes
 
@@ -475,7 +475,7 @@ See [Bytes](/language/data-types#bytes) for literal syntax (`b"..."`), indexing,
 
 ### bytes_fromhex, int_from_bytes, int_to_bytes
 
-Free functions, not int/bytes methods, primitives have no bound methods (`(5).bit_length()`, `(255).to_bytes(...)` don't exist).
+Free functions, not int/bytes methods — primitives have no bound methods (`(5).bit_length()`, `(255).to_bytes(...)` don't exist).
 
 - `bytes_fromhex(s)`: hex string -> bytes. Inner whitespace ignored; non-hex -> `ValueError`.
 - `int_from_bytes(b, order)`: `order` is `"big"` or `"little"`. Unsigned (high bit never sign).
@@ -697,7 +697,7 @@ print(format("hi", ">10"))
 
 ## Attribute access
 
-`getattr` / `hasattr` consult the built-in method table for primitives (str/list/dict/set/bytes) and the instance `__dict__` for user-class instances. They don't walk user-class method definitions, `hasattr(MyClass(), 'my_method')` is `False`. Functional pattern: call functions with values, don't look up methods reflectively.
+`getattr` / `hasattr` consult the built-in method table for primitives (str/list/dict/set/bytes) and the instance `__dict__` for user-class instances. They don't walk user-class method definitions — `hasattr(MyClass(), 'my_method')` is `False`. Functional pattern: call functions with values, don't look up methods reflectively.
 
 ### getattr
 
@@ -757,7 +757,7 @@ print(f())
 {'a': 1, 'b': 2}
 ```
 
-Dicts are copies, mutation doesn't change VM bindings.
+Dicts are copies; mutation doesn't change VM bindings.
 
 ### setattr, delattr
 
@@ -866,7 +866,7 @@ Concurrency primitives; full model in [Async](/language/async).
 
 ### run
 
-`run(*coros)`: schedules every arg, drains until each reaches a terminal state, returns the first arg's result. Errors from peers other than the first are discarded, for fan-out collecting every result, use `gather`.
+`run(*coros)`: schedules every arg, drains until each reaches a terminal state, returns the first arg's result. Errors from peers other than the first are discarded; for fan-out collecting every result, use `gather`.
 
 ### sleep
 
@@ -923,5 +923,4 @@ timed out
 
 ### cancel
 
-`cancel(coro)`: flag a registered coroutine for cancellation; next tick stops it. Cooperative and silent, body doesn't observe `CancelledError`. For deadline-driven exception-style cancellation, use `with_timeout`.
-
+`cancel(coro)`: flag a registered coroutine for cancellation; next tick stops it. Cooperative and silent — the body doesn't observe `CancelledError`. For deadline-driven exception-style cancellation, use `with_timeout`.
