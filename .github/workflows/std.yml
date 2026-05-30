@@ -154,14 +154,23 @@ jobs:
           STDPKG: ${{ matrix.package }}
         run: deno test --allow-all tests/
 
+      # Stage the deployable under its canonical CDN name: native -> <pkg>.wasm, pure-Python (src/entry.py) -> <pkg>.py.
+      - name: Stage artifact
+        run: |
+          mkdir -p _dist
+          if [ -f "std/${{ matrix.package }}/src/entry.py" ]; then
+            cp "std/${{ matrix.package }}/src/entry.py" "_dist/${{ matrix.package }}.py"
+          else
+            cp "$WASM" "_dist/${{ matrix.package }}.wasm"
+          fi
+
       - uses: actions/upload-artifact@v6
-        if: matrix.package != 'test'
         with:
-          name: wasm-${{ matrix.package }}
-          path: ${{ env.WASM }}
+          name: dist-${{ matrix.package }}
+          path: _dist/
           retention-days: 1
 
-  # Publish every per-package wasm to Cloudflare Pages on pushes to main only.
+  # Publish every per-package artifact (.wasm + .py) to Cloudflare Pages on pushes to main only.
   deploy:
     name: Deploy
     needs: wasm
@@ -170,15 +179,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      # Pull every per-package wasm uploaded by the matrix above.
-      - name: Download wasm artifacts
+      # Pull every per-package artifact uploaded by the matrix above.
+      - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
-          pattern: wasm-*
+          pattern: dist-*
           path: _site/
           merge-multiple: true
 
-      # Pages serves the wasm at std.edgepython.com/*.
+      # Pages serves each package at std.edgepython.com/* (e.g. json.wasm, test.py).
       - name: Deploy
         uses: cloudflare/wrangler-action@v4
         with:
