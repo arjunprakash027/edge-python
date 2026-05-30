@@ -14,7 +14,7 @@ export default withNextra({
         return [
         {
             source: '/',
-            destination: '/getting-started/quickstart',
+            destination: '/getting-started/introduction',
             permanent: false,
         },
         ]
