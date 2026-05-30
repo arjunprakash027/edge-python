@@ -7,12 +7,12 @@ Dunders (`__add__`, `__eq__`, `__getitem__`, ...) plug a class into language pro
 
 ```python
 class V:
-    def __init__(self, n):
-        self.n = n
-    def __add__(self, o):
-        return V(self.n + o.n)
-    def __eq__(self, o):
-        return self.n == o.n
+  def __init__(self, n):
+    self.n = n
+  def __add__(self, o):
+    return V(self.n + o.n)
+  def __eq__(self, o):
+    return self.n == o.n
 
 print((V(3) + V(4)).n)
 print(V(3) == V(3))
@@ -23,7 +23,7 @@ print(V(3) == V(3))
 True
 ```
 
-Dunders are looked up on the class chain (instance dict skipped). Subclasses inherit and may override, operator overloading composes with [single-level inheritance](/language/classes#inheritance-and-super). Monomorphic sites (same class for both operands) promote through the IC after 4 hits and bypass lookup entirely.
+Dunders are looked up on the class chain (instance dict skipped). Subclasses inherit and may override; operator overloading composes with [single-level inheritance](/language/classes#inheritance-and-super). Monomorphic sites (same class for both operands) promote through the IC after 4 hits and bypass lookup entirely.
 
 ## Arithmetic
 
@@ -36,19 +36,19 @@ Dunders are looked up on the class chain (instance dict skipped). Subclasses inh
 | `a // b` | `__floordiv__` | `__rfloordiv__` |
 | `a % b` | `__mod__` | `__rmod__` |
 | `a ** b` | `__pow__` | `__rpow__` |
-| `-a` | `__neg__` |, |
+| `-a` | `__neg__` | — |
 
 Returning `NotImplemented` from the forward op tells the VM to try the reflected op on the other operand. Both `NotImplemented` (or neither defined) -> `TypeError`.
 
-Subclass-first: when `type(b)` is a strict subclass of `type(a)`, `b.__radd__` runs before `a.__add__`, lets a subclass override an inherited reflected op without touching the base.
+Subclass-first: when `type(b)` is a strict subclass of `type(a)`, `b.__radd__` runs before `a.__add__` — letting a subclass override an inherited reflected op without touching the base.
 
 ```python
 class Money:
-    def __init__(self, n): self.n = n
-    def __add__(self, o):
-        return Money(self.n + (o.n if isinstance(o, Money) else o))
-    def __radd__(self, o):
-        return Money(o + self.n)
+  def __init__(self, n): self.n = n
+  def __add__(self, o):
+    return Money(self.n + (o.n if isinstance(o, Money) else o))
+  def __radd__(self, o):
+    return Money(o + self.n)
 
 print((Money(10) + Money(5)).n)
 print((3 + Money(7)).n)
@@ -70,7 +70,7 @@ print((3 + Money(7)).n)
 | `a > b` | `__gt__` | `__lt__` |
 | `a >= b` | `__ge__` | `__le__` |
 
-`!=` falls back to `not __eq__` when `__ne__` is absent. Results coerce to `bool`, `__lt__` returning `'A.lt'` yields `True`, not the string.
+`!=` falls back to `not __eq__` when `__ne__` is absent. Results coerce to `bool` — `__lt__` returning `'A.lt'` yields `True`, not the string.
 
 ## Truth and length
 
@@ -84,13 +84,13 @@ print((3 + Money(7)).n)
 
 ```python
 class Empty:
-    def __bool__(self):
-        return False
+  def __bool__(self):
+    return False
 
 class Container:
-    def __init__(self, n): self.n = n
-    def __len__(self):
-        return self.n
+  def __init__(self, n): self.n = n
+  def __len__(self):
+    return self.n
 
 print(bool(Empty()))
 print(bool(Container(0)), bool(Container(3)))
@@ -125,16 +125,16 @@ Absent `__contains__`: `v in obj` falls back to iterating `obj` with `__eq__`.
 
 ```python
 class Up:
-    def __init__(self, stop):
-        self.i = 0
-        self.stop = stop
-    def __iter__(self):
-        return self
-    def __next__(self):
-        if self.i >= self.stop:
-            raise StopIteration
-        self.i += 1
-        return self.i
+  def __init__(self, stop):
+    self.i = 0
+    self.stop = stop
+  def __iter__(self):
+    return self
+  def __next__(self):
+    if self.i >= self.stop:
+      raise StopIteration
+    self.i += 1
+    return self.i
 
 print(list(Up(3)))
 ```
@@ -151,8 +151,8 @@ print(list(Up(3)))
 
 ```python
 class Double:
-    def __call__(self, x):
-        return x * 2
+  def __call__(self, x):
+    return x * 2
 
 d = Double()
 print(d(7))
@@ -168,7 +168,7 @@ True
 
 `hash(x)` calls `__hash__`; must return `int` (masked to `INT_MAX`).
 
-Eq/hash invariant: a class defining `__eq__` without `__hash__` is unhashable, `hash(x)` and `{x: 1}` raise `TypeError`. Prevents inconsistent dict keys.
+Eq/hash invariant: a class defining `__eq__` without `__hash__` is unhashable — `hash(x)` and `{x: 1}` raise `TypeError`. Prevents inconsistent dict keys.
 
 ```python
 class K:
@@ -198,7 +198,7 @@ Built-in dict/set still compare instance keys by identity (`Val` bits); user `__
 | `str(x)`, `print(x)`| `__str__` | `__repr__`, then default |
 | `f"{x}"` (no spec) | `__str__` | same as `str(x)` |
 | `f"{x:spec}"` | `__format__` | built-in format spec engine |
-| `f"{x!r}"` | `__repr__` |, |
+| `f"{x!r}"` | `__repr__` | — |
 
 `__format__(spec)` receives the spec string and must return `str`.
 
@@ -225,7 +225,7 @@ Existing attributes bypass `__getattr__`; only misses trigger it.
 
 ## Context managers
 
-`with cm() as x:` invokes `__enter__`; its return binds to `as`. On exit, `__exit__(exc_type, exc_value, traceback)` runs, `(None, None, None)` for normal exit, live exception info on raise. Truthy return suppresses; falsy propagates.
+`with cm() as x:` invokes `__enter__`; its return binds to `as`. On exit, `__exit__(exc_type, exc_value, traceback)` runs — `(None, None, None)` for normal exit, live exception info on raise. Truthy return suppresses; falsy propagates.
 
 ```python
 class Suppress:
@@ -243,7 +243,7 @@ print("after")
 after
 ```
 
-Multiple managers (`with a(), b() as x:`) nest LIFO, `b` enters last, exits first. Each has its own implicit handler, so inner suppression still lets outer managers run their normal `__exit__(None, None, None)`.
+Multiple managers (`with a(), b() as x:`) nest LIFO — `b` enters last, exits first. Each has its own implicit handler, so inner suppression still lets outer managers run their normal `__exit__(None, None, None)`.
 
 If `__exit__` itself raises, the new exception replaces the original.
 
