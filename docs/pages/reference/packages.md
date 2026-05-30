@@ -32,7 +32,7 @@ print(dumps({"k": [1, 2, 3], "ok": True})) # {"k":[1,2,3],"ok":true}
 
 Pre-built `.wasm` is served from `https://std.edgepython.com/json.wasm`. Full API: [`std/json/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/json).
 
-> **`json` is an external package, but the browser runtime resolves it by default.** It isn't compiled into `compiler_lib.wasm`, it's this `.wasm` package. In the browser runtime you can write `from json import ...` with no `packages.json` (a built-in [default](#defaults), fetched lazily on first import). Other hosts, or `defaults: false`, need it declared (alias or URL) like any other module.
+> **`json` is an external `.wasm` package, not built into `compiler_lib.wasm`** — the browser runtime just resolves it by [default](#defaults), so `from json import ...` works with no manifest.
 
 ### `re`
 

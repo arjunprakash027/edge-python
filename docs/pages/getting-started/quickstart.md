@@ -39,7 +39,7 @@ In the browser, the runtime's `<edge-python>` element runs a `.py` file declarat
 </head>
 <body>
     <div id="app"></div>
-    <edge-python entry="./app/hellp.py" packages="./app/packages.json"></edge-python>
+    <edge-python entry="./app/hello.py" packages="./app/packages.json"></edge-python>
 </body>
 </html>
 ```
@@ -65,7 +65,7 @@ Open the [playground](https://demo.edgepython.com) and try the SimplePerceptron 
 greet = lambda name: f"Hello, {name}!"
 
 for who in ["world", "edge", "python"]:
-    print(greet(who))
+  print(greet(who))
 ```
 
 ```text Output
@@ -73,50 +73,3 @@ Hello, world!
 Hello, edge!
 Hello, python!
 ```
-
-## Language overview
-
-Edge Python is a Python subset with classes, async/await, structural pattern matching, and `packages.json` imports, compiled to bytecode and run on a sandboxed WebAssembly VM.
-
-```python
-# First-class functions
-ops = [abs, len, str]
-print([f(-3) for f in ops])
-
-# Currying with closures
-add = lambda x: lambda y: x + y
-print(add(3)(4))
-
-# Pure functions are template-memoised after two hits with the same arguments (no decorators needed, this is detected by the VM)
-def fib(n):
-    if n < 2: return n
-    return fib(n - 1) + fib(n - 2)
-
-print(fib(20))
-```
-
-```text Output
-[3, 2, '-3']
-7
-6765
-```
-
-## Next steps
-
-<CardGroup cols={2}>
-  <Card title="What it is" icon="compass" href="/getting-started/what-it-is">
-    Scope, paradigm, and what intentionally isn't supported.
-  </Card>
-  <Card title="Syntax" icon="code" href="/language/syntax">
-    Operators, literals, and the language surface.
-  </Card>
-  <Card title="Built-ins" icon="package" href="/reference/builtins">
-    Every built-in function with examples and outputs.
-  </Card>
-  <Card title="Methods" icon="list" href="/reference/methods">
-    String, list, and dict methods.
-  </Card>
-  <Card title="Packages" icon="boxes" href="/reference/packages">
-    Ready-made modules: `json`, `dom`, `network`, `storage` and more.
-  </Card>
-</CardGroup>

@@ -73,7 +73,7 @@ Heap is a `Vec<HeapSlot>` arena with a free list (capped 524,288, sorted to pref
 - No IR, one representation between source and dispatch.
 - No JIT (single-tier, pure Rust). Method JITs need per-arch stencils; trace JITs duplicate the execution model and complicate GC.
 - No runtime module system, imports resolve at parse time through a host-injected `Resolver`. See [Imports](/reference/imports).
-- No bigints, complex numbers, `bytearray`, `memoryview`, `Decimal`, `Fraction`. No `gen.send` / `throw` / `close`. No `asyncio` module, `run`, `sleep`, `gather`, `with_timeout`, `cancel`, `receive` are top-level builtins.
+- No bigints, complex numbers, `bytearray`, `memoryview`, `Decimal`, `Fraction`. No `gen.send` / `throw` / `close`. No `asyncio` module — concurrency primitives are top-level builtins ([Async](/language/async)).
 
 ## Coroutine and context-manager dispatch
 
