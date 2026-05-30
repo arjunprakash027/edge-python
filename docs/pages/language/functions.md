@@ -3,7 +3,7 @@ title: "Functions"
 description: "First-class functions, lambdas, closures, generators."
 ---
 
-Functions are the central abstraction, values that can be passed, returned, stored, composed.
+Functions are the central abstraction: values that can be passed, returned, stored, and composed.
 
 ## def
 
@@ -78,7 +78,7 @@ print(opts(host="api", port=443))
 
 ### Keyword-only parameters
 
-A bare `*` marks every following parameter as keyword-only, positional args never reach them.
+A bare `*` marks every following parameter as keyword-only; positional args never reach them.
 
 ```python
 def connect(host, *, port=80, secure=False):
@@ -142,7 +142,7 @@ Hi, world
 
 ## First-class functions
 
-Functions are values, store, pass, return.
+Functions are values: store, pass, return them.
 
 ```python
 ops = [abs, len, str]
@@ -156,9 +156,9 @@ print([f(-3) for f in ops])
 ```python
 # Functions as dict values; replaces switch/case
 handlers = {
-  "add":  lambda a, b: a + b,
-  "mul":  lambda a, b: a * b,
-  "max":  max,
+  "add": lambda a, b: a + b,
+  "mul": lambda a, b: a * b,
+  "max": max,
 }
 
 print(handlers["add"](3, 4))
@@ -343,11 +343,11 @@ Naive recursion runs at memoized cost without source-level changes.
 
 ```python
 def squares(n):
-    for i in range(n):
-        yield i * i
+  for i in range(n):
+    yield i * i
 
 for x in squares(5):
-    print(x)
+  print(x)
 ```
 
 ```text Output
@@ -452,7 +452,7 @@ print(base(5))
 12
 ```
 
-Parameterised decorators are factories, a function taking decorator args and returning the actual decorator. The wrapped function captures both scopes.
+Parameterised decorators are factories — a function taking decorator args and returning the actual decorator. The wrapped function captures both scopes.
 
 ```python
 def repeat(n):
