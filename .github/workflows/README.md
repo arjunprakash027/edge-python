@@ -15,10 +15,11 @@ check -> wasm -> runtime -> demo
 | `cli.yml` | Standalone (not part of the pipeline above): builds and tests `cli/`; on `main` pushes also publishes the release binary + `cli/setup/` scripts (`install.sh`, `uninstall.sh`) to GitHub Pages |
 | `host.yml` | Standalone: deno-lints and tests each host capability (`dom`, `network`, `storage`, `time`) in headless Chromium; on `main` pushes also deploys their ESM sources to Cloudflare Pages (`edge-python-host`) |
 | `std.yml` | Standalone: clippy + build + optimize + test each stdpkg (`json`, `re`, `math` as wasm; `test` is pure Edge Python, so its steps skip the wasm build and only run the corpus); on `main` pushes also deploys the per-package `.wasm` to Cloudflare Pages (`edge-python-std`) |
+| `docs.yml` | Standalone (triggered only by `docs/**` changes): `npm ci` + `next build` static export of the Nextra docs (`docs/out`, sitemap via `postbuild`); PRs build only, `main` pushes also deploy to Cloudflare Pages (`edge-python-docs`) |
 
 ## Cloudflare Pages
 
-Four **Direct Upload** projects, Actions pushes prebuilt directories via `wrangler pages deploy`; Cloudflare doesn't clone or build.
+Five **Direct Upload** projects, Actions pushes prebuilt directories via `wrangler pages deploy`; Cloudflare doesn't clone or build.
 
 | Project | Source | Production URL |
 |---------|--------|----------------|
@@ -26,8 +27,9 @@ Four **Direct Upload** projects, Actions pushes prebuilt directories via `wrangl
 | `edge-python-runtime` | `runtime/` + bundled `compiler_lib.wasm` | `https://edge-python-runtime.pages.dev` |
 | `edge-python-host` | `host/<cap>/src/` for each capability, flattened to `<cap>/` | `https://edge-python-host.pages.dev` |
 | `edge-python-std` | per-package optimized `.wasm` from `std/<pkg>/` | `https://edge-python-std.pages.dev` |
+| `edge-python-docs` | `docs/out` (Nextra static export) | `https://edgepython.com` (custom domain; also `https://edge-python-docs.pages.dev`) |
 
-All four deploys run **only on pushes to `main`** and are pinned to the production `main` branch in the matching workflow (`_runtime.yml` / `_demo.yml` / `host.yml` / `std.yml`). PRs and tags never deploy; the next `main` push refreshes the projects.
+All five deploys run **only on pushes to `main`** and are pinned to the production `main` branch in the matching workflow (`_runtime.yml` / `_demo.yml` / `host.yml` / `std.yml` / `docs.yml`). PRs and tags never deploy; the next `main` push refreshes the projects.
 
 ### Cloudflare and GitHub setup
 
@@ -36,7 +38,10 @@ All four deploys run **only on pushes to `main`** and are pinned to the producti
 npx wrangler login
 npx wrangler pages project create edge-python-demo --production-branch=main
 npx wrangler pages project create edge-python-runtime --production-branch=main
+npx wrangler pages project create edge-python-docs --production-branch=main
 ```
+
+`edge-python-docs` serves `edgepython.com` (replacing the old Mintlify docs): after the first deploy, add `edgepython.com` as a custom domain on the project (Pages -> Custom domains) and remove it from Mintlify.
 
 Repo secrets (*Settings -> Secrets and variables -> Actions*):
 

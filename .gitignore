@@ -22,6 +22,12 @@ node_modules/
 dist/
 *.log
 
+# Next.js / Nextra (docs)
+.next/
+**/.next/
+out/
+**/out/
+
 # WASM
 pkg/
 **/pkg/

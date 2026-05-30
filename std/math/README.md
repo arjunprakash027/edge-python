@@ -1,6 +1,6 @@
 # Edge Python Math
 
-`math` package for [Edge Python](https://edgepython.com), compiled to `wasm32-unknown-unknown` over the [WASM module ABI](https://github.com/dylan-sutton-chavez/edge-python/blob/main/docs/reference/wasm-abi.md). Scalar transcendentals run on `libm` (no platform libc), and a packed-f64 batch path keeps bulk work fast by crossing the host boundary once per call instead of once per element.
+`math` package for [Edge Python](https://edgepython.com), compiled to `wasm32-unknown-unknown` over the [WASM module ABI](https://edgepython.com/reference/wasm-abi). Scalar transcendentals run on `libm` (no platform libc), and a packed-f64 batch path keeps bulk work fast by crossing the host boundary once per call instead of once per element.
 
 ```python
 from math import sqrt, pi, factorial, hypot

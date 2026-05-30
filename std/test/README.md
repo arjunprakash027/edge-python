@@ -34,7 +34,7 @@ A failing `assert` is reported as `FAIL`; any other exception as `ERROR` with it
 
 ## Exit code
 
-`run()` raises `SystemExit` so a host can read pass/fail as a process exit code (`0` all passed, `1` otherwise). `SystemExit` is caught by `except SystemExit` / `except BaseException` / a bare `except`, but not by `except Exception`. See [Limits and errors](https://github.com/dylan-sutton-chavez/edge-python/blob/main/docs/reference/limits-and-errors.md).
+`run()` raises `SystemExit` so a host can read pass/fail as a process exit code (`0` all passed, `1` otherwise). `SystemExit` is caught by `except SystemExit` / `except BaseException` / a bare `except`, but not by `except Exception`. See [Limits and errors](https://edgepython.com/reference/limits-and-errors).
 
 ## Limitations
 

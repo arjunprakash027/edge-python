@@ -1,0 +1,12 @@
+/* Centers nav links on x-axis; logo stays left, search/icons right. */
+
+.nextra-nav-container nav {
+  position: relative;
+}
+
+.nextra-nav-container nav > div.nextra-scrollbar {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
