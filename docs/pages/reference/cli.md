@@ -1,0 +1,172 @@
+---
+title: "CLI"
+description: "The Edge Python developer CLI: run, serve, repl, init, package management, and build."
+---
+
+The `edge` developer CLI. Write `.py`, run it, serve it, ship it — you never compile anything yourself. `edge` hosts the [Edge Python runtime](/getting-started/what-it-is#where-it-runs) in a headless Chromium provisioned at install time, then runs your code against it. You just point it at a file.
+
+```bash
+edge run app.py  # run a script
+edge serve  # dev server with live reload
+edge repl  # interactive shell (demo)
+edge test  # run *_test.py files (not implemented yet)
+edge init my-app  # scaffold a project
+edge add network  # add a package to packages.json
+edge remove network  # remove a package from packages.json
+edge build  # bundle to dist/
+edge uninstall  # remove the binary, PATH entry, optionally Chromium
+```
+
+The runtime does the actual work; `edge` is the loop around it. It launches system Chromium headless, serves the runtime alongside your code, runs everything in that browser, and streams output back to your terminal. `edge serve` opens the same setup in your own browser.
+
+## Install
+
+```bash
+# Prebuilt binary (recommended)
+curl -fsSL https://dylan-sutton-chavez.github.io/edge-python/install.sh | sh
+
+# Or from source (any platform with Rust and Cargo)
+cargo install --path cli
+```
+
+`install.sh` drops the binary at `~/.local/bin/edge` and appends that directory to your `~/.bashrc` or `~/.zshrc` if it isn't already on `PATH`. Open a new shell (or `source` the file it printed) and `edge --version` should work. Re-run the same `curl … | sh` line any time to upgrade. To remove everything: `curl -fsSL https://dylan-sutton-chavez.github.io/edge-python/uninstall.sh | sh` (asks before touching Chromium).
+
+`install.sh` also provisions Chromium if it isn't already on `PATH`. It reads `/etc/os-release` and uses the host's package manager (`apt`, `dnf`, `pacman`, `zypper`, `apk`, or `brew --cask` on macOS); `sudo` is invoked only when not running as root. On an unsupported distro, install Chrome/Chromium manually or set `EDGE_CHROME_PATH=/path/to/chrome`. See [Bring your own browser](#bring-your-own-browser).
+
+## `edge run` — run a Python file
+
+Runs a script and streams its output to the terminal. Imports resolve through [`packages.json`](/reference/imports#packagesjson); uncaught errors print a traceback to stderr and exit with code 1.
+
+```text
+$ edge run hello.py
+Hello from Edge Python
+the sum is 42
+```
+
+```text
+$ edge run broken.py
+before
+error: ZeroDivisionError: division by zero
+  --> <input>:2:1
+  |
+2 | x = 1 / 0
+  | ^
+```
+
+A `raise SystemExit(code)` with an integer (or no argument) exits cleanly with that code and no traceback; a string argument is reported as an error and exits 1.
+
+Flags: `--packages <file>` (custom manifest). When no path is given, `edge run` reads from stdin if it is piped (`cat hello.py | edge run`); it errors out if stdin is a terminal.
+
+## `edge serve` — local dev server
+
+A dev server for browser apps. Serves your project directory and reloads the page on any file change via an injected polling client.
+
+```text
+$ edge serve
+  http://localhost:5173
+  watching .
+```
+
+Flags: `--port <n>` (default `5173`), `--open` (open the browser).
+
+## `edge repl` — interactive shell (demo)
+
+An interactive Edge Python shell for quick experiments.
+
+```text
+$ edge repl
+Edge Python 0.1.0  ·  .exit, Ctrl+C or Ctrl+D to quit
+>>> from math import sqrt, pi
+>>> print(sqrt(2))
+1.4142135623730951
+>>> print([n * n for n in range(5)])
+[0, 1, 4, 9, 16]
+>>> .exit
+```
+
+History (arrow keys) and multi-line blocks (a line ending in `:` continues until a blank line) are supported. `.exit`, `Ctrl+C`, or `Ctrl+D` quit; `.reset` wipes the accumulated session. Expression results are not auto-printed — use `print()` explicitly.
+
+State is preserved by **recompiling and rerunning the accumulated session on every prompt**: the runtime resets its VM on each `run_start`, so imports and definitions only persist by replay. Trade-offs — side effects (`time()`, `random()`, network, IO) re-fire on every input, the chunk heap grows linearly with session length, and each eval pays the recompile cost. For long sessions or side-effect-heavy code, prefer `edge run` on a script.
+
+> This is a demo: actual cost is O(n²). A first-class incremental compile path in the VM is the proper fix and is tracked for a future runtime change.
+
+## `edge test` — test runner
+
+Not implemented yet. The `test` package itself (the harness you import) is available: `edge add test` writes it to `packages.json`, and both `edge run` and `edge serve` resolve it by default, so a script can already `from test import fixture, test, raises, run` and call `run()` itself.
+
+## `edge init` — scaffold a workspace
+
+Scaffolds a ready-to-run project: an entry script, an HTML host page, and a manifest.
+
+```text
+$ edge init my-app
+  created my-app/
+    ├─ index.html
+    ├─ main.py
+    └─ packages.json
+
+  next:
+    cd my-app && edge serve
+```
+
+`--bare` skips `index.html` for script-only projects.
+
+## `edge add` / `edge remove` — package manager
+
+Manage [`packages.json`](/reference/imports#packagesjson) by name. `edge` knows the official std (`json`, `re`, `math`, `test`) and host (`dom`, `network`, `storage`, `time`) packages, so you don't paste URLs. Most std packages are `.wasm`; `test` is pure Edge Python, so it resolves to `test.py`. See [Official packages](/reference/packages) for the full catalog.
+
+```text
+$ edge add math network
+  + math       std
+  + network    host
+
+  updated packages.json
+```
+
+```text
+$ edge remove network
+  - network
+
+  updated packages.json
+```
+
+Point a package at a custom URL with `edge add foo=https://example.com/foo.wasm`.
+
+## `edge build` — portable bundle
+
+Bundles your app into a self-contained `dist/` for offline use or self-hosting: the runtime, the `compiler.wasm`, your scripts, and every package vendored locally so nothing is fetched at runtime.
+
+```text
+$ edge build
+  successful - vendored runtime
+  successful - fetched compiler.wasm
+  successful - vendored packages
+
+  bundled to dist/
+
+  13 runtime files + compiler.wasm
+  2 packages
+  3 scripts
+
+  1.24 MB · 5.3s
+```
+
+Flags: `--out <dir>` (default `dist/`).
+
+## `edge uninstall`
+
+Removes the binary and its `PATH` entry, and asks before removing Chromium. Equivalent to the `uninstall.sh` one-liner in [Install](#install).
+
+## Global flags
+
+| Flag | Effect |
+|------|--------|
+| `--packages <file>` | Use a specific manifest instead of `./packages.json` |
+| `--no-color` | Disable colored output |
+| `--version` / `-V` | Print version |
+
+`Ctrl+C` cancels any running command cleanly.
+
+## Bring your own browser
+
+`edge` drives whatever system Chrome/Chromium is on `PATH` (`chromium`, `chromium-browser`, `google-chrome`, or `microsoft-edge`). `install.sh` provisions it on supported distros and macOS; on anything else, install it manually or point `EDGE_CHROME_PATH=/path/to/chrome` at the binary.
