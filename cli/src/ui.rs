@@ -140,24 +140,24 @@ pub fn spinner(label: &str) -> Spinner {
 }
 
 impl Spinner {
-    /// Stop the spinner and print a `successful - {msg}` line in green.
+    /// Stop the spinner and print a `(successful) {msg}` line in green.
     pub fn done(self, msg: &str) {
         // Drop stops the thread and clears the line; the result line goes right after.
         drop(self);
         if plain() {
-            eprintln!("  successful - {msg}");
+            eprintln!("  (successful) {msg}");
         } else {
-            eprintln!("  {} {msg}", "successful -".green());
+            eprintln!("  {} {msg}", "(successful)".green());
         }
     }
 
-    /// Stop the spinner and print an `unsuccessful - {msg}` line in red.
+    /// Stop the spinner and print an `(unsuccessful) {msg}` line in red.
     pub fn fail(self, msg: &str) {
         drop(self);
         if plain() {
-            eprintln!("  unsuccessful - {msg}");
+            eprintln!("  (unsuccessful) {msg}");
         } else {
-            eprintln!("  {} {msg}", "unsuccessful -".red());
+            eprintln!("  {} {msg}", "(unsuccessful)".red());
         }
     }
 }

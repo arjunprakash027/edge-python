@@ -1,20 +1,20 @@
 ---
-title: "CLI"
+title: "Command Line Interface"
 description: "The Edge Python developer CLI: run, serve, repl, init, package management, and build."
 ---
 
 The `edge` developer CLI. Write `.py`, run it, serve it, ship it — you never compile anything yourself. `edge` hosts the [Edge Python runtime](/getting-started/what-it-is#where-it-runs) in a headless Chromium provisioned at install time, then runs your code against it. You just point it at a file.
 
 ```bash
-edge run app.py  # run a script
-edge serve  # dev server with live reload
-edge repl  # interactive shell (demo)
-edge test  # run *_test.py files (not implemented yet)
-edge init my-app  # scaffold a project
-edge add network  # add a package to packages.json
-edge remove network  # remove a package from packages.json
-edge build  # bundle to dist/
-edge uninstall  # remove the binary, PATH entry, optionally Chromium
+edge run app.py     # run a script
+edge serve          # dev server with live reload
+edge repl           # interactive shell (demo)
+edge test           # run *_test.py files (not implemented yet)
+edge init my-app    # scaffold a project
+edge add network    # add a package to packages.json
+edge remove network # remove a package from packages.json
+edge build          # bundle to dist/
+edge uninstall      # remove the binary, PATH entry, optionally Chromium
 ```
 
 The runtime does the actual work; `edge` is the loop around it. It launches system Chromium headless, serves the runtime alongside your code, runs everything in that browser, and streams output back to your terminal. `edge serve` opens the same setup in your own browser.
@@ -64,7 +64,7 @@ A dev server for browser apps. Serves your project directory and reloads the pag
 ```text
 $ edge serve
   http://localhost:5173
-  watching .
+  watching.
 ```
 
 Flags: `--port <n>` (default `5173`), `--open` (open the browser).
@@ -138,9 +138,9 @@ Bundles your app into a self-contained `dist/` for offline use or self-hosting: 
 
 ```text
 $ edge build
-  successful - vendored runtime
-  successful - fetched compiler.wasm
-  successful - vendored packages
+  (successful) vendored runtime
+  (successful) fetched compiler.wasm
+  (successful) vendored packages
 
   bundled to dist/
 
