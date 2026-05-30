@@ -2,9 +2,9 @@
   "theme": "mint",
   "name": "Edge Python",
   "colors": {
-    "primary": "#d97757",
-    "dark": "#30302e",
-    "light": "#ffffff"
+    "primary": "#006BE6",
+    "dark": "#0057CC",
+    "light": "#4DA3FF"
   },
   "navbar": {
     "links": [
@@ -75,8 +75,8 @@
   },
   "background": {
     "color": {
-      "light": "#faf9f5",
-      "dark": "#262624"
+      "light": "#ffffff",
+      "dark": "#111111"
     }
   },
   "styling": {
