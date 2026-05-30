@@ -5,11 +5,11 @@ description: "Tokenization, indentation, f-strings, and source-level limits."
 
 ## Overview
 
-Hand-written LUT-driven scanner: walks source as raw bytes, produces `Token { kind, line, start, end }`. Offset-based, tokens carry byte indices, never text copies. The parser slices lazily for identifier and string content.
+Hand-written LUT-driven scanner: walks source as raw bytes, produces `Token { kind, line, start, end }`. Offset-based: tokens carry byte indices, never text copies. The parser slices lazily for identifier and string content.
 
 Linear time *O(n)*, branchless per-byte dispatch through two lookup tables. Lex-time diagnostics (unterminated strings, bad indent, unknown bytes, malformed underscores, oversized f-string nesting) collect in `Vec<LexError>` returned alongside the token stream; the parser folds them in for a single coherent report.
 
-A leading UTF-8 BOM (`EF BB BF`) is stripped before tokenisation so the first identifier doesn't fuse with the marker.
+A leading UTF-8 BOM (`EF BB BF`) is stripped before tokenization so the first identifier doesn't fuse with the marker.
 
 ## Token kinds
 
@@ -19,8 +19,8 @@ The token set tracks Python 3.13.12 closely. Categories implemented:
 - **Soft keywords**: `type`, `match`, and `case` demote to `Name` when followed by `(`, `:`, `=`, `,`, `)`, `]`, `Newline`, or `EOF`, so `type()`, `match(...)`, and identifiers named like them stay usable; at statement start (`match x:`) they keep keyword force.
 - **Wildcard**: Underscore (`_`) gets its own `Underscore` token; the parser distinguishes wildcard from name use.
 - **Operators**: 1-, 2-, and 3-character operator forms (`+`, `==`, `**=`, `//=`, etc.).
-- **Delimiters**: `( ) [ ] { } :, ; .`.
-- **Literals**: `Name`, `Int`, `Float`, `String`, `Bytes`. There is no `Complex` token, a trailing `j` / `J` is **not** lexed as a complex suffix; `1j` tokenises as `Int(1)` followed by `Name("j")`.
+- **Delimiters**: `( ) [ ] { } : , ; .`.
+- **Literals**: `Name`, `Int`, `Float`, `String`, `Bytes`. There is no `Complex` token: a trailing `j` / `J` is **not** lexed as a complex suffix; `1j` tokenises as `Int(1)` followed by `Name("j")`.
 - **F-string segments**: `FstringStart`, `FstringMiddle`, `FstringEnd`.
 - **Whitespace and structure**: `Comment`, `Newline`, `Indent`, `Dedent`, `Nl`, `Endmarker`.
 
@@ -54,7 +54,7 @@ Identifiers, digits, and whitespace use a `scan_while(pred)` driver looping over
 
 The scanner handles base prefixes (`0x` / `0o` / `0b`, case-insensitive), underscore separators, optional exponents, and leading-dot form. `Int` and `Float` are the only numeric token kinds.
 
-Underscores must sit between digits, leading/trailing/doubled raise `invalid '_' in numeric literal` or `consecutive '_' in numeric literal`. Empty radix body (`0x`, `0o`, `0b`) raises `missing digits in numeric literal`. Trailing dot (`5.`) is valid; empty exponent body (`1e`) is left to the float parser to avoid false-positives in format specs.
+Underscores must sit between digits; leading/trailing/doubled raise `invalid '_' in numeric literal` or `consecutive '_' in numeric literal`. Empty radix body (`0x`, `0o`, `0b`) raises `missing digits in numeric literal`. Trailing dot (`5.`) is valid; empty exponent body (`1e`) is left to the float parser to avoid false-positives in format specs.
 
 Complex literals unsupported: `1j` lexes as `Int(1)` + `Name("j")`.
 
@@ -72,7 +72,7 @@ fr'raw fstring' # raw f-string
 """triple""" # triple-quoted, single or double
 ```
 
-A leading prefix is recognised before the opening quote by the identifier scanner, verified against `is_string_prefix` / `is_fstring_prefix` / `is_bytes_prefix`. Triple-quoted strings span newlines (bumping `line` per `\n`). Backslash escapes are consumed at lex time but decoded by the parser. Recognised escapes: `\n \t \r \a \b \f \v \\ \' \" \xHH \uHHHH \UHHHHHHHH` plus 1,3 digit octal (`\012` -> `\n`, `\101` -> `A`). `\N{NAME}` is unimplemented, the 200 KB Unicode-name database is too costly for the WASM artifact.
+A leading prefix is recognised before the opening quote by the identifier scanner, verified against `is_string_prefix` / `is_fstring_prefix` / `is_bytes_prefix`. Triple-quoted strings span newlines (bumping `line` per `\n`). Backslash escapes are consumed at lex time but decoded by the parser. Recognised escapes: `\n \t \r \a \b \f \v \\ \' \" \xHH \uHHHH \UHHHHHHHH` plus 1–3 digit octal (`\012` -> `\n`, `\101` -> `A`). `\N{NAME}` is unimplemented — the 200 KB Unicode-name database is too costly for the WASM artifact.
 
 Errors anchor on the opening quote so the `^` marker points at the offender, not at end-of-line:
 
@@ -100,7 +100,7 @@ FstringMiddle("!")
 FstringEnd
 ```
 
-Expression tokens between `{` and `}` are emitted by the main lexer, not the f-string scanner, full expression grammar inside interpolations without special casing.
+Expression tokens between `{` and `}` are emitted by the main lexer, not the f-string scanner: full expression grammar inside interpolations, without special casing.
 
 `{{` and `}}` are escaped literal braces, no `Lbrace` / `Rbrace`; they survive into `FstringMiddle` text and are unescaped by the parser.
 
@@ -120,9 +120,9 @@ Edge Python uses an INDENT/DEDENT model. The scanner tracks a stack of column co
 | Dedent doesn't match an outer level | diagnostic `unindent does not match any outer indentation level` |
 | Mixed tabs and spaces in indent | `Endmarker` (lex halt) + diagnostic |
 
-The `nesting` counter is bumped by `(`, `[`, `{` and decremented by `)`, `]`. While `nesting > 0` line breaks emit `Nl` and the indent stack is frozen, multi-line expressions inside brackets without spurious INDENT/DEDENT.
+The `nesting` counter is bumped by `(`, `[`, `{` and decremented by `)`, `]`, `}`. While `nesting > 0`, line breaks emit `Nl` and the indent stack is frozen — multi-line expressions inside brackets without spurious INDENT/DEDENT.
 
-At EOF the lexer drains remaining levels off `indent_stack` for clean block closure, then emits `Endmarker`. No support for backslash line continuation (`\` + `\n`) outside brackets, wrap in parens. ASCII bytes with no operator slot (`$`, `?`, `` ` ``, stray `\`) raise `unexpected character` and are skipped.
+At EOF the lexer drains remaining levels off `indent_stack` for clean block closure, then emits `Endmarker`. No support for backslash line continuation (`\` + `\n`) outside brackets; wrap in parens. ASCII bytes with no operator slot (`$`, `?`, `` ` ``, stray `\`) raise `unexpected character` and are skipped.
 
 ## Soft-keyword disambiguation
 

@@ -5,31 +5,31 @@ description: "A subset of Python, compiled to bytecode and run on a sandboxed VM
 
 A sandboxed Python subset with classes, async/await, structural pattern matching, and `packages.json` imports, compiled to bytecode and run on a stack VM with adaptive inline caching and pure-function memoisation. See [Design](/implementation/design) for internals.
 
-Reads like Python (parses Python syntax). Runs differently, where what it executes is curated.
+Reads like Python (parses Python syntax). Runs differently, what it executes is curated.
 
 ## What it supports
 
-* **First-class functions**: pass them, return them, store them in lists and dicts. Decorators apply to both `def` and `class`.
-* **Lambdas with closures**: full lexical capture by value-snapshot at `MakeFunction`, currying, partial application.
-* **Generators and coroutines**: `yield`, `yield from`, `async def`, `await`. Generator expressions are eagerly materialised to lists; use a `def` with `yield` for true laziness.
-* **Comprehensions**: list, dict, and set, with multiple `for` clauses and `if` guards.
-* **Pattern matching**: `match` / `case` with literals, captures, OR-patterns, guards, and sequence patterns (one star permitted).
-* **Exceptions**: `try` / `except` / `else` / `finally`, named handlers, `raise X from Y` (chain info discarded but `X` is what propagates), and subclass-aware matching (`except Exception` catches `RuntimeError`).
-* **Context managers**: `with` and `async with` invoke `__enter__` / `__exit__` on the context-manager value; a truthy return from `__exit__` suppresses the raised exception.
-* **Protocol dunders**: operator overloading, indexing, iteration, hashing, and `repr` / `str` / `format` dispatch through user-defined dunders; see [Dunders](/language/dunders) for the full matrix.
-* **Numbers**: bounded integers (fast inline path, auto-promoting to wide; see [Integer width](/reference/limits-and-errors#integer-width)) and full IEEE-754 floats. No `complex`, `Decimal`, or `Fraction`.
-* **Sequences**: lists, tuples, dicts (insertion-ordered), sets, frozensets, ranges, strings (UTF-8, codepoint-indexed), and bytes.
-* **f-strings**: full grammar, embedded expressions, `{expr=}` self-doc, `!r` / `!s` / `!a` conversions, and format specs covering `s d b o x X f F e E g G n % c` plus fill / align / sign / `#` / `0` / width / `,` / precision.
-* **Walrus operator**: `:=` in expressions (Name target only).
-* **Type annotations**: parsed and discarded, no runtime `__annotations__`, no enforcement.
-* **Module identity**: `__name__` is bound to `"__main__"` in the entry chunk and to the module's spec inside imported modules, so the canonical `if __name__ == "__main__":` guard works as expected.
-* **Modules**: `import`, `from <spec> import names`, and `from <spec> import *` resolve at parse time through a host-injected resolver, with optional `#sha256-<hex>` integrity on URL specs. Two flavors: `.py` source modules and native modules; see [Imports](/reference/imports) for resolution semantics, [Writing modules](/reference/writing-modules) for the three delivery paths, and [Official packages](/reference/packages) for the ready-made modules (`json`, `dom`, `network`, `storage`, and more).
+- **First-class functions**: pass them, return them, store them in lists and dicts. Decorators apply to both `def` and `class`.
+- **Lambdas with closures**: full lexical capture by value-snapshot at `MakeFunction`, currying, partial application.
+- **Generators and coroutines**: `yield`, `yield from`, `async def`, `await`. Generator expressions are eagerly materialised to lists; use a `def` with `yield` for true laziness.
+- **Comprehensions**: list, dict, and set, with multiple `for` clauses and `if` guards.
+- **Pattern matching**: `match` / `case` with literals, captures, OR-patterns, guards, and sequence patterns (one star permitted).
+- **Exceptions**: `try` / `except` / `else` / `finally`, named handlers, `raise X from Y` (chain info discarded but `X` is what propagates), and subclass-aware matching (`except Exception` catches `RuntimeError`).
+- **Context managers**: `with` and `async with` invoke `__enter__` / `__exit__` on the context-manager value; a truthy return from `__exit__` suppresses the raised exception.
+- **Protocol dunders**: operator overloading, indexing, iteration, hashing, and `repr` / `str` / `format` dispatch through user-defined dunders; see [Dunders](/language/dunders) for the full matrix.
+- **Numbers**: bounded integers (fast inline path, auto-promoting to wide; see [Integer width](/reference/limits-and-errors#integer-width)) and full IEEE-754 floats. No `complex`, `Decimal`, or `Fraction`.
+- **Sequences**: lists, tuples, dicts (insertion-ordered), sets, frozensets, ranges, strings (UTF-8, codepoint-indexed), and bytes.
+- **f-strings**: full grammar, embedded expressions, `{expr=}` self-doc, `!r` / `!s` / `!a` conversions, and format specs covering `s d b o x X f F e E g G n % c` plus fill / align / sign / `#` / `0` / width / `,` / precision.
+- **Walrus operator**: `:=` in expressions (Name target only).
+- **Type annotations**: parsed and discarded, no runtime `__annotations__`, no enforcement.
+- **Module identity**: `__name__` is bound to `"__main__"` in the entry chunk and to the module's spec inside imported modules, so the canonical `if __name__ == "__main__":` guard works as expected.
+- **Modules**: `import`, `from <spec> import names`, and `from <spec> import *` resolve at parse time through a host-injected resolver, with optional `#sha256-<hex>` integrity on URL specs. Two flavors: `.py` source modules and native modules; see [Imports](/reference/imports) for resolution semantics, [Writing modules](/reference/writing-modules) for the three delivery paths, and [Official packages](/reference/packages) for the ready-made modules (`json`, `dom`, `network`, `storage`, and more).
 
 ## What it doesn't support
 
 These parse for syntactic compatibility but raise at runtime, or simply don't exist:
 
-- **Standard library**: no bundled stdlib; every module is external (see **Modules** above).
+- **Standard library**: no bundled stdlib; every module is external (see **Modules*- above).
 - **I/O**: `input()` reads from a host-provided buffer. There is no file system, no network, no `os`, no `sys`: these surface only when the host runtime registers them as [host capabilities](/reference/writing-modules#path-b-host-capability) (the same mechanism behind `print` and `input` themselves).
 - **Async surface**: `async def` creates real coroutines and the VM runs a cooperative scheduler, but there is no `asyncio` module: primitives are top-level builtins ([Async](/language/async)). Coroutines do not expose `.send()` / `.throw()` / `.close()`.
 - **Metaclasses, descriptor protocol, `__slots__`**: not modeled.
