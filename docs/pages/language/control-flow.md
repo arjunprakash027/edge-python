@@ -7,15 +7,15 @@ description: "Conditionals, loops, exceptions, pattern matching."
 
 ```python
 def classify(n):
-    if n < 0:
-        return "negative"
-    elif n == 0:
-        return "zero"
-    else:
-        return "positive"
+  if n < 0:
+    return "negative"
+  elif n == 0:
+    return "zero"
+  else:
+    return "positive"
 
 for x in [-3, 0, 7]:
-    print(classify(x))
+  print(classify(x))
 ```
 
 ```text Output
@@ -29,8 +29,8 @@ positive
 ```python
 n, total = 5, 0
 while n > 0:
-    total += n
-    n -= 1
+  total += n
+  n -= 1
 print(total)
 ```
 
@@ -45,9 +45,9 @@ The `else` runs if the loop completes without `break`.
 ```python
 x = 0
 while x < 3:
-    x += 1
+  x += 1
 else:
-    print("loop finished cleanly")
+  print("loop finished cleanly")
 ```
 
 ```text Output
@@ -60,7 +60,7 @@ Iterates anything that produces a sequence: list, tuple, dict, set, range, strin
 
 ```python
 for ch in "abc":
-    print(ch)
+  print(ch)
 ```
 
 ```text Output
@@ -73,7 +73,7 @@ c
 # Tuple unpacking in the loop variable
 pairs = [("a", 1), ("b", 2), ("c", 3)]
 for key, value in pairs:
-    print(key, value)
+  print(key, value)
 ```
 
 ```text Output
@@ -85,7 +85,7 @@ c 3
 ```python
 # Star pattern works too
 for first, *rest in [[1, 2, 3], [4, 5, 6, 7]]:
-    print(first, rest)
+  print(first, rest)
 ```
 
 ```text Output
@@ -97,10 +97,10 @@ for first, *rest in [[1, 2, 3], [4, 5, 6, 7]]:
 
 ```python
 for i in range(10):
-    if i == 5:
-        break
-    if i % 2 == 0:
-        continue
+  if i == 5:
+    break
+  if i % 2 == 0:
+    continue
     print(i)
 ```
 
@@ -115,9 +115,9 @@ Runs when the loop exhausts its iterator (no `break`).
 
 ```python
 for i in range(3):
-    pass
+  pass
 else:
-    print("done")
+  print("done")
 ```
 
 ```text Output
@@ -132,19 +132,19 @@ Sequence-pattern items must be literals (`int` / `float` / `str` / `True` / `Fal
 
 ```python
 def classify(p):
-    match p:
-        case 0:
-            return 'zero'
-        case 1 | 2 | 3:
-            return 'small'
-        case n if n < 0:
-            return 'negative'
-        case [x, y] if x == y:
-            return 'diagonal'
-        case [first, *middle, last]:
-            return f'span {first}..{last}'
-        case _:
-            return 'other'
+  match p:
+    case 0:
+      return 'zero'
+    case 1 | 2 | 3:
+      return 'small'
+    case n if n < 0:
+      return 'negative'
+    case [x, y] if x == y:
+      return 'diagonal'
+    case [first, *middle, last]:
+      return f'span {first}..{last}'
+    case _:
+      return 'other'
 
 print(classify(0))
 print(classify(2))
@@ -163,16 +163,16 @@ span 1..5
 
 ```python
 def describe(n):
-    match n:
-        case 0:
-            return "zero"
-        case 1:
-            return "one"
-        case _:
-            return "many"
+  match n:
+    case 0:
+  return "zero"
+    case 1:
+  return "one"
+    case _:
+  return "many"
 
 for x in [0, 1, 2, 99]:
-    print(describe(x))
+  print(describe(x))
 ```
 
 ```text Output
@@ -186,10 +186,10 @@ many
 
 ```python
 def safe_div(a, b):
-    try:
-        return a / b
-    except ZeroDivisionError:
-        return None
+  try:
+    return a / b
+  except ZeroDivisionError:
+    return None
 
 print(safe_div(10, 2))
 print(safe_div(10, 0))
@@ -203,11 +203,11 @@ None
 ```python
 # Multiple handlers and finally
 try:
-    x = int("abc")
+  x = int("abc")
 except ValueError:
-    x = -1
+  x = -1
 finally:
-    print("cleanup")
+  print("cleanup")
 print(x)
 ```
 
@@ -219,9 +219,9 @@ cleanup
 ```python
 # Bare except catches everything
 try:
-    raise "boom"
+  raise "boom"
 except:
-    print("caught")
+  print("caught")
 ```
 
 ```text Output
@@ -232,14 +232,14 @@ caught
 
 ```python
 def positive(n):
-    if n < 0:
-        raise ValueError
-    return n
+  if n < 0:
+    raise ValueError
+  return n
 
 try:
-    positive(-1)
+  positive(-1)
 except ValueError:
-    print("rejected")
+  print("rejected")
 ```
 
 ```text Output
@@ -250,9 +250,9 @@ rejected
 
 ```python
 try:
-    raise ValueError from KeyError
+  raise ValueError from KeyError
 except ValueError:
-    print("caught the ValueError")
+  print("caught the ValueError")
 ```
 
 ```text Output
@@ -263,9 +263,9 @@ Handlers match on class and declared parents. `except Exception` catches `ValueE
 
 ```python
 try:
-    raise RuntimeError("boom")
+  raise RuntimeError("boom")
 except Exception:
-    print("subclass caught")
+  print("subclass caught")
 ```
 
 ```text Output
@@ -283,7 +283,7 @@ Pre-bound exception classes (with their parent links so `except <Parent>:` match
 ```python
 x = [1, 2]
 with x as items:
-    print(len(items))
+  print(len(items))
 print("after")
 ```
 
@@ -297,7 +297,7 @@ Multiple targets:
 ```python
 a, b = "first", "second"
 with a as x, b as y:
-    print(x, y)
+  print(x, y)
 ```
 
 ```text Output
@@ -308,8 +308,8 @@ first second
 
 ```python
 def reciprocal(n):
-    assert n != 0, "n must be non-zero"
-    return 1 / n
+  assert n != 0, "n must be non-zero"
+  return 1 / n
 
 print(reciprocal(4))
 ```
@@ -328,9 +328,9 @@ Removes a binding from the slot. Works on plain names and indexed positions.
 x = 42
 del x
 try:
-    print(x)
+  print(x)
 except NameError:
-    print("gone")
+  print("gone")
 ```
 
 ```text Output

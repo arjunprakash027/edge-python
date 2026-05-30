@@ -9,7 +9,7 @@ Functions are the central abstraction, values that can be passed, returned, stor
 
 ```python
 def add(a, b):
-    return a + b
+  return a + b
 
 print(add(3, 4))
 ```
@@ -22,7 +22,7 @@ print(add(3, 4))
 
 ```python
 def greet(name, greeting="Hello"):
-    return f"{greeting}, {name}!"
+  return f"{greeting}, {name}!"
 
 print(greet("world"))
 print(greet("world", "Hi"))
@@ -37,7 +37,7 @@ Hi, world!
 
 ```python
 def f(x, y, z):
-    return x * 100 + y * 10 + z
+  return x * 100 + y * 10 + z
 
 print(f(1, 2, 3))
 print(f(x=1, z=3, y=2))
@@ -54,7 +54,7 @@ print(f(1, z=3, y=2))
 
 ```python
 def total(*nums):
-    return sum(nums)
+  return sum(nums)
 
 print(total(1, 2, 3))
 print(total(*[10, 20, 30]))
@@ -67,7 +67,7 @@ print(total(*[10, 20, 30]))
 
 ```python
 def opts(**kwargs):
-    return sorted(kwargs.items())
+  return sorted(kwargs.items())
 
 print(opts(host="api", port=443))
 ```
@@ -82,15 +82,15 @@ A bare `*` marks every following parameter as keyword-only, positional args neve
 
 ```python
 def connect(host, *, port=80, secure=False):
-    return f"{host}:{port} secure={secure}"
+  return f"{host}:{port} secure={secure}"
 
 print(connect("api"))
 print(connect("api", port=443, secure=True))
 
 try:
-    connect("api", 443) # positional past `*` is rejected
+  connect("api", 443) # positional past `*` is rejected
 except TypeError:
-    print("rejected")
+  print("rejected")
 ```
 
 ```text Output
@@ -103,7 +103,7 @@ rejected
 
 ```python
 def f(a, b, c):
-    return a + b + c
+  return a + b + c
 
 print(f(*[1, 2, 3]))
 print(f(*[1, 2], 3))
@@ -156,9 +156,9 @@ print([f(-3) for f in ops])
 ```python
 # Functions as dict values; replaces switch/case
 handlers = {
-    "add":  lambda a, b: a + b,
-    "mul":  lambda a, b: a * b,
-    "max":  max,
+  "add":  lambda a, b: a + b,
+  "mul":  lambda a, b: a * b,
+  "max":  max,
 }
 
 print(handlers["add"](3, 4))
@@ -178,7 +178,7 @@ Functions that take or return functions.
 
 ```python
 def apply(f, x):
-    return f(x)
+  return f(x)
 
 print(apply(lambda n: n * n, 5))
 print(apply(abs, -10))
@@ -192,7 +192,7 @@ print(apply(abs, -10))
 ```python
 # Returning a function
 def make_adder(n):
-    return lambda x: x + n
+  return lambda x: x + n
 
 add5 = make_adder(5)
 add10 = make_adder(10)
@@ -212,12 +212,12 @@ Functions capture their enclosing scope by reference.
 
 ```python
 def counter():
-    count = 0
-    def step():
-        nonlocal count
-        count += 1
-        return count
-    return step
+  count = 0
+  def step():
+    nonlocal count
+    count += 1
+    return count
+  return step
 
 tick = counter()
 print(tick())
@@ -234,7 +234,7 @@ print(tick())
 ```python
 # Closures over loop variables; captured by reference
 def make_adders(n):
-    return [lambda x, i=i: x + i for i in range(n)]
+  return [lambda x, i=i: x + i for i in range(n)]
 
 add0, add1, add2 = make_adders(3)
 print(add0(10), add1(10), add2(10))
@@ -267,7 +267,7 @@ print(add3(100))
 ```python
 # Curry helper
 def curry(f):
-    return lambda x: lambda y: f(x, y)
+  return lambda x: lambda y: f(x, y)
 
 cmul = curry(lambda a, b: a * b)
 double = cmul(2)
@@ -284,11 +284,11 @@ print(double(7), triple(7))
 
 ```python
 def compose(*fns):
-    def piped(x):
-        for f in fns:
-            x = f(x)
-        return x
-    return piped
+  def piped(x):
+    for f in fns:
+      x = f(x)
+    return x
+  return piped
 
 # Reads left-to-right: double, then square
 pipeline = compose(lambda n: n * 2, lambda n: n * n)
@@ -306,9 +306,9 @@ print([pipeline(x) for x in [1, 2, 3]])
 
 ```python
 def factorial(n):
-    if n < 2:
-        return 1
-    return n * factorial(n - 1)
+  if n < 2:
+    return 1
+  return n * factorial(n - 1)
 
 print(factorial(10))
 ```
@@ -320,10 +320,10 @@ print(factorial(10))
 ```python
 # Mutual recursion
 def is_even(n):
-    return True if n == 0 else is_odd(n - 1)
+  return True if n == 0 else is_odd(n - 1)
 
 def is_odd(n):
-    return False if n == 0 else is_even(n - 1)
+  return False if n == 0 else is_even(n - 1)
 
 print(is_even(10), is_odd(10))
 ```
@@ -361,10 +361,10 @@ for x in squares(5):
 ```python
 # Materialize a generator
 def naturals(limit):
-    n = 1
-    while n <= limit:
-        yield n
-        n += 1
+  n = 1
+  while n <= limit:
+    yield n
+    n += 1
 
 print(list(naturals(5)))
 ```
@@ -379,8 +379,8 @@ Delegate to another generator.
 
 ```python
 def nums():
-    yield from range(3)
-    yield from [10, 20]
+  yield from range(3)
+  yield from [10, 20]
 
 print(list(nums()))
 ```
@@ -413,14 +413,14 @@ A decorator wraps another callable. Applies to both functions and classes (see [
 
 ```python
 def trace(f):
-    def wrapped(*args):
-        print(f"calling with {args}")
-        return f(*args)
-    return wrapped
+  def wrapped(*args):
+    print(f"calling with {args}")
+    return f(*args)
+  return wrapped
 
 @trace
 def add(a, b):
-    return a + b
+  return a + b
 
 print(add(3, 4))
 ```
@@ -434,15 +434,15 @@ Stacked decorators apply bottom-up:
 
 ```python
 def double_result(f):
-    return lambda *a: f(*a) * 2
+  return lambda *a: f(*a) * 2
 
 def add_one(f):
-    return lambda *a: f(*a) + 1
+  return lambda *a: f(*a) + 1
 
 @double_result
 @add_one
 def base(x):
-    return x
+  return x
 
 # base(5) -> add_one -> 6 -> double_result -> 12
 print(base(5))
@@ -456,16 +456,16 @@ Parameterised decorators are factories, a function taking decorator args and ret
 
 ```python
 def repeat(n):
-    def decorator(fn):
-        def wrapped(x):
-            for i in range(n):
-                fn(x)
-        return wrapped
-    return decorator
+  def decorator(fn):
+    def wrapped(x):
+      for i in range(n):
+        fn(x)
+    return wrapped
+  return decorator
 
 @repeat(3)
 def greet(name):
-    print(f"hi {name}")
+  print(f"hi {name}")
 
 greet("world")
 ```

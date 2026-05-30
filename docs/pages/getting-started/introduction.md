@@ -5,7 +5,7 @@ description: "What Edge Python is and where to go next."
 
 # Introduction
 
-Edge Python is a sandboxed Python subset compiled to a ~170 KB WebAssembly module — built in Rust to run on Cloudflare Workers, Fastly Compute, and the browser.
+Edge Python is a sandboxed Python subset compiled to a less 200 KB WebAssembly module release, built in Rust to run on Cloudflare Workers, and the browser.
 
 ## Explore
 
@@ -18,7 +18,7 @@ Edge Python is a sandboxed Python subset compiled to a ~170 KB WebAssembly modul
 
 ### Browser:
 
-Run Edge Python live in your browser at [demo.edgepython.com](https://demo.edgepython.com/).
+Run live in your browser at [demo.edgepython.com](https://demo.edgepython.com/).
 
 ### Command Line Interface:
 

@@ -5,7 +5,7 @@ description: "Compiler architecture, dispatch model, and runtime layout."
 
 ## Overview
 
-Release build is around 170 KB on `wasm32-unknown-unknown` (`panic=abort`, `opt-level=z`, `lto=true`, `codegen-units=1`). Pipeline: LUT-driven lexer -> single-pass Pratt parser emitting SSA-versioned bytecode directly -> peephole constant-folding optimiser -> token-threaded interpreter with two layers of adaptive specialisation.
+Release build, is a 200 KB on `wasm32-unknown-unknown` (`panic=abort`, `opt-level=z`, `lto=true`, `codegen-units=1`). Where the path is: LUT-driven lexer -> single-pass Pratt parser emitting SSA-versioned bytecode directly -> peephole constant-folding optimiser -> token-threaded interpreter with two layers of adaptive specialisation.
 
 No AST, no IR, bytecode is the only intermediate representation. Around 13,000 lines of Rust; production deps are `hashbrown` and `itoa` (SHA-256 in-tree). WASM build adds `lol_alloc` for a single-threaded leaking bump allocator.
 
@@ -26,13 +26,13 @@ Classes support single-level inheritance, `super()`, full dunder dispatch, `@pro
 Each `Instruction` is 4 bytes: 1-byte `OpCode` (`#[repr(u8)]` planned), 2-byte operand, 1 byte padding. Opcodes span 17 categories, load, store, arith, bitwise, compare, logic, identity, control flow, iter, build, container, comprehension, function, ssa (Phi), yield, side effects, unsupported (raises at runtime). Around 40 specialised `Call*` variants for hot builtins; `LoadAttr + Call(0)` pairs fuse into `CallMethod + CallMethodArgs` after first dispatch.
 
 ```text
-OpCode::LoadConst   operand = constant index
-OpCode::LoadName    operand = name slot
-OpCode::StoreName   operand = name slot
-OpCode::Add / Sub   operand = 0 (IC slot derived from ip)
-OpCode::Call        operand = (kw << 8) | pos
-OpCode::Phi         operand = target slot, sources in chunk.phi_sources
-OpCode::ForIter     operand = jump target on iterator exhaustion
+OpCode::LoadConst  -> operand = constant index
+OpCode::LoadName  -> operand = name slot
+OpCode::StoreName  -> operand = name slot
+OpCode::Add / Sub  -> operand = 0 (IC slot derived from ip)
+OpCode::Call  -> operand = (kw << 8) | pos
+OpCode::Phi  -> operand = target slot, sources in chunk.phi_sources
+OpCode::ForIter  -> operand = jump target on iterator exhaustion
 ```
 
 ## Dispatch shape

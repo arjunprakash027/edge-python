@@ -161,10 +161,10 @@ A `Token` carries a kind tag plus three byte offsets:
 
 ```rust
 pub struct Token {
-    pub kind: TokenType,
-    pub line: usize,
-    pub start: usize,
-    pub end: usize,
+	pub kind: TokenType,
+	pub line: usize,
+	pub start: usize,
+	pub end: usize,
 }
 ```
 

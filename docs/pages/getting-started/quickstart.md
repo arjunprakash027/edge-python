@@ -5,7 +5,7 @@ description: "Run your first Edge Python program in under a minute."
 
 ## Run it
 
-Edge Python ships as a 170 KB WebAssembly module. Fastest way to try it, the playground, no install, fully client-side.
+Edge Python ships as a less 200 KB WASM module. Fastest way to try it, the playground, no install, fully client-side.
 
 [Open the playground ->](https://demo.edgepython.com)
 
@@ -21,12 +21,12 @@ In the browser, the runtime's `<edge-python>` element runs a `.py` file declarat
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <script type="module" src="https://runtime.edgepython.com/js/src/element.js"></script>
+  <meta charset="UTF-8">
+  <script type="module" src="https://runtime.edgepython.com/js/src/element.js"></script>
 </head>
 <body>
-    <div id="app"></div>
-    <edge-python entry="./app/hello.py" packages="./app/packages.json"></edge-python>
+  <div id="app"></div>
+  <edge-python entry="./app/hello.py" packages="./app/packages.json"></edge-python>
 </body>
 </html>
 ```
@@ -42,7 +42,7 @@ from dom import query, set_text
 set_text(query("#app"), "Hello from Python")
 ```
 
-`dom` is one of the official [host libraries](/reference/packages#host-libraries) (`dom`, `network`, `storage` and more); standard `.wasm` packages like [`json`](/reference/packages#json) sit alongside them. The `packages.json` above declares `dom` explicitly, but the browser runtime also resolves the official packages by bare name with no manifest at all (see [Defaults](/reference/packages#defaults)), fetching each lazily on first import. See [Official packages](/reference/packages) for the full catalog, and the [runtime README](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) for all `<edge-python>` attributes and the `imports` field for `.py` / `.wasm` modules.
+`dom` is one of the official [host libraries](/reference/packages#host-libraries) (`dom`, `network`, `storage`,...); standard `.wasm` packages like [`json`](/reference/packages#json) sit alongside them. The `packages.json` above declares `dom` explicitly, but the browser runtime also resolves the official packages by bare name with no manifest at all (see [Defaults](/reference/packages#defaults)), fetching each lazily on first import. See [Official packages](/reference/packages) for the full catalog, and the [runtime README](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) for all `<edge-python>` attributes and the `imports` field for `.py` / `.wasm` modules.
 
 ## Your first program
 

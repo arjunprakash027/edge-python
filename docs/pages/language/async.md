@@ -14,8 +14,8 @@ import asyncio # ModuleNotFoundError: there is no asyncio
 ```python
 # Idiomatic edge-python: call the primitives directly.
 async def main():
-    sleep(0.01)
-    return "ok"
+  sleep(0.01)
+  return "ok"
 
 print(run(main()))
 ```
@@ -32,14 +32,14 @@ A plain `def` inside a coroutine (or at module top-level) can still call yieldin
 
 ```python
 def routine():
-    return 1
+  return 1
 
 async def coro():
-    return 1
+  return 1
 
 print(routine())   # 1
-print(coro())   # <coroutine>  (does not run yet)
-print(run(coro()))   # 1  (run drives it to completion)
+print(coro())   # <coroutine> (does not run yet)
+print(run(coro()))   # 1 (run drives it to completion)
 ```
 
 ## Driving coroutines
@@ -48,7 +48,7 @@ print(run(coro()))   # 1  (run drives it to completion)
 
 ```python
 async def square(n):
-    return n * n
+  return n * n
 
 print(run(square(5)))
 ```
@@ -65,9 +65,9 @@ print(run(square(5)))
 
 ```python
 async def task(name):
-    print(f"{name} step 1")
-    sleep(0) # yield to the scheduler
-    print(f"{name} step 2")
+  print(f"{name} step 1")
+  sleep(0) # yield to the scheduler
+  print(f"{name} step 2")
 
 run(task("a"), task("b"))
 ```
@@ -85,8 +85,8 @@ b step 2
 
 ```python
 async def fetch(name, delay):
-    sleep(delay)
-    return name + "!"
+  sleep(delay)
+  return name + "!"
 
 print(gather(fetch("a", 0.05), fetch("b", 0.02), fetch("c", 0.03)))
 ```
@@ -104,9 +104,9 @@ async def good(): return 1
 async def bad():  raise ValueError
 
 try:
-    gather(good(), bad())
+  gather(good(), bad())
 except ValueError:
-    print("caught")
+  print("caught")
 ```
 
 ```text Output
@@ -121,15 +121,14 @@ Deferred host calls (e.g. `network.fetch`) run concurrently under `gather`: each
 from network import fetch_text
 
 async def status(url):
-    try:
-        fetch_text(url)
-        return "ok"
-    except:
-        return "failed"
+  try:
+    fetch_text(url)
+    return "ok"
+  except:
+    return "failed"
 
 # The bad URL raises inside its own coroutine; the others still resolve.
-print(gather(status("https://example.com/a"),
-             status("https://nope.invalid/x")))
+print(gather(status("https://example.com/a"), status("https://nope.invalid/x")))
 ```
 
 ```text Output
@@ -142,13 +141,13 @@ print(gather(status("https://example.com/a"),
 
 ```python
 async def slow():
-    sleep(10)
-    return "never"
+  sleep(10)
+  return "never"
 
 try:
-    with_timeout(0.1, slow())
+  with_timeout(0.1, slow())
 except TimeoutError:
-    print("timed out")
+  print("timed out")
 ```
 
 ```text Output
@@ -165,9 +164,9 @@ A coroutine in a tight synchronous loop without `await`/`sleep` cannot be cancel
 
 ```python
 async def loop_forever():
-    for i in range(1_000_000):
-        pass # no yield, not cancellable here
-    sleep(0) # cancellable from this point on
+  for i in range(1_000_000):
+    pass # no yield, not cancellable here
+  sleep(0) # cancellable from this point on
 ```
 
 For deadline-driven cancellation use `with_timeout`.

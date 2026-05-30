@@ -11,12 +11,12 @@ Single-level inheritance with `super()`, `@property` / `@x.setter`, full dunder 
 
 ```python
 class Counter:
-    def __init__(self, n=0):
-        self.n = n
-    def tick(self):
-        self.n += 1
-    def value(self):
-        return self.n
+  def __init__(self, n=0):
+    self.n = n
+  def tick(self):
+    self.n += 1
+  def value(self):
+    return self.n
 
 c = Counter()
 c.tick()
@@ -35,16 +35,16 @@ A class with no `__init__` and no per-instance state is a namespace. Methods cal
 
 ```python
 class Status:
-    IDLE = 0
-    RUNNING = 1
-    DONE = 2
+  IDLE = 0
+  RUNNING = 1
+  DONE = 2
 
 class Math:
-    PI = 3.14159
-    def square(x):
-        return x * x
-    def cube(x):
-        return x * x * x
+  PI = 3.14159
+  def square(x):
+    return x * x
+  def cube(x):
+    return x * x * x
 
 print(Status.IDLE)
 print(Math.PI)
@@ -67,17 +67,17 @@ Single base via `class Sub(Base):`. Methods not on the subclass are looked up li
 
 ```python
 class Animal:
-    def __init__(self, name):
-        self.name = name
-    def describe(self):
-        return self.name
+  def __init__(self, name):
+    self.name = name
+  def describe(self):
+    return self.name
 
 class Dog(Animal):
-    def __init__(self, name, breed):
-        super().__init__(name)
-        self.breed = breed
-    def describe(self):
-        return super().describe() + " (" + self.breed + ")"
+  def __init__(self, name, breed):
+    super().__init__(name)
+    self.breed = breed
+  def describe(self):
+    return super().describe() + " (" + self.breed + ")"
 
 d = Dog("Rex", "lab")
 print(d.describe())
@@ -106,13 +106,13 @@ A class decorator wraps the class object the same way it wraps a function, the d
 
 ```python
 def tag(cls):
-    cls.kind = "tagged"
-    return cls
+  cls.kind = "tagged"
+  return cls
 
 @tag
 class Box:
-    def __init__(self, v):
-        self.v = v
+  def __init__(self, v):
+    self.v = v
 
 print(Box.kind)
 print(Box(7).v)
@@ -129,17 +129,17 @@ tagged
 
 ```python
 class Temp:
-    def __init__(self, c):
-        self._c = c
-    @property
-    def celsius(self):
-        return self._c
-    @celsius.setter
-    def celsius(self, value):
-        self._c = value
-    @property
-    def fahrenheit(self):
-        return self._c * 9 / 5 + 32
+  def __init__(self, c):
+    self._c = c
+  @property
+  def celsius(self):
+    return self._c
+  @celsius.setter
+  def celsius(self, value):
+    self._c = value
+  @property
+  def fahrenheit(self):
+    return self._c * 9 / 5 + 32
 
 t = Temp(20)
 print(t.celsius)
@@ -162,10 +162,10 @@ Operators, indexing, iteration, context managers, hashing, `repr` / `str` / `for
 
 ```python
 class Vec:
-    def __init__(self, x, y):
-        self.x, self.y = x, y
-    def __add__(self, other):
-        return Vec(self.x + other.x, self.y + other.y)
+  def __init__(self, x, y):
+    self.x, self.y = x, y
+  def __add__(self, other):
+    return Vec(self.x + other.x, self.y + other.y)
 ```
 
 See [Dunder methods](/language/dunders) for the full matrix.

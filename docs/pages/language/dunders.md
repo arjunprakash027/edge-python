@@ -172,11 +172,11 @@ Eq/hash invariant: a class defining `__eq__` without `__hash__` is unhashable, `
 
 ```python
 class K:
-    def __init__(self, n): self.n = n
-    def __hash__(self):
-        return self.n
-    def __eq__(self, o):
-        return self.n == o.n
+  def __init__(self, n): self.n = n
+  def __hash__(self):
+    return self.n
+  def __eq__(self, o):
+    return self.n == o.n
 
 k = K(5)
 print(hash(k))
@@ -208,8 +208,8 @@ Built-in dict/set still compare instance keys by identity (`Val` bits); user `__
 
 ```python
 class Proxy:
-    def __getattr__(self, name):
-        return f"computed:{name}"
+  def __getattr__(self, name):
+    return f"computed:{name}"
 
 p = Proxy()
 print(p.anything)
@@ -229,13 +229,13 @@ Existing attributes bypass `__getattr__`; only misses trigger it.
 
 ```python
 class Suppress:
-    def __enter__(self):
-        return self
-    def __exit__(self, t, v, tb):
-        return True # swallow whatever raised
+  def __enter__(self):
+    return self
+  def __exit__(self, t, v, tb):
+    return True # swallow whatever raised
 
 with Suppress():
-    raise ValueError("boom")
+  raise ValueError("boom")
 print("after")
 ```
 

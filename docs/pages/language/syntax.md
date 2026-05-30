@@ -347,7 +347,7 @@ counter: int = 0
 name: str = "edge"
 
 def add(a: int, b: int) -> int:
-    return a + b
+  return a + b
 
 print(add(3, 4))
 print(add("a", "b")) # annotations don't enforce: int+str logic decides

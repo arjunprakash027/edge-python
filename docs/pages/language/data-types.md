@@ -95,7 +95,7 @@ Iteration yields characters:
 
 ```python
 for ch in "abc":
-    print(ch)
+  print(ch)
 ```
 
 ```text Output
@@ -142,7 +142,7 @@ b'\x00\x01\xff'
 ```python
 # Iteration yields ints, not bytes
 for byte in b"abc":
-    print(byte)
+  print(byte)
 ```
 
 ```text Output
