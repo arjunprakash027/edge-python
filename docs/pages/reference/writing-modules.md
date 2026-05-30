@@ -26,11 +26,11 @@ print(add(2, 3)) # -> 5
 
 ## Path B: host capability
 
-Some native functionality can't live in a CDN-distributed `.wasm` (Path A) because the work happens outside the WASM sandbox, DOM mutation, WASI filesystem I/O, native crypto. Path A modules see only the sealed 6 `env.*` imports; they have no channel to the host runtime. Path B closes that gap.
+Some native functionality can't live in a CDN-distributed `.wasm` (Path A) because the work happens outside the WASM sandbox — DOM mutation, WASI filesystem I/O, native crypto. Path A modules see only the sealed 6 `env.*` imports; they have no channel to the host runtime. Path B closes that gap.
 
-A host capability is shipped as part of a custom embedder. The embedder declares additional host imports beyond the sealed plugin ABI, these imports are the embedder's private contract with its host runtime, not part of the public plugin contract.
+A host capability is shipped as part of a custom embedder. The embedder declares additional host imports beyond the sealed plugin ABI — these imports are the embedder's private contract with its host runtime, not part of the public plugin contract.
 
-Precedent: `print(...)` calls the embedder's `host_print` import; `input()` drains a buffer the host fills via `set_input`. The same shape generalises, a browser-host distribution can register `dom` as a native module whose `query`, `set_text`, `append_child` operations bridge to JS through embedder-specific host imports. A WASI-host distribution can register `fs` against `wasi_snapshot_preview1`. Scripts see them as ordinary native modules:
+Precedent: `print(...)` calls the embedder's `host_print` import; `input()` drains a buffer the host fills via `set_input`. The same shape generalises — a browser-host distribution can register `dom` as a native module whose `query`, `set_text`, `append_child` operations bridge to JS through embedder-specific host imports. A WASI-host distribution can register `fs` against `wasi_snapshot_preview1`. Scripts see them as ordinary native modules:
 
 ```python
 from dom import document, query # browser host
@@ -63,7 +63,7 @@ The custom `compiler.wasm` declares `env.host_dom_op` alongside the standard `en
 
 ### Why this is not a third module flavor
 
-Scripts still see two flavors (code and native, see [Imports](/reference/imports)). Path B is a distribution pattern that ships additional bridges through the embedder; the compiler dispatches them the same way as built-in operations. Keeps the public language surface and the [WASM module ABI](/reference/wasm-abi) untouched.
+Scripts still see two flavors (code and native; see [Imports](/reference/imports)). Path B is a distribution pattern that ships additional bridges through the embedder; the compiler dispatches them the same way as built-in operations. Keeps the public language surface and the [WASM module ABI](/reference/wasm-abi) untouched.
 
 ## Path C: JS host module
 
@@ -121,7 +121,7 @@ run(main())
 
 Or skip the manual wiring: the browser runtime's `<edge-python>` element loads these declaratively from a `host` field in `packages.json`. See the [runtime README](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime).
 
-Handlers take decoded JS values and return plain JS values. Supported tags: `None`, `bool`, `int` (i64, range-limited by JS Number), `float`, string bytes. Opaque object references (DOM nodes, files, observers) model as integer IDs into a main-thread registry the handlers own (the `alloc` / `node` pattern above).
+Handlers take decoded JS values and return plain JS values. Supported tags: `None`, `bool`, `int` (i64, range-limited by JS Number), `float`, string, bytes. Opaque object references (DOM nodes, files, observers) model as integer IDs into a main-thread registry the handlers own (the `alloc` / `node` pattern above).
 
 ### Trade-offs vs Path B
 
