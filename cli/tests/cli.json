@@ -32,6 +32,12 @@
   },
   {
     "given": { "packages.json": "{}\n" },
+    "run": ["add", "test"],
+    "stdout": ["+ test", "std"],
+    "contains": { "packages.json": "std.edgepython.com/test.py" }
+  },
+  {
+    "given": { "packages.json": "{}\n" },
     "run": ["add", "foo=https://example.com/foo.wasm"],
     "contains": { "packages.json": "example.com/foo.wasm" }
   },

@@ -161,7 +161,8 @@ fn vendor_packages(
         let Some((kind, url)) = pkg::resolve(name, manifest) else { continue };
         let bytes = fetch(&url).with_context(|| format!("fetching {url}"))?;
         let local = match kind {
-            Kind::Std => format!("vendor/{name}.wasm"),
+            // std packages are .wasm, except pure-Python ones (test) served as .py; preserve the real extension.
+            Kind::Std => format!("vendor/{name}.{}", if url.ends_with(".py") { "py" } else { "wasm" }),
             Kind::Host => format!("vendor/{name}/index.js"),
         };
         write_under(out_dir, &local, &bytes)?;

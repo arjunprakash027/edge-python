@@ -95,7 +95,7 @@ Flags: `--port <n>` (default `5173`), `--open` (open the browser).
 
 ## Edge Python Test
 
-Not implemented yet.
+The `edge test` runner is not implemented yet. The `test` package itself (the harness you import) is available: `edge add test` writes it to `packages.json`, and `edge run` / `edge serve` resolve it by default, so a script can already `from test import fixture, test, raises, run` and call `run()` itself.
 
 ---
 
@@ -120,7 +120,7 @@ $ edge init my-app
 
 ## Packages Manager
 
-Manage `packages.json` by name. `edge` knows the official std (`json`, `re`, `math`) and host (`dom`, `network`, `storage`, `time`) packages, so you do not paste URLs.
+Manage `packages.json` by name. `edge` knows the official std (`json`, `re`, `math`, `test`) and host (`dom`, `network`, `storage`, `time`) packages, so you do not paste URLs. Most std packages are `.wasm`; `test` is pure Edge Python, so it resolves to `test.py`.
 
 ```text
 $ edge add math network

@@ -41,18 +41,24 @@ pub enum Kind {
     Host,
 }
 
-const STD: [&str; 3] = ["json", "re", "math"];
+const STD: [&str; 4] = ["json", "re", "math", "test"];
 const HOST: [&str; 4] = ["dom", "network", "storage", "time"];
 
 /// Resolve a bare name against the official registry; user manifest overrides go through `resolve`.
 pub fn registry(name: &str) -> Option<(Kind, String)> {
     if STD.contains(&name) {
-        Some((Kind::Std, format!("https://std.edgepython.com/{name}.wasm")))
+        Some((Kind::Std, std_url(name)))
     } else if HOST.contains(&name) {
         Some((Kind::Host, format!("https://host.edgepython.com/{name}/index.js")))
     } else {
         None
     }
+}
+
+/// CDN url for a std package. Most ship as `.wasm`; `test` is pure Edge Python, served as `.py`. Mirrors runtime/src/defaults.js.
+fn std_url(name: &str) -> String {
+    let ext = if name == "test" { "py" } else { "wasm" };
+    format!("https://std.edgepython.com/{name}.{ext}")
 }
 
 /// Resolve `name` for the runtime: user manifest entry first, registry fallback.
