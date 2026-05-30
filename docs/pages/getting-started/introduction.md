@@ -22,10 +22,14 @@ Run live in your browser at [demo.edgepython.com](https://demo.edgepython.com/).
 
 ### Command Line Interface:
 
-Or download it to your machine ([reference docs](/reference/builtins)):
+Or download it to your machine ([reference docs](/reference/cli)):
 
 ```bash
 curl -fsSL https://dylan-sutton-chavez.github.io/edge-python/install.sh | sh
 
 edge -h # List all commands
 ```
+
+## Need help?
+
+Looking to integrate Edge into your app: run Python business logic in your users browsers, or anything else? Get in touch: [email](mailto:c.sutton.dylan@gmail.com)
