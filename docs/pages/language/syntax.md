@@ -7,7 +7,7 @@ description: "Operators, literals, and language surface."
 
 ```python
 # Single-line comment
-x = 1  # Trailing comment
+x = 1 # Trailing comment
 
 """
 Triple-quoted strings used as
@@ -57,7 +57,7 @@ Assignment as expression. Useful in conditions and comprehensions.
 ```python
 data = [1, 2, 3]
 if (n := len(data)) > 0:
-    print(n)
+  print(n)
 ```
 
 ```text Output
@@ -82,7 +82,7 @@ print(1_000_000)
 1000000
 ```
 
-Underscores are validated, `1_`, `1__2`, `0x_1`, `1e_5` -> `SyntaxError`. Must sit between two digits.
+Underscores are validated: `1_`, `1__2`, `0x_1`, `1e_5` -> `SyntaxError`. Must sit between two digits.
 
 ```python
 # Floats: IEEE-754 doubles
@@ -340,7 +340,7 @@ print(max(x for x in [3, 1, 4, 1, 5]))
 
 ## Type annotations
 
-Annotations parse on variables, parameters, and return positions but have no runtime effect, drained by the parser, never reach the VM. No `__annotations__`, no runtime check. Treat them as docs for humans and static analysers.
+Annotations parse on variables, parameters, and return positions but have no runtime effect: drained by the parser, they never reach the VM. No `__annotations__`, no runtime check. Treat them as docs for humans and static analysers.
 
 ```python
 counter: int = 0
