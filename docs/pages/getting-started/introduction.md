@@ -16,16 +16,16 @@ Edge Python is a sandboxed Python subset compiled to a ~170 KB WebAssembly modul
 
 ## Try it
 
-### Use in the Browser:
+### Browser:
 
 Run Edge Python live in your browser at [demo.edgepython.com](https://demo.edgepython.com/).
 
-### Download the Command Line Interface:
+### Command Line Interface:
 
-Insted you can download in your computer ([reference docs](https://github.com/dylan-sutton-chavez/edge-python/tree/main/cli)):
+Or download it to your machine ([reference docs](https://github.com/dylan-sutton-chavez/edge-python/tree/main/cli)):
 
 ```bash
 curl -fsSL https://dylan-sutton-chavez.github.io/edge-python/install.sh | sh
 
-edge -h # Explain all the commands
+edge -h # List all commands
 ```

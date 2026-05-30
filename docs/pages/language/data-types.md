@@ -33,29 +33,7 @@ For runtime membership in a type, use [`isinstance`](/reference/builtins#isinsta
 
 ## Integer
 
-Two-tier. **Inline (fast)**: 47-bit signed in a NaN-boxed `Val`, one ALU op per arithmetic, zero alloc. **LongInt (slow)**: i128 in a heap slot, auto when literal/result exceeds 47-bit. Boundary invisible, same `int` type, same operators. Hard cap ±2¹²⁷; wider -> `OverflowError`. No CPython unbounded ints; no complex (`1j`, `2+3j`).
-
-```python
-# Inline range
-print(2 ** 46)
-print(2 ** 46 - 1)
-
-# Auto-promoted to LongInt
-print(2 ** 100)
-
-# Past the 128-bit cap
-try:
-    print(2 ** 127)
-except OverflowError:
-    print("overflow")
-```
-
-```text Output
-70368744177664
-70368744177663
-1267650600228229401496703205376
-overflow
-```
+One `int` type, transparently two-tier: a fast inline path that auto-promotes to wide integers, capped at ±2¹²⁷ (full mechanics in [Integer width](/reference/limits-and-errors#integer-width)). No CPython unbounded ints; no complex (`1j`, `2+3j`).
 
 ```python
 # Modular exponentiation

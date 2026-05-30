@@ -11,20 +11,7 @@ Edge Python ships as a 170 KB WebAssembly module. Fastest way to try it, the pla
 
 ## Embed it
 
-Two artifacts:
-
-1. `compiler_lib.wasm` (170 KB, lexer, parser, stack VM).
-2. A loader. Browser: the [`runtime/`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) package; WASI: your runtime's import API.
-
-Build yourself:
-
-```bash
-git clone https://github.com/dylan-sutton-chavez/edge-python
-cd edge-python/compiler
-cargo wasm # -> target/wasm32-unknown-unknown/release/compiler_lib.wasm
-```
-
-Rust consumers can let cargo fetch the release artifact via `DEP_COMPILER_LIB_WASM` (see the repo README). No native CLI, `compiler_lib.wasm` is the artifact and the host owns I/O, network, time, module fetching. Full ABI: [What it is, Where it runs](/getting-started/what-it-is#where-it-runs).
+The playground is the fastest path; to put Edge Python in your own page, drop in the `<edge-python>` element below. Building the `.wasm` from source or embedding in Rust/WASI is covered in [Where it runs](/getting-started/what-it-is#where-it-runs).
 
 ### Drop-in HTML element
 

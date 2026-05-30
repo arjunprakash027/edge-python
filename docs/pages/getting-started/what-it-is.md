@@ -17,7 +17,7 @@ Reads like Python (parses Python syntax). Runs differently, what it executes is 
 * **Exceptions**: `try` / `except` / `else` / `finally`, named handlers, `raise X from Y` (chain info discarded but `X` is what propagates), and subclass-aware matching (`except Exception` catches `RuntimeError`).
 * **Context managers**: `with` and `async with` invoke `__enter__` / `__exit__` on the context-manager value; a truthy return from `__exit__` suppresses the raised exception.
 * **Protocol dunders**: operator overloading, indexing, iteration, hashing, and `repr` / `str` / `format` dispatch through user-defined dunders, see [Dunders](/language/dunders) for the full matrix.
-* **Numbers**: integers up to `±2^127` (auto-promoted past 47 bits; beyond the cap raises `OverflowError`) and full IEEE-754 floats. No `complex`, `Decimal`, `Fraction`, or arbitrary precision beyond 128 bits.
+* **Numbers**: bounded integers (fast inline path, auto-promoting to wide; see [Integer width](/reference/limits-and-errors#integer-width)) and full IEEE-754 floats. No `complex`, `Decimal`, or `Fraction`.
 * **Sequences**: lists, tuples, dicts (insertion-ordered), sets, frozensets, ranges, strings (UTF-8, codepoint-indexed), and bytes.
 * **f-strings**: full grammar, embedded expressions, `{expr=}` self-doc, `!r` / `!s` / `!a` conversions, and format specs covering `s d b o x X f F e E g G n % c` plus fill / align / sign / `#` / `0` / width / `,` / precision.
 * **Walrus operator**: `:=` in expressions (Name target only).
@@ -41,9 +41,9 @@ These parse for syntactic compatibility but raise at runtime, or simply don't ex
 
 Multi-paradigm sandboxed compiler:
 
-- **Smaller binary**, compiler + VM in 170 KB WebAssembly release.
+- **Small binary**, compiler + VM in one WebAssembly release.
 - **Faster interpreter**, no method-resolution overhead; hot opcodes promote to type-specialised fast paths via IC.
-- **Aggressive memoisation**, pure functions auto-cached; most functional code is pure by construction.
+- **Aggressive memoisation**, pure functions auto-cached after two hits ([Functions](/language/functions#generators)); most functional code is pure by construction.
 - **Easier sandboxing**, no protocol dispatch, no stdlib; attack surface is the fixed built-in set.
 
 ## Sandbox guarantees

@@ -178,13 +178,14 @@ class K:
     def __eq__(self, o):
         return self.n == o.n
 
-print(hash(K(5)))
-print({K(1): 'one'}[K(1)] if K(1).__hash__() == K(1).__hash__() else 'unhashable')
+k = K(5)
+print(hash(k))
+print({k: 'found'}[k]) # same instance reference looks up reliably
 ```
 
 ```text Output
 5
-one
+found
 ```
 
 Built-in dict/set still compare instance keys by identity (`Val` bits); user `__hash__` is returned by `hash()` but doesn't change containment in built-in containers. Use the same instance reference to look up reliably.

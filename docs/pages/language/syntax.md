@@ -125,14 +125,14 @@ hello world
 
 ### Escape sequences
 
-Supported: `\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\0`, `\xHH`, `\uHHHH`, `\UHHHHHHHH`, `\NNN` (1\u20133 octal digits). Named-char escapes (`\N{GREEK SMALL LETTER ALPHA}`) not supported \u2014 use `\u`.
+Supported: `\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\0`, `\xHH`, `\uHHHH`, `\UHHHHHHHH`, `\NNN` (1–3 octal digits). Named-char escapes (`\N{GREEK SMALL LETTER ALPHA}`) not supported — use `\u`.
 
 ```python
 print('\n line break')
 print('\t tab')
 print('\x41 hex')
 print('\u00e9 unicode')
-print('\101') # octal escape \u2014 'A'
+print('\101') # octal escape — 'A'
 ```
 
 ```text Output
@@ -140,7 +140,7 @@ print('\101') # octal escape \u2014 'A'
  line break
 	 tab
 A hex
-\u00e9 unicode
+é unicode
 A
 ```
 

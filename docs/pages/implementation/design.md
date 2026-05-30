@@ -17,7 +17,7 @@ Classes support single-level inheritance, `super()`, full dunder dispatch, `@pro
 - **Single-pass SSA codegen**: Variables versioned per assignment (`x_1`, `x_2`). Control-flow joins emit `Phi` opcodes resolved at runtime.
 - **Token-threaded dispatch**: `Vec<Instruction>` where each is `(opcode: OpCode, operand: u16)`. Hot loop is a flat `match`; Rust lowers it to a jump table. Not direct threading (computed-goto isn't available in safe Rust).
 - **Per-instruction inline caching**: Each binary op records operand type tags. After `QUICK_THRESH = 4` stable hits the IC stores a typed `FastOp` (`AddInt`, `AddFloat`, `AddStr`, `LtFloat`, `EqStr`, `ModInt`, ...) as a speculative fast path with type-guard deopt.
-- **Template memoisation**: Pure user functions cache `(args) -> result` after `TPL_THRESH = 2` hits, capped at 256 entries per function. Gated on no-kw calls, an outer scope free of impure ops (`StoreItem`, `StoreAttr`, `Raise`, `Yield`, `Global`, `Nonlocal`, `Import`, ...), and byte-stable arguments (mutable containers disqualify). Hashing is an FNV-like fold over raw `Val.0` bits with a value-eq verify.
+- **Template memoisation**: pure user functions cache `(args) -> result` after `TPL_THRESH = 2` hits, capped at 256 entries each. Gated on no-kw calls, byte-stable args (mutable containers disqualify), and an impurity-free body (purity detection in [Syntax](/implementation/syntax#lambda-and-function-bodies)). Hashing is an FNV-like fold over raw `Val.0` bits with a value-eq verify.
 - **NaN-boxed values**: `Val` is a 64-bit union: 47-bit signed ints (inline), IEEE-754 floats (NaNs canonicalised), bools, None, an undef sentinel, and 28-bit heap indices.
 - **Mark-and-sweep GC**: Triggered when `live >= gc_threshold` or `alloc_count >= max(live/4, 4096)`. After each sweep `gc_threshold = max(live * 2, 512)`. Roots: stack, with-stack, yields, event queue, slots and live-slot snapshots, slot templates, globals, every iterator frame's `iter_stack`, opcode-cache constants, active const pools, function templates.
 
@@ -77,7 +77,7 @@ Heap is a `Vec<HeapSlot>` arena with a free list (capped 524,288, sorted to pref
 
 ## Coroutine and context-manager dispatch
 
-`async def` and `yield`-bearing `def` both produce `HeapObj::Coroutine`. `run()` drives the scheduler; `sleep`, `gather`, `with_timeout`, `cancel`, `receive` are top-level builtins. No `asyncio` module.
+`async def` and `yield`-bearing `def` both produce `HeapObj::Coroutine`. `run()` drives the scheduler; the other primitives are top-level builtins ([Async](/language/async)).
 
 A plain `def` inside a coroutine calling a yielding builtin gets its state (`ip`, slots, stack/iter deltas) snapshotted as a `SyncFrame` pushed on the enclosing Coroutine's `sync_frames` (innermost-last). `resume_coroutine` walks this stack inside-out before re-entering the outer body, so each helper's return value lands at the original `Call` site, otherwise the outer's `resume_ip` would skip past the unfinished helper.
 

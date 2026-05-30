@@ -862,7 +862,7 @@ print(c.x)
 
 ## Async
 
-Top-level builtins, no `asyncio` module.
+Concurrency primitives; full model in [Async](/language/async).
 
 ### run
 
