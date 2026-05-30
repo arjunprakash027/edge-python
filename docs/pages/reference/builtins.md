@@ -438,7 +438,7 @@ import prod_handler
 import dev_handler
 
 def handle(env, request):
-    return import_module(env + "_handler").handle(request)
+  return import_module(env + "_handler").handle(request)
 
 handle("prod", req)
 handle("dev",  req)
@@ -544,18 +544,18 @@ Functions, type objects, and user classes expose `__name__` (the bare declared n
 
 ```python
 def greet():
-    pass
+  pass
 
 class Box:
-    pass
+  pass
 
 print(greet.__name__)
 print(int.__name__)
 print(Box.__name__)
 try:
-    1 / 0
+  1 / 0
 except Exception as e:
-    print(type(e).__name__)
+  print(type(e).__name__)
 ```
 
 ```text Output
@@ -591,10 +591,10 @@ print(issubclass(bool, int))
 print(issubclass(KeyError, (ValueError, Exception)))
 
 class A:
-    pass
+  pass
 
 class B(A):
-    pass
+  pass
 
 print(issubclass(B, A))
 print(issubclass(A, B))
@@ -745,9 +745,9 @@ fn = globals()['add']
 print(fn(3, 4))
 
 def f():
-    a = 1
-    b = 2
-    return locals()
+  a = 1
+  b = 2
+  return locals()
 print(f())
 ```
 
@@ -765,8 +765,8 @@ Dicts are copies, mutation doesn't change VM bindings.
 
 ```python
 class Box:
-    def __init__(self):
-        pass
+  def __init__(self):
+    pass
 
 b = Box()
 setattr(b, "x", 42)
@@ -802,9 +802,9 @@ print(xs[slice(0, 5, 2)])
 
 ```python
 class P:
-    def __init__(self):
-        self.x = 1
-        self.y = 2
+  def __init__(self):
+    self.x = 1
+    self.y = 2
 
 p = P()
 print(vars(p))
@@ -822,12 +822,12 @@ print(vars(p))
 
 ```python
 class A:
-    def m(self):
-        return "a"
+  def m(self):
+    return "a"
 
 class B(A):
-    def m(self):
-        return super().m() + "b"
+  def m(self):
+    return super().m() + "b"
 
 print(B().m())
 ```
@@ -842,14 +842,14 @@ ab
 
 ```python
 class C:
-    def __init__(self, x):
-        self._x = x
-    @property
-    def x(self):
-        return self._x
-    @x.setter
-    def x(self, v):
-        self._x = v
+  def __init__(self, x):
+    self._x = x
+  @property
+  def x(self):
+    return self._x
+  @x.setter
+  def x(self, v):
+    self._x = v
 
 c = C(1)
 c.x = 9
@@ -878,9 +878,9 @@ Concurrency primitives; full model in [Async](/language/async).
 
 ```python
 async def animate(node):
-    for i in range(60):
-        set_attribute(node, "style", f"transform: translateX({i}px)")
-        frame()
+  for i in range(60):
+    set_attribute(node, "style", f"transform: translateX({i}px)")
+    frame()
 ```
 
 ### receive
@@ -893,7 +893,7 @@ async def animate(node):
 
 ```python
 async def task(n):
-    return n * 2
+  return n * 2
 
 print(gather(task(1), task(2), task(3)))
 ```
@@ -908,13 +908,13 @@ print(gather(task(1), task(2), task(3)))
 
 ```python
 async def slow():
-    sleep(10)
-    return "never"
+  sleep(10)
+  return "never"
 
 try:
-    with_timeout(0.1, slow())
+  with_timeout(0.1, slow())
 except TimeoutError:
-    print("timed out")
+  print("timed out")
 ```
 
 ```text Output

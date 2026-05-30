@@ -53,7 +53,7 @@ Users opt in by loading the custom `compiler.wasm` and matching host runtime tog
 // custom compiler.wasm declares an extra env import beyond the sealed plugin set
 #[link(wasm_import_module = "env")]
 unsafe extern "C" {
-    fn host_dom_op(opcode: u32, ptr: *const u8, len: u32) -> u32;
+  fn host_dom_op(opcode: u32, ptr: *const u8, len: u32) -> u32;
 }
 
 // And exposes a `dom` module whose operations bridge through it.
@@ -80,32 +80,32 @@ A module is a factory `(ctx) => handlers` (or `{name: handler}`). The factory re
 ```js
 // dom.js
 export const dom = ({ pushEvent }) => {
-    const nodes = [];
-    const alloc = (n) => { if (n == null) return -1; nodes.push(n); return nodes.length - 1; };
-    const node = (h) => nodes[h];
+  const nodes = [];
+  const alloc = (n) => { if (n == null) return -1; nodes.push(n); return nodes.length - 1; };
+  const node = (h) => nodes[h];
 
-    return {
-        query: (sel) => alloc(document.querySelector(sel)),
-        set_text: (h, txt) => { node(h).textContent = txt; },
-        bind_event: (h, type, msg) => {
-            node(h).addEventListener(type, (e) => {
-                pushEvent(JSON.stringify({ msg, type: e.type, target_id: e.target.id }));
-            });
-        },
-    };
+  return {
+    query: (sel) => alloc(document.querySelector(sel)),
+    set_text: (h, txt) => { node(h).textContent = txt; },
+    bind_event: (h, type, msg) => {
+      node(h).addEventListener(type, (e) => {
+        pushEvent(JSON.stringify({ msg, type: e.type, target_id: e.target.id }));
+      });
+    },
+  };
 };
 ```
 
 ```html
 <script type="module">
-    import { createWorker } from "https://runtime.edgepython.com/js/src/index.js";
-    import { dom } from "./dom.js";
+  import { createWorker } from "https://runtime.edgepython.com/js/src/index.js";
+  import { dom } from "./dom.js";
 
-    const worker = await createWorker({
-        wasmUrl: "https://runtime.edgepython.com/js/compiler_lib.wasm",
-        mainThreadModules: { dom },
-    });
-    await worker.run(await (await fetch("./script.py")).text());
+  const worker = await createWorker({
+    wasmUrl: "https://runtime.edgepython.com/js/compiler_lib.wasm",
+    mainThreadModules: { dom },
+  });
+  await worker.run(await (await fetch("./script.py")).text());
 </script>
 ```
 
@@ -113,9 +113,9 @@ export const dom = ({ pushEvent }) => {
 from dom import query, set_text, bind_event
 bind_event(query("#btn"), "click", "click")
 async def main():
-    while True:
-        receive()
-        set_text(query("#btn"), "clicked")
+  while True:
+    receive()
+    set_text(query("#btn"), "clicked")
 run(main())
 ```
 

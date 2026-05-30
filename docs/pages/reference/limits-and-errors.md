@@ -27,9 +27,9 @@ print(140737488355327) # inline, fast path
 print(2 ** 47) # 140737488355328: auto-promotes to LongInt
 print(2 ** 100) # 1267650600228229401496703205376
 try:
-    print(2 ** 127) # past the i128 cap
+  print(2 ** 127) # past the i128 cap
 except OverflowError:
-    print("overflow")
+  print("overflow")
 ```
 
 ```text Output
@@ -53,9 +53,9 @@ def loop(n):
     return loop(n + 1)
 
 try:
-    loop(0)
+  loop(0)
 except RecursionError:
-    print("hit max depth")
+  print("hit max depth")
 ```
 
 ```text Output
@@ -65,11 +65,11 @@ hit max depth
 ```python
 # Heap quota, a tight loop allocating new objects
 try:
-    xs = []
-    while True:
-        xs = xs + [0] * 1000
+  xs = []
+  while True:
+    xs = xs + [0] * 1000
 except MemoryError:
-    print("hit heap limit")
+  print("hit heap limit")
 ```
 
 ## Source size
@@ -142,14 +142,14 @@ Flat tree rooted at `BaseException -> Exception`. `except` walks parent links, `
 
 ```python
 try:
-    raise RuntimeError("oops")
+  raise RuntimeError("oops")
 except Exception as e:
-    print("caught via parent:", e)
+  print("caught via parent:", e)
 
 try:
-    [][0]
+  [][0]
 except Exception:
-    print("caught IndexError as Exception")
+  print("caught IndexError as Exception")
 ```
 
 ```text Output
@@ -165,19 +165,19 @@ Caught exceptions expose constructor args as `e.args` (tuple). `raise X("msg")` 
 
 ```python
 try:
-    raise TypeError("bad input")
+  raise TypeError("bad input")
 except TypeError as e:
-    print(e.args)
+  print(e.args)
 
 try:
-    1 / 0
+  1 / 0
 except ZeroDivisionError as e:
-    print(e.args)
+  print(e.args)
 
 try:
-    raise ValueError
+  raise ValueError
 except ValueError as e:
-    print(e.args)
+  print(e.args)
 ```
 
 ```text Output
@@ -190,16 +190,16 @@ except ValueError as e:
 
 ```python
 def safe(f, x):
-    try:
-        return f(x)
-    except TypeError:
-        return "type"
-    except ValueError:
-        return "value"
-    except ZeroDivisionError:
-        return "zero"
-    except:
-        return "other"
+  try:
+    return f(x)
+  except TypeError:
+    return "type"
+  except ValueError:
+    return "value"
+  except ZeroDivisionError:
+    return "zero"
+  except:
+    return "other"
 
 print(safe(lambda x: 1 / x, 0))
 print(safe(lambda x: int(x), "abc"))
@@ -229,9 +229,9 @@ Parse but raise `RuntimeError` when executed:
 
 ```python
 try:
-    import os
+  import os
 except RuntimeError as e:
-    print("import:", e)
+  print("import:", e)
 ```
 
 Exist for syntactic compatibility. For code reuse, use higher-order functions.

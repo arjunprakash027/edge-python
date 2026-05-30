@@ -3,7 +3,7 @@ title: "WASM module ABI"
 description: "The wire format a `.wasm` module must follow to be importable by Edge Python."
 ---
 
-> **Sealed contract, plugin ABI v1.** Every signature, op code, tag, and error kind here is the public contract for CDN-distributed `.wasm` plugin modules (Path A). New host packages arrive as new `Op` values, never new imports; a future wire-level break would ship as `env_v2.*` without removing v1. Distinct from the `compiler<->host` interface embedders declare (see [host capabilities](/reference/writing-modules#path-b-host-capability)), embedders aren't bound by the 6-import limit here.
+> **Sealed contract, plugin ABI v1.** Every signature, op code, tag, and error kind here is the public contract for CDN-distributed `.wasm` plugin modules (Path A). New host packages arrive as new `Op` values, never new imports; a future wire-level break would ship as `env_v2.*` without removing v1. Distinct from the `compiler<->host` interface embedders declare (see [host packages](/reference/writing-modules#path-c-host-capability)), embedders aren't bound by the 6-import limit here.
 
 A `.wasm` module imported via `from "<url>" import <names>` follows the contract below. Handle-based API: the host owns all values, the guest sees only opaque `u32` handles, and one universal dispatch primitive (`edge_op`) covers every operation. New types, methods, and language features become available to existing modules with no ABI change.
 
@@ -47,28 +47,15 @@ The reference `wasm-pdk` crate emits both symbols automatically. `EDGE_ABI_VERSI
 Guest declares from `env`:
 
 ```rust
-fn edge_op(
-    op: u32,
-    recv: u32,
-    name_ptr: *const u8, name_len: u32,
-    argv_ptr: *const u32, argc: u32,
-    out: *mut u32,
-) -> i32;
+fn edge_op(op: u32, recv: u32, name_ptr: *const u8, name_len: u32, argv_ptr: *const u32, argc: u32, out: *mut u32) -> i32;
 
 fn edge_encode(tag: u32, ptr: *const u8, len: u32) -> u32;
 
-fn edge_decode(
-    h: u32,
-    out_tag: *mut u32,
-    dst: *mut u8, dst_max: u32,
-) -> i32;
+fn edge_decode(h: u32, out_tag: *mut u32, dst: *mut u8, dst_max: u32) -> i32;
 
 fn edge_release(h: u32);
 
-fn edge_take_error(
-    out_kind: *mut u32,
-    dst: *mut u8, dst_max: u32,
-) -> i32;
+fn edge_take_error(out_kind: *mut u32, dst: *mut u8, dst_max: u32) -> i32;
 
 fn edge_throw(kind: u32, msg_ptr: *const u8, msg_len: u32);
 ```
@@ -159,23 +146,23 @@ wasm_pdk::module!();   // expands to #[global_allocator] + #[panic_handler]
 
 #[plugin_fn]
 fn slugify(s: String) -> String {
-    s.to_lowercase().replace(' ', "-")
+  s.to_lowercase().replace(' ', "-")
 }
 
 #[plugin_fn]
 fn repeat_n(s: String, n: i64) -> Result<String> {
-    if n < 0 { return Err(Error::Value("repeat count must be non-negative".into())); }
-    Ok(s.repeat(n as usize))
+  if n < 0 { return Err(Error::Value("repeat count must be non-negative".into())); }
+  Ok(s.repeat(n as usize))
 }
 
 #[plugin_fn]
 fn sum_ints(items: Handle) -> Result<i64> {
-    let it = items.iter()?;
-    let mut total: i64 = 0;
-    while let Some(item) = it.iter_next()? {
-        total += i64::from_handle(item.raw())?;
-    }
-    Ok(total)
+  let it = items.iter()?;
+  let mut total: i64 = 0;
+  while let Some(item) = it.iter_next()? {
+    total += i64::from_handle(item.raw())?;
+  }
+  Ok(total)
 }
 ```
 
@@ -210,15 +197,15 @@ pub struct Slugger { parts: Vec<String> }
 
 #[plugin_methods]
 impl Slugger {
-    #[plugin_ctor]
-    pub fn new() -> Self { Self { parts: Vec::new() } }
-    pub fn add(&mut self, s: String) { self.parts.push(s.to_lowercase()); }
-    pub fn build(&self) -> String { self.parts.join("-") }
-    pub fn pop(&mut self) -> Option<String> { self.parts.pop() }
-    pub fn repeat(&self, n: i64) -> Result<String> {
-        if n < 0 { return Err(Error::Value("n must be non-negative".into())); }
-        Ok(self.parts.join("-").repeat(n as usize))
-    }
+  #[plugin_ctor]
+  pub fn new() -> Self { Self { parts: Vec::new() } }
+  pub fn add(&mut self, s: String) { self.parts.push(s.to_lowercase()); }
+  pub fn build(&self) -> String { self.parts.join("-") }
+  pub fn pop(&mut self) -> Option<String> { self.parts.pop() }
+  pub fn repeat(&self, n: i64) -> Result<String> {
+    if n < 0 { return Err(Error::Value("n must be non-negative".into())); }
+    Ok(self.parts.join("-").repeat(n as usize))
+  }
 }
 ```
 
@@ -255,9 +242,9 @@ A trailing `Args` param captures every positional past the fixed ones, for `*arg
 ```rust
 #[plugin_fn]
 fn hypot(coords: Args) -> Result<f64> {
-    let mut sum = 0.0;
-    for h in &coords.0 { let x = f64::from_handle(h.raw())?; sum += x * x; }
-    Ok(libm::sqrt(sum))
+  let mut sum = 0.0;
+  for h in &coords.0 { let x = f64::from_handle(h.raw())?; sum += x * x; }
+  Ok(libm::sqrt(sum))
 }
 ```
 
@@ -282,9 +269,9 @@ print(repeat_n("ha", 3)) # -> hahaha
 print(sum_ints([1, 2, 3, 4])) # -> 10
 
 try:
-    print(repeat_n("nope", -1))
+  print(repeat_n("nope", -1))
 except ValueError as e:
-    print("caught:", e) # -> caught: repeat count must be non-negative
+  print("caught:", e) # -> caught: repeat count must be non-negative
 ```
 
 ## Worked example, raw, no SDK
@@ -304,12 +291,7 @@ static A: lol_alloc::LeakingPageAllocator = lol_alloc::LeakingPageAllocator;
 
 #[link(wasm_import_module = "env")]
 unsafe extern "C" {
-    fn edge_op(
-        op: u32, recv: u32,
-        name_ptr: *const u8, name_len: u32,
-        argv_ptr: *const u32, argc: u32,
-        out: *mut u32,
-    ) -> i32;
+    fn edge_op(op: u32, recv: u32, name_ptr: *const u8, name_len: u32, argv_ptr: *const u32, argc: u32, out: *mut u32) -> i32;
     fn edge_encode(tag: u32, ptr: *const u8, len: u32) -> u32;
     fn edge_release(h: u32);
 }
@@ -320,30 +302,29 @@ const TAG_BYTES: u32 = 4;
 /// Required by the host shim for staging argv arrays.
 #[unsafe(no_mangle)]
 pub extern "C" fn __edge_alloc(size: u32) -> *mut u8 {
-    Box::into_raw(vec![0u8; size as usize].into_boxed_slice()) as *mut u8
+  Box::into_raw(vec![0u8; size as usize].into_boxed_slice()) as *mut u8
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn slugify(argv: *const u32, argc: u32, out: *mut u32) -> i32 {
-    if argc != 1 { return 1; }
-    let input = unsafe { *argv };
+  if argc != 1 { return 1; }
+  let input = unsafe { *argv };
 
-    // 1) input.lower()
-    let mut lower: u32 = 0;
-    if unsafe { edge_op(OP_CALL, input, b"lower".as_ptr(), 5, core::ptr::null(), 0, &mut lower) } != 0 {
-        return 1;
-    }
+  // 1) input.lower()
+  let mut lower: u32 = 0;
+  if unsafe { edge_op(OP_CALL, input, b"lower".as_ptr(), 5, core::ptr::null(), 0, &mut lower) } != 0 {
+      return 1;
+  }
 
-    // 2) lower.replace(" ", "-")
-    let space = unsafe { edge_encode(TAG_BYTES, b" ".as_ptr(), 1) };
-    let dash  = unsafe { edge_encode(TAG_BYTES, b"-".as_ptr(), 1) };
-    let argv2 = [space, dash];
-    let r = unsafe { edge_op(OP_CALL, lower, b"replace".as_ptr(), 7, argv2.as_ptr(), 2, out) };
+  // 2) lower.replace(" ", "-")
+  let space = unsafe { edge_encode(TAG_BYTES, b" ".as_ptr(), 1) };
+  let dash  = unsafe { edge_encode(TAG_BYTES, b"-".as_ptr(), 1) };
+  let argv2 = [space, dash];
+  let r = unsafe { edge_op(OP_CALL, lower, b"replace".as_ptr(), 7, argv2.as_ptr(), 2, out) };
 
-    // 3) Cleanup intermediate handles. The result handle in *out
-    //    transfers to the host.
-    unsafe { edge_release(space); edge_release(dash); edge_release(lower); }
-    r
+  // 3) Cleanup intermediate handles. The result handle in *out transfers to the host.
+  unsafe { edge_release(space); edge_release(dash); edge_release(lower); }
+  r
 }
 ```
 

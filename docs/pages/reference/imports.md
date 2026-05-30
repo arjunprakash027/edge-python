@@ -34,9 +34,9 @@ from utils import normalize as n
 
 # Parenthesized name lists, multi-line, optional trailing comma
 from utils import (
-    slugify,
-    normalize as n,
-    titlecase,
+  slugify,
+  normalize as n,
+  titlecase,
 )
 
 # Plain `import X`, binds the module under its name; access exports via `.`
