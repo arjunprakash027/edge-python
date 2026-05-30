@@ -3,9 +3,9 @@ title: "Classes"
 description: "User-defined classes as state machines and library namespaces."
 ---
 
-Edge Python is functional-first, classes are state containers and namespaces, not the primary abstraction. Two patterns: state machines (a few methods that mutate the receiver) and namespaces (a bundle of related functions and constants).
+Where classes are state containers and namespaces, not the primary abstraction (decided by design for the compiler purpose). Two patterns: state machines (a few methods that mutate the receiver) and namespaces (a bundle of related functions and constants).
 
-Single-level inheritance with `super()`, `@property` / `@x.setter`, full dunder protocol for operators, indexing, iteration, context managers (see [Dunder methods](/language/dunders)). Multi-base C3 MRO, descriptors, metaclasses, `__slots__` are out of scope.
+Single-level inheritance with `super()`, `@property` / `@x.setter`, and a curated dunder protocol covering operators, indexing, iteration, hashing, context managers, and attribute fallback (see [Dunder methods](/language/dunders)). Multi-base C3 MRO, descriptors, metaclasses, `__slots__` are out of scope.
 
 ## State-machine pattern
 
@@ -31,7 +31,7 @@ print(c.value())
 
 ## Namespace pattern
 
-A class with no `__init__` and no per-instance state is a namespace. Methods called on the class are unbound, no `self` prepended.
+A class with no `__init__` and no per-instance state is a namespace. Methods called on the class are unbound — no `self` prepended.
 
 ```python
 class Status:
@@ -61,7 +61,7 @@ print(Math.cube(3))
 
 ## Inheritance and super()
 
-Single base via `class Sub(Base):`. Methods not on the subclass are looked up linearly on the base, no C3 MRO. `isinstance(x, Base)` walks the same chain, so `Sub` instances are also instances of every ancestor.
+Single base via `class Sub(Base):`. Methods not on the subclass are looked up linearly on the base — no C3 MRO. `isinstance(x, Base)` walks the same chain, so `Sub` instances are also instances of every ancestor.
 
 `super()` (zero-arg) delegates to the next class up the chain, bound to current `self`. Most common in `__init__` to extend a base constructor.
 
@@ -102,7 +102,7 @@ True
 
 ## Class decorators
 
-A class decorator wraps the class object the same way it wraps a function, the decorator is called with the class; its return binds to the name.
+A class decorator wraps the class object the same way it wraps a function — the decorator is called with the class; its return binds to the name.
 
 ```python
 def tag(cls):
@@ -125,7 +125,7 @@ tagged
 
 ## Properties
 
-`@property` turns a method into a read-only attribute. `@x.setter` (via `property.setter`) makes it writable. Properties live on the class, subclasses inherit and can override either side.
+`@property` turns a method into a read-only attribute. `@x.setter` (via `property.setter`) makes it writable. Properties live on the class; subclasses inherit and can override either side.
 
 ```python
 class Temp:
@@ -174,7 +174,7 @@ See [Dunder methods](/language/dunders) for the full matrix.
 
 * Multi-base inheritance with proper C3 MRO. `class C(A, B):` parses and both bases are stored, but resolution is a linear depth-first walk, not C3. Prefer single inheritance.
 * Metaclasses, descriptors (`__get__` / `__set__`), `__slots__`, ABCs, `__init_subclass__`.
-* `@staticmethod` / `@classmethod`, use the namespace pattern or free functions.
-* Async dunders, see [Dunders, What's not dispatched](/language/dunders#whats-not-dispatched).
+* `@staticmethod` / `@classmethod` — use the namespace pattern or free functions.
+* Async dunders; see [Dunders, What's not dispatched](/language/dunders#whats-not-dispatched).
 
-Behaviour reuse via free functions and composition remains the default, fast dispatch, aligned with the functional-first identity. Reach for inheritance and operator overloading when the abstraction genuinely calls for them.
+Behaviour reuse via free functions and composition remains the default — fast dispatch, aligned with the functional-first identity. Reach for inheritance and operator overloading when the abstraction genuinely calls for them.
