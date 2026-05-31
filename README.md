@@ -1,11 +1,24 @@
-# Edge Python
+<div align="center">
+  <a href="https://edgepython.com/" target="_blank">
+    <picture>
+      <img width="300" src="docs/public/static/banner.svg" alt="Edge Python Logo">
+    </picture>
+  </a>
+</div>
 
-A compact bytecode compiler and stack VM for a sandboxed Python subset, written in Rust. See [Design](https://edgepython.com/implementation/design) for the architecture.
+<br/>
 
-Edge Python is distributed as a WebAssembly module, `compiler.wasm`, around 170 KB. It runs anywhere WebAssembly runs: browsers, Cloudflare Workers, Fastly Compute, Wasmtime, Wasmer, Spin. Sandboxed by construction.
+Edge is a sandboxed subset of Python, compiled to a less than 200 KB WebAssembly binary and built in Rust to run on Cloudflare Workers and in the browser. Embed your full business logic, run LLMs client-side, build frontend apps and serverless workloads.
 
-- **Demo:** [demo.edgepython.com](https://demo.edgepython.com/)
-- **Docs:** [edgepython.com](https://edgepython.com/)
+- Secure by default. No file, network, or environment access, unless explicitly enabled by the [host](https://edgepython.com/reference/packages#host-libraries).
+- Less than 200 KB footprint. The full compiler and runtime ship as a single WASM binary.
+- Compile-time imports. Every module resolves at parse time no dynamic loading, no runtime surprises.
+- No AST, source compiles directly to bytecode in a single pass: o(n)
+
+## More about it
+
+- Demo: [demo.edgepython.com](https://demo.edgepython.com/)
+- Docs: [edgepython.com](https://edgepython.com/)
 
 ## Repository layout
 
@@ -25,7 +38,7 @@ Cargo workspace; commands work from any directory.
 ```
 
 ```bash
-cargo wasm # release .wasm (the distributed artifact)
+cargo wasm            # release .wasm (the distributed artifact)
 cargo build --release # host .rlib + cdylib for Rust embedders
 cargo test --release  # full test suite
 ```
@@ -36,13 +49,15 @@ Native modules ship via three delivery paths (CDN `.wasm`, host capability, JS h
 
 ### CLI
 
+download it to your machine ([reference docs](https://edgepython.com/reference/cli)):
+
 ```bash
-cargo install --path cli
-edge init my-app && cd my-app
-edge run main.py
+curl -fsSL https://dylan-sutton-chavez.github.io/edge-python/install.sh | sh
+
+edge -h # List all commands
 ```
 
-`edge` hosts the runtime in a headless Chromium provisioned by `install.sh` (apt, dnf, pacman, zypper, apk, or brew on macOS); see [`cli/README.md`](cli/README.md) for `serve`, `repl`, `build`, `uninstall`.
+`edge` hosts the runtime in a headless Chromium provisioned by `install.sh` (apt, dnf, pacman, zypper, apk, or brew on macOS) for `serve`, `repl`, `build` and `uninstall`.
 
 ### Browser
 
@@ -50,16 +65,16 @@ edge run main.py
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <script type="module" src="https://runtime.edgepython.com/js/src/element.js"></script>
+  <meta charset="UTF-8">
+  <script type="module" src="https://runtime.edgepython.com/js/src/element.js"></script>
 </head>
 <body>
-    <edge-python entry="./app/main.py" packages="./app/packages.json"></edge-python>
+  <edge-python entry="./app/main.py" packages="./app/packages.json"></edge-python>
 </body>
 </html>
 ```
 
-The runtime spawns a Web Worker that pre-fetches imports, dispatches native calls, and streams `print()` output back. Build the WASM yourself with `cargo wasm` (output around 390 KB unstripped; optionally `wasm-opt -Oz` to shrink).
+The runtime spawns a Web Worker that pre-fetches imports, dispatches native calls, and streams `print()` output back.
 
 ### Consume the release from a Rust host
 
@@ -74,10 +89,9 @@ edge-python = { git = "https://github.com/dylan-sutton-chavez/edge-python", tag 
 ```rust
 // build.rs
 fn main() {
-    println!("cargo::rerun-if-changed=build.rs");
-    let wasm = std::env::var("DEP_COMPILER_LIB_WASM")
-        .expect("`DEP_COMPILER_LIB_WASM` unset, upstream must declare `links = \"compiler_lib\"`");
-    std::fs::copy(&wasm, "runtime/compiler_lib.wasm").expect("copy failed");
+  println!("cargo::rerun-if-changed=build.rs");
+  let wasm = std::env::var("DEP_COMPILER_LIB_WASM").expect("`DEP_COMPILER_LIB_WASM` unset, upstream must declare `links = \"compiler_lib\"`");
+  std::fs::copy(&wasm, "runtime/compiler_lib.wasm").expect("copy failed");
 }
 ```
 
