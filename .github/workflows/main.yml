@@ -1,15 +1,6 @@
 name: CI / CD
 
-# Single pipeline for the whole monorepo. Each job's logic lives in a composite
-# action under .github/actions/<pkg>; this file only wires the dependency graph.
-#
-#   compiler-check ┐
-#   runtime-lint  ─┴─► compiler ─► runtime ─┬─► host (matrix) ─┐
-#                                           └─► std  (matrix) ─┤
-#   cli-release (matrix, starts at t=0) ─────────────────────┴─► cli-test
-#                                                                   │ (push to main)
-#                                    cdn ◄── demo ◄── docs ◄────────┘
-#   docs deploys only on push to main, gated behind the full pipeline.
+# Single pipeline for the whole monorepo. Each job's logic lives in a composite action under .github/actions/<pkg>; this file only wires the dependency graph.
 
 on:
   push:
@@ -95,9 +86,20 @@ jobs:
         with:
           package: ${{ matrix.package }}
 
-  # Starts at t=0 (no needs): the heavy release build runs in parallel; cli-test awaits its artifacts.
+  # Clippy + check once (no matrix); gates the release build.
+  cli-lint:
+    name: CLI / Lint and Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/cli
+        with:
+          mode: lint
+
+  # Heavy release build per target; starts as soon as cli-lint is green.
   cli-release:
     name: CLI / Release (${{ matrix.target }})
+    needs: [cli-lint]
     strategy:
       fail-fast: false
       matrix:
@@ -142,7 +144,7 @@ jobs:
 
   demo:
     name: Demo
-    needs: [cli-test]
+    needs: [cdn]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -152,7 +154,8 @@ jobs:
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-  docs:
+  # Builds on every run (PR gate) and uploads the static export for docs-deploy.
+  docs-build:
     name: Docs / Build
     needs: [cli-test]
     runs-on: ubuntu-latest
@@ -160,6 +163,18 @@ jobs:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/docs
         with:
-          deploy: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          mode: build
+
+  # Tail of the cdn -> demo -> docs deploy chain; main pushes only.
+  docs-deploy:
+    name: Docs / Deploy
+    needs: [demo, docs-build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/docs
+        with:
+          mode: deploy
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

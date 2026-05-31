@@ -1,11 +1,10 @@
-name: Docs build & deploy
-description: Build the Nextra static export (docs/out); deploy to edge-python-docs when deploy=true.
+name: Docs
+description: Nextra static export. build = next build + upload docs/out; deploy = pull artifact + push to edge-python-docs.
 
 inputs:
-  deploy:
-    description: true to deploy after a successful build.
-    required: false
-    default: "false"
+  mode:
+    description: "build | deploy"
+    required: true
   cloudflare-api-token:
     description: Cloudflare API token (deploy only).
     required: false
@@ -18,7 +17,9 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-node@v6
+    - name: Setup Node
+      if: inputs.mode == 'build'
+      uses: actions/setup-node@v6
       with:
         node-version: "22"
         cache: npm
@@ -26,17 +27,34 @@ runs:
 
     # Reproducible install from the committed lockfile.
     - name: Install
+      if: inputs.mode == 'build'
       shell: bash
       working-directory: docs
       run: npm ci
 
     - name: Build
+      if: inputs.mode == 'build'
       shell: bash
       working-directory: docs
       run: npm run build
 
+    - name: Upload static export
+      if: inputs.mode == 'build'
+      uses: actions/upload-artifact@v6
+      with:
+        name: docs-out
+        path: docs/out
+        retention-days: 1
+
+    - name: Download static export
+      if: inputs.mode == 'deploy'
+      uses: actions/download-artifact@v8
+      with:
+        name: docs-out
+        path: docs/out
+
     - name: Deploy to Cloudflare Pages
-      if: inputs.deploy == 'true'
+      if: inputs.mode == 'deploy'
       uses: cloudflare/wrangler-action@v4
       with:
         apiToken: ${{ inputs.cloudflare-api-token }}

@@ -1,9 +1,9 @@
 name: CLI
-description: cli/ is its own workspace. release = lint/check + build per target; test = cargo test.
+description: cli/ is its own workspace. lint = clippy + check; release = build per target; test = cargo test.
 
 inputs:
   mode:
-    description: "release | test"
+    description: "lint | release | test"
     required: true
   target:
     description: Rust target triple (release mode).
@@ -13,12 +13,31 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Toolchain (lint)
+      if: inputs.mode == 'lint'
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+
+    - name: Cache Rust (lint)
+      if: inputs.mode == 'lint'
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: cli -> cli/target
+
+    - name: Clippy and check
+      if: inputs.mode == 'lint'
+      shell: bash
+      working-directory: cli
+      run: |
+        cargo clippy --all-targets -- -D warnings
+        cargo check
+
     - name: Toolchain (release)
       if: inputs.mode == 'release'
       uses: dtolnay/rust-toolchain@stable
       with:
         targets: ${{ inputs.target }}
-        components: clippy
 
     - name: Install musl tools
       if: inputs.mode == 'release' && contains(inputs.target, 'linux-musl')
@@ -31,15 +50,6 @@ runs:
       with:
         workspaces: cli -> cli/target
         key: ${{ inputs.target }}
-
-    # Lint + check once, anchored to the linux x86 target so the matrix doesn't repeat it.
-    - name: Clippy and check
-      if: inputs.mode == 'release' && inputs.target == 'x86_64-unknown-linux-musl'
-      shell: bash
-      working-directory: cli
-      run: |
-        cargo clippy --release --target "${{ inputs.target }}" -- -D warnings
-        cargo check --release --target "${{ inputs.target }}"
 
     - name: Build release
       if: inputs.mode == 'release'
