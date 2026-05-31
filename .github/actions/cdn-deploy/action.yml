@@ -18,19 +18,28 @@ runs:
         name: compiler_wasm
         path: /tmp/compiler/
 
-    - name: Download std artifacts
-      uses: actions/download-artifact@v8
-      with:
-        pattern: dist-*
-        path: /tmp/std/
-        merge-multiple: true
-
-    - name: Download cli artifacts
-      uses: actions/download-artifact@v8
-      with:
-        pattern: edge-*
-        path: /tmp/cli/
-        merge-multiple: true
+    # TEMPORARY (compiler-rename deploy): the std/cli build jobs are not gating this
+    # job, so their dist-*/edge-* artifacts aren't available. A Pages deploy replaces
+    # the whole site, so we must still ship std/ and cli/ or they'd be wiped. They're
+    # byte-identical to what's live (the rename only touches compiler.wasm), so we
+    # rehydrate them straight from the production CDN. --fail aborts on any missing
+    # file rather than deploying a broken tree. Revert to the dist-*/edge-* downloads
+    # once the full pipeline gates this job again.
+    - name: Rehydrate std + cli from live CDN
+      shell: bash
+      env:
+        CDN: https://cdn.edgepython.com
+      run: |
+        set -euo pipefail
+        mkdir -p /tmp/std /tmp/cli
+        for f in json.wasm re.wasm math.wasm test.py; do
+          curl -fsSL "$CDN/std/$f" -o "/tmp/std/$f"
+        done
+        for t in x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-apple-darwin aarch64-apple-darwin; do
+          curl -fsSL "$CDN/cli/edge-$t.tar.gz" -o "/tmp/cli/edge-$t.tar.gz"
+        done
+        echo "Rehydrated std:" && ls -l /tmp/std
+        echo "Rehydrated cli:" && ls -l /tmp/cli
 
     - name: Stage site
       shell: bash
