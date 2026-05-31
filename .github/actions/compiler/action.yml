@@ -1,0 +1,139 @@
+name: Compiler
+description: Rust compiler crate. check = shear + clippy; build = wasm build/opt + test + upload.
+
+inputs:
+  mode:
+    description: "check | build"
+    required: true
+  github-token:
+    description: Token for the tag Release upload (build mode, tags only).
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Cache Rust
+      uses: Swatinem/rust-cache@v2
+
+    - name: Toolchain (clippy)
+      if: inputs.mode == 'check'
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+
+    - name: Install cargo-shear
+      if: inputs.mode == 'check'
+      shell: bash
+      run: cargo install cargo-shear
+
+    # Detects declared but unused dependencies across the workspace.
+    - name: Shear
+      if: inputs.mode == 'check'
+      shell: bash
+      run: cargo shear
+
+    # --no-default-features skips the prebuilt wasm download in build.rs.
+    - name: Clippy (host)
+      if: inputs.mode == 'check'
+      shell: bash
+      run: cargo clippy --all-targets --no-default-features -- -D warnings
+
+    - name: Install wasm target (check)
+      if: inputs.mode == 'check'
+      shell: bash
+      run: rustup target add wasm32-unknown-unknown
+
+    - name: Clippy (wasm)
+      if: inputs.mode == 'check'
+      shell: bash
+      run: cargo clippy --lib --target wasm32-unknown-unknown -p edge-python -p slugify-mod -- -D warnings
+
+    # build-std needs nightly plus rust-src.
+    - name: Toolchain (nightly)
+      if: inputs.mode == 'build'
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: rust-src
+
+    - name: Install wasm target (build)
+      if: inputs.mode == 'build'
+      shell: bash
+      run: rustup target add wasm32-unknown-unknown
+
+    # apt ships an old binaryen, so fetch the upstream release.
+    - name: Install wasm-opt
+      if: inputs.mode == 'build'
+      shell: bash
+      run: |
+        curl -sSL https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz \
+          | tar -xz --strip-components=2 -C /usr/local/bin binaryen-version_121/bin/wasm-opt
+        wasm-opt --version
+
+    - name: Build
+      if: inputs.mode == 'build'
+      shell: bash
+      run: |
+        RUSTFLAGS="-Z location-detail=none -Z fmt-debug=none -Z unstable-options -C panic=immediate-abort" \
+        cargo +nightly build \
+          --target wasm32-unknown-unknown \
+          --lib \
+          --release \
+          -p edge-python \
+          -Z build-std=std,panic_abort
+
+    - name: Size (unoptimized)
+      if: inputs.mode == 'build'
+      shell: bash
+      run: ls -lh target/wasm32-unknown-unknown/release/compiler_lib.wasm
+
+    # Two passes: -Oz with traps-never-happen, then reflatten for a fresh CFG.
+    - name: Optimize
+      if: inputs.mode == 'build'
+      shell: bash
+      run: |
+        INPUT=target/wasm32-unknown-unknown/release/compiler_lib.wasm
+
+        wasm-opt -Oz --converge \
+          --generate-global-effects \
+          --strip-debug --strip-producers \
+          --enable-bulk-memory-opt \
+          --enable-nontrapping-float-to-int \
+          --enable-sign-ext \
+          -tnh \
+          -o /tmp/wasm_stage1.wasm "$INPUT"
+
+        wasm-opt --flatten --rereloop -Oz -Oz \
+          --enable-bulk-memory-opt \
+          --enable-nontrapping-float-to-int \
+          --enable-sign-ext \
+          -o "$INPUT" /tmp/wasm_stage1.wasm
+
+        rm /tmp/wasm_stage1.wasm
+
+    - name: Size (optimized)
+      if: inputs.mode == 'build'
+      shell: bash
+      run: ls -lh target/wasm32-unknown-unknown/release/compiler_lib.wasm
+
+    - name: Test
+      if: inputs.mode == 'build'
+      shell: bash
+      run: cargo test -p edge-python --no-default-features
+
+    - name: Upload wasm artifact
+      if: inputs.mode == 'build'
+      uses: actions/upload-artifact@v6
+      with:
+        name: compiler_lib_wasm
+        path: target/wasm32-unknown-unknown/release/compiler_lib.wasm
+        retention-days: 1
+
+    - name: Upload WASM Release
+      if: inputs.mode == 'build' && startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v2
+      with:
+        token: ${{ inputs.github-token }}
+        files: target/wasm32-unknown-unknown/release/compiler_lib.wasm
+        fail_on_unmatched_files: true
+        generate_release_notes: true

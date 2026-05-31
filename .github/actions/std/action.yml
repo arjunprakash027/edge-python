@@ -1,0 +1,142 @@
+name: Std package
+description: Lint, build/optimize (wasm), test one stdpkg, then stage its artifact. No release.
+
+inputs:
+  package:
+    description: "json | re | math | test"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # Stable for clippy, nightly for the build-std wasm build.
+    - name: Toolchain (stable)
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+        components: clippy
+
+    - name: Toolchain (nightly)
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        targets: wasm32-unknown-unknown
+        components: rust-src
+
+    - uses: denoland/setup-deno@v2
+      with:
+        deno-version: v2.x
+
+    - name: Cache Cargo
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          std/${{ inputs.package }}/target
+        key: cargo-std-${{ runner.os }}-${{ inputs.package }}-${{ hashFiles(format('std/{0}/Cargo.toml', inputs.package)) }}
+        restore-keys: cargo-std-${{ runner.os }}-${{ inputs.package }}-
+
+    - name: Cache Deno modules
+      uses: actions/cache@v5
+      with:
+        path: ~/.cache/deno
+        key: deno-${{ runner.os }}-${{ hashFiles('std/**/deno.json', 'std/**/deno.lock') }}
+        restore-keys: deno-${{ runner.os }}-
+
+    - name: Cache Playwright browsers
+      uses: actions/cache@v5
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-chromium
+
+    - name: Install Chromium
+      shell: bash
+      run: deno run -A npm:playwright install --with-deps chromium
+
+    # apt ships an old binaryen, so fetch the upstream release.
+    - name: Install wasm-opt
+      if: inputs.package != 'test'
+      shell: bash
+      run: |
+        curl -sSL "https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz" \
+          | tar -xz --strip-components=2 -C /usr/local/bin "binaryen-version_121/bin/wasm-opt"
+        wasm-opt --version
+
+    # Lint only the cdylib; --all-targets clashes with its panic handler.
+    - name: Clippy
+      if: inputs.package != 'test'
+      shell: bash
+      working-directory: std/${{ inputs.package }}
+      run: cargo +stable clippy --release --target wasm32-unknown-unknown -- -D warnings
+
+    # `test` is pure Edge Python (entry.py): no crate to build.
+    - name: Build
+      if: inputs.package != 'test'
+      shell: bash
+      working-directory: std/${{ inputs.package }}
+      run: |
+        RUSTFLAGS="-Z location-detail=none -Z fmt-debug=none -Z unstable-options -C panic=immediate-abort" \
+        cargo +nightly build \
+          --target wasm32-unknown-unknown \
+          --lib --release \
+          -Z build-std=std,panic_abort
+
+    - name: Size (unoptimized)
+      if: inputs.package != 'test'
+      shell: bash
+      run: ls -lh "std/${{ inputs.package }}/target/wasm32-unknown-unknown/release/${{ inputs.package }}.wasm"
+
+    # Two passes: -Oz with traps-never-happen, then reflatten for a fresh CFG.
+    - name: Optimize
+      if: inputs.package != 'test'
+      shell: bash
+      env:
+        WASM: std/${{ inputs.package }}/target/wasm32-unknown-unknown/release/${{ inputs.package }}.wasm
+      run: |
+        wasm-opt -Oz --converge \
+          --generate-global-effects \
+          --strip-debug --strip-producers \
+          --enable-bulk-memory-opt \
+          --enable-nontrapping-float-to-int \
+          --enable-sign-ext \
+          -tnh \
+          -o /tmp/wasm_stage1.wasm "$WASM"
+
+        wasm-opt --flatten --rereloop -Oz -Oz \
+          --enable-bulk-memory-opt \
+          --enable-nontrapping-float-to-int \
+          --enable-sign-ext \
+          -o "$WASM" /tmp/wasm_stage1.wasm
+
+        rm /tmp/wasm_stage1.wasm
+
+    - name: Size (optimized)
+      if: inputs.package != 'test'
+      shell: bash
+      run: ls -lh "std/${{ inputs.package }}/target/wasm32-unknown-unknown/release/${{ inputs.package }}.wasm"
+
+    # STDPKG narrows Deno's test discovery to this package's corpus.
+    - name: Test
+      shell: bash
+      working-directory: std
+      env:
+        STDPKG: ${{ inputs.package }}
+      run: deno test --allow-all tests/
+
+    # Stage native -> <pkg>.wasm, pure-Python -> <pkg>.py.
+    - name: Stage artifact
+      shell: bash
+      run: |
+        mkdir -p _dist
+        if [ -f "std/${{ inputs.package }}/src/entry.py" ]; then
+          cp "std/${{ inputs.package }}/src/entry.py" "_dist/${{ inputs.package }}.py"
+        else
+          cp "std/${{ inputs.package }}/target/wasm32-unknown-unknown/release/${{ inputs.package }}.wasm" "_dist/${{ inputs.package }}.wasm"
+        fi
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v6
+      with:
+        name: dist-${{ inputs.package }}
+        path: _dist/
+        retention-days: 1

@@ -1,0 +1,180 @@
+name: CI / CD
+
+# Single pipeline for the whole monorepo. Each job's logic lives in a composite action under .github/actions/<pkg>; this file only wires the dependency graph.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compiler-check:
+    name: Compiler / Lint and Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/compiler
+        with:
+          mode: check
+
+  runtime-lint:
+    name: Runtime / Deno Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/runtime
+        with:
+          mode: lint
+
+  compiler:
+    name: Compiler / Test and Release
+    needs: [compiler-check, runtime-lint]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/compiler
+        with:
+          mode: build
+          github-token: ${{ github.token }}
+
+  runtime:
+    name: Runtime / Deno Test
+    needs: [compiler]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/runtime
+        with:
+          mode: test
+
+  host:
+    name: Host / ${{ matrix.capability }}
+    needs: [runtime]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        capability: [dom, network, storage, time]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/host
+        with:
+          capability: ${{ matrix.capability }}
+
+  std:
+    name: Std / ${{ matrix.package }}
+    needs: [runtime]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [json, re, math, test]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/std
+        with:
+          package: ${{ matrix.package }}
+
+  # Clippy + check once (no matrix); gates the release build.
+  cli-lint:
+    name: CLI / Lint and Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/cli
+        with:
+          mode: lint
+
+  # Heavy release build per target; starts as soon as cli-lint is green.
+  cli-release:
+    name: CLI / Release (${{ matrix.target }})
+    needs: [cli-lint]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/cli
+        with:
+          mode: release
+          target: ${{ matrix.target }}
+
+  cli-test:
+    name: CLI / Test
+    needs: [host, std, cli-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/cli
+        with:
+          mode: test
+
+  cdn:
+    name: Cloudflare Upload (CDN)
+    needs: [cli-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/cdn-deploy
+        with:
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  demo:
+    name: Demo
+    needs: [cdn]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/demo
+        with:
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  # Builds on every run (PR gate) and uploads the static export for docs-deploy.
+  docs-build:
+    name: Docs / Build
+    needs: [cli-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/docs
+        with:
+          mode: build
+
+  # Tail of the cdn -> demo -> docs deploy chain; main pushes only.
+  docs-deploy:
+    name: Docs / Deploy
+    needs: [demo, docs-build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/docs
+        with:
+          mode: deploy
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

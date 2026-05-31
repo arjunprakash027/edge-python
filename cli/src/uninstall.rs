@@ -27,11 +27,10 @@ pub fn run() -> Result<()> {
     // Tell the script which prompt path the user already answered.
     cmd.env("EDGE_UNINSTALL_REMOVE_BROWSER", if remove_browser { "1" } else { "0" });
     // Point at the install dir derived from where this binary lives, so non-default installs still clean up.
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent() {
             cmd.env("EDGE_INSTALL_DIR", dir);
         }
-    }
 
     let status = cmd.status().map_err(|e| anyhow!("running bash: {e}"))?;
     let _ = std::fs::remove_file(&temp);
