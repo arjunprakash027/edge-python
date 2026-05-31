@@ -132,7 +132,7 @@ jobs:
 
   cdn:
     name: Cloudflare Upload (CDN)
-    needs: [compiler]
+    needs: [cli-test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
