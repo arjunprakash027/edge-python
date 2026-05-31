@@ -36,16 +36,8 @@ worker.dispose();
 Declarative alternative to `createWorker`: include the script, drop a tag, and a `.py` file runs. The element wraps `createWorker` on the page's main thread.
 
 ```html
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <script type="module" src="https://cdn.edgepython.com/runtime/src/element.js"></script>
-</head>
-<body>
-    <edge-python entry="./app/main.py" packages="./app/packages.json"></edge-python>
-</body>
-</html>
+<script type="module" src="https://cdn.edgepython.com/runtime/src/element.js"></script>
+<edge-python entry="./app/main.py" packages="./app/packages.json"></edge-python>
 ```
 
 Importing `element.js` auto-registers the tag. On connect, the element reads its attributes and `packages.json`, spawns the worker, runs `entry` if present, then fires a `ready` event. `compiler.wasm` loads from the CDN automatically. Modules load lazily: only what a run actually imports is fetched, host libraries included.
@@ -105,7 +97,7 @@ Spawns a Web Worker, loads `compiler.wasm` inside it, returns a proxy.
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `wasmUrl` | `string` |, | URL of `compiler.wasm`. |
+| `wasmUrl` | `string` | — | URL of `compiler.wasm`. |
 | `integrity` | `boolean` | `true` | When `true`, use IDB + lockfile to cache and verify fetched module bytes. Falls back to in-memory cache (with `console.warn`) if IDB is unavailable. |
 | `imports` | `Record<string, string>` | `null` | Bare-name shortcut: maps Python bare names (`from <name> import ...`) to URLs of `.py` / `.wasm` modules. Replaces the need for a physical `packages.json` for simple projects. |
 | `loaders` | `string[]` | `[]` | URLs of module loader plugins. Each loader is a `.js` file with a default export `{ match, load }`. See [Writing a loader](#writing-a-loader). |
@@ -143,10 +135,12 @@ export default {
 
     /** Load the module and return its callable surface. */
     async load(module, ctx) {
-        // ctx.compilerExports, compiler.wasm instance exports (wasm_alloc, host_edge_*, etc.)
-        // ctx.rt, handle codec helpers (decodeStr, encodeInt, ...)
-        // ctx.fetchedSources, Map of already-fetched spec -> bytes
-        // ctx.loaders, full loader list (in order)
+        /**
+         * ctx.compilerExports, compiler.wasm instance exports (wasm_alloc, host_edge_*, etc.)
+         * ctx.rt, handle codec helpers (decodeStr, encodeInt, ...)
+         * ctx.fetchedSources, Map of already-fetched spec -> bytes
+         * ctx.loaders, full loader list (in order)
+         */
 
         return {
             kind: 'wasmpdk' | 'capability',
@@ -175,33 +169,14 @@ Factory `(ctx) => handlers` or `{name: handler}`. Factory form receives `{ pushE
 const dom = ({ pushEvent }) => {
     const nodes = [];
     const alloc = (n) => { nodes.push(n); return nodes.length - 1; };
-    const node = (h) => nodes[h];
-
     return {
         query: (sel) => alloc(document.querySelector(sel)),
-        set_text: (h, txt) => { node(h).textContent = txt; },
-        bind_event: (h, type, msg) => {
-            node(h).addEventListener(type, (e) => {
-                pushEvent(JSON.stringify({ msg, type: e.type, target_id: e.target.id }));
-            });
-        },
+        set_text: (h, txt) => { nodes[h].textContent = txt; },
+        // async handlers call pushEvent(jsonDetail) to wake a paused receive()
     };
 };
 
-const worker = await createWorker({
-    wasmUrl: "...",
-    mainThreadModules: { dom },
-});
-```
-
-```python
-from dom import query, set_text, bind_event
-
-bind_event(query("#btn"), "click", "click")
-async def main():
-    while True:
-        receive()
-        set_text(query("#btn"), "clicked")
+const worker = await createWorker({ wasmUrl: "...", mainThreadModules: { dom } });
 ```
 
 Supported tags: `None`, `bool`, `int` (i64, range-limited by JS Number), `float`, string bytes. Opaque references (DOM nodes, files, observers) -> integer IDs in a main-thread registry (the `alloc` / `node` pattern).
@@ -220,41 +195,19 @@ A spec the prefetch can't fetch or register (wrong scheme, a `.wasm` served as H
 
 ## Layout
 
-```
-├── README.md
-├── src
-│   ├── cache
-│   │   ├── idb.js
-│   │   └── memory.js
-│   ├── element.js
-│   ├── env.js
-│   ├── fetch.js
-│   ├── index.js
-│   ├── native.js
-│   ├── prefetch.js
-│   ├── rt.js
-│   └── specs.js
-└── worker
-    ├── engine.js
-    └── worker.js
-```
-
-## Files
-
 | Path | Purpose |
 |---|---|
 | `src/index.js` | Public API. `createWorker` factory (main-thread). |
-| `src/element.js` | Public `<edge-python>` custom element. Wraps `createWorker`; reads `host` / `imports` from `packages.json` (host libraries load lazily on first import). |
-| `worker/engine.js` | Internal orchestrator (Worker only). `load`, `run`, `pushEvent`, `reset`, `clearCache`, `dispose`, `setHostCallDelegate`, `setLoadHostDelegate`. |
+| `src/element.js` | Public `<edge-python>` custom element. Wraps `createWorker`; reads `host` / `imports` from `packages.json`. |
+| `worker/engine.js` | Internal orchestrator (Worker only). `load`, `run`, `pushEvent`, `reset`, `clearCache`, `dispose`, host-call delegates. |
 | `src/env.js` | The 4 `env.*` imports `compiler` declares: `host_print`, `host_call_native`, `host_fetch_bytes`, `host_now_ns`. |
 | `src/native.js` | Native module loader extension point + built-in Path A (wasm-pdk) loader + `nativeTable`. |
-| `src/prefetch.js` | Lazy BFS over the dependency graph; resolves each imported name and registers only the `.py` / `.wasm` / host modules a run uses. |
-| `src/defaults.js` | Built-in base manifest: official std (`json`, `re`) and host (`dom`, ...) packages, resolvable by bare name without `packages.json`. |
+| `src/prefetch.js` | Lazy BFS over the dependency graph; resolves and registers only the modules a run uses. |
+| `src/defaults.js` | Built-in base manifest: official std + host packages, resolvable by bare name. |
 | `src/fetch.js` | CAS-backed fetch with lockfile integrity check. |
 | `src/specs.js` | URL/spec helpers mirroring `compiler::modules::packages::manifest`. |
 | `src/rt.js` | Handle codec wrappers (`decodeStr`, `encodeInt`, ...) for loaders. |
-| `src/cache/memory.js` | In-memory cache backend (per-Worker only). |
-| `src/cache/idb.js` | IndexedDB cache backend (persistent across sessions). |
+| `src/cache/{memory,idb}.js` | In-memory (per-Worker) and IndexedDB (persistent) cache backends. |
 | `worker/worker.js` | Web Worker entry; postMessage protocol. |
 
 ## License

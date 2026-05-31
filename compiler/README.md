@@ -7,18 +7,15 @@ A compact single-pass SSA bytecode compiler and stack VM for a sandboxed Python 
 
 ## Architecture
 
-Single-pass pipeline: source -> bytecode in an SSA chunk; stack interpreter with adaptive inline caching and pure-function memoization.
+Single-pass pipeline: source -> SSA bytecode chunk; stack interpreter with adaptive inline caching and pure-function memoization.
 
-* **Lexer** (`modules/lexer/`), LUT-driven, offset-based tokens. See [Lexical](https://edgepython.com/implementation/lexical).
-* **Parser** (`modules/parser/`), Pratt precedence; SSA-versioned bytecode with `Phi` at control-flow joins; no AST. See [Syntax (impl)](https://edgepython.com/implementation/syntax).
-* **Optimizer** (`modules/vm/optimizer.rs`), constant folding, Phi-noop elimination, dead-instruction compaction. Preserves `LoadName` for IC.
-* **VM** (`modules/vm/`), flat-match dispatch on `(opcode, operand: u16)`; `handlers/` + `handlers/builtin_methods/`. `LoadAttr + Call(0)` fuses into `CallMethod`.
-* **Inline caching** (`modules/vm/cache.rs`), scalar IC promotes arith/compare to typed `FastOp` after 4 hits; instance-dunder IC caches `(class_idx, method)`.
-* **Template memoization**, pure-function results cached after 2 hits; impurity tagged on `StoreItem` / `StoreAttr` / I/O / `raise` / `yield`.
-* **Memory**, NaN-boxed 64-bit `Val` (47-bit inline int, IEEE-754 float, bool, None, 28-bit heap index); mark-and-sweep arena; interned strings/bytes <= 128 B; auto-promote to i128 `LongInt`, capped at +/-2^127.
-* **Resolver** (`modules/packages/`), host-injected; `packages.json` walk-up; native imports register for `CallExtern` dispatch.
+* **Lexer** (`modules/lexer/`) LUT-driven, offset-based tokens.
+* **Parser** (`modules/parser/`) Pratt precedence, SSA-versioned bytecode with `Phi` at joins, no AST.
+* **Optimizer** (`modules/vm/optimizer.rs`) constant folding, Phi-noop elimination, dead-code compaction.
+* **VM** (`modules/vm/`) flat-match dispatch, scalar + instance-dunder inline caches, pure-function template memoization, NaN-boxed 64-bit `Val` with a mark-and-sweep arena.
+* **Resolver** (`modules/packages/`) host-injected; native imports register for `CallExtern` dispatch.
 
-Full rationale, NaN-box patterns, IC thresholds, GC roots, and intentional omissions: [Design](https://edgepython.com/implementation/design).
+Full rationale, NaN-box patterns, IC thresholds, GC roots, and intentional omissions: [Design](https://edgepython.com/implementation/design). Lexer and parser internals: [Lexical](https://edgepython.com/implementation/lexical), [Syntax](https://edgepython.com/implementation/syntax).
 
 ## Layout
 
@@ -60,13 +57,12 @@ edge-python = { git = "https://github.com/dylan-sutton-chavez/edge-python", tag 
 // Downstream build.rs
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");
-    let wasm = std::env::var("DEP_COMPILER_LIB_WASM")
-        .expect("`DEP_COMPILER_LIB_WASM` unset, upstream `edge-python` must declare `links = \"compiler\"`");
+    let wasm = std::env::var("DEP_COMPILER_LIB_WASM").expect("`DEP_COMPILER_LIB_WASM` unset, upstream `edge-python` must declare `links = \"compiler\"`");
     std::fs::copy(&wasm, "runtime/compiler.wasm").expect("copy failed");
 }
 ```
 
-URL is derived from `<repository>/releases/download/v<version>/compiler.wasm`, a tag bump is the only retarget needed. Use `branch = "main"` for unreleased work. Requires `curl` on PATH. Gated by the default-on `prebuilt` feature; producer-side commands pass `--no-default-features` to skip.
+The download URL is derived from `CARGO_PKG_VERSION`, so a tag bump is the only retarget. Use `branch = "main"` for unreleased work. Requires `curl` on PATH; gated by the default-on `prebuilt` feature.
 
 ## References
 

@@ -1,17 +1,14 @@
 # Edge Python Network
 
-HTTP, WebSocket, and SSE shipped as a plain ESM module. Scripts see `network` as ordinary.
+HTTP, WebSocket, and SSE shipped as a plain ESM module. Scripts see `network` as ordinary. Register it with `createWorker({ mainThreadModules: { network } })` (or the `host` field of `packages.json`); see [`host/README.md`](../README.md) for the setup boilerplate.
 
 ```python
 from network import fetch_json, ws_open, ws_send
-
 from "https://cdn.edgepython.com/std/json.wasm" import loads
 
-# HTTP, yields and resumes when the response arrives. Composes with gather / with_timeout.
-data = fetch_json("https://api.example.com/users")
+data = fetch_json("https://api.example.com/users") # yields, composes with gather / with_timeout
 
-# WebSocket, streaming, push-event pattern.
-sock = ws_open("wss://example.com/socket", "msg")
+sock = ws_open("wss://example.com/socket", "msg") # streaming, push-event pattern
 ws_send(sock, "hello")
 async def main():
     while True:
@@ -20,31 +17,11 @@ async def main():
             print(ev["data"])
 ```
 
-## Setup
-
-```html
-<script type="module">
-    import { createWorker } from "https://cdn.edgepython.com/runtime/src/index.js";
-    import { network } from "./src/index.js";
-
-    const worker = await createWorker({
-        wasmUrl: "https://cdn.edgepython.com/compiler.wasm",
-        mainThreadModules: { network },
-    });
-    await worker.run(await (await fetch("./script.py")).text());
-</script>
-```
-
 ## Testing
 
-Cases live in [`network.json`](network.json) and run through the shared runner at the repo root:
-
 ```bash
-# One-time setup
-deno run -A npm:playwright install chromium
-
-# Run (from repo root)
-HOSTCAP=network deno test --allow-all tests/
+deno run -A npm:playwright install chromium # one-time
+HOSTCAP=network deno test --allow-all tests/ # from repo root
 ```
 
 See [`tests/README.md`](../tests/README.md) for the corpus shape.
@@ -57,51 +34,41 @@ See [`tests/README.md`](../tests/README.md) for the corpus shape.
 - **WebSocket/SSE use push-events** (like `dom`'s `bind_event`). Connections open with a `msg` tag; every wire event arrives via `receive()` as JSON.
 - **Handles are integer IDs.**
 - **Options are JSON strings**, `fetch(url, '{"method":"POST","body":"..."}')`.
-- **Response bodies are strings.** Parse JSON with the [`json`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/json) standard package. It isn't built-in, declare it via a `packages.json` alias or import it by URL, as the examples below do.
+- **Response bodies are strings.** Parse JSON with the [`json`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/json) standard package (not built-in: declare it via a `packages.json` alias or import it by URL).
 
 ### HTTP
 
-```python
-from network import fetch, fetch_text, fetch_json, abort_request
-from "https://cdn.edgepython.com/std/json.wasm" import loads
+`fetch`, `fetch_text`, `fetch_json`, `abort_request`.
 
+```python
 # Full response object as a JSON string: {id, ok, status, headers, body}
 resp = loads(fetch("https://api.example.com/users"))
-if resp["ok"]:
-    print(resp["body"])
 
 # Convenience helpers: body string only. Raise on non-2xx.
 text = fetch_text("https://example.com")
 data = loads(fetch_json("https://api.example.com/users"))
 
-# POST with options
+# POST with options; abort an in-flight request by its `id`
 resp = loads(fetch("https://api.example.com/users",
     '{"method":"POST","body":"{\\"name\\":\\"ada\\"}","headers":{"Content-Type":"application/json"}}'))
-
-# Abort an in-flight request by its `id` (returned in the full response object)
 abort_request(resp["id"])
 ```
 
-`fetch`, `fetch_text`, `fetch_json`, `abort_request`.
-
 ### Concurrency (free from the scheduler)
 
+`gather()` and `with_timeout()` work directly over the yielding HTTP handlers:
+
 ```python
-# Three requests in parallel; returns when all three are done.
-results = gather(
+results = gather( # three requests in parallel
     fetch("https://api.example.com/a"),
     fetch("https://api.example.com/b"),
-    fetch("https://api.example.com/c"),
 )
 
-# Deadline; raises TimeoutError if the response doesn't arrive in time.
 try:
     body = with_timeout(2.0, fetch_text("https://slow.example.com"))
 except TimeoutError:
     print("too slow")
 ```
-
-### Asynchronous fan-out
 
 An `async def` call returns a coroutine without running it, so a comprehension builds the batch and `gather(*...)` runs it. Each coroutine parks at its own `fetch` (a deferred host call tagged with a unique id); the host resolves the in-flight requests concurrently and delivers every response back to the coroutine that issued it. A rejected request raises in that one coroutine, so `try/except` isolates it from the batch.
 
@@ -114,17 +81,15 @@ async def load(url):
 
 urls = [f"https://api.example.com/item/{i}" for i in range(1000)]
 bodies = gather(*[load(u) for u in urls])
-print(sum(1 for b in bodies if b is not None), "ok")
 ```
 
-This is concurrency, not parallelism: the VM runs on one thread, so requests overlap while in flight but coroutines resume one at a time. Throughput is bounded by the browser's per-host connection limit (~6 on HTTP/1.1, multiplexed on HTTP/2), memory (one parked coroutine per in-flight request), and bandwidth, not by the scheduler.
+This is concurrency, not parallelism: the VM runs on one thread, so requests overlap while in flight but coroutines resume one at a time. Throughput is bounded by the browser's per-host connection limit (~6 on HTTP/1.1, multiplexed on HTTP/2), memory, and bandwidth, not by the scheduler.
 
 ### WebSocket
 
-```python
-from "https://cdn.edgepython.com/std/json.wasm" import loads
-from network import ws_open, ws_send, ws_close, ws_state
+`ws_open(url, msg, protocols_json?)`, `ws_send(handle, data)`, `ws_close(handle, code?, reason?)`, `ws_state(handle)`.
 
+```python
 sock = ws_open("wss://example.com/socket", "ws")
 
 async def main():
@@ -140,16 +105,13 @@ async def main():
 run(main())
 ```
 
-Payload `type` values: `open`, `message`, `close`, `error`. `message` carries `data` for text frames (binary frames surface `binary: true` only, bidirectional bytes is a future addition).
-
-`ws_open(url, msg, protocols_json?)`, `ws_send(handle, data)`, `ws_close(handle, code?, reason?)`, `ws_state(handle)`.
+Payload `type` values: `open`, `message`, `close`, `error`. `message` carries `data` for text frames (binary frames surface `binary: true` only; bidirectional bytes is a future addition).
 
 ### Server-Sent Events
 
-```python
-from "https://cdn.edgepython.com/std/json.wasm" import loads
-from network import sse_open, sse_close
+`sse_open(url, msg, options_json?)`, `sse_close(handle)`, `sse_state(handle)`.
 
+```python
 stream = sse_open("/events", "sse")
 
 async def main():
@@ -164,21 +126,11 @@ async def main():
 run(main())
 ```
 
-`sse_open(url, msg, options_json?)`, `sse_close(handle)`, `sse_state(handle)`.
-
 ## How it works
 
-`src/index.js` is a factory `(ctx) => handlers` (same shape as `dom`). Three slices (`http`, `ws`, `sse`) close over a shared `state` (handle tables for in-flight requests, sockets, SSE sources) and merge with `Object.assign`.
+`src/index.js` is a factory `(ctx) => handlers` (same shape as `dom`). Three slices (`http`, `ws`, `sse`) close over a shared `state` (handle tables for in-flight requests, sockets, SSE sources) and merge with `Object.assign`. HTTP handlers are async (`async (url) => { ... return body; }`); the runtime detects the Promise and parks in `WaitingHostCall` until resolved, same shape as `sleep()`. WS/SSE slices return sync handlers wiring DOM-style listeners into `ctx.pushEvent`.
 
-HTTP slice returns async handlers (`async (url) => { ... return body; }`); the runtime detects the Promise and parks in `WaitingHostCall` until resolved, same shape as `sleep()`. WS/SSE slices return sync handlers wiring DOM-style listeners into `ctx.pushEvent`.
-
-## Performance
-
-Per-handler cost is one `postMessage` round-trip per call; HTTP adds network latency on top. For many small same-host requests, prefer one larger request, same advice as plain JS.
-
-## Distribution
-
-JS sources only, `compiler.wasm` and the runtime load from `cdn.edgepython.com`. No build step.
+Per-handler cost is one `postMessage` round-trip; HTTP adds network latency on top. For many small same-host requests, prefer one larger request. JS sources only; loads from `cdn.edgepython.com`, no build step.
 
 ## License
 
