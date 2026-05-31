@@ -7,7 +7,7 @@ JS half of Edge Python: hosts `compiler.wasm` in a Web Worker, resolves and regi
 No install, the official CDN serves both the runtime and matching `compiler.wasm`:
 
 ```js
-import { createWorker } from "https://runtime.edgepython.com/js/src/index.js";
+import { createWorker } from "https://cdn.edgepython.com/runtime/src/index.js";
 // Local checkout: import { createWorker } from "../../runtime/src/index.js";
 ```
 
@@ -40,7 +40,7 @@ Declarative alternative to `createWorker`: include the script, drop a tag, and a
 <html>
 <head>
     <meta charset="UTF-8">
-    <script type="module" src="https://runtime.edgepython.com/js/src/element.js"></script>
+    <script type="module" src="https://cdn.edgepython.com/runtime/src/element.js"></script>
 </head>
 <body>
     <edge-python entry="./app/main.py" packages="./app/packages.json"></edge-python>
@@ -71,7 +71,7 @@ await el.run("print(1 + 1)"); // 2
 Where `customElements` is absent (Cloudflare Workers, Deno, SSR), append `?setElement=false` to the script URL to skip the auto-call, then register manually with the exported `defineElement(tag = "edge-python")`, where custom tags must contain a hyphen:
 
 ```js
-import { defineElement } from "https://runtime.edgepython.com/js/src/element.js?setElement=false";
+import { defineElement } from "https://cdn.edgepython.com/runtime/src/element.js?setElement=false";
 defineElement("edge-py");
 ```
 
@@ -210,7 +210,7 @@ Per-call overhead: one `postMessage` round-trip (around 0.1 to 0.4 ms in modern 
 
 ## Worker bootstrap
 
-When the runtime is cross-origin (page on `demo.edgepython.com`, runtime on `runtime.edgepython.com`), Chromium rejects `new Worker(crossOriginUrl)` even with `type: 'module'`. `createWorker` spawns from a same-origin **Blob URL** that dynamically `import()`s the cross-origin module. Same-origin imports use the direct path; `createWorker` auto-selects from `import.meta.url`. The Blob bootstrap buffers any `postMessage` arriving before `worker.js` installs its handler.
+When the runtime is cross-origin (page on `demo.edgepython.com`, runtime served from `cdn.edgepython.com/runtime/`), Chromium rejects `new Worker(crossOriginUrl)` even with `type: 'module'`. `createWorker` spawns from a same-origin **Blob URL** that dynamically `import()`s the cross-origin module. Same-origin imports use the direct path; `createWorker` auto-selects from `import.meta.url`. The Blob bootstrap buffers any `postMessage` arriving before `worker.js` installs its handler.
 
 ## Module fetch lifecycle
 

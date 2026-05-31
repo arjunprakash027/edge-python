@@ -5,7 +5,7 @@ HTTP, WebSocket, and SSE shipped as a plain ESM module. Scripts see `network` as
 ```python
 from network import fetch_json, ws_open, ws_send
 
-from "http://std.edgepython.com/json.wasm" import loads
+from "https://cdn.edgepython.com/std/json.wasm" import loads
 
 # HTTP, yields and resumes when the response arrives. Composes with gather / with_timeout.
 data = fetch_json("https://api.example.com/users")
@@ -24,7 +24,7 @@ async def main():
 
 ```html
 <script type="module">
-    import { createWorker } from "https://runtime.edgepython.com/js/src/index.js";
+    import { createWorker } from "https://cdn.edgepython.com/runtime/src/index.js";
     import { network } from "./src/index.js";
 
     const worker = await createWorker({
@@ -63,7 +63,7 @@ See [`tests/README.md`](../tests/README.md) for the corpus shape.
 
 ```python
 from network import fetch, fetch_text, fetch_json, abort_request
-from "http://std.edgepython.com/json.wasm" import loads
+from "https://cdn.edgepython.com/std/json.wasm" import loads
 
 # Full response object as a JSON string: {id, ok, status, headers, body}
 resp = loads(fetch("https://api.example.com/users"))
@@ -122,7 +122,7 @@ This is concurrency, not parallelism: the VM runs on one thread, so requests ove
 ### WebSocket
 
 ```python
-from "http://std.edgepython.com/json.wasm" import loads
+from "https://cdn.edgepython.com/std/json.wasm" import loads
 from network import ws_open, ws_send, ws_close, ws_state
 
 sock = ws_open("wss://example.com/socket", "ws")
@@ -147,7 +147,7 @@ Payload `type` values: `open`, `message`, `close`, `error`. `message` carries `d
 ### Server-Sent Events
 
 ```python
-from "http://std.edgepython.com/json.wasm" import loads
+from "https://cdn.edgepython.com/std/json.wasm" import loads
 from network import sse_open, sse_close
 
 stream = sse_open("/events", "sse")
@@ -178,7 +178,7 @@ Per-handler cost is one `postMessage` round-trip per call; HTTP adds network lat
 
 ## Distribution
 
-JS sources only, `compiler.wasm` and the runtime load from `runtime.edgepython.com`. No build step.
+JS sources only, `compiler.wasm` and the runtime load from `cdn.edgepython.com`. No build step.
 
 ## License
 

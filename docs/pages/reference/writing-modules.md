@@ -98,7 +98,7 @@ export const dom = ({ pushEvent }) => {
 
 ```html
 <script type="module">
-  import { createWorker } from "https://runtime.edgepython.com/js/src/index.js";
+  import { createWorker } from "https://cdn.edgepython.com/runtime/src/index.js";
   import { dom } from "./dom.js";
 
   const worker = await createWorker({

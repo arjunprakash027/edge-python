@@ -22,7 +22,7 @@ One folder per capability. Each ships a `<name>/<name>.json` corpus; the shared 
 
 ```html
 <script type="module">
-    import { createWorker } from "https://runtime.edgepython.com/js/src/index.js";
+    import { createWorker } from "https://cdn.edgepython.com/runtime/src/index.js";
     import { dom } from "./dom/src/index.js";
 
     const worker = await createWorker({

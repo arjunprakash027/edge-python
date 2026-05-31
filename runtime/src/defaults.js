@@ -5,16 +5,16 @@ Lowest precedence (user `imports` win) and lazy: an unused default is never fetc
 
 /* Worker-side std packages (.wasm). Pinned for reproducibility; the lockfile verifies the bytes when integrity is on. */
 export const DEFAULT_IMPORTS = {
-    json: 'https://std.edgepython.com/json.wasm',
-    re: 'https://std.edgepython.com/re.wasm',
-    math: 'https://std.edgepython.com/math.wasm',
-    test: 'https://std.edgepython.com/test.py',
+    json: 'https://cdn.edgepython.com/std/json.wasm',
+    re: 'https://cdn.edgepython.com/std/re.wasm',
+    math: 'https://cdn.edgepython.com/std/math.wasm',
+    test: 'https://cdn.edgepython.com/std/test.py',
 };
 
-/* Main-thread host libraries (ESM). Pages flattens each `<name>/src/` to `host.edgepython.com/<name>/`. Same lazy + opt-out rules; merged under any user `host` entries. */
+/* Main-thread host libraries (ESM). Pages flattens each `<name>/src/` to `cdn.edgepython.com/host/<name>/`. Same lazy + opt-out rules; merged under any user `host` entries. */
 export const DEFAULT_HOST = {
-    dom: 'https://host.edgepython.com/dom/index.js',
-    network: 'https://host.edgepython.com/network/index.js',
-    storage: 'https://host.edgepython.com/storage/index.js',
-    time: 'https://host.edgepython.com/time/index.js',
+    dom: 'https://cdn.edgepython.com/host/dom/index.js',
+    network: 'https://cdn.edgepython.com/host/network/index.js',
+    storage: 'https://cdn.edgepython.com/host/storage/index.js',
+    time: 'https://cdn.edgepython.com/host/time/index.js',
 };

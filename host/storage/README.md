@@ -4,7 +4,7 @@ Persistent client-side storage, `localStorage`, `sessionStorage`, `IndexedDB`. P
 
 ```python
 from storage import local_set, local_get, idb_open, idb_put, idb_get
-from "http://std.edgepython.com/json.wasm" import loads
+from "https://cdn.edgepython.com/std/json.wasm" import loads
 
 local_set("theme", "dark")
 print(local_get("theme")) # -> "dark"
@@ -19,7 +19,7 @@ print(note["title"]) # -> "hello"
 
 ```html
 <script type="module">
-    import { createWorker } from "https://runtime.edgepython.com/js/src/index.js";
+    import { createWorker } from "https://cdn.edgepython.com/runtime/src/index.js";
     import { storage } from "./src/index.js";
 
     const worker = await createWorker({
@@ -58,7 +58,7 @@ See [`tests/README.md`](../tests/README.md) for the corpus shape.
 
 ```python
 from storage import local_set, local_get, local_remove, local_clear, local_keys
-from "http://std.edgepython.com/json.wasm" import loads
+from "https://cdn.edgepython.com/std/json.wasm" import loads
 
 local_set("theme", "dark")
 local_set("user", "ada")
@@ -77,7 +77,7 @@ Same surface for `sessionStorage` with the `session_` prefix: `session_get`, `se
 
 ```python
 from storage import idb_open, idb_put, idb_get, idb_delete, idb_keys, idb_close
-from "http://std.edgepython.com/json.wasm" import dumps, loads
+from "https://cdn.edgepython.com/std/json.wasm" import dumps, loads
 
 # Schema declares the object stores to create on first open / version bump.
 db = idb_open("notes", 1, '{"stores":["items","tags"]}')

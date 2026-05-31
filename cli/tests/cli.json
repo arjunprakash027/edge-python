@@ -22,19 +22,19 @@
     "given": { "packages.json": "{}\n" },
     "run": ["add", "math"],
     "stdout": ["+ math", "std"],
-    "contains": { "packages.json": "std.edgepython.com/math.wasm" }
+    "contains": { "packages.json": "cdn.edgepython.com/std/math.wasm" }
   },
   {
     "given": { "packages.json": "{}\n" },
     "run": ["add", "network"],
     "stdout": ["+ network", "host"],
-    "contains": { "packages.json": "host.edgepython.com/network/index.js" }
+    "contains": { "packages.json": "cdn.edgepython.com/host/network/index.js" }
   },
   {
     "given": { "packages.json": "{}\n" },
     "run": ["add", "test"],
     "stdout": ["+ test", "std"],
-    "contains": { "packages.json": "std.edgepython.com/test.py" }
+    "contains": { "packages.json": "cdn.edgepython.com/std/test.py" }
   },
   {
     "given": { "packages.json": "{}\n" },
@@ -57,7 +57,7 @@
     "fails": ["nothing to add"]
   },
   {
-    "given": { "packages.json": "{\"imports\":{\"math\":\"https://std.edgepython.com/math.wasm\"}}\n" },
+    "given": { "packages.json": "{\"imports\":{\"math\":\"https://cdn.edgepython.com/std/math.wasm\"}}\n" },
     "run": ["remove", "math"],
     "stdout": ["- math"]
   },
@@ -67,7 +67,7 @@
     "fails": ["not in"]
   },
   {
-    "given": { "packages.json": "{\"imports\":{\"math\":\"https://std.edgepython.com/math.wasm\"}}\n" },
+    "given": { "packages.json": "{\"imports\":{\"math\":\"https://cdn.edgepython.com/std/math.wasm\"}}\n" },
     "run": ["remove", "math", "mystery"],
     "fails": ["not in"],
     "contains": { "packages.json": "math.wasm" }
@@ -79,7 +79,7 @@
   {
     "given": { "custom.json": "{}\n" },
     "run": ["--packages", "custom.json", "add", "math"],
-    "contains": { "custom.json": "std.edgepython.com/math.wasm" }
+    "contains": { "custom.json": "cdn.edgepython.com/std/math.wasm" }
   },
   {
     "run": ["run", "no_such.py"],

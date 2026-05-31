@@ -49,7 +49,7 @@ async function runPackage(pkg) {
     page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
     page.on("pageerror", (e) => errors.push(e.message));
 
-    /* Serve repo files from disk; synthesize the manifest. External CDNs (runtime.edgepython.com) pass through. */
+    /* Serve repo files from disk; synthesize the manifest. External CDNs (cdn.edgepython.com) pass through. */
     await page.route("**/*", (route) => {
         const url = new URL(route.request().url());
         if (url.host !== "localhost") return route.continue();

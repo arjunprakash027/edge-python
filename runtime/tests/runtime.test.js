@@ -6,11 +6,10 @@ Run: deno test --allow-all runtime/tests/runtime.test.js
 
 import { chromium } from "npm:playwright@latest";
 import { readFileSync } from "node:fs";
-import { DEFAULT_IMPORTS, DEFAULT_HOST } from "../src/defaults.js";
+import { DEFAULT_IMPORTS } from "../src/defaults.js";
 
-// Domains follow the manifest instead of being hardcoded; the std/host families each share one host.
-const STD_HOST = new URL(Object.values(DEFAULT_IMPORTS)[0]).host;
-const HOST_HOST = new URL(Object.values(DEFAULT_HOST)[0]).host;
+// One CDN host now serves every family under a path prefix (/std, /host, /runtime); derive it from the manifest.
+const CDN_HOST = new URL(Object.values(DEFAULT_IMPORTS)[0]).host;
 
 const REPO = new URL("../../", import.meta.url).pathname; // edge-python/ repo root
 const cases = JSON.parse(readFileSync(new URL("./runtime.json", import.meta.url)));
@@ -37,20 +36,20 @@ Deno.test("runtime: <edge-python> runs the corpus through index.html", async () 
     await page.route("**/*", (r) => {
         const u = new URL(r.request().url());
         // Prefer the in-tree std/ and host/ artifacts; if absent (CI checks out only the runtime/ subset), fall back to the CDN-deployed copy.
-        if (u.host === STD_HOST) {
-            // std/<name>.wasm lives at <name>/target/wasm32-unknown-unknown/release/ in the tree.
-            const name = u.pathname.slice(1).replace(/\.wasm$/, "");
+        if (u.host === CDN_HOST && u.pathname.startsWith("/std/")) {
+            // /std/<name>.wasm lives at <name>/target/wasm32-unknown-unknown/release/ in the tree.
+            const name = u.pathname.slice("/std/".length).replace(/\.wasm$/, "");
             const file = `${STD_DIR}/${name}/target/wasm32-unknown-unknown/release/${name}.wasm`;
             try { return r.fulfill({ contentType: "application/wasm", body: readFileSync(file) }); }
             catch { return r.continue(); } // no local std build: use the deployed wasm
         }
-        if (u.host === HOST_HOST) {
-            // Production (Pages) flattens <cap>/src/* to <cap>/*; map back to the tree layout.
-            const repoPath = u.pathname.replace(/^\/([^/]+)\//, "/$1/src/");
+        if (u.host === CDN_HOST && u.pathname.startsWith("/host/")) {
+            // Production (Pages) flattens host/<cap>/src/* to host/<cap>/*; map back to the tree layout.
+            const repoPath = u.pathname.replace(/^\/host\/([^/]+)\//, "/$1/src/");
             try { return r.fulfill({ contentType: "text/javascript", body: readFileSync(HOST_DIR + repoPath) }); }
             catch { return r.continue(); } // no local host source: use the deployed module
         }
-        if (u.host !== "localhost") return r.continue(); // any other CDN asset passes through
+        if (u.host !== "localhost") return r.continue(); // any other CDN asset (compiler.wasm, runtime) passes through
         const ext = u.pathname.slice(u.pathname.lastIndexOf("."));
         try { return r.fulfill({ contentType: TYPES[ext] ?? "application/octet-stream", body: readFileSync(REPO + u.pathname.slice(1)) }); }
         catch { return r.fulfill({ status: 404 }); }
@@ -93,9 +92,9 @@ Deno.test("runtime: <edge-python> runs the corpus through index.html", async () 
         // Laziness: only what the corpus imports gets fetched; declared-but-unused stays untouched.
         if (!reqd("/app/ui.js")) throw new Error("host ui was used but ui.js never loaded");
         if (!reqd("json.wasm")) throw new Error("json default imported but json.wasm never fetched");
-        if (!reqd("host.edgepython.com/time")) throw new Error("time host default imported but never loaded");
+        if (!reqd("/host/time")) throw new Error("time host default imported but never loaded");
         if (reqd("re.wasm")) throw new Error("re default never imported yet re.wasm was fetched (not lazy)");
-        if (reqd("host.edgepython.com/network")) throw new Error("network host default never imported yet fetched (not lazy)");
+        if (reqd("/host/network")) throw new Error("network host default never imported yet fetched (not lazy)");
     } finally {
         await browser.close();
     }

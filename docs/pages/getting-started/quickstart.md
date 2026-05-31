@@ -22,7 +22,7 @@ In the browser, the runtime's `<edge-python>` element runs a `.py` file declarat
 <html>
 <head>
   <meta charset="UTF-8">
-  <script type="module" src="https://runtime.edgepython.com/js/src/element.js"></script>
+  <script type="module" src="https://cdn.edgepython.com/runtime/src/element.js"></script>
 </head>
 <body>
   <div id="app"></div>

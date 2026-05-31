@@ -14,7 +14,7 @@ print(strftime("%Y-%m-%d %H:%M:%S", gmtime(0))) # 1970-01-01 00:00:00
 
 ```html
 <script type="module">
-    import { createWorker } from "https://runtime.edgepython.com/js/src/index.js";
+    import { createWorker } from "https://cdn.edgepython.com/runtime/src/index.js";
     import { time } from "./src/index.js";
 
     const worker = await createWorker({
@@ -97,7 +97,7 @@ except TimeoutError:
 
 ```python
 from time import gmtime, localtime, mktime
-from "https://std.edgepython.com/json.wasm" import loads
+from "https://cdn.edgepython.com/std/json.wasm" import loads
 
 t = loads(gmtime(0)) # decode the struct_time tuple
 print(t[0], t[1], t[2]) # 1970 1 1

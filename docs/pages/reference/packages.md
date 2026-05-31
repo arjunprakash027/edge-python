@@ -30,7 +30,7 @@ print(data["name"]) # ada
 print(dumps({"k": [1, 2, 3], "ok": True})) # {"k":[1,2,3],"ok":true}
 ```
 
-Pre-built `.wasm` is served from `https://std.edgepython.com/json.wasm`. Full API: [`std/json/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/json).
+Pre-built `.wasm` is served from `https://cdn.edgepython.com/std/json.wasm`. Full API: [`std/json/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/json).
 
 > **`json` is an external `.wasm` package, not built into `compiler.wasm`** — the browser runtime just resolves it by [default](#defaults), so `from json import ...` works with no manifest.
 
@@ -46,7 +46,7 @@ print(sub(r'\s+', '_', 'a  b   c')) # a_b_c
 print(findall(r'\w+', 'one two three')) # ['one', 'two', 'three']
 ```
 
-Functions: `match`, `search`, `fullmatch`, `findall`, `groups`, `span`, `sub`; flags go inline (`(?i)`, `(?s)`, `(?m)`). Pre-built `.wasm` is served from `https://std.edgepython.com/re.wasm`. Full API: [`std/re/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/re).
+Functions: `match`, `search`, `fullmatch`, `findall`, `groups`, `span`, `sub`; flags go inline (`(?i)`, `(?s)`, `(?m)`). Pre-built `.wasm` is served from `https://cdn.edgepython.com/std/re.wasm`. Full API: [`std/re/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/re).
 
 ### `math`
 
@@ -61,7 +61,7 @@ print(hypot(3, 4, 12)) # 13.0
 print(factorial(5)) # 120
 ```
 
-Integers are bounded by the VM's `i128`, so `factorial`, `comb`, `perm`, and `lcm` raise `ValueError` past that range, and there is no `complex` / `cmath`. Pre-built `.wasm` is served from `https://std.edgepython.com/math.wasm`. Full API: [`std/math/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/math).
+Integers are bounded by the VM's `i128`, so `factorial`, `comb`, `perm`, and `lcm` raise `ValueError` past that range, and there is no `complex` / `cmath`. Pre-built `.wasm` is served from `https://cdn.edgepython.com/std/math.wasm`. Full API: [`std/math/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/math).
 
 ### `test`
 
@@ -88,7 +88,7 @@ run() # prints PASS/FAIL lines and a summary, then raises SystemExit(0 if all pa
 
 `@fixture` registers a `def` under its name and injects it by keyword into the tests that ask for it; `@test(description, *uses)` registers a test plus the fixtures it pulls; `raises(ExcType)` is a context manager asserting the block raises `ExcType` (a subclass, or any type in a tuple); `run()` executes every registered test, prints `PASS` / `FAIL` / `ERROR` and a summary, then raises `SystemExit(1 if any failed, else 0)` so a host can read the result as a process exit code.
 
-Unlike the other standard packages, `test` ships as **pure Edge Python source** (`src/entry.py`), not a compiled `.wasm`, so there is no `cargo` build; it is served from `https://std.edgepython.com/test.py` and the browser runtime resolves it by default, importing the `.py` directly (see [Defaults](#defaults)). Full API: [`std/test/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/test).
+Unlike the other standard packages, `test` ships as **pure Edge Python source** (`src/entry.py`), not a compiled `.wasm`, so there is no `cargo` build; it is served from `https://cdn.edgepython.com/std/test.py` and the browser runtime resolves it by default, importing the `.py` directly (see [Defaults](#defaults)). Full API: [`std/test/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/test).
 
 ## Host libraries
 
@@ -161,7 +161,7 @@ Handlers: `time`, `time_ns`, `monotonic`, `monotonic_ns`, `perf_counter`, `perf_
 
 ```json
 {
-  "imports": { "json": "https://std.edgepython.com/json.wasm" },
+  "imports": { "json": "https://cdn.edgepython.com/std/json.wasm" },
   "host": { "dom": "./dom/src/index.js" }
 }
 ```

@@ -14,7 +14,7 @@ const FETCH_OPTS = DEV ? { cache: 'no-store' } : {};
 /* Dev/prod switch for runtime JS: local checkout in dev, edge-python-runtime in prod. Mirrors index.html's Tailwind switch, preserves dev-edit-refresh loop without bundling. */
 const RUNTIME_URL = DEV
     ? '../../runtime/src/index.js'
-    : 'https://runtime.edgepython.com/js/src/index.js';
+    : 'https://cdn.edgepython.com/runtime/src/index.js';
 
 const { createWorker } = await import(RUNTIME_URL);
 

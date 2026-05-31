@@ -18,7 +18,7 @@ async def main():
 
 ```html
 <script type="module">
-    import { createWorker } from "https://runtime.edgepython.com/js/src/index.js";
+    import { createWorker } from "https://cdn.edgepython.com/runtime/src/index.js";
     import { dom } from "./src/index.js";
 
     const worker = await createWorker({
@@ -101,7 +101,7 @@ set_data(query("#row"), "id", "42")  # element.dataset.id = "42"
 
 ```python
 from dom import set_style, rect, focus
-from "http://std.edgepython.com/json.wasm" import loads
+from "https://cdn.edgepython.com/std/json.wasm" import loads
 
 set_style(query("#box"), "transform", "translateX(20px)")
 r = loads(rect(query("#box")))
@@ -114,7 +114,7 @@ focus(query("#input"))
 ### Events
 
 ```python
-from "http://std.edgepython.com/json.wasm" import loads
+from "https://cdn.edgepython.com/std/json.wasm" import loads
 from dom import bind_event
 
 bind_event(query("#form"), "submit", "submit", '{"prevent_default": true}')
@@ -133,7 +133,7 @@ Returns a binding handle for `unbind_event(h)`. Also: `dispatch_event(node, type
 ### Forms
 
 ```python
-from "http://std.edgepython.com/json.wasm" import loads
+from "https://cdn.edgepython.com/std/json.wasm" import loads
 from dom import validity, set_custom_validity, form_data
 
 email = query("#email")
@@ -150,7 +150,7 @@ data = loads(form_data(query("#signup")))
 ### Files
 
 ```python
-from "http://std.edgepython.com/json.wasm" import loads
+from "https://cdn.edgepython.com/std/json.wasm" import loads
 from dom import bind_event, get_files, file_read_data_url, set_attribute
 
 bind_event(query("#picker"), "change", "picked")
@@ -170,7 +170,7 @@ async def main():
 ### Observers
 
 ```python
-from "http://std.edgepython.com/json.wasm" import loads
+from "https://cdn.edgepython.com/std/json.wasm" import loads
 from dom import observe_intersection
 
 observe_intersection(query("#hero"), "visible", '{"threshold": 0.5}')
@@ -237,7 +237,7 @@ append_child(query("svg"), circle)
 Async errors in DOM callbacks (event listeners, observer callbacks, swallowed promise rejections in `media_play` / `request_fullscreen` / `request_pointer_lock` / `animate`) go to the browser console by default. Bind a message to surface them as ordinary Python events:
 
 ```python
-from "http://std.edgepython.com/json.wasm" import loads
+from "https://cdn.edgepython.com/std/json.wasm" import loads
 from dom import bind_global_error
 
 bind_global_error("err")
@@ -267,7 +267,7 @@ Bad fit: tight per-frame loops with thousands of fine-grained ops, or pixel-prec
 
 ## Distribution
 
-JS sources only, `compiler.wasm` and the runtime load from `runtime.edgepython.com` at page load. No vendored copy, no build step.
+JS sources only, `compiler.wasm` and the runtime load from `cdn.edgepython.com` at page load. No vendored copy, no build step.
 
 ## License
 

@@ -66,7 +66,7 @@ edge -h # List all commands
 <html>
 <head>
   <meta charset="UTF-8">
-  <script type="module" src="https://runtime.edgepython.com/js/src/element.js"></script>
+  <script type="module" src="https://cdn.edgepython.com/runtime/src/element.js"></script>
 </head>
 <body>
   <edge-python entry="./app/main.py" packages="./app/packages.json"></edge-python>
