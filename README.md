@@ -107,6 +107,12 @@ Edge Python targets sandboxed edge computing: a dynamic, multi-paradigm Python s
 
 Full language reference, scope, and what intentionally isn't supported: [What Edge Python is](https://edgepython.com/getting-started/what-it-is). Architecture details: [`compiler/README.md`](compiler/README.md).
 
+## CI/CD
+
+One workflow [`.github/workflows/main.yml`](.github/workflows/main.yml) that runs the complete CI/CD, where each package is a steps in a composite action under [`.github/actions/`](.github/actions).
+
+On pushes to `main` it deploys three Cloudflare Pages projects: `edge-python-cdn` (the bundled package artifacts), `edge-python-demo`, and `edge-python-docs` (served at `edgepython.com`). 
+
 ## License
 
 MIT OR Apache-2.0
