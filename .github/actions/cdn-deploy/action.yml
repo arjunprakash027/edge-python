@@ -32,25 +32,34 @@ runs:
         path: /tmp/cli/
         merge-multiple: true
 
+    - name: Setup Deno
+      uses: denoland/setup-deno@v2
+      with:
+        deno-version: v2.x
+
     - name: Stage site
       shell: bash
       run: |
-        mkdir -p _site/runtime _site/std _site/host _site/cli
+        mkdir -p _site/std _site/cli
 
-        # compiler: the wasm module, served at the CDN root (cdn.edgepython.com/compiler.wasm).
+        # compiler: served at the CDN root (cdn.edgepython.com/compiler.wasm).
         cp /tmp/compiler/compiler.wasm _site/compiler.wasm
 
-        # runtime: JS sources; the wasm is loaded from the CDN root, not bundled here.
-        cp -r runtime/. _site/runtime/
+        # runtime: bundle + minify the public entries, keep src/ + worker/ layout so the worker URL resolves.
+        deno run -A npm:esbuild@0.28.0 \
+          runtime/src/index.js runtime/src/element.js runtime/worker/worker.js \
+          --bundle --minify --format=esm --platform=browser --target=es2022 \
+          --legal-comments=none --outbase=runtime --outdir=_site/runtime
 
         # std: <pkg>.wasm / <pkg>.py.
         cp -r /tmp/std/. _site/std/
 
-        # host: flatten each capability's src/ into _site/host/<cap>/.
+        # host: bundle + minify each capability into host.edgepython.com/<cap>/index.js.
         for dir in host/*/src; do
           cap="$(basename "$(dirname "$dir")")"
-          mkdir -p "_site/host/$cap"
-          cp -r "$dir"/. "_site/host/$cap/"
+          deno run -A npm:esbuild@0.28.0 "$dir/index.js" \
+            --bundle --minify --format=esm --platform=browser --target=es2022 \
+            --legal-comments=none --outfile="_site/host/$cap/index.js"
         done
 
         # cli: release tarballs.
