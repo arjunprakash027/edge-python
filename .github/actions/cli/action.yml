@@ -1,0 +1,79 @@
+name: CLI
+description: cli/ is its own workspace. release = lint/check + build per target; test = cargo test.
+
+inputs:
+  mode:
+    description: "release | test"
+    required: true
+  target:
+    description: Rust target triple (release mode).
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Toolchain (release)
+      if: inputs.mode == 'release'
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ inputs.target }}
+        components: clippy
+
+    - name: Install musl tools
+      if: inputs.mode == 'release' && contains(inputs.target, 'linux-musl')
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+    - name: Cache Rust (release)
+      if: inputs.mode == 'release'
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: cli -> cli/target
+        key: ${{ inputs.target }}
+
+    # Lint + check once, anchored to the linux x86 target so the matrix doesn't repeat it.
+    - name: Clippy and check
+      if: inputs.mode == 'release' && inputs.target == 'x86_64-unknown-linux-musl'
+      shell: bash
+      working-directory: cli
+      run: |
+        cargo clippy --release --target "${{ inputs.target }}" -- -D warnings
+        cargo check --release --target "${{ inputs.target }}"
+
+    - name: Build release
+      if: inputs.mode == 'release'
+      shell: bash
+      working-directory: cli
+      run: cargo build --release --target "${{ inputs.target }}"
+
+    - name: Tar
+      if: inputs.mode == 'release'
+      shell: bash
+      working-directory: cli
+      run: tar -C "target/${{ inputs.target }}/release" -czf "edge-${{ inputs.target }}.tar.gz" edge
+
+    - name: Upload release artifact
+      if: inputs.mode == 'release'
+      uses: actions/upload-artifact@v6
+      with:
+        name: edge-${{ inputs.target }}
+        path: cli/edge-${{ inputs.target }}.tar.gz
+        retention-days: 1
+
+    - name: Toolchain (test)
+      if: inputs.mode == 'test'
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Rust (test)
+      if: inputs.mode == 'test'
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: cli -> cli/target
+
+    # Drives a real Chromium; ubuntu-latest ships google-chrome-stable.
+    - name: Test
+      if: inputs.mode == 'test'
+      shell: bash
+      working-directory: cli
+      run: cargo test

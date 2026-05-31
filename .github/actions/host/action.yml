@@ -1,0 +1,45 @@
+name: Host capability
+description: Deno-lint and smoke-test one host capability (all JS) in Chromium. No release.
+
+inputs:
+  capability:
+    description: "dom | network | storage | time"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: denoland/setup-deno@v2
+      with:
+        deno-version: v2.x
+
+    - name: Cache Deno modules
+      uses: actions/cache@v5
+      with:
+        path: ~/.cache/deno
+        key: deno-${{ runner.os }}-${{ hashFiles('host/**/deno.json', 'host/**/deno.lock') }}
+        restore-keys: deno-${{ runner.os }}-
+
+    - name: Lint src/
+      shell: bash
+      working-directory: host/${{ inputs.capability }}
+      run: deno lint src/
+
+    # ~150MB Chromium; cached so only the first run pays the download.
+    - name: Cache Playwright browsers
+      uses: actions/cache@v5
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-chromium
+
+    - name: Install Chromium
+      shell: bash
+      run: deno run -A npm:playwright install --with-deps chromium
+
+    # HOSTCAP narrows test discovery to this capability's corpus.
+    - name: Test tests/
+      shell: bash
+      working-directory: host
+      env:
+        HOSTCAP: ${{ inputs.capability }}
+      run: deno test --allow-all tests/

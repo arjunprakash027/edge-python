@@ -1,0 +1,48 @@
+name: Demo deploy
+description: Hash deps into version.json, build Tailwind, deploy demo/ to edge-python-demo.
+
+inputs:
+  cloudflare-api-token:
+    description: Cloudflare API token.
+    required: true
+  cloudflare-account-id:
+    description: Cloudflare account id.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v6
+      with:
+        node-version: "22"
+
+    # Downloaded for hashing only; the demo loads the wasm from the CDN at runtime.
+    - name: Download wasm artifact
+      uses: actions/download-artifact@v8
+      with:
+        name: compiler_lib_wasm
+        path: /tmp/wasm/
+
+    # Hash compiler wasm + runtime JS + demo Python entries for cache-busting.
+    - name: Write version manifest
+      shell: bash
+      run: |
+        HASH=$( { sha256sum /tmp/wasm/compiler_lib.wasm; \
+                  find runtime -type f | LC_ALL=C sort | xargs sha256sum; \
+                  find demo/runtime -type f | LC_ALL=C sort | xargs sha256sum; \
+                } | sha256sum | cut -c1-12)
+        printf '{"v":"%s"}\n' "$HASH" > demo/version.json
+
+    - name: Build Tailwind CSS
+      shell: bash
+      working-directory: demo
+      run: |
+        echo "@tailwind base;@tailwind components;@tailwind utilities;" \
+          | npx tailwindcss@3 --input - --output tailwind.css --minify
+
+    - name: Deploy to Cloudflare Pages
+      uses: cloudflare/wrangler-action@v4
+      with:
+        apiToken: ${{ inputs.cloudflare-api-token }}
+        accountId: ${{ inputs.cloudflare-account-id }}
+        command: pages deploy demo --project-name=edge-python-demo --branch=main
