@@ -12,7 +12,7 @@ use crate::pkg::{self, Kind, Manifest};
 
 // Production layout we mirror into dist/runtime/ and dist/.
 const RUNTIME_BASE: &str = "https://runtime.edgepython.com/js/";
-const COMPILER_WASM: &str = "https://runtime.edgepython.com/js/compiler.wasm";
+const COMPILER_WASM: &str = "https://cdn.edgepython.com/compiler.wasm";
 const RUNTIME_FILES: &[&str] = &[
     "src/index.js",
     "src/element.js",

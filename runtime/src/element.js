@@ -27,7 +27,7 @@ export class EdgePythonElement extends HTMLElement {
 
         // Kept on the element so callers can drive the same worker after the declarative run.
         this.worker = await createWorker({
-            wasmUrl: "https://runtime.edgepython.com/js/compiler.wasm",
+            wasmUrl: "https://cdn.edgepython.com/compiler.wasm",
             hostModules,
             imports,
         });

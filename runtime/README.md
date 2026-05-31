@@ -15,7 +15,7 @@ import { createWorker } from "https://runtime.edgepython.com/js/src/index.js";
 
 ```js
 const worker = await createWorker({
-    wasmUrl: "https://runtime.edgepython.com/js/compiler.wasm",
+    wasmUrl: "https://cdn.edgepython.com/compiler.wasm",
     integrity: true, // default: IDB + lockfile CAS
     imports: { dom: "./dom.wasm" }, // bare-name shortcut, optional
     loaders: [], // opt-in module loaders, optional

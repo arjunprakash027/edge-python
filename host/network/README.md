@@ -28,7 +28,7 @@ async def main():
     import { network } from "./src/index.js";
 
     const worker = await createWorker({
-        wasmUrl: "https://runtime.edgepython.com/js/compiler.wasm",
+        wasmUrl: "https://cdn.edgepython.com/compiler.wasm",
         mainThreadModules: { network },
     });
     await worker.run(await (await fetch("./script.py")).text());

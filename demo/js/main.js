@@ -87,7 +87,7 @@ ok('Loading WASM...');
     try {
         const ver = await fetch('./version.json', { cache: 'no-store' }).then(r => r.json()).catch(() => ({}));
         const bust = ver.v ? `?v=${ver.v}` : '';
-        const wasmUrl = `https://runtime.edgepython.com/js/compiler.wasm${bust}`;
+        const wasmUrl = `https://cdn.edgepython.com/compiler.wasm${bust}`;
 
         const t0 = performance.now();
         worker = await createWorker({ wasmUrl, integrity: true, version: ver.v });

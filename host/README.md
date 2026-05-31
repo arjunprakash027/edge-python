@@ -26,7 +26,7 @@ One folder per capability. Each ships a `<name>/<name>.json` corpus; the shared 
     import { dom } from "./dom/src/index.js";
 
     const worker = await createWorker({
-        wasmUrl: "https://runtime.edgepython.com/js/compiler.wasm",
+        wasmUrl: "https://cdn.edgepython.com/compiler.wasm",
         mainThreadModules: { dom },
     });
     await worker.run(await (await fetch("./script.py")).text());

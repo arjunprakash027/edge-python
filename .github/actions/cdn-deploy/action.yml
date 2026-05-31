@@ -35,14 +35,13 @@ runs:
     - name: Stage site
       shell: bash
       run: |
-        mkdir -p _site/compiler _site/runtime _site/std _site/host _site/cli
+        mkdir -p _site/runtime _site/std _site/host _site/cli
 
-        # compiler: the wasm module.
-        cp /tmp/compiler/compiler.wasm _site/compiler/
+        # compiler: the wasm module, served at the CDN root (cdn.edgepython.com/compiler.wasm).
+        cp /tmp/compiler/compiler.wasm _site/compiler.wasm
 
-        # runtime: JS sources plus the wasm it bundles.
+        # runtime: JS sources; the wasm is loaded from the CDN root, not bundled here.
         cp -r runtime/. _site/runtime/
-        cp /tmp/compiler/compiler.wasm _site/runtime/
 
         # std: <pkg>.wasm / <pkg>.py.
         cp -r /tmp/std/. _site/std/
