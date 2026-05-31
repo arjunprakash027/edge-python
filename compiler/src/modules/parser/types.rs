@@ -30,6 +30,8 @@ pub enum OpCode {
     LoadModule,
     /* Read/write a `global`-declared name from/to `self.globals`; operand indexes the bare name in `chunk.names`. */
     LoadGlobal, StoreGlobal,
+    /* Literal unpacking: pop a source value and merge it into the container left below it on the stack. `{**m}` / `{*s}` / `[*it]`. */
+    DictUpdate, SetUpdate, ListExtend,
 }
 
 // Python builtin name -> (specialised OpCode, `leaves_value_on_stack`).

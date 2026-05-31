@@ -514,6 +514,7 @@ impl<'a> VM<'a> {
             OpCode::UnpackSequence | OpCode::UnpackEx | OpCode::FormatValue => self.handle_container(opcode, operand, chunk, slots)?,
 
             OpCode::ListAppend | OpCode::SetAdd | OpCode::MapAdd => self.handle_comprehension(opcode)?,
+            OpCode::DictUpdate | OpCode::SetUpdate | OpCode::ListExtend => self.handle_spread_merge(opcode)?,
 
             OpCode::Yield => self.handle_yield()?,
             OpCode::LoadEllipsis => {

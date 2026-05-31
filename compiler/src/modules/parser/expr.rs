@@ -294,10 +294,10 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Postfix trailers: `.attr`, [i], [s:e], (args), chained. */
+    /* Postfix trailers: `.attr`, [i], [s:e], (args), chained. A trailer must start on the same line, so a statement boundary ends the chain (else `x = []` ⏎ `[i]` parses as `[][i]`). */
     pub(super) fn postfix_tail(&mut self) {
         loop {
-            match self.peek() {
+            match self.peek_same_line() {
                 Some(TokenType::Lsqb) => {
                     self.advance();
                     let is_slice = matches!(self.peek(), Some(TokenType::Colon));

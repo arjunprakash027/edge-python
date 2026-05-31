@@ -339,6 +339,17 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
+    /* Like `peek` but stops at the logical-line boundary: a `Newline` yields `None` (unconsumed) so postfix trailers don't bind across statements. `Nl`/`Comment` (bracket-internal) still skip, so multiline `()`/`[]`/`{}` are unaffected. */
+    pub(super) fn peek_same_line(&mut self) -> Option<TokenType> {
+        loop {
+            match self.tokens.peek().map(|t| t.kind) {
+                Some(TokenType::Nl | TokenType::Comment) => { self.tokens.next(); }
+                Some(TokenType::Newline) | Some(TokenType::Endmarker) | None => return None,
+                Some(k) => return Some(k),
+            }
+        }
+    }
+
     pub(super) fn patch(&mut self, pos: usize) {
         self.chunk.instructions[pos].operand = self.chunk.instructions.len() as u16;
     }

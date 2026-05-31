@@ -124,6 +124,46 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
+    /* Merge the source on top of the stack into the container below it: `{**m}`, `{*s}`, `[*it]`. */
+    pub(crate) fn handle_spread_merge(&mut self, op: OpCode) -> Result<(), VmErr> {
+        let src = self.pop()?;
+        let acc = *self.stack.last().ok_or(VmErr::Runtime("stack underflow"))?;
+        if !acc.is_heap() { return Err(cold_runtime("spread accumulator corrupted")); }
+        match op {
+            OpCode::DictUpdate => {
+                // `**` requires a mapping; later keys overwrite earlier ones.
+                let pairs: Vec<(Val, Val)> = match self.heap.get(src) {
+                    HeapObj::Dict(rc) => rc.borrow().iter().collect(),
+                    _ => return Err(cold_type("argument after ** must be a mapping")),
+                };
+                if let HeapObj::Dict(rc) = self.heap.get(acc) {
+                    let mut m = rc.borrow_mut();
+                    for (k, v) in pairs { m.insert(k, v); }
+                }
+            }
+            OpCode::SetUpdate => {
+                let items = self.iter_to_vec_for_spread(src)?;
+                for it in items {
+                    self.require_hashable(it)?;
+                    let dup = match self.heap.get(acc) {
+                        HeapObj::Set(rc) => rc.borrow().iter().any(|&x| eq_vals_with_heap(x, it, &self.heap)),
+                        _ => return Err(cold_runtime("spread accumulator corrupted")),
+                    };
+                    if !dup && let HeapObj::Set(rc) = self.heap.get(acc) { rc.borrow_mut().insert(it); }
+                }
+            }
+            OpCode::ListExtend => {
+                let items = self.iter_to_vec_for_spread(src)?;
+                match self.heap.get(acc) {
+                    HeapObj::List(rc) => rc.borrow_mut().extend(items),
+                    _ => return Err(cold_runtime("spread accumulator corrupted")),
+                }
+            }
+            _ => return Err(cold_runtime("non-spread opcode in handle_spread_merge")),
+        }
+        Ok(())
+    }
+
     /* Yield: keep the value on the stack and flag the executor to suspend. */
     pub(crate) fn handle_yield(&mut self) -> Result<(), VmErr> {
         let v = self.pop()?;
@@ -180,7 +220,8 @@ impl<'a> VM<'a> {
                 let msg = match info {
                     Some((n, Some(arg))) => { let detail = self.display(arg); crate::s!(str &n, ": ", str &detail) }
                     Some((n, None)) => n,
-                    None => self.display(exc),
+                    // Non-exception value (str, int, ...): raises TypeError, catchable by `except Exception`.
+                    None => crate::s!("TypeError: exceptions must derive from BaseException"),
                 };
                 return Err(VmErr::Raised(msg));
             }
