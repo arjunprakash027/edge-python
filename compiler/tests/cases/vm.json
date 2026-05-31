@@ -191,6 +191,7 @@
   {"src": "y = 100\nprint([x + y for x in range(3)])", "output": ["[100, 101, 102]"]},
   {"src": "print([len(s) for s in ['a', 'bb', 'ccc']])", "output": ["[1, 2, 3]"]},
   {"src": "print([x for x in []])", "output": ["[]"]},
+  {"src": "print([print(x) for x in range(2)])", "output": ["0", "1", "[None, None]"]},
   {"src": "print(sum([x for x in range(101)]))", "output": ["5050"]},
   {"src": "print({k: k * k for k in range(4)})", "output": ["{0: 0, 1: 1, 2: 4, 3: 9}"]},
   {"src": "pairs = [(1, 'a'), (2, 'b'), (3, 'c')]\nprint({k: v for k, v in pairs})", "output": ["{1: 'a', 2: 'b', 3: 'c'}"]},

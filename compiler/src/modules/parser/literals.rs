@@ -156,6 +156,10 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 };
                 self.chunk.instructions.push(Instruction { opcode: ins.opcode, operand });
             }
+            // Void element (`print(...)` -> CallPrint) leaves no value; push None so append has one.
+            if matches!(body.last().map(|i| i.opcode), Some(OpCode::CallPrint)) {
+                self.emit_const(Value::None);
+            }
         }
         self.chunk.emit(append_op, 0);
 
