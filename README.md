@@ -76,30 +76,9 @@ edge -h # List all commands
 
 The runtime spawns a Web Worker that pre-fetches imports, dispatches native calls, and streams `print()` output back.
 
-### Consume the release from a Rust host
+### Rust host / server / edge runtimes
 
-Declare `edge-python` as a dependency and `compiler.wasm` from the matching GitHub Release is fetched into `OUT_DIR` automatically, no manual download.
-
-```toml
-# Cargo.toml
-[dependencies]
-edge-python = { git = "https://github.com/dylan-sutton-chavez/edge-python", tag = "v0.1.0" }
-```
-
-```rust
-// build.rs
-fn main() {
-  println!("cargo::rerun-if-changed=build.rs");
-  let wasm = std::env::var("DEP_COMPILER_LIB_WASM").expect("`DEP_COMPILER_LIB_WASM` unset, upstream must declare `links = \"compiler\"`");
-  std::fs::copy(&wasm, "runtime/compiler.wasm").expect("copy failed");
-}
-```
-
-Pin to a tag for reproducible builds; use `branch = "main"` for unreleased changes. Requires `curl` on PATH. Gated by the default-on `prebuilt` feature.
-
-### Server / edge runtimes (Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute, Spin)
-
-Edge Python is a `cdylib`, your host instantiates `compiler.wasm` and calls its exports. The same `.wasm` you serve to browsers is the server-side artifact; the host owns I/O, fetching, and output (WASI / runtime APIs instead of `fetch` / `postMessage`). No server-side CLI ships here (the `cli/` tool targets the browser runtime), so embed `compiler.wasm` in around 50 LOC wasmtime shell for local dev.
+Edge Python is a `cdylib`: your host instantiates `compiler.wasm` and calls its exports (Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute, Spin). The same `.wasm` served to browsers is the server-side artifact; the host owns I/O. Declaring `edge-python` as a Cargo dependency fetches the matching release `.wasm` automatically, see [`compiler/README.md`](compiler/README.md).
 
 ## What it is
 
