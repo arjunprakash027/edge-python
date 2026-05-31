@@ -610,7 +610,7 @@ False
 
 ### callable
 
-True for user functions, lambdas, bound methods, type objects, native builtins. False for everything else, including instances, no `__call__` dispatch.
+True for user functions, lambdas, bound methods, type objects, native builtins, and instances whose class defines `__call__` (see [Callable](/language/dunders#callable)). False for everything else.
 
 ```python
 print(callable(print))

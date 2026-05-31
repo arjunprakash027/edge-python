@@ -8,7 +8,7 @@ Cooperative concurrency via `async def` coroutines and `await` / `yield`. No pre
 No `asyncio` module. Primitives: `run`, `sleep`, `frame`, `gather`, `with_timeout`, `cancel`, `receive` — are top-level builtins.
 
 ```python
-import asyncio # ModuleNotFoundError: It was decided not to use asyncio and introduce the asynchrony within the virtual machine.
+import asyncio # compile-time error: module 'asyncio' not found — concurrency lives in the VM, not a module.
 ```
 
 ```python

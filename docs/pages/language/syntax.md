@@ -125,7 +125,7 @@ hello world
 
 ### Escape sequences
 
-Supported: `\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\0`, `\xHH`, `\uHHHH`, `\UHHHHHHHH`, `\NNN` (1–3 octal digits). Named-char escapes (`\N{GREEK SMALL LETTER ALPHA}`) not supported — use `\u`.
+Supported: `\n`, `\t`, `\r`, `\a`, `\b`, `\f`, `\v`, `\\`, `\'`, `\"`, `\0`, `\xHH`, `\uHHHH`, `\UHHHHHHHH`, `\NNN` (1–3 octal digits). Named-char escapes (`\N{GREEK SMALL LETTER ALPHA}`) not supported — use `\u`.
 
 ```python
 print('\n line break')

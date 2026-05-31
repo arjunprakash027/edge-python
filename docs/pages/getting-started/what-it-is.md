@@ -43,7 +43,7 @@ Multi-paradigm sandboxed compiler:
 
 - **Small binary**, compiler + VM in one WebAssembly release.
 - **Faster interpreter**, no method-resolution overhead; hot opcodes promote to type-specialised fast paths via IC.
-- **Aggressive memoisation**, pure functions auto-cached after two hits ([Functions](/language/functions#generators)); most functional code is pure by construction.
+- **Aggressive memoisation**, pure functions auto-cached after two hits ([Functions](/language/functions#recursion)); most functional code is pure by construction.
 - **Easier sandboxing**, no protocol dispatch, no stdlib; attack surface is the fixed built-in set.
 
 ## Sandbox guarantees

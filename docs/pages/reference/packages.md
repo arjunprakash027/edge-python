@@ -92,7 +92,7 @@ Unlike the other standard packages, `test` ships as **pure Edge Python source** 
 
 ## Host libraries
 
-Plain-JS capabilities that run on the browser's main thread, registered declaratively via the `host` field of [`packages.json`](/reference/imports#packages-json) (with the `<edge-python>` element), programmatically via `createWorker({ hostModules })`, or resolved by default with no config at all (see [Defaults](#defaults)). No `.wasm`, no Rust, no build step. Each call defers to the main thread over `postMessage` (around 0.1 to 0.4 ms); Python sees a synchronous call. The ESM loads lazily, the first time a run imports it.
+Plain-JS capabilities that run on the browser's main thread, registered declaratively via the `host` field of [`packages.json`](/reference/imports#packagesjson) (with the `<edge-python>` element), programmatically via `createWorker({ hostModules })`, or resolved by default with no config at all (see [Defaults](#defaults)). No `.wasm`, no Rust, no build step. Each call defers to the main thread over `postMessage` (around 0.1 to 0.4 ms); Python sees a synchronous call. The ESM loads lazily, the first time a run imports it.
 
 ### `dom`
 

@@ -5,13 +5,13 @@ description: "Sandbox limits, error types, and runtime guarantees."
 
 ## Sandbox limits
 
-Two profiles via `VM::with_limits`: the same `compiler.wasm` runs unsandboxed in trusted contexts, clamped in untrusted.
+Two profiles via `VM::with_limits`: the same `compiler_lib.wasm` runs unsandboxed in trusted contexts, clamped in untrusted.
 
 | Limit | `none()` (default) | `sandbox()` | What hitting it raises |
 |----------------|--------------------|---------------|------------------------|
 | Max call depth | 1,000 | 256 | `RecursionError` |
 | Max operations | unbounded | 100,000,000 | `RuntimeError` |
-| Max heap bytes | 10,000,000 | 100,000 | `MemoryError` |
+| Max live objects | 10,000,000 | 100,000 | `MemoryError` |
 
 ## Integer width
 
@@ -223,18 +223,9 @@ Failures surfaced before the source reaches the compiler: no line/column preview
 
 Handle at the embedder layer (path validation, encoding, size check) before invoking the compiler.
 
-## Unsupported features at runtime
+## Unavailable modules
 
-Parse but raise `RuntimeError` when executed:
-
-```python
-try:
-  import os
-except RuntimeError as e:
-  print("import:", e)
-```
-
-Exist for syntactic compatibility. For code reuse, use higher-order functions.
+Unavailable modules (`os`, `sys`, `asyncio`, …) parse for syntactic compatibility but have no resolver entry, so they are rejected at **compile time** before any code runs — a parse-time diagnostic, not a catchable runtime exception. See [Imports, Errors](/reference/imports#errors). For code reuse, use higher-order functions.
 
 ## Determinism
 
