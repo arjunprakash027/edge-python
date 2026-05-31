@@ -18,6 +18,22 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             self.chunk.emit(OpCode::BuildDict, 0);
             return;
         }
+        // `{**m, ...}`: leading mapping-unpack => dict built incrementally.
+        if self.eat_if(TokenType::DoubleStar) {
+            self.chunk.emit(OpCode::BuildDict, 0);
+            self.expr();
+            self.chunk.emit(OpCode::DictUpdate, 0);
+            self.dict_tail(0, true);
+            return;
+        }
+        // `{*s, ...}`: leading iterable-unpack => set built incrementally.
+        if self.eat_if(TokenType::Star) {
+            self.chunk.emit(OpCode::BuildSet, 0);
+            self.expr();
+            self.chunk.emit(OpCode::SetUpdate, 0);
+            self.set_tail(0, true);
+            return;
+        }
         let key_start = self.chunk.instructions.len();
         self.expr();
         match self.peek() {
@@ -33,16 +49,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     self.comprehension_loop(&[key_ins, val_ins], OpCode::MapAdd, &versions_before);
                     self.eat(TokenType::Rbrace);
                 } else {
-                    let mut pairs = 1u16;
-                    while self.eat_if(TokenType::Comma) {
-                        if matches!(self.peek(), Some(TokenType::Rbrace)) { break; }
-                        self.expr();
-                        self.eat(TokenType::Colon);
-                        self.expr();
-                        pairs += 1;
-                    }
-                    self.eat(TokenType::Rbrace);
-                    self.chunk.emit(OpCode::BuildDict, pairs);
+                    // First pair already emitted; dict_tail consolidates if a later `**` appears.
+                    self.dict_tail(1, false);
                 }
             }
             Some(TokenType::For) => {
@@ -53,14 +61,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.eat(TokenType::Rbrace);
             }
             _ => {
-                let mut count = 1u16;
-                while self.eat_if(TokenType::Comma) {
-                    if matches!(self.peek(), Some(TokenType::Rbrace)) { break; }
-                    self.expr();
-                    count += 1;
-                }
-                self.eat(TokenType::Rbrace);
-                self.chunk.emit(OpCode::BuildSet, count);
+                // First element already emitted; set_tail consolidates if a later `*` appears.
+                self.set_tail(1, false);
             }
         }
     }
@@ -72,6 +74,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             self.chunk.emit(OpCode::BuildList, 0);
             return;
         }
+        // `[*it, ...]`: leading iterable-unpack => list built incrementally.
+        if self.eat_if(TokenType::Star) {
+            self.chunk.emit(OpCode::BuildList, 0);
+            self.expr();
+            self.chunk.emit(OpCode::ListExtend, 0);
+            self.list_tail(0, true);
+            return;
+        }
         let elem_start = self.chunk.instructions.len();
         self.expr();
         if matches!(self.peek(), Some(TokenType::For)) {
@@ -81,15 +91,62 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             self.comprehension_loop(&[elem_ins], OpCode::ListAppend, &versions_before);
             self.eat(TokenType::Rsqb);
         } else {
-            let mut count = 1u16;
-            while self.eat_if(TokenType::Comma) {
-                if matches!(self.peek(), Some(TokenType::Rsqb)) { break; }
-                self.expr();
-                count += 1;
-            }
-            self.eat(TokenType::Rsqb);
-            self.chunk.emit(OpCode::BuildList, count);
+            // First element already emitted; list_tail consolidates if a later `*` appears.
+            self.list_tail(1, false);
         }
+    }
+
+    /* Finishes a `{}` dict after the first pair. `pairs` = loose key/val pairs on the stack; `incremental` = a Dict object is already on the stack. On the first `**` the loose pairs are consolidated with `BuildDict pairs`, then merges use `DictUpdate`/`MapAdd`. */
+    fn dict_tail(&mut self, mut pairs: u16, mut incremental: bool) {
+        while self.eat_if(TokenType::Comma) {
+            if matches!(self.peek(), Some(TokenType::Rbrace)) { break; }
+            if self.eat_if(TokenType::DoubleStar) {
+                if !incremental { self.chunk.emit(OpCode::BuildDict, pairs); incremental = true; }
+                self.expr();
+                self.chunk.emit(OpCode::DictUpdate, 0);
+            } else {
+                self.expr();
+                self.eat(TokenType::Colon);
+                self.expr();
+                if incremental { self.chunk.emit(OpCode::MapAdd, 0); } else { pairs += 1; }
+            }
+        }
+        self.eat(TokenType::Rbrace);
+        if !incremental { self.chunk.emit(OpCode::BuildDict, pairs); }
+    }
+
+    /* Finishes a `{}` set after the first element; mirrors `dict_tail` with `SetUpdate`/`SetAdd` and `BuildSet`. */
+    fn set_tail(&mut self, mut count: u16, mut incremental: bool) {
+        while self.eat_if(TokenType::Comma) {
+            if matches!(self.peek(), Some(TokenType::Rbrace)) { break; }
+            if self.eat_if(TokenType::Star) {
+                if !incremental { self.chunk.emit(OpCode::BuildSet, count); incremental = true; }
+                self.expr();
+                self.chunk.emit(OpCode::SetUpdate, 0);
+            } else {
+                self.expr();
+                if incremental { self.chunk.emit(OpCode::SetAdd, 0); } else { count += 1; }
+            }
+        }
+        self.eat(TokenType::Rbrace);
+        if !incremental { self.chunk.emit(OpCode::BuildSet, count); }
+    }
+
+    /* Finishes a `[]` list after the first element; mirrors `dict_tail` with `ListExtend`/`ListAppend` and `BuildList`. */
+    fn list_tail(&mut self, mut count: u16, mut incremental: bool) {
+        while self.eat_if(TokenType::Comma) {
+            if matches!(self.peek(), Some(TokenType::Rsqb)) { break; }
+            if self.eat_if(TokenType::Star) {
+                if !incremental { self.chunk.emit(OpCode::BuildList, count); incremental = true; }
+                self.expr();
+                self.chunk.emit(OpCode::ListExtend, 0);
+            } else {
+                self.expr();
+                if incremental { self.chunk.emit(OpCode::ListAppend, 0); } else { count += 1; }
+            }
+        }
+        self.eat(TokenType::Rsqb);
+        if !incremental { self.chunk.emit(OpCode::BuildList, count); }
     }
 
     /* Emits for/if comprehension scaffolding; reinjcts body with loop-bound SSA slots. */

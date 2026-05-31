@@ -79,7 +79,7 @@ print(round(1.55, 1))
 
 ### min, max
 
-Variadic or single iterable. Empty -> `ValueError`. No `key=` / `default=`.
+Variadic or single iterable. Empty -> `ValueError`. No `key=` / `default=`. Ordering follows `<`: numbers, strings, bytes, and tuples/lists (lexicographic).
 
 ```python
 print(min(3, 1, 4))
@@ -297,7 +297,7 @@ print(list(range(10, 0, -2)))
 
 ### sorted
 
-New sorted list. No `key=` / `reverse=`, sort by derived value via a precomputed list of `(key, value)` tuples.
+New sorted list. No `key=` / `reverse=`, sort by derived value via a precomputed list of `(key, value)` tuples. Numbers, strings, bytes, and tuples/lists order lexicographically; mixed un-orderable types raise `TypeError`.
 
 ```python
 print(sorted([3, 1, 4, 1, 5]))

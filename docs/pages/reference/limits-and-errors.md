@@ -134,7 +134,7 @@ Raised as `VmErr`; most catchable with `try` / `except`.
 | `Heap` | `MemoryError` | Past heap limit |
 | `Budget` | `RuntimeError` | Past op limit |
 | `Runtime` | `RuntimeError` | Internal invariant or unsupported |
-| `Raised` | (custom) | User `raise X` (X may be a class or string) |
+| `Raised` | (custom) | User `raise X` (X is a class or instance; raising a non-exception value such as a `str` or `int` gives `TypeError`) |
 
 #### Exception hierarchy
 

@@ -262,11 +262,32 @@ impl<'a> VM<'a> {
         if let Some((af, bf)) = coerce_floats(a, b) { return Ok(af < bf); }
         // Wide-int compare in i128; falls through when either side isn't int-like.
         if let (Some(ai), Some(bi)) = (as_i128(a, &self.heap), as_i128(b, &self.heap)) { return Ok(ai < bi); }
-        if a.is_heap() && b.is_heap()
-            && let (HeapObj::Str(x), HeapObj::Str(y)) = (self.heap.get(a), self.heap.get(b)) {
-                return Ok(x < y);
+        if a.is_heap() && b.is_heap() {
+            match (self.heap.get(a), self.heap.get(b)) {
+                (HeapObj::Str(x), HeapObj::Str(y)) => return Ok(x < y),
+                (HeapObj::Bytes(x), HeapObj::Bytes(y)) => return Ok(x < y),
+                // Sequences compare lexicographically; clone to drop the heap borrow before recursing.
+                (HeapObj::List(x), HeapObj::List(y)) => {
+                    let (x, y) = (x.borrow().clone(), y.borrow().clone());
+                    return self.seq_lt(&x, &y);
+                }
+                (HeapObj::Tuple(x), HeapObj::Tuple(y)) => {
+                    let (x, y) = (x.clone(), y.clone());
+                    return self.seq_lt(&x, &y);
+                }
+                _ => {}
+            }
         }
         Err(VmErr::TypeMsg(s!("'<' not supported between instances of '", str self.type_name(a), "' and '", str self.type_name(b), "'")))
+    }
+
+    /* Lexicographic `<` for sequences: first differing element decides; otherwise the shorter is less. Recurses through `lt_vals`, so nested sequences and mixed element types are handled (and rejected) consistently. */
+    pub fn seq_lt(&self, xs: &[Val], ys: &[Val]) -> Result<bool, VmErr> {
+        for (&x, &y) in xs.iter().zip(ys.iter()) {
+            if eq_vals_with_heap(x, y, &self.heap) { continue; }
+            return self.lt_vals(x, y);
+        }
+        Ok(xs.len() < ys.len())
     }
 
     /* Item presence in list/tuple/dict/set, or substring in string. */

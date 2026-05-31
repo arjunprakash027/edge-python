@@ -317,6 +317,25 @@ set()
 True
 ```
 
+## Unpacking in literals
+
+`*` spreads an iterable into a list/set literal; `**` spreads a mapping into a dict literal. Mix freely with regular elements; for dicts, later keys win.
+
+```python
+xs = [1, 2]
+print([*xs, 3, *xs]) # list spread
+print({*xs, 2, 3})   # set spread (deduped)
+
+a = {"x": 1}
+print({**a, "y": 2, **{"x": 9}}) # dict spread, later key wins
+```
+
+```text Output
+[1, 2, 3, 1, 2]
+{1, 2, 3}
+{'x': 9, 'y': 2}
+```
+
 ## Range
 
 Lazy integer sequence. `range(stop)`, `range(start, stop)`, `range(start, stop, step)`.

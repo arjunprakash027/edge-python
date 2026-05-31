@@ -203,13 +203,17 @@ print(-5, +5)
 
 ### Comparison and chaining
 
+Ordering comparisons (`<`, `>`, `<=`, `>=`) work on numbers, strings, bytes, and tuples/lists (compared lexicographically); mixing un-orderable types raises `TypeError`.
+
 ```python
 print(1 < 2 < 3) # chained
 print(0 < 5 < 10)
 print(1 == 1 == 1)
+print([1, 2] < [1, 3]) # lexicographic
 ```
 
 ```text Output
+True
 True
 True
 True
