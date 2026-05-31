@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod test {
 
-    use compiler_lib::modules::lexer::lex;
-    use compiler_lib::modules::parser::{Parser, Value, Diagnostic};
+    use compiler::modules::lexer::lex;
+    use compiler::modules::parser::{Parser, Value, Diagnostic};
 
     #[derive(serde::Deserialize)]
     struct Case {

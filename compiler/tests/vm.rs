@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod test {
 
-    use compiler_lib::modules::lexer::lex;
-    use compiler_lib::modules::parser::Parser;
-    use compiler_lib::modules::vm::VM;
-    use compiler_lib::modules::vm::types::{SchedulerStatus, VmErr};
+    use compiler::modules::lexer::lex;
+    use compiler::modules::parser::Parser;
+    use compiler::modules::vm::VM;
+    use compiler::modules::vm::types::{SchedulerStatus, VmErr};
 
     #[derive(serde::Deserialize)]
     struct Case {

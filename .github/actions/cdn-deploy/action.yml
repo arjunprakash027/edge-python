@@ -15,7 +15,7 @@ runs:
     - name: Download compiler wasm
       uses: actions/download-artifact@v8
       with:
-        name: compiler_lib_wasm
+        name: compiler_wasm
         path: /tmp/compiler/
 
     - name: Download std artifacts
@@ -38,11 +38,11 @@ runs:
         mkdir -p _site/compiler _site/runtime _site/std _site/host _site/cli
 
         # compiler: the wasm module.
-        cp /tmp/compiler/compiler_lib.wasm _site/compiler/
+        cp /tmp/compiler/compiler.wasm _site/compiler/
 
         # runtime: JS sources plus the wasm it bundles.
         cp -r runtime/. _site/runtime/
-        cp /tmp/compiler/compiler_lib.wasm _site/runtime/
+        cp /tmp/compiler/compiler.wasm _site/runtime/
 
         # std: <pkg>.wasm / <pkg>.py.
         cp -r /tmp/std/. _site/std/

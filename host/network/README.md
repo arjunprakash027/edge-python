@@ -28,7 +28,7 @@ async def main():
     import { network } from "./src/index.js";
 
     const worker = await createWorker({
-        wasmUrl: "https://runtime.edgepython.com/js/compiler_lib.wasm",
+        wasmUrl: "https://runtime.edgepython.com/js/compiler.wasm",
         mainThreadModules: { network },
     });
     await worker.run(await (await fetch("./script.py")).text());
@@ -178,7 +178,7 @@ Per-handler cost is one `postMessage` round-trip per call; HTTP adds network lat
 
 ## Distribution
 
-JS sources only, `compiler_lib.wasm` and the runtime load from `runtime.edgepython.com`. No build step.
+JS sources only, `compiler.wasm` and the runtime load from `runtime.edgepython.com`. No build step.
 
 ## License
 

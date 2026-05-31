@@ -23,7 +23,7 @@ print(note["title"]) # -> "hello"
     import { storage } from "./src/index.js";
 
     const worker = await createWorker({
-        wasmUrl: "https://runtime.edgepython.com/js/compiler_lib.wasm",
+        wasmUrl: "https://runtime.edgepython.com/js/compiler.wasm",
         mainThreadModules: { storage },
     });
     await worker.run(await (await fetch("./script.py")).text());

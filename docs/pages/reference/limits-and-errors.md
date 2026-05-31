@@ -5,7 +5,7 @@ description: "Sandbox limits, error types, and runtime guarantees."
 
 ## Sandbox limits
 
-Two profiles via `VM::with_limits`: the same `compiler_lib.wasm` runs unsandboxed in trusted contexts, clamped in untrusted.
+Two profiles via `VM::with_limits`: the same `compiler.wasm` runs unsandboxed in trusted contexts, clamped in untrusted.
 
 | Limit | `none()` (default) | `sandbox()` | What hitting it raises |
 |----------------|--------------------|---------------|------------------------|

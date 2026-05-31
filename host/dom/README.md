@@ -22,7 +22,7 @@ async def main():
     import { dom } from "./src/index.js";
 
     const worker = await createWorker({
-        wasmUrl: "https://runtime.edgepython.com/js/compiler_lib.wasm",
+        wasmUrl: "https://runtime.edgepython.com/js/compiler.wasm",
         mainThreadModules: { dom },
     });
     await worker.run(await (await fetch("./script.py")).text());
@@ -267,7 +267,7 @@ Bad fit: tight per-frame loops with thousands of fine-grained ops, or pixel-prec
 
 ## Distribution
 
-JS sources only, `compiler_lib.wasm` and the runtime load from `runtime.edgepython.com` at page load. No vendored copy, no build step.
+JS sources only, `compiler.wasm` and the runtime load from `runtime.edgepython.com` at page load. No vendored copy, no build step.
 
 ## License
 

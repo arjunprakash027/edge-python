@@ -38,17 +38,17 @@ Full rationale, NaN-box patterns, IC thresholds, GC roots, and intentional omiss
 ## Quick start
 
 ```bash
-cargo wasm # release WASM artifact -> target/wasm32-unknown-unknown/release/compiler_lib.wasm
+cargo wasm # release WASM artifact -> target/wasm32-unknown-unknown/release/compiler.wasm
 cargo test --release # host-side test suite
 ```
 
-`cargo wasm` is a workspace alias (`.cargo/config.toml`) for `cargo build --release --target wasm32-unknown-unknown -p edge-python`. Plain `cargo build --release` produces host artifacts (`.rlib` + cdylib) for embedders linking `compiler_lib`. To add native modules from your own crate, implement the `Resolver` trait, see [Writing modules](https://edgepython.com/reference/writing-modules).
+`cargo wasm` is a workspace alias (`.cargo/config.toml`) for `cargo build --release --target wasm32-unknown-unknown -p edge-python`. Plain `cargo build --release` produces host artifacts (`.rlib` + cdylib) for embedders linking `compiler`. To add native modules from your own crate, implement the `Resolver` trait, see [Writing modules](https://edgepython.com/reference/writing-modules).
 
 The host runtime owns I/O, network, and module fetching; there is no native CLI. Browser hosts use the [`runtime/`](../runtime/) JS package; server/edge runtimes use wasmtime, wasmer, Cloudflare Workers, Fastly Compute, Spin.
 
 ### Consuming the release from another Rust crate
 
-This crate declares `links = "compiler_lib"` and its `build.rs` downloads the matching `compiler_lib.wasm` from the GitHub Release for `CARGO_PKG_VERSION` into `OUT_DIR`. Downstream crates read the absolute path through `DEP_COMPILER_LIB_WASM`.
+This crate declares `links = "compiler"` and its `build.rs` downloads the matching `compiler.wasm` from the GitHub Release for `CARGO_PKG_VERSION` into `OUT_DIR`. Downstream crates read the absolute path through `DEP_COMPILER_LIB_WASM`.
 
 ```toml
 # Downstream Cargo.toml
@@ -61,12 +61,12 @@ edge-python = { git = "https://github.com/dylan-sutton-chavez/edge-python", tag 
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");
     let wasm = std::env::var("DEP_COMPILER_LIB_WASM")
-        .expect("`DEP_COMPILER_LIB_WASM` unset, upstream `edge-python` must declare `links = \"compiler_lib\"`");
-    std::fs::copy(&wasm, "runtime/compiler_lib.wasm").expect("copy failed");
+        .expect("`DEP_COMPILER_LIB_WASM` unset, upstream `edge-python` must declare `links = \"compiler\"`");
+    std::fs::copy(&wasm, "runtime/compiler.wasm").expect("copy failed");
 }
 ```
 
-URL is derived from `<repository>/releases/download/v<version>/compiler_lib.wasm`, a tag bump is the only retarget needed. Use `branch = "main"` for unreleased work. Requires `curl` on PATH. Gated by the default-on `prebuilt` feature; producer-side commands pass `--no-default-features` to skip.
+URL is derived from `<repository>/releases/download/v<version>/compiler.wasm`, a tag bump is the only retarget needed. Use `branch = "main"` for unreleased work. Requires `curl` on PATH. Gated by the default-on `prebuilt` feature; producer-side commands pass `--no-default-features` to skip.
 
 ## References
 

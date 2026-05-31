@@ -1,6 +1,6 @@
 /*
 Engine orchestrator. Internal to the Worker; consumers use `createWorker` in `src/index.js`.
-Lifecycle: `load` once -> many `run` cycles -> `dispose`. Each run instantiates compiler_lib fresh, no state leak.
+Lifecycle: `load` once -> many `run` cycles -> `dispose`. Each run instantiates compiler fresh, no state leak.
 */
 
 import { MemoryCache } from '../src/cache/memory.js';

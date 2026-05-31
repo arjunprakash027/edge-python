@@ -11,7 +11,7 @@
     const pkgs = await fetch("./packages.json").then((r) => r.json());
     const src = await fetch("./__EDGE_ENTRY__").then((r) => r.text());
     const worker = await createWorker({
-      wasmUrl: "./compiler_lib.wasm",
+      wasmUrl: "./compiler.wasm",
       imports: pkgs.imports || {},
       hostModules: pkgs.host || {},
       defaults: false,

@@ -12,7 +12,7 @@ use crate::pkg::{self, Kind, Manifest};
 
 // Production layout we mirror into dist/runtime/ and dist/.
 const RUNTIME_BASE: &str = "https://runtime.edgepython.com/js/";
-const COMPILER_WASM: &str = "https://runtime.edgepython.com/js/compiler_lib.wasm";
+const COMPILER_WASM: &str = "https://runtime.edgepython.com/js/compiler.wasm";
 const RUNTIME_FILES: &[&str] = &[
     "src/index.js",
     "src/element.js",
@@ -49,11 +49,11 @@ pub fn run(manifest_path: &Path, out_dir: PathBuf) -> Result<()> {
     }
 
     let sp = crate::ui::spinner("fetching compiler.wasm");
-    let compiler_bytes = match fetch(COMPILER_WASM).context("fetching compiler_lib.wasm") {
+    let compiler_bytes = match fetch(COMPILER_WASM).context("fetching compiler.wasm") {
         Ok(b) => b,
         Err(e) => { sp.fail("failed to fetch compiler.wasm"); return Err(e); }
     };
-    fs::write(out_dir.join("compiler_lib.wasm"), &compiler_bytes)?;
+    fs::write(out_dir.join("compiler.wasm"), &compiler_bytes)?;
     sp.done("fetched compiler.wasm");
 
     let scripts = collect_scripts(&project, &out_dir);

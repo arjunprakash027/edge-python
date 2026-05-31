@@ -257,7 +257,7 @@ Not on crates.io — depend from GitHub, pinned to a release tag:
 wasm-pdk = { git = "https://github.com/dylan-sutton-chavez/edge-python", tag = "v0.1.0" }
 ```
 
-Cargo resolves `wasm-abi` and `wasm-pdk-macros` transitively. Pinning to a tag (vs `branch = "main"`) gives reproducible builds and a known wire-ABI version — your module compiled against `wasm-pdk vX.Y.Z` is binary-compatible with the `compiler_lib.wasm` of the same release. Bump `tag` + `cargo update -p wasm-pdk` to upgrade. Use `branch = "main"` only for unreleased iteration.
+Cargo resolves `wasm-abi` and `wasm-pdk-macros` transitively. Pinning to a tag (vs `branch = "main"`) gives reproducible builds and a known wire-ABI version — your module compiled against `wasm-pdk vX.Y.Z` is binary-compatible with the `compiler.wasm` of the same release. Bump `tag` + `cargo update -p wasm-pdk` to upgrade. Use `branch = "main"` only for unreleased iteration.
 
 Use it from a script:
 

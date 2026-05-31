@@ -134,17 +134,17 @@ Point a package at a custom URL with `edge add foo=https://example.com/foo.wasm`
 
 ## `edge build` — portable bundle
 
-Bundles your app into a self-contained `dist/` for offline use or self-hosting: the runtime, the `compiler_lib.wasm`, your scripts, and every package vendored locally so nothing is fetched at runtime.
+Bundles your app into a self-contained `dist/` for offline use or self-hosting: the runtime, the `compiler.wasm`, your scripts, and every package vendored locally so nothing is fetched at runtime.
 
 ```text
 $ edge build
   (successful) vendored runtime
-  (successful) fetched compiler_lib.wasm
+  (successful) fetched compiler.wasm
   (successful) vendored packages
 
   bundled to dist/
 
-  13 runtime files + compiler_lib.wasm
+  13 runtime files + compiler.wasm
   2 packages
   3 scripts
 

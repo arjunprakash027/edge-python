@@ -8,12 +8,12 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use compiler_lib::util::fx::FxHashMap;
-use compiler_lib::modules::packages::{
+use compiler::util::fx::FxHashMap;
+use compiler::modules::packages::{
     NativeBinding, Resolved, Resolver, partition_bindings,
     Manifest, walk_up_dirs, dir_of, join_relative,
 };
-use compiler_lib::modules::vm::types::{HeapObj, HeapPool, Val, VmErr};
+use compiler::modules::vm::types::{HeapObj, HeapPool, Val, VmErr};
 
 // TestResolver
 

@@ -11,7 +11,7 @@ Edge Python has no bundled stdlib. Three ways to add native functionality:
 | **Host capability** | Custom `compiler.wasm` (additional host imports declared) + host runtime they bridge to | Primitives + access to host services (DOM, FS, fetch) through embedder host imports | You own embedder + host runtime; bindings travel together |
 | **JS host module** | Plain ESM via `createWorker` (`mainThreadModules` eager, `hostModules` lazy) or the `host` field of `packages.json` | Primitives only (same as Path A) | Pure JS; no Rust, no `.wasm`, no build step |
 
-`.wasm` matches the marketplace pattern (`from "https://x.wasm" import f` works in any host). Host capability is for runtime distributions that own their `compiler.wasm` and expose host services to scripts (the same pattern `print` and `input` use). JS host modules keep upstream `compiler_lib.wasm` untouched while exposing main-thread surface (DOM, dialogs, FileReader, observers, anything `window.*`).
+`.wasm` matches the marketplace pattern (`from "https://x.wasm" import f` works in any host). Host capability is for runtime distributions that own their `compiler.wasm` and expose host services to scripts (the same pattern `print` and `input` use). JS host modules keep upstream `compiler.wasm` untouched while exposing main-thread surface (DOM, dialogs, FileReader, observers, anything `window.*`).
 
 ## Path A: `.wasm` module by URL
 
@@ -41,7 +41,7 @@ from fs import read_text, write # WASI host
 
 | Artifact | Role |
 |---|---|
-| Custom `compiler.wasm` | Vanilla `compiler_lib` plus declared additional host imports |
+| Custom `compiler.wasm` | Vanilla `compiler` plus declared additional host imports |
 | Host runtime | Browser shim / WASI loader / native binary that provides those imports |
 | Pure-Python wrappers (`.py`) (optional) | Ergonomic surface on top of the raw bridge, shipped as a code module |
 
@@ -102,7 +102,7 @@ export const dom = ({ pushEvent }) => {
   import { dom } from "./dom.js";
 
   const worker = await createWorker({
-    wasmUrl: "https://runtime.edgepython.com/js/compiler_lib.wasm",
+    wasmUrl: "https://runtime.edgepython.com/js/compiler.wasm",
     mainThreadModules: { dom },
   });
   await worker.run(await (await fetch("./script.py")).text());

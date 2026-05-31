@@ -28,7 +28,7 @@ function schemeHint(spec) {
 /* Imports of `src`, classified, via the compiler (single source of truth). Returns [{ bare, spec }]. */
 function scanImports(src, exports) {
     if (typeof exports.extract_imports !== 'function') {
-        throw new Error('compiler_lib is missing extract_imports; runtime and wasm are out of sync');
+        throw new Error('compiler is missing extract_imports; runtime and wasm are out of sync');
     }
     const bytes = TE.encode(src);
     const len = Math.min(bytes.length, SOURCE_LIMIT);

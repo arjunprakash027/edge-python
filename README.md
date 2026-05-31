@@ -78,7 +78,7 @@ The runtime spawns a Web Worker that pre-fetches imports, dispatches native call
 
 ### Consume the release from a Rust host
 
-Declare `edge-python` as a dependency and `compiler_lib.wasm` from the matching GitHub Release is fetched into `OUT_DIR` automatically, no manual download.
+Declare `edge-python` as a dependency and `compiler.wasm` from the matching GitHub Release is fetched into `OUT_DIR` automatically, no manual download.
 
 ```toml
 # Cargo.toml
@@ -90,8 +90,8 @@ edge-python = { git = "https://github.com/dylan-sutton-chavez/edge-python", tag 
 // build.rs
 fn main() {
   println!("cargo::rerun-if-changed=build.rs");
-  let wasm = std::env::var("DEP_COMPILER_LIB_WASM").expect("`DEP_COMPILER_LIB_WASM` unset, upstream must declare `links = \"compiler_lib\"`");
-  std::fs::copy(&wasm, "runtime/compiler_lib.wasm").expect("copy failed");
+  let wasm = std::env::var("DEP_COMPILER_LIB_WASM").expect("`DEP_COMPILER_LIB_WASM` unset, upstream must declare `links = \"compiler\"`");
+  std::fs::copy(&wasm, "runtime/compiler.wasm").expect("copy failed");
 }
 ```
 
@@ -99,7 +99,7 @@ Pin to a tag for reproducible builds; use `branch = "main"` for unreleased chang
 
 ### Server / edge runtimes (Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute, Spin)
 
-Edge Python is a `cdylib`, your host instantiates `compiler_lib.wasm` and calls its exports. The same `.wasm` you serve to browsers is the server-side artifact; the host owns I/O, fetching, and output (WASI / runtime APIs instead of `fetch` / `postMessage`). No server-side CLI ships here (the `cli/` tool targets the browser runtime), so embed `compiler_lib.wasm` in around 50 LOC wasmtime shell for local dev.
+Edge Python is a `cdylib`, your host instantiates `compiler.wasm` and calls its exports. The same `.wasm` you serve to browsers is the server-side artifact; the host owns I/O, fetching, and output (WASI / runtime APIs instead of `fetch` / `postMessage`). No server-side CLI ships here (the `cli/` tool targets the browser runtime), so embed `compiler.wasm` in around 50 LOC wasmtime shell for local dev.
 
 ## What it is
 

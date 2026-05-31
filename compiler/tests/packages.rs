@@ -7,11 +7,11 @@ Case schema in `cases/packages.json`: src, output, error, input, modules, manife
 mod test {
     use std::collections::HashMap;
 
-    use compiler_lib::modules::lexer::lex;
-    use compiler_lib::modules::parser::Parser;
-    use compiler_lib::modules::vm::VM;
-    use compiler_lib::modules::vm::types::{SchedulerStatus, VmErr};
-    use compiler_lib::modules::packages::NativeBinding;
+    use compiler::modules::lexer::lex;
+    use compiler::modules::parser::Parser;
+    use compiler::modules::vm::VM;
+    use compiler::modules::vm::types::{SchedulerStatus, VmErr};
+    use compiler::modules::packages::NativeBinding;
 
     use crate::common::{TestResolver, test_native};
 

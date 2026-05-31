@@ -18,7 +18,7 @@ print(strftime("%Y-%m-%d %H:%M:%S", gmtime(0))) # 1970-01-01 00:00:00
     import { time } from "./src/index.js";
 
     const worker = await createWorker({
-        wasmUrl: "https://runtime.edgepython.com/js/compiler_lib.wasm",
+        wasmUrl: "https://runtime.edgepython.com/js/compiler.wasm",
         mainThreadModules: { time },
     });
     await worker.run(await (await fetch("./script.py")).text());

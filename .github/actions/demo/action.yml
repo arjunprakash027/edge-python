@@ -20,14 +20,14 @@ runs:
     - name: Download wasm artifact
       uses: actions/download-artifact@v8
       with:
-        name: compiler_lib_wasm
+        name: compiler_wasm
         path: /tmp/wasm/
 
     # Hash compiler wasm + runtime JS + demo Python entries for cache-busting.
     - name: Write version manifest
       shell: bash
       run: |
-        HASH=$( { sha256sum /tmp/wasm/compiler_lib.wasm; \
+        HASH=$( { sha256sum /tmp/wasm/compiler.wasm; \
                   find runtime -type f | LC_ALL=C sort | xargs sha256sum; \
                   find demo/runtime -type f | LC_ALL=C sort | xargs sha256sum; \
                 } | sha256sum | cut -c1-12)

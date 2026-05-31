@@ -1,5 +1,5 @@
 /*
-The `env.*` imports compiler_lib declares (host_print, host_call_native, host_fetch_bytes, host_now_ns), wired to closure-captured engine state.
+The `env.*` imports compiler declares (host_print, host_call_native, host_fetch_bytes, host_now_ns), wired to closure-captured engine state.
 */
 
 import { nativeTable } from './native.js';

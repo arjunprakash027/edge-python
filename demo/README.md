@@ -11,7 +11,7 @@ Static playground at [demo.edgepython.com](https://demo.edgepython.com/), runs E
 
 ## Local start
 
-The page fetches WASM and uses a Web Worker, so it must be served over HTTP (`file://` fails with CORS). [Live Server](https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer) is the easiest dev option. Runtime JS and `compiler_lib.wasm` pull from `runtime.edgepython.com`, demo, runtime, and compiler version independently.
+The page fetches WASM and uses a Web Worker, so it must be served over HTTP (`file://` fails with CORS). [Live Server](https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer) is the easiest dev option. Runtime JS and `compiler.wasm` pull from `runtime.edgepython.com`, demo, runtime, and compiler version independently.
 
 ### Cache and deploys
 

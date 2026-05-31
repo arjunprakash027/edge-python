@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test {
 
-    use compiler_lib::modules::lexer::lex;
+    use compiler::modules::lexer::lex;
 
     #[derive(serde::Deserialize)]
     struct Case {

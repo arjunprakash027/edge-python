@@ -32,7 +32,7 @@ print(dumps({"k": [1, 2, 3], "ok": True})) # {"k":[1,2,3],"ok":true}
 
 Pre-built `.wasm` is served from `https://std.edgepython.com/json.wasm`. Full API: [`std/json/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/json).
 
-> **`json` is an external `.wasm` package, not built into `compiler_lib.wasm`** — the browser runtime just resolves it by [default](#defaults), so `from json import ...` works with no manifest.
+> **`json` is an external `.wasm` package, not built into `compiler.wasm`** — the browser runtime just resolves it by [default](#defaults), so `from json import ...` works with no manifest.
 
 ### `re`
 
@@ -176,7 +176,7 @@ The browser runtime ships a built-in base manifest, so the official packages res
 - **Overridable.** Your `packages.json` (or `imports` / `hostModules`) wins for the same name, so you can pin a specific version or URL.
 - **Opt-out.** Pass `defaults: false` to `createWorker` to disable the base manifest entirely (e.g. offline or non-browser embedders).
 
-Defaults are a convenience of the browser runtime, not the compiler: `compiler_lib.wasm` stays hermetic and resolves bare names only through the manifest the host provides. Non-browser hosts decide their own defaults, if any.
+Defaults are a convenience of the browser runtime, not the compiler: `compiler.wasm` stays hermetic and resolves bare names only through the manifest the host provides. Non-browser hosts decide their own defaults, if any.
 
 ## See also
 
