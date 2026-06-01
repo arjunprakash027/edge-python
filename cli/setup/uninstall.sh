@@ -65,8 +65,7 @@ for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
   fi
 done
 
-# 3. Chromium. Opt-in because the user may rely on it for other apps.
-# `edge uninstall` sets EDGE_UNINSTALL_REMOVE_BROWSER after asking in Rust, so we skip the prompt then.
+# 3. Chromium. Opt-in because the user may rely on it for other apps. `edge uninstall` sets EDGE_UNINSTALL_REMOVE_BROWSER after asking in Rust, so we skip the prompt then.
 case "${EDGE_UNINSTALL_REMOVE_BROWSER:-}" in
   1) uninstall_browser ;;
   0) echo "leaving Chromium installed" ;;
