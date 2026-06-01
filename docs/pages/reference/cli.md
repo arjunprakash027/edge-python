@@ -14,10 +14,10 @@ edge init my-app    # scaffold a project
 edge add network    # add a package to packages.json
 edge remove network # remove a package from packages.json
 edge build          # bundle to dist/
-edge uninstall      # remove the binary, PATH entry, optionally Chromium
+edge uninstall      # remove the binary, PATH entry, optionally the bundled browser
 ```
 
-The runtime does the actual work; `edge` is the loop around it. It launches system Chromium headless, serves the runtime alongside your code, runs everything in that browser, and streams output back to your terminal. `edge serve` opens the same setup in your own browser.
+The runtime does the actual work; `edge` is the loop around it. It launches the headless browser, serves the runtime alongside your code, runs everything in that browser, and streams output back to your terminal. `edge serve` opens the same setup in your own browser.
 
 ## Install
 
@@ -155,7 +155,7 @@ Flags: `--out <dir>` (default `dist/`).
 
 ## `edge uninstall`
 
-Removes the binary and its `PATH` entry, and asks before removing Chromium. Equivalent to the `uninstall.sh` one-liner in [Install](#install).
+Removes the binary and its `PATH` entry, and asks before removing the bundled `chrome-headless-shell` cache (never touches system Chromium). Equivalent to the `uninstall.sh` one-liner in [Install](#install).
 
 ## Global flags
 
