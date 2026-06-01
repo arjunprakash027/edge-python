@@ -3,7 +3,7 @@
 
 set -e
 
-BASE="${EDGE_INSTALL_BASE:-https://dylan-sutton-chavez.github.io/edge-python}"
+BASE="${EDGE_INSTALL_BASE:-https://cdn.edgepython.com/cli}"
 INSTALL_DIR="${EDGE_INSTALL_DIR:-$HOME/.local/bin}"
 
 case "$(uname -s)" in
