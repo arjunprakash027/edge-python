@@ -78,19 +78,15 @@ impl Session {
         let expr = format!("__edgeRun({literal})");
         self.tab.evaluate(&expr, false).map_err(|e| anyhow!("starting eval: {e}"))?;
 
-        // Stream lines as they arrive; suppress the first `history_lines` (replayed history, already shown in prior evals) with a counter instead of buffering the whole run.
-        let skip = self.history_lines;
-        let mut seen = 0usize;
-        let outcome = drain(&self.tab, &mut |line| {
-            if seen >= skip {
-                on_line(line);
-            }
-            seen += 1;
-        })?;
+        let mut all: Vec<String> = Vec::new();
+        let outcome = drain(&self.tab, &mut |line| all.push(line.to_string()))?;
+        for line in all.iter().skip(self.history_lines) {
+            on_line(line);
+        }
         if outcome.err.is_none() {
             if !self.history.is_empty() { self.history.push('\n'); }
             self.history.push_str(src);
-            self.history_lines = seen;
+            self.history_lines = all.len();
         }
         Ok(outcome)
     }
