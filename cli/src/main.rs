@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use pkg::Manifest;
 
 #[derive(Parser)]
-#[command(name = "edge", version, about = "The Edge Python developer CLI", after_help = "Press Ctrl+C at any time to exit cleanly.")]
+#[command(name = "edge", version, about = "The Edge Python developer command line interface.", after_help = "Press Ctrl+C at any time to exit cleanly.", after_long_help = "Docs: https://edgepython.com/")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,

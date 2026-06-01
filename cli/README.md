@@ -1,6 +1,6 @@
 # Edge Python CLI
 
-The Edge Python developer CLI. Write `.py`, run it, serve it, ship it. You never compile anything: `edge` hosts the Edge Python runtime in a headless Chromium provisioned by `install.sh`, then runs your code against it.
+The Edge Python developer command line interface. Write `.py`, run it, serve it, ship it. You never compile anything: `edge` hosts the Edge Python runtime in a headless Chromium provisioned by `install.sh`, then runs your code against it.
 
 ```bash
 edge run app.py     # run a script

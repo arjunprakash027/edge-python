@@ -1,6 +1,6 @@
 ---
 title: "Command Line Interface"
-description: "The Edge Python developer CLI: run, serve, repl, init, package management, and build."
+description: "The Edge Python developer command line interface (CLI): run, serve, repl, init, package management, and build."
 ---
 
 The `edge` developer CLI. Write `.py`, run it, serve it, ship it — you never compile anything yourself. `edge` hosts the [Edge Python runtime](/getting-started/what-it-is#where-it-runs) in a headless Chromium provisioned at install time, then runs your code against it. You just point it at a file.
