@@ -24,7 +24,7 @@ curl -fsSL https://cdn.edgepython.com/cli/install.sh | sh
 cargo install --path cli
 ```
 
-`install.sh` drops the binary at `~/.local/bin/edge`, puts it on `PATH`, and provisions Chromium via the host package manager if it is not already present. Re-run the same line to upgrade. Point `EDGE_CHROME_PATH=/path/to/chrome` at a custom browser.
+`install.sh` drops the binary at `~/.local/bin/edge`, puts it on `PATH`, and, if no Chrome/Chromium-flavored browser is already reachable, downloads a pinned `chrome-headless-shell` into `~/.cache/edge` and records its path in `EDGE_CHROME_PATH`. Needs `unzip`. Re-run the same line to upgrade. Point `EDGE_CHROME_PATH=/path/to/chrome` at a custom browser to skip the download.
 
 Full command reference, flags, and examples: [edgepython.com/reference/cli](https://edgepython.com/reference/cli).
 
