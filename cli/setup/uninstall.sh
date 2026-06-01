@@ -1,53 +1,12 @@
 #!/usr/bin/env bash
-# Remove the edge binary, its PATH entry, and optionally the Chromium install.sh added.
+# Remove the edge binary, its PATH entry, and the bundled chrome-headless-shell cache.
 
 set -e
 
 INSTALL_DIR="${EDGE_INSTALL_DIR:-$HOME/.local/bin}"
 
-# Pick sudo only when not root and sudo exists; matches install.sh.
-SUDO=""
-if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
-  SUDO="sudo"
-fi
-
-# Remove Chromium via the host's native package manager. Reads /etc/os-release on Linux.
-uninstall_browser() {
-  case "$(uname -s)" in
-    Darwin)
-      if command -v brew >/dev/null 2>&1; then
-        brew uninstall --cask chromium
-        return
-      fi
-      echo "Homebrew not found; remove Chromium manually" >&2
-      return 1
-      ;;
-    Linux)
-      local id="" id_like=""
-      if [ -r /etc/os-release ]; then
-        # shellcheck disable=SC1091
-        . /etc/os-release
-        id="${ID:-}"
-        id_like="${ID_LIKE:-}"
-      fi
-      case " ${id} ${id_like} " in
-        *" debian "*|*" ubuntu "*)
-          $SUDO apt-get remove -y chromium && $SUDO apt-get autoremove -y ;;
-        *" fedora "*|*" rhel "*|*" centos "*)
-          $SUDO dnf remove -y chromium ;;
-        *" arch "*)
-          $SUDO pacman -Rs --noconfirm chromium ;;
-        *" opensuse "*|*" suse "*)
-          $SUDO zypper remove -y chromium ;;
-        *" alpine "*)
-          $SUDO apk del chromium ;;
-        *)
-          echo "unsupported distro (${id:-unknown}); remove Chromium manually" >&2
-          return 1 ;;
-      esac
-      ;;
-  esac
-}
+# Browser model: install.sh downloads a pinned chrome-headless-shell to ~/.cache/edge, so uninstall just removes that directory: no package-manager dispatch, no sudo, and we never touch system Chromium that other apps may depend on.
+CHROME_DIR="${EDGE_CHROME_DIR:-$HOME/.cache/edge}"
 
 # 1. Binary.
 if [ -f "$INSTALL_DIR/edge" ]; then
@@ -57,28 +16,45 @@ else
   echo "no edge binary at $INSTALL_DIR/edge"
 fi
 
-# 2. PATH entry. Leave a .edgebak in case the user wants to roll it back.
+# 2. PATH and EDGE_CHROME_PATH entries. Leave a .edgebak in case the user wants to roll it back.
 for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
-  if [ -f "$rc" ] && grep -qs "$INSTALL_DIR" "$rc"; then
+  [ -f "$rc" ] || continue
+  changed=0
+  if grep -qs "$INSTALL_DIR" "$rc"; then
     sed -i.edgebak "\|export PATH=\"$INSTALL_DIR:\$PATH\"|d" "$rc"
-    echo "cleaned PATH entry from $rc (backup at $rc.edgebak)"
+    changed=1
   fi
+  if grep -qs 'EDGE_CHROME_PATH=' "$rc"; then
+    [ -f "$rc.edgebak" ] || cp "$rc" "$rc.edgebak"
+    sed -i.tmp '/EDGE_CHROME_PATH=/d' "$rc" && rm -f "$rc.tmp"
+    changed=1
+  fi
+  [ "$changed" = 1 ] && echo "cleaned edge entries from $rc (backup at $rc.edgebak)"
 done
 
-# 3. Chromium. Opt-in because the user may rely on it for other apps. `edge uninstall` sets EDGE_UNINSTALL_REMOVE_BROWSER after asking in Rust, so we skip the prompt then.
+# 3. Bundled chrome-headless-shell cache. Opt-in; `edge uninstall` sets EDGE_UNINSTALL_REMOVE_BROWSER after asking in Rust, so we skip the prompt then.
+remove_chrome_cache() {
+  if [ -d "$CHROME_DIR" ]; then
+    rm -rf "$CHROME_DIR"
+    echo "removed $CHROME_DIR"
+  else
+    echo "no chrome-headless-shell cache at $CHROME_DIR"
+  fi
+}
+
 case "${EDGE_UNINSTALL_REMOVE_BROWSER:-}" in
-  1) uninstall_browser ;;
-  0) echo "leaving Chromium installed" ;;
+  1) remove_chrome_cache ;;
+  0) echo "leaving chrome-headless-shell cache at $CHROME_DIR" ;;
   *)
     if [ -t 0 ]; then
-      printf "remove system Chromium too? [y/N] "
+      printf "remove bundled chrome-headless-shell cache at %s? [y/N] " "$CHROME_DIR"
       read -r ans
       case "$ans" in
-        [yY]|[yY][eE][sS]) uninstall_browser ;;
-        *) echo "leaving Chromium installed" ;;
+        [yY]|[yY][eE][sS]) remove_chrome_cache ;;
+        *) echo "leaving chrome-headless-shell cache at $CHROME_DIR" ;;
       esac
     else
-      echo "leaving Chromium installed (non-interactive)"
+      echo "leaving chrome-headless-shell cache at $CHROME_DIR (non-interactive)"
     fi
     ;;
 esac
