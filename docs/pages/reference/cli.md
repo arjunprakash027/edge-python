@@ -31,7 +31,11 @@ cargo install --path cli
 
 `install.sh` drops the binary at `~/.local/bin/edge` and appends that directory to your `~/.bashrc` or `~/.zshrc` if it isn't already on `PATH`. Open a new shell (or `source` the file it printed) and `edge --version` should work. Re-run the same `curl … | sh` line any time to upgrade. To remove everything: `curl -fsSL https://cdn.edgepython.com/cli/uninstall.sh | sh` (asks before removing the bundled browser cache).
 
-`install.sh` also downloads a pinned `chrome-headless-shell` into `~/.cache/edge` when no browser is already reachable; this needs `unzip`, with no package manager and no `sudo`. An existing browser on `PATH`, or an `EDGE_CHROME_PATH` you set, is used as-is. Linux arm64 has no such build — install Chrome/Chromium manually and set `EDGE_CHROME_PATH`. See [Bring your own browser](#bring-your-own-browser).
+`install.sh` also downloads a pinned `chrome-headless-shell` into `~/.cache/edge` when no browser is already reachable; this needs `unzip`, with no package manager and no `sudo`. An existing browser on `PATH`, or an `EDGE_CHROME_PATH` you set, is used as-is. Linux arm64 has no such build: install Chrome/Chromium manually and set `EDGE_CHROME_PATH`. See [Bring your own browser](#bring-your-own-browser).
+
+## `edge run` — run a Python file
+
+Runs a script and streams its output to the terminal. Imports resolve through [`packages.json`](/reference/imports#packagesjson); uncaught errors print a traceback to stderr and exit with code 1.
 
 ```text
 $ edge run hello.py
