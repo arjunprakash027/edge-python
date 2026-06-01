@@ -53,8 +53,9 @@ runs:
           cp -r "$dir"/. "_site/host/$cap/"
         done
 
-        # cli: release tarballs.
+        # cli: release tarballs + the install/uninstall scripts, served under cdn.edgepython.com/cli/.
         cp -r /tmp/cli/. _site/cli/
+        cp cli/setup/install.sh cli/setup/uninstall.sh _site/cli/
 
     - name: Deploy to Cloudflare Pages
       uses: cloudflare/wrangler-action@v4

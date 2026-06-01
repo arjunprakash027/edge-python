@@ -18,7 +18,7 @@ edge uninstall      # remove the binary, PATH entry, optionally Chromium
 
 ```bash
 # Prebuilt binary (recommended)
-curl -fsSL https://dylan-sutton-chavez.github.io/edge-python/install.sh | sh
+curl -fsSL https://cdn.edgepython.com/cli/install.sh | sh
 
 # Or from source (any platform with Rust + Cargo)
 cargo install --path cli

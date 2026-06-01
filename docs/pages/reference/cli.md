@@ -23,13 +23,13 @@ The runtime does the actual work; `edge` is the loop around it. It launches syst
 
 ```bash
 # Prebuilt binary (recommended)
-curl -fsSL https://dylan-sutton-chavez.github.io/edge-python/install.sh | sh
+curl -fsSL https://cdn.edgepython.com/cli/install.sh | sh
 
 # Or from source (any platform with Rust and Cargo)
 cargo install --path cli
 ```
 
-`install.sh` drops the binary at `~/.local/bin/edge` and appends that directory to your `~/.bashrc` or `~/.zshrc` if it isn't already on `PATH`. Open a new shell (or `source` the file it printed) and `edge --version` should work. Re-run the same `curl … | sh` line any time to upgrade. To remove everything: `curl -fsSL https://dylan-sutton-chavez.github.io/edge-python/uninstall.sh | sh` (asks before touching Chromium).
+`install.sh` drops the binary at `~/.local/bin/edge` and appends that directory to your `~/.bashrc` or `~/.zshrc` if it isn't already on `PATH`. Open a new shell (or `source` the file it printed) and `edge --version` should work. Re-run the same `curl … | sh` line any time to upgrade. To remove everything: `curl -fsSL https://cdn.edgepython.com/cli/uninstall.sh | sh` (asks before touching Chromium).
 
 `install.sh` also provisions Chromium if it isn't already on `PATH`. It reads `/etc/os-release` and uses the host's package manager (`apt`, `dnf`, `pacman`, `zypper`, `apk`, or `brew --cask` on macOS); `sudo` is invoked only when not running as root. On an unsupported distro, install Chrome/Chromium manually or set `EDGE_CHROME_PATH=/path/to/chrome`. See [Bring your own browser](#bring-your-own-browser).
 

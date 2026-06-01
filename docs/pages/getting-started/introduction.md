@@ -25,7 +25,7 @@ Run live in your browser at [demo.edgepython.com](https://demo.edgepython.com/).
 Or download it to your machine ([reference docs](/reference/cli)):
 
 ```bash
-curl -fsSL https://dylan-sutton-chavez.github.io/edge-python/install.sh | sh
+curl -fsSL https://cdn.edgepython.com/cli/install.sh | sh
 
 edge -h # List all commands
 ```

@@ -52,7 +52,7 @@ Native modules ship via three delivery paths (CDN `.wasm`, host capability, JS h
 download it to your machine ([reference docs](https://edgepython.com/reference/cli)):
 
 ```bash
-curl -fsSL https://dylan-sutton-chavez.github.io/edge-python/install.sh | sh
+curl -fsSL https://cdn.edgepython.com/cli/install.sh | sh
 
 edge -h # List all commands
 ```
