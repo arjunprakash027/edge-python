@@ -7,12 +7,20 @@ Official JS modules for [Edge Python](https://edgepython.com) exposing host APIs
 ```
 ├── dom
 │   └── src
+│       ├── index.js
+│       └── main
 ├── network
 │   └── src
+│       ├── index.js
+│       └── main
 ├── storage
 │   └── src
+│       ├── index.js
+│       └── main
 ├── time
 │   └── src
+│       ├── index.js
+│       └── main
 └── tests
 ```
 

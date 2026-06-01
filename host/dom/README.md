@@ -146,9 +146,7 @@ Each fires a payload through `receive()` per entry with observer-specific fields
 `animate(node, keyframes_json, options_json, msg?)`, `animation_play`, `animation_pause`, `animation_cancel`, `animation_finish`, `animation_reverse`, `animation_dispose`.
 
 ```python
-animate(query("#spinner"),
-    '[{"transform": "rotate(0deg)"}, {"transform": "rotate(360deg)"}]',
-    '{"duration": 1000, "iterations": "Infinity"}')
+animate(query("#spinner"), '[{"transform": "rotate(0deg)"}, {"transform": "rotate(360deg)"}]', '{"duration": 1000, "iterations": "Infinity"}')
 ```
 
 Works on HTML and SVG. Returns a handle. With a `msg`, a `{msg, animation_handle, ok}` payload fires via `receive()` on finish. Handle auto-disposes on finish or cancel; for `iterations: "Infinity"` call `animation_dispose(h)` when done.
@@ -199,7 +197,7 @@ Payload: `{msg, where, error, stack?}`. `where` identifies the call site (`event
 
 ## How it works
 
-Factory `(ctx) => handlers`. `src/state.js` opens a fresh closure per `createWorker` with handle tables (`nodes`, `bindings`, `files`, observers, animations), `alloc` / `node` / `allocList` helpers, and `cleanSubtree`. Eight handler slices (`tree`, `style`, `events`, `forms`, `observers`, `animations`, `media`, `platform`) each return an object literal of handlers closing over the shared state; `src/index.js` composes them with `Object.assign` and wraps async callbacks with `emitError` so failures surface via `bind_global_error`. Adding a handler is one entry in one slice.
+Factory `(ctx) => handlers`. `src/main/state.js` opens a fresh closure per `createWorker` with handle tables (`nodes`, `bindings`, `files`, observers, animations), `alloc` / `node` / `allocList` helpers, and `cleanSubtree`. Eight handler slices in `src/main/` (`tree`, `style`, `events`, `forms`, `observers`, `animations`, `media`, `platform`) each return an object literal of handlers closing over the shared state; `src/index.js` composes them with `Object.assign` and wraps async callbacks with `emitError` so failures surface via `bind_global_error`. Adding a handler is one entry in one slice.
 
 ## Performance
 
