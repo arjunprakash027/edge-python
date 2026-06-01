@@ -22,7 +22,7 @@ ctrlc = "3"
 # Drives a system-installed Chrome/Chromium via CDP; the install.sh provisions the browser.
 headless_chrome = "1.0.21"
 # Line editor + history for `edge repl`.
-rustyline = "18.0.0"
+rustyline = "17.0.0"
 # HTTPS fetcher used by `edge build` to vendor the runtime, compiler.wasm, and packages.
 ureq = "3"
 
