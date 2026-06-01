@@ -29,13 +29,9 @@ curl -fsSL https://cdn.edgepython.com/cli/install.sh | sh
 cargo install --path cli
 ```
 
-`install.sh` drops the binary at `~/.local/bin/edge` and appends that directory to your `~/.bashrc` or `~/.zshrc` if it isn't already on `PATH`. Open a new shell (or `source` the file it printed) and `edge --version` should work. Re-run the same `curl … | sh` line any time to upgrade. To remove everything: `curl -fsSL https://cdn.edgepython.com/cli/uninstall.sh | sh` (asks before touching Chromium).
+`install.sh` drops the binary at `~/.local/bin/edge` and appends that directory to your `~/.bashrc` or `~/.zshrc` if it isn't already on `PATH`. Open a new shell (or `source` the file it printed) and `edge --version` should work. Re-run the same `curl … | sh` line any time to upgrade. To remove everything: `curl -fsSL https://cdn.edgepython.com/cli/uninstall.sh | sh` (asks before removing the bundled browser cache).
 
-`install.sh` also provisions Chromium if it isn't already on `PATH`. It reads `/etc/os-release` and uses the host's package manager (`apt`, `dnf`, `pacman`, `zypper`, `apk`, or `brew --cask` on macOS); `sudo` is invoked only when not running as root. On an unsupported distro, install Chrome/Chromium manually or set `EDGE_CHROME_PATH=/path/to/chrome`. See [Bring your own browser](#bring-your-own-browser).
-
-## `edge run` — run a Python file
-
-Runs a script and streams its output to the terminal. Imports resolve through [`packages.json`](/reference/imports#packagesjson); uncaught errors print a traceback to stderr and exit with code 1.
+`install.sh` also downloads a pinned `chrome-headless-shell` into `~/.cache/edge` when no browser is already reachable; this needs `unzip`, with no package manager and no `sudo`. An existing browser on `PATH`, or an `EDGE_CHROME_PATH` you set, is used as-is. Linux arm64 has no such build — install Chrome/Chromium manually and set `EDGE_CHROME_PATH`. See [Bring your own browser](#bring-your-own-browser).
 
 ```text
 $ edge run hello.py
@@ -169,4 +165,4 @@ Removes the binary and its `PATH` entry, and asks before removing Chromium. Equi
 
 ## Bring your own browser
 
-`edge` drives whatever system Chrome/Chromium is on `PATH` (`chromium`, `chromium-browser`, `google-chrome`, or `microsoft-edge`). `install.sh` provisions it on supported distros and macOS; on anything else, install it manually or point `EDGE_CHROME_PATH=/path/to/chrome` at the binary.
+`edge` uses, in order: `EDGE_CHROME_PATH` if set, the bundled `chrome-headless-shell` in `~/.cache/edge`, or a system `chromium` / `chromium-browser` / `google-chrome` / `microsoft-edge` on `PATH`. `install.sh` downloads `chrome-headless-shell` when none is present; Linux arm64 has no build, so install Chrome/Chromium manually and point `EDGE_CHROME_PATH=/path/to/chrome` at it.
