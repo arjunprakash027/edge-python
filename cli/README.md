@@ -11,7 +11,7 @@ edge init my-app    # scaffold a project
 edge add network    # add a package to packages.json
 edge remove network # remove a package
 edge build          # bundle to dist/
-edge uninstall      # remove the binary, PATH entry, optionally Chromium
+edge uninstall      # remove the binary, PATH entry, optionally the bundled browser
 ```
 
 ## Install
