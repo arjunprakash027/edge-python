@@ -28,6 +28,17 @@ cargo install --path cli
 
 Full command reference, flags, and examples: [edgepython.com/reference/cli](https://edgepython.com/reference/cli).
 
+## Build + test
+
+The CLI is a standalone Cargo workspace under `cli/`. Commands run from there:
+
+```bash
+cd cli
+cargo clippy --all-targets -- -D warnings # lint
+cargo check # type-check
+cargo test # run tests (requires google-chrome-stable on PATH)
+```
+
 ## License
 
 MIT OR Apache-2.0

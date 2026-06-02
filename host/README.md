@@ -50,6 +50,23 @@ One folder per capability. Each ships a `<name>/<name>.json` corpus; the shared 
 | `storage` | localStorage, sessionStorage, IndexedDB, see [`storage/README.md`](storage/README.md) |
 | `time`    | Clocks, sleep, calendar formatting, see [`time/README.md`](time/README.md) |
 
+## Development
+
+Requires [Deno v2](https://deno.com/) and Playwright's Chromium.
+
+```bash
+# Lint one capability
+cd host/<capability> && deno lint src/
+
+# Install Chromium (once)
+deno run -A npm:playwright install --with-deps chromium
+
+# Test one capability (from host/)
+cd host && HOSTCAP=<capability> deno test --allow-all tests/
+```
+
+`<capability>` is one of `dom`, `network`, `storage`, `time`.
+
 ## License
 
 MIT OR Apache-2.0

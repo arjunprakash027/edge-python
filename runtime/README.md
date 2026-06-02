@@ -2,6 +2,16 @@
 
 JS half of Edge Python: hosts `compiler.wasm` in a Web Worker, resolves and registers `.py` / `.wasm` modules, dispatches native calls. Drive it programmatically with `createWorker`, or declaratively with the `<edge-python>` HTML element.
 
+## Development
+
+Requires [Deno v2](https://deno.com/) and Playwright's Chromium (installed on first run).
+
+```bash
+deno lint runtime/ # lint
+deno run -A npm:playwright install --with-deps chromium # install Chromium (once)
+deno test --allow-all runtime/tests/runtime.test.js # run tests
+```
+
 ## Install
 
 No install, the official CDN serves both the runtime and matching `compiler.wasm`:

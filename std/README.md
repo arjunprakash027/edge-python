@@ -2,13 +2,6 @@
 
 Official standard-library packages for [Edge Python](https://edgepython.com). Most are a Rust crate compiled to `wasm32-unknown-unknown` against the [wasm-pdk](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) ABI; hosts load the resulting `.wasm` over the standard plugin contract, no custom embedder, no Rust on the consumer side. A package can also ship as pure Edge Python source (`src/entry.py`), imported as a code module with no `cargo` build (e.g. `test`).
 
-## Layout
-
-```
-tests/, agnostic Deno + Playwright runner driving the <edge-python> tag
-<name>/, one folder per stdpkg, with src/, README.md, and <name>.json corpus
-```
-
 The folder name IS the package name. A native package builds to `<name>/target/wasm32-unknown-unknown/release/<name>.wasm`; a pure-Python package has `src/entry.py` and no build artifact. Each package's `<name>.json` corpus sits in its folder; cases in it are automatically prefixed with `from <name> import *\n` before dispatch, so the corpus only contains the code being tested.
 
 ## Packages
