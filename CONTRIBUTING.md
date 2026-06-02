@@ -19,3 +19,5 @@ Run the following commands before sending a pull request to ensure code quality:
 *Other packages have their own build and test setup — take a look at the `README.md` in the relevant path.*
 
 A CI job will be run by the maintainer after the PR has been created.
+
+PRs that introduce new behavior without test coverage, or that update documentation without reflecting the actual code change, will not be accepted.
