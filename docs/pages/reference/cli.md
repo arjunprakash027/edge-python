@@ -22,7 +22,7 @@ The runtime does the actual work; `edge` is the loop around it. It launches the 
 ## Install
 
 ```bash
-# Prebuilt binary (recommended)
+# Prebuilt binary (recommended) — compatible with macOS, Linux and WSL
 curl -fsSL https://cdn.edgepython.com/cli/install.sh | sh
 
 # Or from source (any platform with Rust and Cargo)
