@@ -59,19 +59,21 @@ impl<'a> VM<'a> {
             FastOp::GtEqInt if a.is_int() && b.is_int() => Val::bool(a.as_int() >= b.as_int()),
             FastOp::NotEqInt if a.is_int() && b.is_int() => Val::bool(a.as_int() != b.as_int()),
 
-            FastOp::AddStr | FastOp::EqStr if a.is_heap() && b.is_heap() => {
+            FastOp::EqStr if a.is_heap() && b.is_heap() => {
+                match (self.heap.get(a), self.heap.get(b)) {
+                    (HeapObj::Str(x), HeapObj::Str(y)) => Val::bool(x == y),
+                    _ => return Ok(FastOutcome::TypeMiss),
+                }
+            }
+
+            FastOp::AddStr if a.is_heap() && b.is_heap() => {
                 let (sa, sb) = match (self.heap.get(a), self.heap.get(b)) {
                     (HeapObj::Str(x), HeapObj::Str(y)) => (x.clone(), y.clone()),
                     _ => return Ok(FastOutcome::TypeMiss),
                 };
-                match fast {
-                    FastOp::AddStr => {
-                        let mut r = String::with_capacity(sa.len() + sb.len());
-                        r.push_str(&sa); r.push_str(&sb);
-                        self.heap.alloc(HeapObj::Str(r))?
-                    }
-                    _ => Val::bool(sa == sb),
-                }
+                let mut r = String::with_capacity(sa.len() + sb.len());
+                r.push_str(&sa); r.push_str(&sb);
+                self.heap.alloc(HeapObj::Str(r))?
             }
 
             _ => return Ok(FastOutcome::TypeMiss),
