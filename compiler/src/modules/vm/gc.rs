@@ -6,7 +6,6 @@ impl<'a> VM<'a> {
     /* Mark all reachable roots then sweep; non-heap Vals are no-op to mark. */
     pub(crate) fn collect(&mut self, current_slots: &[Val]) {
         for &v in &self.stack { self.heap.mark(v); }
-        for sf in &self.pending_sync_frames { sf.for_each_val(&mut |v| heap.mark(v)); }
         for &v in &self.with_stack { self.heap.mark(v); }
         for &v in &self.yields { self.heap.mark(v); }
         for &v in &self.event_queue { self.heap.mark(v); }

@@ -315,8 +315,8 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
         HeapObj::Coroutine(_, slots, stack, _, iters, sub_frames, _) => {
             for &v in slots { f(v); }
             for &v in stack { f(v); }
-            for fr in iters { fr.for_each_val(f); }
-            for sf in sub_frames { sf.for_each_val(f); }
+            for fr in iters { fr.for_each_val(&mut f); }
+            for sf in sub_frames { sf.for_each_val(&mut f); }
         }
         HeapObj::Func(_, defaults, captures) => {
             for &v in defaults { f(v); }
