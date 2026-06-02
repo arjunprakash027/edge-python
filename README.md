@@ -38,10 +38,12 @@ Cargo workspace; commands work from any directory.
 ```
 
 ```bash
-cargo wasm            # release .wasm (the distributed artifact)
+cargo wasm # release .wasm (the distributed artifact)
 cargo build --release # host .rlib + cdylib for Rust embedders
-cargo test --release  # full test suite
+cargo test --release --no-default-features # run the compiler test suite
 ```
+
+*`--no-default-features` disables the `prebuilt` feature, which otherwise triggers a `build.rs` download of `compiler.wasm` from the GitHub release: that download is only needed by external Rust crates that consume this library, not when developing locally.*
 
 Native modules ship via three delivery paths (CDN `.wasm`, host capability, JS host module), see [Writing modules](https://edgepython.com/reference/writing-modules).
 

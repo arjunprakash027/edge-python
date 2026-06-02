@@ -36,7 +36,7 @@ Full rationale, NaN-box patterns, IC thresholds, GC roots, and intentional omiss
 
 ```bash
 cargo wasm # release WASM artifact -> target/wasm32-unknown-unknown/release/compiler.wasm
-cargo test --release # host-side test suite
+cargo test --release --no-default-features # host-side test suite (skips the prebuilt wasm download, only needed by external consumers)
 ```
 
 `cargo wasm` is a workspace alias (`.cargo/config.toml`) for `cargo build --release --target wasm32-unknown-unknown -p edge-python`. Plain `cargo build --release` produces host artifacts (`.rlib` + cdylib) for embedders linking `compiler`. To add native modules from your own crate, implement the `Resolver` trait, see [Writing modules](https://edgepython.com/reference/writing-modules).
