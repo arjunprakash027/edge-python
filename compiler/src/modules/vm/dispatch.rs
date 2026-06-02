@@ -359,8 +359,7 @@ impl<'a> VM<'a> {
             }
             OpCode::StoreName => {
                 self.handle_store(op, slots)?;
-                // Mirror entry-chunk stores into `module_state` so functions with `global X` see updates,
-                // and mirror Module values into `globals` so `import_module()` finds module aliases.
+                // Mirror entry-chunk stores into `module_state` so functions with `global X` see updates, and mirror Module values into `globals` so `import_module()` finds module aliases.
                 if core::ptr::eq(chunk, self.chunk)
                     && let Some(name) = chunk.names.get(op as usize)
                 {
