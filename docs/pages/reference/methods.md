@@ -215,7 +215,7 @@ print(ys)
 
 ### Mutating
 
-Return `None`, mutate in place. `extend` accepts any iterable. `sort` has no `key=` / `reverse=`, sort by derived key via precomputed tuples.
+Return `None`, mutate in place. `extend` accepts any iterable. `sort` accepts `key=fn` and `reverse=True/False`.
 
 ```python
 xs = [1, 2, 3]

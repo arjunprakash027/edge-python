@@ -30,7 +30,7 @@ impl<'a> VM<'a> {
             OpCode::CallType => self.call_type(),
             OpCode::CallChr => self.call_chr(),
             OpCode::CallOrd => self.call_ord(),
-            OpCode::CallSorted => self.call_sorted(),
+            OpCode::CallSorted => self.call_sorted(false),
             OpCode::CallList => self.call_list(chunk, slots),
             OpCode::CallTuple => self.call_tuple(chunk, slots),
             OpCode::CallEnumerate => self.call_enumerate(),
@@ -241,6 +241,23 @@ impl<'a> VM<'a> {
         if let HeapObj::BoundMethod(recv, id) = self.heap.get(callee) {
             let recv = *recv;
             let id = *id;
+            if id.name() == "sort" && !kw_flat.is_empty() {
+                if !positional.is_empty() {
+                    return Err(cold_type("list.sort() takes no positional arguments"));
+                }
+                let mut sort_key: Option<Val> = None;
+                let mut sort_reverse = false;
+                for pair in kw_flat.chunks(2) {
+                    let (name_v, val_v) = (pair[0], pair[1]);
+                    let is_key = name_v.is_heap() && matches!(self.heap.get(name_v), HeapObj::Str(s) if s == "key");
+                    let is_reverse = name_v.is_heap() && matches!(self.heap.get(name_v), HeapObj::Str(s) if s == "reverse");
+                    if is_key { sort_key = Some(val_v); }
+                    else if is_reverse { sort_reverse = self.truthy(val_v); }
+                    else { return Err(cold_type("list.sort() got unexpected keyword argument")); }
+                }
+                self.call_list_sort_keyed(recv, sort_key, sort_reverse, chunk, slots)?;
+                return Ok(true);
+            }
             self.exec_bound_method(recv, id, positional, kw_flat)?;
             return Ok(true);
         }
@@ -594,20 +611,19 @@ impl<'a> VM<'a> {
     pub(crate) fn dispatch_native(&mut self, id: super::super::types::NativeFnId, positional: &[Val], kw: &[Val], chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         use super::super::types::NativeFnId::*;
 
-        // `sorted()` is the only builtin taking kwargs (`key=fn`); extract it before the no-kw guard.
+        // `sorted()` is the only builtin taking kwargs (`key=`, `reverse=`); extract them before the no-kw guard.
         let mut sort_key: Option<Val> = None;
+        let mut sort_reverse = false;
         let leftover_storage: Vec<Val>;
         let kw_remaining: &[Val] = if id == Sorted {
             let mut leftover: Vec<Val> = Vec::new();
             for chunk_pair in kw.chunks(2) {
                 let (name_v, val_v) = (chunk_pair[0], chunk_pair[1]);
                 let is_key = name_v.is_heap() && matches!(self.heap.get(name_v), HeapObj::Str(s) if s == "key");
-                if is_key {
-                    sort_key = Some(val_v);
-                } else {
-                    leftover.push(name_v);
-                    leftover.push(val_v);
-                }
+                let is_reverse = name_v.is_heap() && matches!(self.heap.get(name_v), HeapObj::Str(s) if s == "reverse");
+                if is_key { sort_key = Some(val_v); }
+                else if is_reverse { sort_reverse = self.truthy(val_v); }
+                else { leftover.push(name_v); leftover.push(val_v); }
             }
             leftover_storage = leftover;
             &leftover_storage
@@ -679,7 +695,7 @@ impl<'a> VM<'a> {
             Type => self.call_type(),
             Chr => self.call_chr(),
             Ord => self.call_ord(),
-            Sorted => self.call_sorted_with_key(sort_key, chunk, slots),
+            Sorted => self.call_sorted_with_key(sort_key, sort_reverse, chunk, slots),
             Enumerate => self.call_enumerate(),
             List => self.call_list(chunk, slots),
             Tuple => self.call_tuple(chunk, slots),

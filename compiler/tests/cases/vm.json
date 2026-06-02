@@ -1776,5 +1776,9 @@
   {"src": "print((1, 2, 3) < (1, 2))", "output": ["False"]},
   {"src": "print(b'abc' < b'abd')", "output": ["True"]},
   {"src": "print(sorted([[2], [1], [1, 0]]))", "output": ["[[1], [1, 0], [2]]"]},
-  {"src": "print(sorted([10, 5, 8, 1, 67], key=lambda x: -x))", "output": ["[67, 10, 8, 5, 1]"]}
+  {"src": "print(sorted([10, 5, 8, 1, 67], key=lambda x: -x))", "output": ["[67, 10, 8, 5, 1]"]},
+  {"src": "print(sorted([3, 1, 2], reverse=True))", "output": ["[3, 2, 1]"]},
+  {"src": "print(sorted([3, 1, 2], key=lambda x: -x, reverse=False))", "output": ["[3, 2, 1]"]},
+  {"src": "lst = [3, 1, 2]; lst.sort(reverse=True); print(lst)", "output": ["[3, 2, 1]"]},
+  {"src": "lst = [3, 1, 2]; lst.sort(key=lambda x: -x); print(lst)", "output": ["[3, 2, 1]"]}
 ]

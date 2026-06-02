@@ -297,11 +297,13 @@ print(list(range(10, 0, -2)))
 
 ### sorted
 
-New sorted list. No `key=` / `reverse=`, sort by derived value via a precomputed list of `(key, value)` tuples. Numbers, strings, bytes, and tuples/lists order lexicographically; mixed un-orderable types raise `TypeError`.
+New sorted list. Accepts `key=fn` and `reverse=True/False`. Numbers, strings, bytes, and tuples/lists order lexicographically; mixed un-orderable types raise `TypeError`.
 
 ```python
 print(sorted([3, 1, 4, 1, 5]))
 print(sorted("hello"))
+print(sorted([3, 1, 4, 1, 5], reverse=True))
+print(sorted(["banana", "apple", "kiwi"], key=len))
 ```
 
 ```text Output

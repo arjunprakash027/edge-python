@@ -74,21 +74,53 @@ impl<'a> VM<'a> {
         self.push(Val::int(n)); Ok(())
     }
 
-    pub fn call_sorted(&mut self) -> Result<(), VmErr> {
+    pub fn call_sorted(&mut self, reverse: bool) -> Result<(), VmErr> {
         let o = self.pop()?;
         let mut items = self.extract_iter(o, false)?;
         self.sort_by_lt(&mut items)?;
+        if reverse { items.reverse(); }
         self.alloc_and_push_list(items)
     }
 
-    /* sorted(iterable, key=fn), decorate-sort-undecorate via a parallel keys vec. key=None delegates to the no-key path. */
-    pub fn call_sorted_with_key(&mut self, key: Option<Val>, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+    /* sorted(iterable, key=fn, reverse=False) — delegates to call_sorted when key is absent. */
+    pub fn call_sorted_with_key(&mut self, key: Option<Val>, reverse: bool, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let key = match key {
             Some(k) if !k.is_none() => k,
-            _ => return self.call_sorted(),
+            _ => return self.call_sorted(reverse),
         };
         let o = self.pop()?;
         let items = self.extract_iter(o, false)?;
+        let mut sorted = self.sort_by_key(items, key, chunk, slots)?;
+        if reverse { sorted.reverse(); }
+        self.alloc_and_push_list(sorted)
+    }
+
+    /* list.sort(key=fn, reverse=False) in-place. Snapshots list before key calls so heap borrow ends before exec_call. */
+    pub fn call_list_sort_keyed(&mut self, recv: Val, key: Option<Val>, reverse: bool, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+        let items = match self.heap.get(recv) {
+            HeapObj::List(rc) => rc.borrow().clone(),
+            _ => return Err(cold_type("sort: receiver is not a list")),
+        };
+        let mut result = if let Some(k) = key.filter(|k| !k.is_none()) {
+            self.sort_by_key(items, k, chunk, slots)?
+        } else {
+            let mut s = items;
+            self.sort_by_lt(&mut s)?;
+            s
+        };
+        if reverse { result.reverse(); }
+        let rc = match self.heap.get(recv) {
+            HeapObj::List(rc) => rc.clone(),
+            _ => return Err(cold_type("sort: receiver is not a list")),
+        };
+        *rc.borrow_mut() = result;
+        self.mark_impure();
+        self.push(Val::none());
+        Ok(())
+    }
+
+    /* Decorate-sort-undecorate: applies key fn to each item, sorts by resulting keys, returns reordered items. */
+    fn sort_by_key(&mut self, items: Vec<Val>, key: Val, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<Vec<Val>, VmErr> {
         let mut keys: Vec<Val> = Vec::with_capacity(items.len());
         for &item in &items {
             self.push(key);
@@ -111,8 +143,7 @@ impl<'a> VM<'a> {
             }
         });
         if let Some(e) = sort_err { return Err(e); }
-        let sorted: Vec<Val> = indices.into_iter().map(|i| items[i]).collect();
-        self.alloc_and_push_list(sorted)
+        Ok(indices.into_iter().map(|i| items[i]).collect())
     }
 
     /* In-place sort via `lt_vals`. Stashes the first error and surfaces it after the sort, `sort_by` closures can't return Result. */
