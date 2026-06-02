@@ -17,7 +17,7 @@ edge uninstall      # remove the binary, PATH entry, optionally the bundled brow
 ## Install
 
 ```bash
-# Prebuilt binary (recommended)
+# Prebuilt binary (recommended) — compatible with macOS, Linux and WSL
 curl -fsSL https://cdn.edgepython.com/cli/install.sh | sh
 
 # Or from source (any platform with Rust + Cargo)
