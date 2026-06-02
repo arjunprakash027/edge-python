@@ -2,7 +2,7 @@
 
 ## Local Development
 
-Install dependencies
+Install dependencies and update `package-lock.json`:
 
 ```sh
 npm install
