@@ -6,18 +6,7 @@ impl<'a> VM<'a> {
     /* Mark all reachable roots then sweep; non-heap Vals are no-op to mark. */
     pub(crate) fn collect(&mut self, current_slots: &[Val]) {
         for &v in &self.stack { self.heap.mark(v); }
-        for sf in &self.pending_sync_frames {
-            for &v in &sf.slots { self.heap.mark(v); }
-            for &v in &sf.stack_delta { self.heap.mark(v); }
-            for fr in &sf.iter_delta {
-                match fr {
-                    IterFrame::Seq { items, .. } => for &v in items { self.heap.mark(v); },
-                    IterFrame::Coroutine(v) => self.heap.mark(*v),
-                    IterFrame::UserDefined(v) => self.heap.mark(*v),
-                    IterFrame::Range { .. } => {}
-                }
-            }
-        }
+        for sf in &self.pending_sync_frames { sf.for_each_val(&mut |v| heap.mark(v)); }
         for &v in &self.with_stack { self.heap.mark(v); }
         for &v in &self.yields { self.heap.mark(v); }
         for &v in &self.event_queue { self.heap.mark(v); }
@@ -40,16 +29,9 @@ impl<'a> VM<'a> {
         }
         for &v in self.globals.values() { self.heap.mark(v); }
         for &v in self.module_state.values() { self.heap.mark(v); }
-        for frame in &self.iter_stack {
-            match frame {
-                IterFrame::Seq { items, .. } => {
-                    for &v in items { self.heap.mark(v); }
-                }
-                IterFrame::Coroutine(v) => self.heap.mark(*v),
-                IterFrame::UserDefined(v) => self.heap.mark(*v),
-                IterFrame::Range { .. } => {}
-            }
-        }
+        let heap = &mut self.heap; // split borrow: lets closures take &mut heap while iterating other fields
+        for frame in &self.iter_stack { frame.for_each_val(&mut |v| heap.mark(v)); }
+        for sf in &self.pending_sync_frames { sf.for_each_val(&mut |v| heap.mark(v)); }
         for cache in self.opcode_caches.values() {
             if let Some(consts) = cache.const_vals_opt() {
                 for &v in consts { self.heap.mark(v); }

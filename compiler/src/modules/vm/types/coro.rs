@@ -106,4 +106,22 @@ impl IterFrame {
             }
         }
     }
+
+    /* Visit each Val in this frame; Range holds none. */
+    pub(crate) fn for_each_val(&self, f: &mut impl FnMut(Val)) {
+        match self {
+            IterFrame::Seq { items, .. } => for &v in items { f(v); },
+            Self::Coroutine(v) | Self::UserDefined(v) => f(*v),
+            IterFrame::Range { .. } => {}
+        }
+    }
+}
+
+impl SyncFrame {
+    /* Visit all Vals across slots, stack delta, and iter frames. */
+    pub(crate) fn for_each_val(&self, f: &mut impl FnMut(Val)) {
+        for &v in &self.slots { f(v); }
+        for &v in &self.stack_delta { f(v); }
+        for fr in &self.iter_delta { fr.for_each_val(f); }
+    }
 }
