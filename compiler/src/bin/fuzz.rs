@@ -7,7 +7,7 @@ use std::{panic, time::{Duration, Instant, SystemTime}};
 const MAX_LEN: usize = 2048;
 const SAVE_DIR: &str = "crashes";
 const PRINT_INTERVAL: u64 = 10_000;
-const MAX_SECS: u64 = 60; // 60 seconds
+const MAX_SECS: u64 = 600; // 60 seconds
 const SLOW_THRESHOLD: Duration = Duration::from_millis(50);
 
 struct Rng(u64);
