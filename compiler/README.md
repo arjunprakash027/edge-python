@@ -15,13 +15,14 @@ Single-pass pipeline: source -> SSA bytecode chunk; stack interpreter with adapt
 * **VM** (`modules/vm/`) flat-match dispatch, scalar + instance-dunder inline caches, pure-function template memoization, NaN-boxed 64-bit `Val` with a mark-and-sweep arena.
 * **Resolver** (`modules/packages/`) host-injected; native imports register for `CallExtern` dispatch.
 
-Full rationale, NaN-box patterns, IC thresholds, GC roots, and intentional omissions: [Design](https://edgepython.com/implementation/design). Lexer and parser internals: [Lexical](https://edgepython.com/implementation/lexical), [Syntax](https://edgepython.com/implementation/syntax).
+Full rationale, NaN-box patterns, IC thresholds, GC roots, and intentional omissions: [Design](https://edgepython.com/implementation/design). Lexer and parser internals: [Lexical](https://edgepython.com/implementation/lexical), [Syntax](https://edgepython.com/implementation/syntax). Fuzzer internals and mutation strategies: [Fuzzing](https://edgepython.com/implementation/fuzzing).
 
 ## Layout
 
 ```text
 ├── src
 │   ├── main
+│   ├── bin
 │   ├── modules
 │   │   ├── lexer
 │   │   ├── packages
@@ -63,6 +64,16 @@ fn main() {
 ```
 
 The download URL is derived from `CARGO_PKG_VERSION`, so a tag bump is the only retarget. Use `branch = "main"` for unreleased work. Requires `curl` on PATH; gated by the default-on `prebuilt` feature.
+
+## Fuzzer
+
+```bash
+# build and run
+cargo run --bin fuzz --profile fuzz
+
+# reproduce a crash
+cargo run --bin compiler crashes/crash_000001.py
+```
 
 ## References
 

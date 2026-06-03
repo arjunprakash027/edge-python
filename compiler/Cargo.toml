@@ -16,6 +16,10 @@ crate-type = ["cdylib", "rlib"]
 test = false
 doctest = false
 
+[[bin]]
+name = "fuzz"
+path = "src/bin/fuzz.rs"
+
 [[test]]
 name = "tests"
 path = "tests/main.rs"

@@ -38,3 +38,7 @@ pkg/
 # Secrets
 .env
 .env.*
+
+# fuzzer output
+crashes/
+**/crashes/

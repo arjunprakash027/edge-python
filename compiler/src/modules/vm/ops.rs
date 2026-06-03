@@ -387,6 +387,9 @@ impl<'a> VM<'a> {
             return Err(VmErr::TypeMsg(s!("unsupported operand type(s) for *: '", str self.type_name(a), "' and '", str self.type_name(b), "'")));
         };
         let n = count.max(0) as usize;
+        if n > 1_000_000 {
+            return Err(VmErr::Value("repetition count too large"));
+        }
         match self.heap.get(seq_val) {
             HeapObj::Str(s) => {
                 let r = s.repeat(n);

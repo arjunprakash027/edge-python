@@ -28,3 +28,9 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+[profile.fuzz]
+inherits = "release"
+opt-level = 3
+strip = false
+debug = true
