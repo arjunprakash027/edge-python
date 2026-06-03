@@ -38,3 +38,9 @@ pkg/
 # Secrets
 .env
 .env.*
+
+# Fuzz
+**/in/
+**/out/
+**/target/
+**/edge.dict

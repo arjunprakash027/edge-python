@@ -1,0 +1,20 @@
+[package]
+name = "edge-python-afl"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+# Standalone workspace so the parent workspace does not adopt this crate.
+[workspace]
+
+[dependencies]
+afl = "0.18.2"
+
+# `default-features = false` drops `prebuilt` so the build skips the wasm download.
+[dependencies.edge-python]
+path = ".."
+default-features = false
+
+[[bin]]
+name = "afl-pipeline"
+path = "src/main.rs"

@@ -64,6 +64,18 @@ fn main() {
 
 The download URL is derived from `CARGO_PKG_VERSION`, so a tag bump is the only retarget. Use `branch = "main"` for unreleased work. Requires `curl` on PATH; gated by the default-on `prebuilt` feature.
 
+## Fuzzing
+
+Coverage-guided fuzzing of the lex -> parse -> VM pipeline lives in [`fuzz-afl/`](fuzz-afl/), built on [cargo-afl](https://github.com/rust-fuzz/afl.rs) (AFL++) and running on stable Rust.
+
+```bash
+cd fuzz-afl
+./seeds.sh # generate corpus + dictionary from vm.json (once)
+cargo afl build && cargo afl fuzz -i in -o out -x edge.dict target/debug/afl-pipeline
+```
+
+Seeds and the dictionary are generated from `tests/cases/vm.json`, so they are gitignored. Under WSL, prefix the fuzz command with `AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1`. See [Fuzzing](https://edgepython.com/implementation/fuzzing) for details.
+
 ## References
 
 1. **Aho, Sethi & Ullman**, *Compilers: Principles, Techniques and Tools* (1986). LUT-based lexer.
