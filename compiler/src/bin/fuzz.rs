@@ -349,7 +349,7 @@ fn main() {
                 stats.crashes += 1;
                 let path = format!("{SAVE_DIR}/crash_{:06}.py", stats.crashes);
                 let _ = std::fs::write(&path, &input);
-                eprintln!("\n[CRASH #{:06}] → {path}\n  {:?}\n", stats.crashes, &input[..input.len().min(120)]);
+                eprintln!("\n[CRASH #{:06}] -> {path}\n  {:?}\n", stats.crashes, &input[..input.len().min(120)]);
             }
             Outcome::Clean(bm, t_lex, t_parse, t_vm) => {
                 perf.record(t_lex, t_parse, t_vm);
@@ -357,7 +357,7 @@ fn main() {
                 if total > SLOW_THRESHOLD {
                     let path = format!("{SAVE_DIR}/slow_{:06}.py", stats.iters);
                     let _ = std::fs::write(&path, &input);
-                    eprintln!("\n[SLOW {}ms] → {path}\n  lex={}µs parse={}µs vm={}µs\n",
+                    eprintln!("\n[SLOW {}ms] -> {path}\n  lex={}µs parse={}µs vm={}µs\n",
                         total.as_millis(), t_lex.as_micros(), t_parse.as_micros(), t_vm.as_micros());
                 }
                 if corpus.add(input, bm) { stats.adds += 1; }
