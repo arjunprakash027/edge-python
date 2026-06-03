@@ -90,11 +90,13 @@ const BOUNDARIES: [i64; 13] = [
 
 fn boundary_int(rng: &mut Rng) -> i64 { BOUNDARIES[rng.usize_in(BOUNDARIES.len())] }
 
+/* 25% boundary values; rest are full-range random i64 */
 fn rand_int(rng: &mut Rng) -> String {
     if rng.usize_in(4) == 0 { boundary_int(rng).to_string() }
     else { (rng.next() as i64).to_string() }
 }
 
+/* Picks one of ten mutation strategies at uniform random */
 fn mutate(src: &str, corpus: &[String], rng: &mut Rng) -> String {
     match rng.usize_in(10) {
         0 => byte_flip(src, rng),
@@ -119,12 +121,14 @@ fn byte_flip(src: &str, rng: &mut Rng) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
+/* Splits into lines, applies f in place, rejoins; shared by drop/duplicate */
 fn with_lines(src: &str, f: impl FnOnce(&mut Vec<&str>)) -> String {
     let mut lines: Vec<&str> = src.lines().collect();
     f(&mut lines);
     lines.join("\n")
 }
 
+/* Injects a keyword snippet at a random line; exercises keywords in unexpected positions */
 fn insert_keyword(src: &str, rng: &mut Rng) -> String {
     let kw = rand_keyword(rng);
     let name = rand_name(rng);
@@ -153,6 +157,7 @@ fn duplicate_line(src: &str, rng: &mut Rng) -> String {
     with_lines(src, |lines| { let idx = rng.usize_in(lines.len()); lines.insert(idx, lines[idx]); })
 }
 
+/* Cross-seeds two corpus entries to produce novel program shapes */
 fn splice(src: &str, corpus: &[String], rng: &mut Rng) -> String {
     if corpus.is_empty() { return src.to_string(); }
     let other = &corpus[rng.usize_in(corpus.len())];
@@ -165,6 +170,7 @@ fn splice(src: &str, corpus: &[String], rng: &mut Rng) -> String {
     out.join("\n")
 }
 
+/* Replaces the first numeric literal with a NaN-box boundary value */
 fn inject_boundary(src: &str, rng: &mut Rng) -> String {
     let boundary = boundary_int(rng).to_string();
     let bytes = src.as_bytes();
@@ -220,6 +226,7 @@ fn indent_bomb(rng: &mut Rng) -> String {
     out
 }
 
+/* Injects a comment line to exercise lexer comment skipping */
 fn add_comment(src: &str, rng: &mut Rng) -> String {
     let comment = format!("# {}", rand_int(rng));
     let mut lines: Vec<&str> = src.lines().collect();
@@ -278,10 +285,11 @@ impl Perf {
 
 enum Outcome { Crash, ParseErr, VmErr, Timeout, Clean(u128, Duration, Duration, Duration) }
 
+/* Runs lex→parse→VM in an isolated thread; catches panics and enforces VM_TIMEOUT */
 fn run_once(src: &str) -> Outcome {
     let src = if src.len() > MAX_LEN { src[..MAX_LEN].to_string() } else { src.to_string() };
     let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
+    thread::Builder::new().stack_size(8 * 1024 * 1024).spawn(move || {
         let outcome = match panic::catch_unwind(panic::AssertUnwindSafe(|| {
             let t0 = Instant::now();
             let (tokens, _) = lex(&src);
@@ -309,6 +317,7 @@ fn run_once(src: &str) -> Outcome {
     rx.recv_timeout(VM_TIMEOUT).unwrap_or(Outcome::Timeout)
 }
 
+/* Coverage-guided seed pool; retains inputs that reach new opcodes */
 struct Corpus { entries: Vec<String>, seen: u128 }
 
 impl Corpus {
@@ -324,6 +333,7 @@ impl Corpus {
     }
 }
 
+/* Run counters and start time for the periodic progress display */
 struct Stats { iters: u64, crashes: u64, adds: u64, timeouts: u64, start: Instant }
 
 impl Stats {

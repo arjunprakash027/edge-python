@@ -61,6 +61,7 @@ pub struct Parser<'src, I: Iterator<Item = Token>> {
     // `true=for` (PopIter on break), false=while; parallels loop_starts/loop_breaks.
     pub(super) loop_kinds: Vec<bool>,
     pub(super) expr_depth: usize,
+    pub(super) block_depth: usize,
     pub(super) saw_newline: bool,
     /* True inside f-string brace expr; disables `=` assignment so `f"{x=}"` parses as debug form. */
     pub(super) in_fstring_expr: bool,
@@ -459,6 +460,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             saw_newline: false,
             in_fstring_expr: false,
             expr_depth: 0,
+            block_depth: 0,
             last_line: 0,
             last_end: 0,
             bracket_stack: Vec::new(),

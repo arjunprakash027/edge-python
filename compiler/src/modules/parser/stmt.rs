@@ -1,7 +1,7 @@
 use crate::s;
 
 use super::Parser;
-use super::types::OpCode;
+use super::types::{OpCode, MAX_BLOCK_DEPTH};
 
 use crate::modules::lexer::{Token, TokenType};
 
@@ -331,6 +331,15 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
     /* Compiles Indent/Dedent block; is_body=true stops after ReturnValue to skip dead code. */
     fn compile_block_inner(&mut self, is_body: bool) {
+        if self.block_depth >= MAX_BLOCK_DEPTH {
+            self.errors.push(crate::modules::parser::types::Diagnostic {
+                msg: crate::s!("nesting too deep"),
+                start: self.tokens.peek().map_or(0, |t| t.start),
+                end: self.tokens.peek().map_or(0, |t| t.end),
+            });
+            return;
+        }
+        self.block_depth += 1;
         let indented = self.eat_if(TokenType::Indent);
         loop {
             while self.eat_if(TokenType::Semi) {}
@@ -349,6 +358,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 if just_returned || !matches!(self.peek(), Some(TokenType::Semi)) { break; }
             } else if !matches!(self.peek(), Some(TokenType::Semi)) { break; }
         }
+        self.block_depth -= 1;
     }
 
     /* Name-led statement: assign, augmented-op, attr, index, call, or tuple unpack. */
