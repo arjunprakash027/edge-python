@@ -2,12 +2,13 @@ use compiler::modules::lexer::{lex, TokenType};
 use compiler::modules::lexer::tables::token_to_str;
 use compiler::modules::parser::{Parser, SSAChunk};
 use compiler::modules::vm::{VM, Val};
-use std::{panic, time::{Duration, Instant, SystemTime}};
+use std::{panic, sync::mpsc, thread, time::{Duration, Instant, SystemTime}};
 
 const MAX_LEN: usize = 2048;
 const SAVE_DIR: &str = "crashes";
 const PRINT_INTERVAL: u64 = 10_000;
-const MAX_SECS: u64 = 600; // 60 seconds
+const MAX_SECS: u64 = 600; // 10 minutes
+const VM_TIMEOUT: Duration = Duration::from_millis(200);
 const SLOW_THRESHOLD: Duration = Duration::from_millis(50);
 
 struct Rng(u64);
@@ -275,32 +276,37 @@ impl Perf {
     }
 }
 
-enum Outcome { Crash, ParseErr, VmErr, Clean(u128, Duration, Duration, Duration) }
+enum Outcome { Crash, ParseErr, VmErr, Timeout, Clean(u128, Duration, Duration, Duration) }
 
 fn run_once(src: &str) -> Outcome {
-    let src = if src.len() > MAX_LEN { &src[..MAX_LEN] } else { src };
-    match panic::catch_unwind(panic::AssertUnwindSafe(|| {
-        let t0 = Instant::now();
-        let (tokens, _) = lex(src);
-        let t_lex = t0.elapsed();
+    let src = if src.len() > MAX_LEN { src[..MAX_LEN].to_string() } else { src.to_string() };
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let outcome = match panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            let t0 = Instant::now();
+            let (tokens, _) = lex(&src);
+            let t_lex = t0.elapsed();
 
-        let t1 = Instant::now();
-        let (chunk, errs) = Parser::new(src, tokens.into_iter()).parse();
-        let t_parse = t1.elapsed();
+            let t1 = Instant::now();
+            let (chunk, errs) = Parser::new(&src, tokens.into_iter()).parse();
+            let t_parse = t1.elapsed();
 
-        let bm = opcode_bitmap(&chunk);
+            let bm = opcode_bitmap(&chunk);
 
-        let t2 = Instant::now();
-        let ok = VM::new(&chunk).run().is_ok();
-        let t_vm = t2.elapsed();
+            let t2 = Instant::now();
+            let ok = VM::new(&chunk).run().is_ok();
+            let t_vm = t2.elapsed();
 
-        (errs.is_empty(), ok, bm, t_lex, t_parse, t_vm)
-    })) {
-        Err(_) => Outcome::Crash,
-        Ok((false, ..)) => Outcome::ParseErr,
-        Ok((true, false, ..)) => Outcome::VmErr,
-        Ok((true, true, bm, tl, tp, tv)) => Outcome::Clean(bm, tl, tp, tv),
-    }
+            (errs.is_empty(), ok, bm, t_lex, t_parse, t_vm)
+        })) {
+            Err(_) => Outcome::Crash,
+            Ok((false, ..)) => Outcome::ParseErr,
+            Ok((true, false, ..)) => Outcome::VmErr,
+            Ok((true, true, bm, tl, tp, tv)) => Outcome::Clean(bm, tl, tp, tv),
+        };
+        let _ = tx.send(outcome);
+    });
+    rx.recv_timeout(VM_TIMEOUT).unwrap_or(Outcome::Timeout)
 }
 
 struct Corpus { entries: Vec<String>, seen: u128 }
@@ -318,14 +324,14 @@ impl Corpus {
     }
 }
 
-struct Stats { iters: u64, crashes: u64, adds: u64, start: Instant }
+struct Stats { iters: u64, crashes: u64, adds: u64, timeouts: u64, start: Instant }
 
 impl Stats {
-    fn new() -> Self { Self { iters: 0, crashes: 0, adds: 0, start: Instant::now() } }
+    fn new() -> Self { Self { iters: 0, crashes: 0, adds: 0, timeouts: 0, start: Instant::now() } }
     fn print(&self, corpus: usize, perf: &Perf) {
         let s = self.start.elapsed().as_secs_f64().max(0.001);
-        eprintln!("[{:7.1}s] iters={:<9} {:.0}/s  crashes={}  corpus={}  new_cov={}",
-            s, self.iters, self.iters as f64 / s, self.crashes, corpus, self.adds);
+        eprintln!("[{:7.1}s] iters={:<9} {:.0}/s  crashes={}  timeouts={}  corpus={}  new_cov={}",
+            s, self.iters, self.iters as f64 / s, self.crashes, self.timeouts, corpus, self.adds);
         perf.print();
     }
 }
@@ -362,6 +368,7 @@ fn main() {
                 }
                 if corpus.add(input, bm) { stats.adds += 1; }
             }
+            Outcome::Timeout => { stats.timeouts += 1; }
             _ => {}
         }
 
