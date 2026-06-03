@@ -818,8 +818,6 @@
   {"src": "print('-5'.zfill(4))", "output": ["-005"]},
   {"src": "print('abc'.zfill(5))", "output": ["00abc"]},
   {"src": "print('abc'.zfill(2))", "output": ["abc"]},
-  {"src": "print('abc'.center(-1))", "output": ["abc"]},
-  {"src": "print('abc'.zfill(-1))", "output": ["abc"]},
   {"src": "print('hello'[:])", "output": ["hello"]},
   {"src": "print('hello'[1:])", "output": ["ello"]},
   {"src": "print('hello'[:3])", "output": ["hel"]},

@@ -34,4 +34,3 @@ inherits = "release"
 opt-level = 3
 strip = false
 debug = true
-panic = "unwind"

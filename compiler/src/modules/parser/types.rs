@@ -5,7 +5,6 @@ use crate::modules::vm::types::ExternFn;
 use alloc::{string::{String, ToString}, vec, vec::Vec};
 
 pub(crate) const MAX_EXPR_DEPTH: usize = 200;
-pub(crate) const MAX_BLOCK_DEPTH: usize = 80;
 pub(crate) const MAX_INSTRUCTIONS: usize = 65_535;
 
 #[derive(Debug, Clone, Copy, PartialEq)]

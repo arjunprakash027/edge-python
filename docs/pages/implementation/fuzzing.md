@@ -18,10 +18,9 @@ corpus -> mutate -> lex + parse + vm -> catch_unwind -> [crash | new coverage | 
 | `Crash`       | panic anywhere in the pipeline               | save to `crashes/crash_NNNNNN.py`      |
 | `ParseErr`    | parser emitted one or more diagnostics       | discard                                |
 | `VmErr`       | VM returned a typed error                    | discard                                |
-| `Timeout`     | VM did not finish within 200 ms              | discard, increment timeout counter     |
 | `Clean(bm)`   | compiled and executed without panic          | admit to corpus if `bm` covers new opcodes |
 
-`ParseErr`, `VmErr`, and `Timeout` are expected outcomes — typed errors and infinite loops are not bugs. Only an unhandled panic indicates a defect.
+`ParseErr` and `VmErr` are expected outcomes — typed errors are not bugs. Only an unhandled panic indicates a defect.
 
 ## Coverage
 
@@ -31,7 +30,7 @@ An input is admitted to the corpus only when its bitmap introduces at least one 
 
 ## Iteration
 
-Some strategies are applied uniformly at random: `byte_flip` (XOR a random byte), `insert_keyword`, `drop_line`, `duplicate_line`, `splice` (join two corpus halves), `inject_boundary` (i64 boundary literals targeting VM overflow), `deep_nest` (100–220 bracket levels, attacks `MAX_EXPR_DEPTH`), `token_shuffle`, `indent_bomb` (50–110 nested `if True:` blocks), and `add_comment`.
+Some sstrategies are applied uniformly at random: `byte_flip` (XOR a random byte), `insert_keyword`, `drop_line`, `duplicate_line`, `splice` (join two corpus halves), `inject_boundary` (i64 boundary literals targeting VM overflow), `deep_nest` (100–220 bracket levels, attacks `MAX_EXPR_DEPTH`), `token_shuffle`, `indent_bomb` (50–110 nested `if True:` blocks), and `add_comment`.
 
 ## Known Targets
 
@@ -58,7 +57,7 @@ The `fuzz` profile inherits from `release` with two overrides: `panic = "unwind"
 Output is written to stderr every 10 000 iterations:
 
 ```txt
-[5.3s]  iters=10000  1886/s  crashes=0  timeouts=2  corpus=24  new_cov=4
+[5.3s]  iters=10000  1886/s  crashes=0  corpus=24  new_cov=4
 ```
 
 Crashes are saved immediately on detection. To reproduce a crash against the standard compiler binary:
