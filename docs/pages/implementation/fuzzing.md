@@ -15,7 +15,7 @@ The target runs the VM under `Limits::sandbox()`, so runaway loops and allocatio
 cd compiler/fuzz-afl
 ./seeds.sh # generate corpus + dictionary from vm.json (once)
 cargo afl build # instrument on stable, no nightly
-cargo afl fuzz -i in -o out -x edge.dict target/debug/afl-pipeline
+cargo afl fuzz -i in -o out -x edge.dict target/debug/afl-pipeline # runs until Ctrl-C; add -V 300 to stop after 300s
 ```
 
 Under WSL, prefix the fuzz command with `AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1` to bypass the core-pattern and CPU-governor checks. Crashes and hangs land in `out/default/`. Reproduce one by piping it back into the target:

@@ -72,7 +72,7 @@ Coverage-guided fuzzing of the lex -> parse -> VM pipeline lives in [`fuzz-afl/`
 cd compiler/fuzz-afl
 ./seeds.sh # generate corpus + dictionary from vm.json (once)
 cargo afl build # instrument on stable, no nightly
-cargo afl fuzz -i in -o out -x edge.dict target/debug/afl-pipeline
+cargo afl fuzz -i in -o out -x edge.dict target/debug/afl-pipeline # runs until Ctrl-C; add -V 300 to stop after 300s
 ```
 
 Seeds and the dictionary are generated from `tests/cases/vm.json`, so they are gitignored. Under WSL, prefix the fuzz command with `AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1`. See [Fuzzing](https://edgepython.com/implementation/fuzzing) for details.
