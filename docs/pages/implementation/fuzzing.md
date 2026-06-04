@@ -16,9 +16,11 @@ cd compiler/fuzz-afl
 ./seeds.sh # generate corpus + dictionary from vm.json (once)
 cargo afl build # instrument on stable, no nightly
 cargo afl fuzz -i in -o out -x edge.dict target/debug/afl-pipeline # runs until Ctrl-C; add -V 300 to stop after 300s
+
+cargo afl whatsup out # status summary of the ./out campaign; run in another terminal while fuzzing
 ```
 
-Under WSL, prefix the fuzz command with `AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1` to bypass the core-pattern and CPU-governor checks. Crashes and hangs land in `out/default/`. Reproduce one by piping it back into the target:
+Reusing the same `out/` resumes the campaign: AFL recalibrates the saved queue (the dry-run pass) before fuzzing, so `execs` sits at 0 for a while; delete it with `rm -rf out` for a clean start. Under WSL, prefix the fuzz command with `AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1` to bypass the core-pattern and CPU-governor checks. Crashes and hangs land in `out/default/`. Reproduce one by piping it back into the target:
 
 ```bash
 ./target/debug/afl-pipeline < out/default/crashes/<id>

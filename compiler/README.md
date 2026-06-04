@@ -73,9 +73,11 @@ cd compiler/fuzz-afl
 ./seeds.sh # generate corpus + dictionary from vm.json (once)
 cargo afl build # instrument on stable, no nightly
 cargo afl fuzz -i in -o out -x edge.dict target/debug/afl-pipeline # runs until Ctrl-C; add -V 300 to stop after 300s
+
+cargo afl whatsup out # status summary of the ./out campaign; run in another terminal while fuzzing
 ```
 
-Seeds and the dictionary are generated from `tests/cases/vm.json`, so they are gitignored. Under WSL, prefix the fuzz command with `AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1`. See [Fuzzing](https://edgepython.com/implementation/fuzzing) for details.
+Seeds and the dictionary are generated from `tests/cases/vm.json`, so they are gitignored. Reusing the same `out/` resumes the campaign: AFL recalibrates the saved queue (the dry-run pass) before fuzzing, so `execs` sits at 0 for a while; delete it with `rm -rf out` for a clean start. Under WSL, prefix the fuzz command with `AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1`. See [Fuzzing](https://edgepython.com/implementation/fuzzing) for details.
 
 ## References
 
