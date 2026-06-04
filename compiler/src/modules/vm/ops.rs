@@ -389,18 +389,21 @@ impl<'a> VM<'a> {
         let n = count.max(0) as usize;
         match self.heap.get(seq_val) {
             HeapObj::Str(s) => {
+                s.len().checked_mul(n).ok_or(cold_overflow())?;
                 let r = s.repeat(n);
                 return self.heap.alloc(HeapObj::Str(r));
             }
             HeapObj::List(rc) => {
                 let src = rc.borrow().clone();
-                let mut out = Vec::with_capacity(src.len() * n);
+                let cap = src.len().checked_mul(n).ok_or(cold_overflow())?;
+                let mut out = Vec::with_capacity(cap);
                 for _ in 0..n { out.extend_from_slice(&src); }
                 return self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(out))));
             }
             HeapObj::Tuple(v) => {
                 let src = v.clone();
-                let mut out = Vec::with_capacity(src.len() * n);
+                let cap = src.len().checked_mul(n).ok_or(cold_overflow())?;
+                let mut out = Vec::with_capacity(cap);
                 for _ in 0..n { out.extend_from_slice(&src); }
                 return self.heap.alloc(HeapObj::Tuple(out));
             }

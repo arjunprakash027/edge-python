@@ -68,7 +68,11 @@ impl<'a> VM<'a> {
             HeapObj::Tuple(v) => v.len() as i64,
             HeapObj::Dict(v) => v.borrow().len() as i64,
             HeapObj::Set(v) => v.borrow().len() as i64,
-            HeapObj::Range(s,e,st) => { let st=*st; ((e-s+st-st.signum())/st).max(0) }
+            HeapObj::Range(s,e,st) => {
+                let (s, e, st) = (*s as i128, *e as i128, *st as i128);
+                if st == 0 { return Err(cold_value("range() step cannot be zero")); }
+                (((e - s + st - st.signum()) / st).max(0)) as i64
+            }
             _ => return Err(cold_type("object has no len()")),
         }} else { return Err(cold_type("object has no len()")); };
         self.push(Val::int(n)); Ok(())
@@ -237,8 +241,17 @@ impl<'a> VM<'a> {
             HeapObj::Range(s, e, st) if include_range => {
                 let (mut cur, end, step) = (*s, *e, *st);
                 let mut out = Vec::new();
-                if step > 0 { while cur < end { out.push(Val::int(cur)); cur += step; } }
-                else { while cur > end { out.push(Val::int(cur)); cur += step; } }
+                if step > 0 {
+                    while cur < end {
+                        out.push(Val::int(cur));
+                        match cur.checked_add(step) { Some(n) => cur = n, None => break }
+                    }
+                } else {
+                    while cur > end {
+                        out.push(Val::int(cur));
+                        match cur.checked_add(step) { Some(n) => cur = n, None => break }
+                    }
+                }
                 Some(out)
             }
             HeapObj::Dict(d) => Some(d.borrow().keys().collect()),

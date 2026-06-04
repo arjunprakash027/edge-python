@@ -402,9 +402,9 @@ pub(super) fn parse_string(s: &str) -> String {
     let is_raw = has_raw_prefix(s);
     let s = s.trim_start_matches(|c: char| "bBrRuU".contains(c));
     let inner = if s.starts_with("\"\"\"") || s.starts_with("'''") {
-        &s[3..s.len() - 3]
+        s.get(3..s.len().saturating_sub(3)).unwrap_or("")
     } else {
-        &s[1..s.len() - 1]
+        s.get(1..s.len().saturating_sub(1)).unwrap_or("")
     };
     if is_raw { inner.to_string() } else { unescape(inner) }
 }
@@ -419,12 +419,12 @@ pub(super) fn parse_bytes_literal(s: &str) -> alloc::vec::Vec<u8> {
         i += 1;
     }
     // Strip triple or single quotes.
-    let body = if bytes.len() >= i + 6
+    let body: &[u8] = if bytes.len() >= i + 6
         && (bytes[i..i + 3] == *b"\"\"\"" || bytes[i..i + 3] == *b"'''")
     {
         &bytes[i + 3..bytes.len() - 3]
     } else {
-        &bytes[i + 1..bytes.len() - 1]
+        bytes.get(i + 1..bytes.len().saturating_sub(1)).unwrap_or(&[])
     };
     if is_raw { return body.to_vec(); }
 

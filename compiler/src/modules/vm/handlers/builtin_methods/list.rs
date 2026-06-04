@@ -60,7 +60,7 @@ pub fn insert(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     list_mut(vm, recv, "insert: receiver is not a list", |list| {
         let i = pos[0].as_int();
         let ui = if i < 0 {
-            (list.len() as i64 + i).max(0) as usize
+            (list.len() as i64).saturating_add(i).max(0) as usize
         } else {
             (i as usize).min(list.len())
         };
@@ -87,7 +87,11 @@ pub fn pop(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
         if pos.is_empty() { return Ok(list.pop().unwrap()); }
         if !pos[0].is_int() { return Err(cold_type("list indices must be integers")); }
         let i = pos[0].as_int();
-        let ui = if i < 0 { (list.len() as i64 + i) as usize } else { i as usize };
+        let ui = if i < 0 {
+            let adj = (list.len() as i64).saturating_add(i);
+            if adj < 0 { return Err(cold_value("pop index out of range")); }
+            adj as usize
+        } else { i as usize };
         if ui >= list.len() { return Err(cold_value("pop index out of range")); }
         Ok(list.remove(ui))
     })?;
