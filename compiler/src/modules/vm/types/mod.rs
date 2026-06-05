@@ -73,13 +73,16 @@ impl core::hash::Hash for Val {
     #[inline]
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         // Hash ints as i64 and integral floats as that same int so 1 and 1.0 share a key (47-bit ints fit f64 losslessly). Bit-hashing int-valued f64s clusters (zero low mantissa bits) and degrades int-keyed dict/set to O(n^2).
-        if self.is_int() { state.write_i64(self.as_int()); }
-        else if self.is_float() {
+        if self.is_int() {
+            state.write_i64(self.as_int());
+        } else if self.is_float() {
             let f = self.as_float();
-            if f.fract() == 0.0 && f >= i64::MIN as f64 && f <= i64::MAX as f64 { state.write_i64(f as i64); }
+            // Round-trip via i64 tests "integral and in i64 range" in one step (the cast saturates out-of-range / non-finite, so they fail to round-trip). No std `f64::fract`.
+            if f as i64 as f64 == f { state.write_i64(f as i64); }
             else { state.write_u64(f.to_bits()); }
+        } else {
+            self.0.hash(state);
         }
-        else { self.0.hash(state); }
     }
 }
 
