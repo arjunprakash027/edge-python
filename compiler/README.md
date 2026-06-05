@@ -52,7 +52,7 @@ This crate declares `links = "compiler"` and its `build.rs` downloads the matchi
 ```toml
 # Downstream Cargo.toml
 [dependencies]
-edge-python = { git = "https://github.com/dylan-sutton-chavez/edge-python", tag = "v0.1.0" }
+edge-python = { git = "https://github.com/dylan-sutton-chavez/edge-python", tag = "v0.1.2" }
 ```
 
 ```rust
