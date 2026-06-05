@@ -236,6 +236,8 @@ pub fn center(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let s = recv_str(vm, recv)?;
     if !pos[0].is_int() { return Err(cold_type("center() width must be an integer")); }
     let width = pos[0].as_int().max(0) as usize;
+    // User-controlled width drives the output size; cap it so a huge value errors instead of aborting in the allocator.
+    if width > vm.heap.limit() { return Err(cold_heap()); }
     let fill = if pos.len() > 1 {
         val_to_str(vm, pos[1])?.chars().next().unwrap_or(' ')
     } else { ' ' };
@@ -252,6 +254,8 @@ pub fn zfill(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     if !pos[0].is_int() { return Err(cold_type("zfill() requires an integer argument")); }
     let s = recv_str(vm, recv)?;
     let width = pos[0].as_int().max(0) as usize;
+    // User-controlled width drives the output size; cap it so a huge value errors instead of aborting in the allocator.
+    if width > vm.heap.limit() { return Err(cold_heap()); }
     let nchars = s.chars().count();
     let out = if nchars >= width {
         s
