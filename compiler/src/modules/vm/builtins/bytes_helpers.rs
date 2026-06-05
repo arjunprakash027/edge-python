@@ -35,12 +35,12 @@ impl<'a> VM<'a> {
     pub fn call_int_from_bytes(&mut self) -> Result<(), VmErr> {
         let order = self.pop()?;
         let v = self.pop()?;
-        let buf = match self.heap.get(v) {
-            HeapObj::Bytes(b) => b.clone(),
+        let buf = match self.heap.try_get(v) {
+            Some(HeapObj::Bytes(b)) => b.clone(),
             _ => return Err(cold_type("int_from_bytes() first arg must be bytes")),
         };
-        let order_s = match self.heap.get(order) {
-            HeapObj::Str(s) => s.clone(),
+        let order_s = match self.heap.try_get(order) {
+            Some(HeapObj::Str(s)) => s.clone(),
             _ => return Err(cold_type("int_from_bytes() byteorder must be 'big' or 'little'")),
         };
         if buf.len() > 8 { return Err(cold_overflow()); }
@@ -71,8 +71,8 @@ impl<'a> VM<'a> {
         let length = length.as_int() as usize;
         if length > 8 { return Err(cold_value("int_to_bytes() length must be <= 8")); }
         if n_i128 < 0 { return Err(cold_value("int_to_bytes() requires a non-negative int")); }
-        let order_s = match self.heap.get(order) {
-            HeapObj::Str(s) => s.clone(),
+        let order_s = match self.heap.try_get(order) {
+            Some(HeapObj::Str(s)) => s.clone(),
             _ => return Err(cold_type("int_to_bytes() byteorder must be 'big' or 'little'")),
         };
         let big = match order_s.as_str() {

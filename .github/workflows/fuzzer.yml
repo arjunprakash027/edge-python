@@ -39,7 +39,7 @@ jobs:
       - name: Seeds and instrumented build
         working-directory: compiler/fuzz-afl
         run: |
-          ./seeds.sh
+          bash ./seeds.sh
           cargo afl build
 
       - name: Fuzz on all cores
