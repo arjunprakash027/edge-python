@@ -131,7 +131,7 @@ runs:
 
     - name: Upload WASM Release
       if: inputs.mode == 'build' && startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       with:
         token: ${{ inputs.github-token }}
         files: target/wasm32-unknown-unknown/release/compiler.wasm
