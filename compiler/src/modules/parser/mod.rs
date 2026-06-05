@@ -351,7 +351,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     }
 
     pub(super) fn patch(&mut self, pos: usize) {
-        self.chunk.instructions[pos].operand = self.chunk.instructions.len() as u16;
+        let target = self.chunk.instructions.len() as u16;
+        // Error recovery can leave a stale placeholder; skip if it was never emitted.
+        if let Some(ins) = self.chunk.instructions.get_mut(pos) { ins.operand = target; }
     }
 
     /* Consumes kind or emits diagnostic; for missing closers anchors at opener and drops cascade. */

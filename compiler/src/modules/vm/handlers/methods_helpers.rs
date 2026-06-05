@@ -8,40 +8,40 @@ use super::*;
 
 #[inline]
 pub(super) fn recv_str(vm: &VM, recv: Val) -> Result<String, VmErr> {
-    match vm.heap.get(recv) {
-        HeapObj::Str(s) => Ok(s.clone()),
+    match vm.heap.try_get(recv) {
+        Some(HeapObj::Str(s)) => Ok(s.clone()),
         _ => Err(cold_type("method requires a string receiver")),
     }
 }
 
 #[inline]
 pub(super) fn recv_bytes(vm: &VM, recv: Val) -> Result<Vec<u8>, VmErr> {
-    match vm.heap.get(recv) {
-        HeapObj::Bytes(b) => Ok(b.clone()),
+    match vm.heap.try_get(recv) {
+        Some(HeapObj::Bytes(b)) => Ok(b.clone()),
         _ => Err(cold_type("method requires a bytes receiver")),
     }
 }
 
 #[inline]
 pub(super) fn val_to_str(vm: &VM, v: Val) -> Result<String, VmErr> {
-    match vm.heap.get(v) {
-        HeapObj::Str(s) => Ok(s.clone()),
+    match vm.heap.try_get(v) {
+        Some(HeapObj::Str(s)) => Ok(s.clone()),
         _ => Err(cold_type("argument must be a string")),
     }
 }
 
 #[inline]
 pub(super) fn list_clone(vm: &VM, recv: Val) -> Result<Vec<Val>, VmErr> {
-    match vm.heap.get(recv) {
-        HeapObj::List(rc) => Ok(rc.borrow().clone()),
+    match vm.heap.try_get(recv) {
+        Some(HeapObj::List(rc)) => Ok(rc.borrow().clone()),
         _ => Err(cold_type("method requires a list receiver")),
     }
 }
 
 #[inline]
 pub(super) fn dict_entries(vm: &VM, recv: Val) -> Result<Vec<(Val, Val)>, VmErr> {
-    match vm.heap.get(recv) {
-        HeapObj::Dict(rc) => Ok(rc.borrow().entries.clone()),
+    match vm.heap.try_get(recv) {
+        Some(HeapObj::Dict(rc)) => Ok(rc.borrow().entries.clone()),
         _ => Err(cold_type("method requires a dict receiver")),
     }
 }
@@ -51,8 +51,8 @@ pub(super) fn dict_entries(vm: &VM, recv: Val) -> Result<Vec<(Val, Val)>, VmErr>
 pub(super) fn list_mut<F, R>(vm: &mut VM, recv: Val, err: &'static str, f: F) -> Result<R, VmErr>
 where F: FnOnce(&mut Vec<Val>) -> Result<R, VmErr>
 {
-    match vm.heap.get_mut(recv) {
-        HeapObj::List(rc) => f(&mut rc.borrow_mut()),
+    match vm.heap.try_get_mut(recv) {
+        Some(HeapObj::List(rc)) => f(&mut rc.borrow_mut()),
         _ => Err(cold_type(err)),
     }
 }
@@ -62,8 +62,8 @@ where F: FnOnce(&mut Vec<Val>) -> Result<R, VmErr>
 pub(super) fn dict_mut<F, R>(vm: &mut VM, recv: Val, err: &'static str, f: F) -> Result<R, VmErr>
 where F: FnOnce(&mut DictMap) -> Result<R, VmErr>
 {
-    match vm.heap.get_mut(recv) {
-        HeapObj::Dict(rc) => f(&mut rc.borrow_mut()),
+    match vm.heap.try_get_mut(recv) {
+        Some(HeapObj::Dict(rc)) => f(&mut rc.borrow_mut()),
         _ => Err(cold_type(err)),
     }
 }

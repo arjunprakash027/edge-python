@@ -72,10 +72,17 @@ impl Eq for Val {}
 impl core::hash::Hash for Val {
     #[inline]
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        // Funnel int/float through f64 bits so 1 and 1.0 share a key (47-bit ints fit losslessly).
-        if self.is_int() { (self.as_int() as f64).to_bits().hash(state); }
-        else if self.is_float() { self.as_float().to_bits().hash(state); }
-        else { self.0.hash(state); }
+        // Hash ints as i64 and integral floats as that same int so 1 and 1.0 share a key (47-bit ints fit f64 losslessly). Bit-hashing int-valued f64s clusters (zero low mantissa bits) and degrades int-keyed dict/set to O(n^2).
+        if self.is_int() {
+            state.write_i64(self.as_int());
+        } else if self.is_float() {
+            let f = self.as_float();
+            // Round-trip via i64 tests "integral and in i64 range" in one step (the cast saturates out-of-range / non-finite, so they fail to round-trip). No std `f64::fract`.
+            if f as i64 as f64 == f { state.write_i64(f as i64); }
+            else { state.write_u64(f.to_bits()); }
+        } else {
+            self.0.hash(state);
+        }
     }
 }
 
@@ -518,6 +525,9 @@ impl HeapPool {
 
     pub fn usage(&self) -> usize { self.live }
 
+    /* Object-count budget, reused as a byte cap for single oversized allocations. */
+    pub fn limit(&self) -> usize { self.limit }
+
     #[inline(always)] pub fn get(&self, v: Val) -> &HeapObj {
         self.slots[v.as_heap() as usize].obj
             .as_ref()
@@ -527,6 +537,16 @@ impl HeapPool {
         self.slots[v.as_heap() as usize].obj
             .as_mut()
             .expect("garbage collector invariant violated: live Val references a freed heap slot (mut)")
+    }
+
+    /* Panic-free access for type checks: None when `v` is not a live heap object. */
+    #[inline] pub fn try_get(&self, v: Val) -> Option<&HeapObj> {
+        if !v.is_heap() { return None; }
+        self.slots.get(v.as_heap() as usize).and_then(|s| s.obj.as_ref())
+    }
+    #[inline] pub fn try_get_mut(&mut self, v: Val) -> Option<&mut HeapObj> {
+        if !v.is_heap() { return None; }
+        self.slots.get_mut(v.as_heap() as usize).and_then(|s| s.obj.as_mut())
     }
 
 

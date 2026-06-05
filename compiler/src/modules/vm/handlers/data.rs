@@ -5,7 +5,8 @@ impl<'a> VM<'a> {
     /* StoreName: single SSA slot write after register coalescing. */
     pub(crate) fn handle_store(&mut self, operand: u16, slots: &mut [Val]) -> Result<(), VmErr> {
         let v = self.pop()?;
-        slots[operand as usize] = v;
+        // Malformed bytecode can carry an out-of-range slot; drop the write rather than panic.
+        if let Some(s) = slots.get_mut(operand as usize) { *s = v; }
         Ok(())
     }
 
@@ -113,7 +114,9 @@ impl<'a> VM<'a> {
         match (kind, self.heap.get(acc)) {
             ("list", HeapObj::List(rc)) => { rc.borrow_mut().push(value); }
             ("set", HeapObj::Set(rc))  => {
-                let already = rc.borrow().iter().any(|&x| eq_vals_with_heap(x, value, &self.heap));
+                // Non-heap values dedup correctly via Hash/Eq; only heap values need a content scan.
+                let already = value.is_heap()
+                    && rc.borrow().iter().any(|&x| eq_vals_with_heap(x, value, &self.heap));
                 if !already && let HeapObj::Set(rc) = self.heap.get(acc) {
                     rc.borrow_mut().insert(value);
                 }
@@ -132,8 +135,8 @@ impl<'a> VM<'a> {
         match op {
             OpCode::DictUpdate => {
                 // `**` requires a mapping; later keys overwrite earlier ones.
-                let pairs: Vec<(Val, Val)> = match self.heap.get(src) {
-                    HeapObj::Dict(rc) => rc.borrow().iter().collect(),
+                let pairs: Vec<(Val, Val)> = match self.heap.try_get(src) {
+                    Some(HeapObj::Dict(rc)) => rc.borrow().iter().collect(),
                     _ => return Err(cold_type("argument after ** must be a mapping")),
                 };
                 if let HeapObj::Dict(rc) = self.heap.get(acc) {

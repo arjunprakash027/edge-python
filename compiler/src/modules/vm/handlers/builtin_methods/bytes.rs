@@ -50,7 +50,10 @@ pub fn endswith(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
 pub fn find(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let buf = recv_bytes(vm, recv)?;
     let sub = recv_bytes(vm, pos[0])?;
-    let idx = buf.windows(sub.len()).position(|w| w == sub.as_slice()).map(|i| i as i64).unwrap_or(-1);
+    // Empty needle matches at 0 (CPython); windows(0) would panic.
+    let idx = if sub.is_empty() { 0 } else {
+        buf.windows(sub.len()).position(|w| w == sub.as_slice()).map(|i| i as i64).unwrap_or(-1)
+    };
     vm.push(Val::int(idx));
     Ok(())
 }
@@ -58,7 +61,9 @@ pub fn find(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
 pub fn index(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let buf = recv_bytes(vm, recv)?;
     let sub = recv_bytes(vm, pos[0])?;
-    let idx = buf.windows(sub.len()).position(|w| w == sub.as_slice()).ok_or(cold_value("subsection not found"))?;
+    let idx = if sub.is_empty() { 0 } else {
+        buf.windows(sub.len()).position(|w| w == sub.as_slice()).ok_or(cold_value("subsection not found"))?
+    };
     vm.push(Val::int(idx as i64));
     Ok(())
 }

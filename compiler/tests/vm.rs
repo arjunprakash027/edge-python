@@ -4,6 +4,7 @@ mod test {
     use compiler::modules::lexer::lex;
     use compiler::modules::parser::Parser;
     use compiler::modules::vm::VM;
+    use compiler::modules::vm::types::Limits;
     use compiler::modules::vm::types::{SchedulerStatus, VmErr};
 
     #[derive(serde::Deserialize)]
@@ -58,6 +59,7 @@ mod test {
         }
     }
 
+    /* Runs every vm.json case under `Limits::sandbox()` rather than `none()`: the budget / heap / call-depth guards are off under `none` (`sandbox_off` short-circuits them), so only the bounded profile exercises the charge_step / charge_steps / back-edge-budget paths and lets cases assert that runaway allocation, recursion, and materialisation surface as `MemoryError` / `RecursionError` instead of hanging. Every case must therefore stay within the sandbox budget. */
     #[test]
     fn test_cases() {
         let cases: Vec<Case> = serde_json::from_str(include_str!("cases/vm.json")).expect("invalid JSON");
@@ -72,7 +74,7 @@ mod test {
                 continue;
             }
             let (chunk, _errors) = Parser::new(&case.src, tokens.into_iter()).parse();
-            let mut vm = VM::new(&chunk);
+            let mut vm = VM::with_limits(&chunk, Limits::sandbox());
             vm.input_buffer = case.input.clone();
             for evt in &case.events { vm.push_event(evt).expect("push_event"); }
             let result = drive(&mut vm, &case.interactive_events);
@@ -87,7 +89,7 @@ mod test {
         }
     }
 
-    /* Reruns every vm.json case in strict_input mode (host-supplied buffer; reading past = RuntimeError). Lex/parse errors are also asserted here. */
+    /* Reruns every vm.json case in strict_input mode (host-supplied buffer; reading past = RuntimeError) under `Limits::sandbox()` (see `test_cases` for why the bounded profile). Lex/parse errors are also asserted here. */
     #[test]
     fn strict_cases() {
         let cases: Vec<Case> = serde_json::from_str(include_str!("cases/vm.json")).expect("invalid JSON");
@@ -125,7 +127,7 @@ mod test {
                 }
             }
 
-            let mut vm = VM::new(&chunk);
+            let mut vm = VM::with_limits(&chunk, Limits::sandbox());
             vm.strict_input = true;
             vm.input_buffer = case.input.clone();
             for evt in &case.events { vm.push_event(evt).expect("push_event"); }

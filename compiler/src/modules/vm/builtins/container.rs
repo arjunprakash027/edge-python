@@ -175,10 +175,10 @@ impl<'a> VM<'a> {
             2 => {
                 // `bytes(s, "utf-8")`, string encoding form.
                 let (s, enc) = (args[0], args[1]);
-                let HeapObj::Str(text) = self.heap.get(s).clone() else {
+                let Some(HeapObj::Str(text)) = self.heap.try_get(s).cloned() else {
                     return Err(cold_type("bytes() first argument must be a string when encoding is given"));
                 };
-                let HeapObj::Str(encoding) = self.heap.get(enc) else {
+                let Some(HeapObj::Str(encoding)) = self.heap.try_get(enc) else {
                     return Err(cold_type("bytes() encoding must be a string"));
                 };
                 match encoding.as_str() {

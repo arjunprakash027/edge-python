@@ -99,7 +99,8 @@ impl<'a> VM<'a> {
         let (s, e) = if st > 0 {
             (clamp(start, 0), clamp(stop, len))
         } else {
-            (clamp(start, len - 1), clamp(stop, -1))
+            // Negative-step start caps at len-1; clamp's min(len) alone overshoots by one.
+            (clamp(start, len - 1).min(len - 1), clamp(stop, -1))
         };
 
         let mut indices = Vec::new();
@@ -270,7 +271,8 @@ impl<'a> VM<'a> {
         }
 
         // Extended slice (step!=1): collect indices; RHS length must match exactly.
-        let (s, e) = if st > 0 { (clamp(start, 0), clamp(stop, len)) } else { (clamp(start, len - 1), clamp(stop, -1)) };
+        // Negative-step start caps at len-1; clamp's min(len) alone would yield an out-of-range len.
+        let (s, e) = if st > 0 { (clamp(start, 0), clamp(stop, len)) } else { (clamp(start, len - 1).min(len - 1), clamp(stop, -1)) };
         let mut indices: Vec<usize> = Vec::new();
         let mut cur = s;
         if st > 0 { while cur < e { indices.push(cur as usize); cur += st; } }

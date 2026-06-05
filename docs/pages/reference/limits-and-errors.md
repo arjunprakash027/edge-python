@@ -63,11 +63,11 @@ hit max depth
 ```
 
 ```python
-# Heap quota, a tight loop allocating new objects
+# Heap quota, a tight loop retaining new objects
 try:
   xs = []
   while True:
-    xs = xs + [0] * 1000
+    xs.append([])
 except MemoryError:
   print("hit heap limit")
 ```
