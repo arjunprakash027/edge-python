@@ -1816,6 +1816,6 @@
   {"src": "async def g():\n    run(g())\n    return 1\nasync def h():\n    return run(g())\nrun(h())", "output": [], "error": "RecursionError"},
   {"src": "print([1, 2, 3, 4, 5][61::-2])", "output": ["[5, 3, 1]"]},
   {"src": "xs = [1, 2, 3, 4, 5]\nxs[61::-2] = []\nprint(xs)", "output": ["[2, 4]"]},
-  {"src": "d = {}\nd.update(-1)\nprint(d)", "output": [], "error": "SENTINEL"},
-  {"src": "d = {}\nd.update([1, 2])\nprint(d)", "output": [], "error": "SENTINEL"}
+  {"src": "d = {}\nd.update(-1)\nprint(d)", "output": [], "error": "'int' object is not iterable"},
+  {"src": "d = {}\nd.update([1, 2])\nprint(d)", "output": [], "error": "dictionary update sequence element must have length 2"}
 ]
