@@ -66,13 +66,15 @@ jobs:
           fi
           echo "no crashes (${#hangs[@]} hangs)"
 
+      # AFL names findings with colons (id:000000,...), which upload-artifact rejects. Tar them so the colons live inside the archive.
+      - name: Package findings
+        if: always()
+        run: tar -czf findings.tar.gz compiler/fuzz-afl/out/*/{crashes,hangs}
+
       - name: Upload findings
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: fuzz-findings
-          path: |
-            compiler/fuzz-afl/out/*/crashes
-            compiler/fuzz-afl/out/*/hangs
-          if-no-files-found: ignore
+          path: findings.tar.gz
           retention-days: 14
