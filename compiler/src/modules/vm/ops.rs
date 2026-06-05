@@ -6,6 +6,9 @@ use crate::modules::parser::types::OpCode;
 use alloc::{string::{String, ToString}, vec::Vec, rc::Rc};
 use core::cell::RefCell;
 
+/* Cap on nested-container rendering depth; stops self-referential prints from overflowing the stack. */
+const RENDER_DEPTH_MAX: usize = 100;
+
 /* Render `bytes` as `b'...'` (printable ASCII verbatim, rest escaped). */
 fn format_bytes(buf: &[u8]) -> String {
     let mut out = String::with_capacity(buf.len() + 3);
@@ -166,12 +169,16 @@ impl<'a> VM<'a> {
         }}
     }
 
-    fn append_reprs<'b>(&self, out: &mut String, it: impl Iterator<Item = &'b Val>) {
+    fn append_reprs<'b>(&self, out: &mut String, it: impl Iterator<Item = &'b Val>, seen: &mut Vec<u32>) {
         let mut first = true;
-        for v in it { if !first { out.push_str(", "); } out.push_str(&self.repr(*v)); first = false; }
+        for v in it { if !first { out.push_str(", "); } out.push_str(&self.repr_d(*v, seen)); first = false; }
     }
 
-    pub fn display(&self, v: Val) -> String {
+    pub fn display(&self, v: Val) -> String { self.display_d(v, &mut Vec::new()) }
+
+    /* Cycle-aware display: `seen` tracks containers on the current path, so self-referential structures emit "..." instead of recursing forever (and its length bounds raw nesting depth). */
+    fn display_d(&self, v: Val, seen: &mut Vec<u32>) -> String {
+        if seen.len() > RENDER_DEPTH_MAX { return "...".into(); }
         if v.is_int() { let mut b = itoa::Buffer::new(); return b.format(v.as_int()).into(); }
         if v.is_float() {
             let f = v.as_float();
@@ -196,11 +203,11 @@ impl<'a> VM<'a> {
             HeapObj::LongInt(i) => i128_to_dec(*i),
             HeapObj::Type(name) => s!("<class '", str name, "'>"),
             HeapObj::Func(i,_,_) => s!("<function ", int *i),
-            HeapObj::Slice(s,e,st) => s!("slice(", str &self.display(*s), ", ", str &self.display(*e), ", ", str &self.display(*st), ")"),
+            HeapObj::Slice(s,e,st) => s!("slice(", str &self.display_d(*s, seen), ", ", str &self.display_d(*e, seen), ", ", str &self.display_d(*st, seen), ")"),
             HeapObj::Range(s,e,st) => if *st == 1 { s!("range(", int *s, ", ", int *e, ")") } else { s!("range(", int *s, ", ", int *e, ", ", int *st, ")") },
-            HeapObj::List(l) => { let mut o = s!(cap: 32; "["); self.append_reprs(&mut o, l.borrow().iter()); o.push(']'); o },
-            HeapObj::Tuple(t) => if t.len() == 1 { s!("(", str &self.repr(t[0]), ",)") } else { let mut o = s!(cap: 32; "("); self.append_reprs(&mut o, t.iter()); o.push(')'); o },
-            HeapObj::Dict(d) => { let mut o = s!(cap: 32; "{"); for (i,(k,v)) in d.borrow().iter().enumerate() { if i>0 { o.push_str(", "); } o.push_str(&self.repr(k)); o.push_str(": "); o.push_str(&self.repr(v)); } o.push('}'); o },
+            HeapObj::List(l) => { let id = v.as_heap(); if seen.contains(&id) { return "[...]".into(); } seen.push(id); let mut o = s!(cap: 32; "["); self.append_reprs(&mut o, l.borrow().iter(), seen); o.push(']'); seen.pop(); o },
+            HeapObj::Tuple(t) => { let id = v.as_heap(); if seen.contains(&id) { return "(...)".into(); } seen.push(id); let o = if t.len() == 1 { s!("(", str &self.repr_d(t[0], seen), ",)") } else { let mut o = s!(cap: 32; "("); self.append_reprs(&mut o, t.iter(), seen); o.push(')'); o }; seen.pop(); o },
+            HeapObj::Dict(d) => { let id = v.as_heap(); if seen.contains(&id) { return "{...}".into(); } seen.push(id); let mut o = s!(cap: 32; "{"); for (i,(k,val)) in d.borrow().iter().enumerate() { if i>0 { o.push_str(", "); } o.push_str(&self.repr_d(k, seen)); o.push_str(": "); o.push_str(&self.repr_d(val, seen)); } o.push('}'); seen.pop(); o },
             HeapObj::BoundMethod(_, id) => s!("<built-in method ", str id.name(), ">"),
             HeapObj::NativeFn(id) => s!("<built-in function ", str id.name(), ">"),
             HeapObj::Class(name, _, _) => crate::s!("<class '", str name, "'>"  ),
@@ -218,12 +225,12 @@ impl<'a> VM<'a> {
             HeapObj::ExcInstance(name, args) => {
                 // `str(E("x"))` -> "x"; `repr(...)` handled elsewhere.
                 if args.len() == 1 {
-                    self.display(args[0])
+                    self.display_d(args[0], seen)
                 } else if args.is_empty() {
                     name.clone()
                 } else {
                     let mut o = s!(cap: 32; str name, "(");
-                    self.append_reprs(&mut o, args.iter());
+                    self.append_reprs(&mut o, args.iter(), seen);
                     o.push(')');
                     o
                 }
@@ -231,18 +238,22 @@ impl<'a> VM<'a> {
             HeapObj::Set(s) => {
                 let items: Vec<Val> = s.borrow().iter().cloned().collect();
                 if items.is_empty() { return "set()".into(); }
+                let id = v.as_heap(); if seen.contains(&id) { return "{...}".into(); } seen.push(id);
                 let mut out = String::new();
                 out.push('{');
-                self.append_reprs(&mut out, items.iter());
+                self.append_reprs(&mut out, items.iter(), seen);
                 out.push('}');
+                seen.pop();
                 out
             }
             HeapObj::FrozenSet(s) => {
                 let items: Vec<Val> = s.iter().cloned().collect();
                 if items.is_empty() { return "frozenset()".into(); }
+                let id = v.as_heap(); if seen.contains(&id) { return "frozenset({...})".into(); } seen.push(id);
                 let mut out = String::from("frozenset({");
-                self.append_reprs(&mut out, items.iter());
+                self.append_reprs(&mut out, items.iter(), seen);
                 out.push_str("})");
+                seen.pop();
                 out
             }
             HeapObj::Ellipsis => "Ellipsis".into(),
@@ -250,9 +261,11 @@ impl<'a> VM<'a> {
         }
     }
 
-    pub fn repr(&self, v: Val) -> String {
+    pub fn repr(&self, v: Val) -> String { self.repr_d(v, &mut Vec::new()) }
+
+    fn repr_d(&self, v: Val, seen: &mut Vec<u32>) -> String {
         if v.is_heap() && let HeapObj::Str(s) = self.heap.get(v) { return s!("'", str s, "'"); }
-        self.display(v)
+        self.display_d(v, seen)
     }
 
     pub fn lt_vals(&self, a: Val, b: Val) -> Result<bool, VmErr> {
@@ -319,6 +332,14 @@ impl<'a> VM<'a> {
             return self.int_to_val(ai.checked_add(bi));
         }
         if a.is_heap() && b.is_heap() {
+            // Charge the copy cost so growing concatenation in a loop stays bounded (avoids O(n^2)).
+            let copy_cost = match (self.heap.get(a), self.heap.get(b)) {
+                (HeapObj::Str(sa), HeapObj::Str(sb)) => Some(sa.len() + sb.len()),
+                (HeapObj::List(va), HeapObj::List(vb)) => Some(va.borrow().len() + vb.borrow().len()),
+                (HeapObj::Tuple(va), HeapObj::Tuple(vb)) => Some(va.len() + vb.len()),
+                _ => None,
+            };
+            if let Some(n) = copy_cost { self.charge_steps(n)?; }
             match (self.heap.get(a), self.heap.get(b)) {
                 (HeapObj::Str(sa), HeapObj::Str(sb)) => {
                     let sa = sa.clone();
@@ -389,13 +410,15 @@ impl<'a> VM<'a> {
         let n = count.max(0) as usize;
         match self.heap.get(seq_val) {
             HeapObj::Str(s) => {
-                s.len().checked_mul(n).ok_or(cold_overflow())?;
+                let bytes = s.len().checked_mul(n).ok_or(cold_overflow())?;
+                if bytes > self.heap.limit() { return Err(cold_heap()); }
                 let r = s.repeat(n);
                 return self.heap.alloc(HeapObj::Str(r));
             }
             HeapObj::List(rc) => {
                 let src = rc.borrow().clone();
                 let cap = src.len().checked_mul(n).ok_or(cold_overflow())?;
+                if cap > self.heap.limit() { return Err(cold_heap()); }
                 let mut out = Vec::with_capacity(cap);
                 for _ in 0..n { out.extend_from_slice(&src); }
                 return self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(out))));
@@ -403,6 +426,7 @@ impl<'a> VM<'a> {
             HeapObj::Tuple(v) => {
                 let src = v.clone();
                 let cap = src.len().checked_mul(n).ok_or(cold_overflow())?;
+                if cap > self.heap.limit() { return Err(cold_heap()); }
                 let mut out = Vec::with_capacity(cap);
                 for _ in 0..n { out.extend_from_slice(&src); }
                 return self.heap.alloc(HeapObj::Tuple(out));

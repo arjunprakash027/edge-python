@@ -12,6 +12,9 @@ pub fn format_value(v: Val, spec: &str, heap: &HeapPool) -> Result<String, &'sta
         return Ok(display_inline(v, heap));
     }
     let parsed = parse_spec(spec)?;
+    // Width and precision both drive allocation; cap them against the heap budget.
+    if parsed.width > heap.limit() { return Err("format width exceeds limit"); }
+    if parsed.precision.is_some_and(|p| p > heap.limit()) { return Err("format precision exceeds limit"); }
     apply(v, &parsed, heap)
 }
 

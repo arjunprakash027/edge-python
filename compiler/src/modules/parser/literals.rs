@@ -46,7 +46,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     let val_ins: Vec<Instruction> = self.chunk.instructions.drain(val_start..).collect();
                     let key_ins: Vec<Instruction> = self.chunk.instructions.drain(key_start..).collect();
                     self.chunk.emit(OpCode::BuildDict, 0);
-                    self.comprehension_loop(&[key_ins, val_ins], OpCode::MapAdd, &versions_before);
+                    self.comprehension_loop(&[(key_start, key_ins), (val_start, val_ins)], OpCode::MapAdd, &versions_before);
                     self.eat(TokenType::Rbrace);
                 } else {
                     // First pair already emitted; dict_tail consolidates if a later `**` appears.
@@ -57,7 +57,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 let versions_before = self.ssa_versions.clone();
                 let elem_ins: Vec<Instruction> = self.chunk.instructions.drain(key_start..).collect();
                 self.chunk.emit(OpCode::BuildSet, 0);
-                self.comprehension_loop(&[elem_ins], OpCode::SetAdd, &versions_before);
+                self.comprehension_loop(&[(key_start, elem_ins)], OpCode::SetAdd, &versions_before);
                 self.eat(TokenType::Rbrace);
             }
             _ => {
@@ -88,7 +88,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             let versions_before = self.ssa_versions.clone();
             let elem_ins: Vec<Instruction> = self.chunk.instructions.drain(elem_start..).collect();
             self.chunk.emit(OpCode::BuildList, 0);
-            self.comprehension_loop(&[elem_ins], OpCode::ListAppend, &versions_before);
+            self.comprehension_loop(&[(elem_start, elem_ins)], OpCode::ListAppend, &versions_before);
             self.eat(TokenType::Rsqb);
         } else {
             // First element already emitted; list_tail consolidates if a later `*` appears.
@@ -150,7 +150,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     }
 
     /* Emits for/if comprehension scaffolding; reinjcts body with loop-bound SSA slots. */
-    pub(super) fn comprehension_loop(&mut self, elem_bodies: &[Vec<Instruction>], append_op: OpCode, versions_before: &HashMap<String, u32>) {
+    pub(super) fn comprehension_loop(&mut self, elem_bodies: &[(usize, Vec<Instruction>)], append_op: OpCode, versions_before: &HashMap<String, u32>) {
         let mut loop_starts: Vec<u16> = Vec::new();
         let mut for_iters: Vec<usize> = Vec::new();
         let mut all_vars: Vec<String> = Vec::new();
@@ -204,10 +204,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             var_map.push((old_slot, new_slot));
         }
 
-        for body in elem_bodies {
+        for (orig_base, body) in elem_bodies {
+            // Body is relocated by this delta; internal jump targets (from `or`/`and`/membership) must shift with it.
+            let delta = self.chunk.instructions.len() as i64 - *orig_base as i64;
             for ins in body {
                 let operand = if matches!(ins.opcode, OpCode::LoadName | OpCode::StoreName) {
                     var_map.iter().find(|(k, _)| *k == ins.operand).map(|(_, v)| *v).unwrap_or(ins.operand)
+                } else if matches!(ins.opcode, OpCode::Jump | OpCode::JumpIfFalse | OpCode::JumpIfFalseOrPop | OpCode::JumpIfTrueOrPop) {
+                    (ins.operand as i64 + delta) as u16
                 } else {
                     ins.operand
                 };
@@ -401,13 +405,15 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let mut pos = 0u16;
         let mut kw = 0u16;
         while !matches!(self.peek(), Some(TokenType::Rpar) | None) {
+            // Forward-progress guard: malformed input must not spin and overflow `pos`.
+            let progress = self.last_end;
             let unpack = if self.eat_if(TokenType::DoubleStar) { Some(2u16) }
                 else if self.eat_if(TokenType::Star) { Some(1u16) }
                 else { None };
             if let Some(kind) = unpack {
                 self.expr();
                 self.chunk.emit(OpCode::UnpackArgs, kind);
-                pos += 1;
+                pos = pos.saturating_add(1);
             } else if matches!(self.peek(), Some(TokenType::Name)) {
                 let t = self.advance();
                 if matches!(self.peek(), Some(TokenType::Equal)) {
@@ -416,7 +422,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     let i = self.chunk.push_const(Value::Str(kw_name));
                     self.chunk.emit(OpCode::LoadConst, i);
                     self.expr();
-                    kw += 1;
+                    kw = kw.saturating_add(1);
                 } else {
                     let elem_start = self.chunk.instructions.len();
                     self.name(t);
@@ -425,9 +431,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                         let versions_before = self.ssa_versions.clone();
                         let elem_ins: Vec<Instruction> = self.chunk.instructions.drain(elem_start..).collect();
                         self.chunk.emit(OpCode::BuildList, 0);
-                        self.comprehension_loop(&[elem_ins], OpCode::ListAppend, &versions_before);
+                        self.comprehension_loop(&[(elem_start, elem_ins)], OpCode::ListAppend, &versions_before);
                     }
-                    pos += 1;
+                    pos = pos.saturating_add(1);
                 }
             } else {
                 let elem_start = self.chunk.instructions.len();
@@ -436,11 +442,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     let versions_before = self.ssa_versions.clone();
                     let elem_ins: Vec<Instruction> = self.chunk.instructions.drain(elem_start..).collect();
                     self.chunk.emit(OpCode::BuildList, 0);
-                    self.comprehension_loop(&[elem_ins], OpCode::ListAppend, &versions_before);
+                    self.comprehension_loop(&[(elem_start, elem_ins)], OpCode::ListAppend, &versions_before);
                 }
-                pos += 1;
+                pos = pos.saturating_add(1);
             }
             self.eat_if(TokenType::Comma);
+            if self.last_end == progress { break; }
         }
         self.eat(TokenType::Rpar);
         (pos, kw)

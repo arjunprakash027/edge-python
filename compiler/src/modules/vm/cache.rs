@@ -220,8 +220,11 @@ fn args_memoizable(args: &[Val], heap: &super::types::HeapPool) -> bool {
     use super::types::HeapObj;
     args.iter().all(|v| {
         if !v.is_heap() { return true; }
-        !matches!(heap.get(*v), HeapObj::List(_) | HeapObj::Dict(_)
-                              | HeapObj::Set(_) | HeapObj::Instance(..))
+        // Post-call args aren't rooted, so the body may have freed one; a freed slot (None) is not memoizable, nor are mutable containers.
+        match heap.try_get(*v) {
+            Some(o) => !matches!(o, HeapObj::List(_) | HeapObj::Dict(_) | HeapObj::Set(_) | HeapObj::Instance(..)),
+            None => false,
+        }
     })
 }
 

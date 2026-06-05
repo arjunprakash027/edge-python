@@ -25,6 +25,9 @@ impl<'a> VM<'a> {
     pub fn call_input(&mut self) -> Result<(), VmErr> {
         let s = if !self.input_buffer.is_empty() {
             self.input_buffer.remove(0)
+        } else if self.strict_input {
+            // Host-driven mode: no blocking stdin read (also keeps headless/fuzz runs from hanging).
+            return Err(VmErr::Runtime("input() requires host-provided data"));
         } else {
             #[cfg(not(target_arch = "wasm32"))]
             {
@@ -51,8 +54,9 @@ impl<'a> VM<'a> {
         let val = self.pop()?;
         let result = match spec_val {
             Some(sv) => {
-                let spec = match self.heap.get(sv) {
-                    HeapObj::Str(s) => s.clone(),
+                // `sv` may be a non-heap value (int/float); guard before indexing the heap.
+                let spec = match sv.is_heap().then(|| self.heap.get(sv)) {
+                    Some(HeapObj::Str(s)) => s.clone(),
                     _ => return Err(cold_type("format() spec must be a string")),
                 };
                 self.format_op(val, &spec, chunk, slots)?

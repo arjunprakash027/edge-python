@@ -210,7 +210,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                         let versions_before = self.ssa_versions.clone();
                         let elem_ins: Vec<Instruction> = self.chunk.instructions.drain(elem_start..).collect();
                         self.chunk.emit(OpCode::BuildList, 0);
-                        self.comprehension_loop(&[elem_ins], OpCode::ListAppend, &versions_before);
+                        self.comprehension_loop(&[(elem_start, elem_ins)], OpCode::ListAppend, &versions_before);
                         self.advance();
                     } else if self.eat_if(TokenType::Comma) {
                         let mut count = 1u16;

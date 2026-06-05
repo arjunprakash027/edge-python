@@ -352,10 +352,11 @@ impl<'a> VM<'a> {
 
             // Hot opcodes.
             OpCode::LoadName => {
-                // Single u64 compare for unbound-slot detection, no Option.
-                let v = slots[op as usize];
+                // Malformed bytecode can carry an out-of-range slot; treat it as unbound.
+                let v = slots.get(op as usize).copied().unwrap_or(Val::undef());
                 if v.is_undef() {
-                    return Err(VmErr::Name(ssa_strip(&chunk.names[op as usize]).into()));
+                    let name = chunk.names.get(op as usize).map(|n| ssa_strip(n)).unwrap_or_default();
+                    return Err(VmErr::Name(name.into()));
                 }
                 self.push(v);
             }
@@ -404,7 +405,15 @@ impl<'a> VM<'a> {
                 self.exec_arith_or_compare(ins.opcode, rip, cache, chunk, slots)?;
             }
 
-            OpCode::Jump => { *ip = self.checked_jump(op as usize, n)?; }
+            OpCode::Jump => {
+                let target = self.checked_jump(op as usize, n)?;
+                // Backward jumps are loop back-edges; charge them so `while` is bounded like `for`.
+                if target <= rip && !self.sandbox_off {
+                    if self.budget == 0 { return Err(cold_budget()); }
+                    self.budget -= 1;
+                }
+                *ip = target;
+            }
             OpCode::JumpIfFalse => {
                 let v = self.pop()?;
                 if !self.truthy_op(v, chunk, slots)? { *ip = self.checked_jump(op as usize, n)?; }
@@ -479,7 +488,7 @@ impl<'a> VM<'a> {
                 return Err(cold_runtime("And/Or reached VM dispatch (should be short-circuited)"));
             }
 
-            OpCode::MakeClass => self.exec_make_class(op, *ip, cache, chunk)?,
+            OpCode::MakeClass => self.exec_make_class(op, *ip, cache, chunk, slots)?,
             OpCode::StoreAttr => self.exec_store_attr(op, chunk, slots)?,
 
             OpCode::LoadExtern => {
@@ -650,6 +659,26 @@ impl<'a> VM<'a> {
         }
     }
 
+    /* Charge one unit against the op budget; for native loops (custom-iterator drain, generator collect) that bypass the dispatch back-edge counter. */
+    #[inline]
+    pub(crate) fn charge_step(&mut self) -> Result<(), VmErr> {
+        if !self.sandbox_off {
+            if self.budget == 0 { return Err(cold_budget()); }
+            self.budget -= 1;
+        }
+        Ok(())
+    }
+
+    /* Charge `n` units at once; for native builtins (sort, materialise) whose cost scales with input size. */
+    #[inline]
+    pub(crate) fn charge_steps(&mut self, n: usize) -> Result<(), VmErr> {
+        if !self.sandbox_off {
+            if self.budget < n { self.budget = 0; return Err(cold_budget()); }
+            self.budget -= n;
+        }
+        Ok(())
+    }
+
     #[inline(never)]
     fn exec_for_iter(&mut self, op: u16, ip: &mut usize, n: usize, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         if !self.sandbox_off {
@@ -702,7 +731,7 @@ impl<'a> VM<'a> {
     }
 
     #[inline(never)]
-    fn exec_make_class(&mut self, op: u16, ip: usize, cache: &OpcodeCache, chunk: &SSAChunk) -> Result<(), VmErr> {
+    fn exec_make_class(&mut self, op: u16, ip: usize, cache: &OpcodeCache, chunk: &SSAChunk, caller_slots: &[Val]) -> Result<(), VmErr> {
         // Operand layout mirrors `class_def_with`: low byte = class chunk index, high byte = base count.
         let class_idx = (op & 0xFF) as usize;
         let num_bases = (op >> 8) as usize;
@@ -713,9 +742,16 @@ impl<'a> VM<'a> {
                 return Err(cold_type("base class must be a class object"));
             }
         }
-        let body = &chunk.classes[class_idx];
+        let Some(body) = chunk.classes.get(class_idx) else {
+            return Err(cold_runtime("class index out of range"));
+        };
         let mut class_slots = self.fill_builtins(&body.names);
-        self.exec(body, &mut class_slots)?;
+        // Pin caller slots as GC roots so a nested class/function body can't sweep them.
+        let snap = self.live_slots.len();
+        self.live_slots.extend_from_slice(caller_slots);
+        let exec_result = self.exec(body, &mut class_slots);
+        self.live_slots.truncate(snap);
+        exec_result?;
         let mut methods: Vec<(String, Val)> = Vec::new();
         for (i, name) in body.names.iter().enumerate() {
             if let Some(&v) = class_slots.get(i)

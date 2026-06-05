@@ -16,6 +16,12 @@ impl<'a> VM<'a> {
                 return Err(cold_type("not a coroutine"));
             };
 
+        // Bound coroutine depth; charge per-resume clone work.
+        if sync_frames.len() >= self.max_calls {
+            return Err(cold_depth());
+        }
+        self.charge_steps(sync_frames.len())?;
+
         let saved_stack_len = self.stack.len();
         let saved_iter_len = self.iter_stack.len();
         let saved_exc_len = self.exception_stack.len();
@@ -103,7 +109,8 @@ impl<'a> VM<'a> {
 
         if self.yielded {
             let resume_ip = if outer_ran { self.resume_ip } else { outer_ip };
-            let remaining = self.stack.split_off(saved_stack_len);
+            // A coroutine that left the stack shorter must not panic split_off; clamp.
+            let remaining = self.stack.split_off(saved_stack_len.min(self.stack.len()));
             let coro_iters: Vec<IterFrame> = self.iter_stack.drain(saved_iter_len..).collect();
             // Normalize: depths captured at SetupExcept time were absolute against the live stacks; store them relative to the coro's saved stack so the next resume can denormalize against a different base.
             let coro_exc: Vec<ExceptionFrame> = self.exception_stack.drain(saved_exc_len..)
@@ -113,7 +120,8 @@ impl<'a> VM<'a> {
                     f
                 })
                 .collect();
-            if let HeapObj::Coroutine(sip, ss, sst, _, si, sf, ef) = self.heap.get_mut(callee) {
+            // An inline-awaited coro isn't a scheduler root, so its body's GC may have freed it; if so skip the save (a freed coro is unreachable and won't resume).
+            if let Some(HeapObj::Coroutine(sip, ss, sst, _, si, sf, ef)) = self.heap.try_get_mut(callee) {
                 *sip = resume_ip;
                 *ss = outer_slots;
                 *sst = remaining;
@@ -131,8 +139,17 @@ impl<'a> VM<'a> {
         }
     }
 
+    /* Live (non-terminal) coroutine count; the concurrency that bounds scheduler work. */
+    fn scheduler_active(&self) -> usize {
+        self.scheduler.iter().filter(|h| !matches!(h.state, CoroState::Done(_) | CoroState::Errored(_) | CoroState::Cancelled)).count()
+    }
+
     /* `run(*coros)`, single-driver model: pushes the targets into the global scheduler, parks the outer in `WaitingForChildren` with `WaitKind::Run(target)`, and yields. The top loop drains the children and wakes the outer when all are terminal. */
     pub fn call_run(&mut self, argc: u16) -> Result<(), VmErr> {
+        // Cap live concurrency like call depth: unbounded task spawning is recursion-shaped.
+        if self.scheduler_active() >= self.max_calls {
+            return Err(cold_depth());
+        }
         let raw_tasks = self.pop_n(argc as usize)?;
         if raw_tasks.is_empty() {
             self.push(Val::none());
@@ -287,6 +304,8 @@ impl<'a> VM<'a> {
     /* Single scheduler driver: picks a Ready coro and steps it; on no Ready, classifies the wait-state and yields to the host (PendingTimer / PendingFrame / PendingHostCall / PendingEvent) or returns Ok when nothing alive remains. */
     pub(crate) fn top_loop(&mut self) -> Result<(), VmErr> {
         loop {
+            // Charge each scheduler tick so a coroutine that endlessly spawns/resumes is bounded.
+            self.charge_step()?;
             self.wake_waiting_outers();
             let mut next_ready: Option<usize> = None;
             let mut min_wake: Option<u64> = None;
@@ -412,6 +431,10 @@ impl<'a> VM<'a> {
 
     /* `gather(*coros)`, single-driver: pushes all targets, parks the outer in `WaitingForChildren` with `WaitKind::Gather`, and yields. Wake-loop builds the result list (or raises the first child error). */
     pub fn call_gather(&mut self, argc: u16) -> Result<(), VmErr> {
+        // Cap live concurrency like call depth: unbounded task spawning is recursion-shaped.
+        if self.scheduler_active() >= self.max_calls {
+            return Err(cold_depth());
+        }
         let tasks = self.pop_n(argc as usize)?;
         let coros: Vec<Val> = tasks.into_iter()
             .filter(|v| v.is_heap() && matches!(self.heap.get(*v), HeapObj::Coroutine(..)))

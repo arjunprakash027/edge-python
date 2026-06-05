@@ -59,6 +59,9 @@ impl<'a> VM<'a> {
             HeapObj::Range(s, e, st) => {
                 let (s, e, st) = (*s, *e, *st);
                 if st == 0 { return Err(VmErr::Value("range() arg 3 must not be zero")); }
+                // Spreading a huge range would build a giant arg vec; cap against the heap budget.
+                let count = (e as i128 - s as i128).unsigned_abs() / (st as i128).unsigned_abs();
+                if count > self.heap.limit() as u128 { return Err(VmErr::Heap); }
                 let mut out = Vec::new();
                 let mut i = s;
                 if st > 0 { while i < e { out.push(Val::int(i)); i += st; } }
@@ -111,6 +114,8 @@ impl<'a> VM<'a> {
     }
 
     pub(crate) fn str_to_char_vals(&mut self, s: &str) -> Result<Vec<Val>, VmErr> {
+        // Per-char heap allocs scale with input; charge the budget so loops over this stay bounded.
+        self.charge_steps(s.len())?;
         s.chars().map(|c| self.heap.alloc(HeapObj::Str(c.to_string()))).collect()
     }
 

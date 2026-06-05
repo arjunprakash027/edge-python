@@ -152,6 +152,7 @@ impl<'a> VM<'a> {
         if container.is_heap() && matches!(self.heap.get(container), HeapObj::Instance(..))
             && let Some(iter) = self.try_call_dunder(container, "__iter__", &[], chunk, slots)? {
             loop {
+                self.charge_step()?;
                 match self.try_call_dunder(iter, "__next__", &[], chunk, slots) {
                     Ok(Some(v)) => {
                         if self.eq_op(item, v, chunk, slots)? { return Ok(true); }
@@ -178,6 +179,7 @@ impl<'a> VM<'a> {
         let Some(iter) = self.try_call_dunder(obj, "__iter__", &[], chunk, slots)? else { return Ok(None); };
         let mut out = Vec::new();
         loop {
+            self.charge_step()?;
             match self.try_call_dunder(iter, "__next__", &[], chunk, slots) {
                 Ok(Some(v)) => out.push(v),
                 Ok(None) => return Ok(Some(out)),

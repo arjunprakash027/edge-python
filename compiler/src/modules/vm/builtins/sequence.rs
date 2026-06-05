@@ -240,6 +240,10 @@ impl<'a> VM<'a> {
             HeapObj::FrozenSet(v) => Some(v.iter().cloned().collect()),
             HeapObj::Range(s, e, st) if include_range => {
                 let (mut cur, end, step) = (*s, *e, *st);
+                // Materialised length is user-controlled; cap it against the heap budget.
+                let span = (end as i128 - cur as i128).unsigned_abs();
+                let count = if step == 0 { 0 } else { span / (step as i128).unsigned_abs() };
+                if count > self.heap.limit() as u128 { return Err(cold_heap()); }
                 let mut out = Vec::new();
                 if step > 0 {
                     while cur < end {
@@ -259,7 +263,11 @@ impl<'a> VM<'a> {
             HeapObj::Str(_) => None, // handled below, needs heap allocation
             _ => return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable"))),
         };
-        if let Some(v) = snapshot { return Ok(v); }
+        if let Some(v) = snapshot {
+            // Cost scales with element count; charge it so repeated materialisation stays bounded.
+            self.charge_steps(v.len())?;
+            return Ok(v);
+        }
         // Str path materialises one-char heap strings via the existing helper.
         if let HeapObj::Str(s) = self.heap.get(o) {
             let s = s.clone();
@@ -402,6 +410,7 @@ impl<'a> VM<'a> {
                 HeapObj::Coroutine(..) => {
                     let mut out = Vec::new();
                     loop {
+                        self.charge_step()?;
                         let v = self.resume_coroutine(o)?;
                         if !self.yielded { break; }
                         self.yielded = false;

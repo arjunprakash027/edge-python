@@ -227,14 +227,15 @@ impl SSAChunk {
         for ins in &mut self.instructions {
             match ins.opcode {
                 OpCode::LoadName | OpCode::StoreName | OpCode::Del | OpCode::Phi => {
-                    ins.operand = canonical[ins.operand as usize];
+                    // Malformed input can leave an out-of-range operand; keep it as-is then.
+                    if let Some(&c) = canonical.get(ins.operand as usize) { ins.operand = c; }
                 }
                 _ => {}
             }
         }
         for (a, b) in &mut self.phi_sources {
-            *a = canonical[*a as usize];
-            *b = canonical[*b as usize];
+            if let Some(&c) = canonical.get(*a as usize) { *a = c; }
+            if let Some(&c) = canonical.get(*b as usize) { *b = c; }
         }
 
         self.prev_slots = ps;

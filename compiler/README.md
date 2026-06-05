@@ -41,6 +41,8 @@ cargo test --release --no-default-features # host-side test suite (skips the pre
 
 `cargo wasm` is a workspace alias (`.cargo/config.toml`) for `cargo build --release --target wasm32-unknown-unknown -p edge-python`. Plain `cargo build --release` produces host artifacts (`.rlib` + cdylib) for embedders linking `compiler`. To add native modules from your own crate, implement the `Resolver` trait, see [Writing modules](https://edgepython.com/reference/writing-modules).
 
+The test suite (`tests/`, fixtures in `tests/cases/vm.json`) runs every case under `Limits::sandbox()`, not the default `none()`. The budget, heap, and call-depth guards short-circuit under `none` (`sandbox_off`), so only the bounded profile exercises them — that way a regression that lets a loop run unbounded, recurse without limit, or materialise an oversized collection becomes a failing `MemoryError` / `RecursionError` assertion instead of a hang. Every fixture must stay within the sandbox budget.
+
 The host runtime owns I/O, network, and module fetching; there is no native CLI. Browser hosts use the [`runtime/`](../runtime/) JS package; server/edge runtimes use wasmtime, wasmer, Cloudflare Workers, Fastly Compute, Spin.
 
 ### Consuming the release from another Rust crate
@@ -76,6 +78,8 @@ cargo afl fuzz -i in -o out -x edge.dict target/debug/afl-pipeline # runs until 
 
 cargo afl whatsup out # status summary of the ./out campaign; run in another terminal while fuzzing
 ```
+
+`./deploy.sh` runs a parallel campaign across most of the host cores (`CPU_PERCENT=75` by default; one `-M` plus N-1 `-S` instances sharing `out/`), and `.github/workflows/fuzzer.yml` runs the target daily in CI.
 
 Seeds and the dictionary are generated from `tests/cases/vm.json`, so they are gitignored. Reusing the same `out/` resumes the campaign: AFL recalibrates the saved queue (the dry-run pass) before fuzzing, so `execs` sits at 0 for a while; delete it with `rm -rf out` for a clean start. Under WSL, prefix the fuzz command with `AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1`. See [Fuzzing](https://edgepython.com/implementation/fuzzing) for details.
 

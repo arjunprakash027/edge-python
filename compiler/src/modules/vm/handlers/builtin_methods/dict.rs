@@ -55,15 +55,15 @@ pub fn get(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
 
 pub fn update(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     // Accept a dict or an iterable of 2-element pairs.
-    let pairs: Vec<(Val, Val)> = if let HeapObj::Dict(rc) = vm.heap.get(pos[0]) {
+    let pairs: Vec<(Val, Val)> = if let Some(HeapObj::Dict(rc)) = vm.heap.try_get(pos[0]) {
         rc.borrow().entries.clone()
     } else {
         let items = vm.extract_iter(pos[0], true)?;
         let mut out = Vec::with_capacity(items.len());
         for it in items {
-            let pair = match vm.heap.get(it) {
-                HeapObj::Tuple(v) if v.len() == 2 => (v[0], v[1]),
-                HeapObj::List(v) if v.borrow().len() == 2 => { let v = v.borrow(); (v[0], v[1]) }
+            let pair = match vm.heap.try_get(it) {
+                Some(HeapObj::Tuple(v)) if v.len() == 2 => (v[0], v[1]),
+                Some(HeapObj::List(v)) if v.borrow().len() == 2 => { let v = v.borrow(); (v[0], v[1]) }
                 _ => return Err(cold_value("dictionary update sequence element must have length 2")),
             };
             out.push(pair);

@@ -119,6 +119,8 @@ impl<'a> VM<'a> {
         let (positional, kw_flat, _num_pos, num_kw) = self.parse_call_args(operand)?;
 
         if self.depth >= self.max_calls { return Err(cold_depth()); }
+        // Charge each call so wide recursion is op-budget bounded.
+        self.charge_step()?;
 
         let callee = self.pop()?;
         if !callee.is_heap() { return Err(cold_type("object is not callable")); }
@@ -409,8 +411,9 @@ impl<'a> VM<'a> {
             let params = &self.functions[fi].0;
             let body_map = &self.body_maps[fi];
             for pair in kw_flat.chunks_exact(2) {
-                let key = match self.heap.get(pair[0]) {
-                    HeapObj::Str(s) => s.clone(),
+                // Malformed `**`/kwarg bytecode can leave a non-string in the name slot; guard the heap access.
+                let key = match self.heap.try_get(pair[0]) {
+                    Some(HeapObj::Str(s)) => s.clone(),
                     _ => return Err(cold_runtime("malformed kwarg on stack")),
                 };
                 // Strip `*`/`**`/`~` prefixes from the declared name before matching the kw key.

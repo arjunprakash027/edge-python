@@ -10,8 +10,8 @@ impl<'a> VM<'a> {
     /* `bytes_fromhex(s)`, hex string -> bytes; tolerates whitespace, errors on odd length / non-hex. */
     pub fn call_bytes_fromhex(&mut self) -> Result<(), VmErr> {
         let v = self.pop()?;
-        let s = match self.heap.get(v) {
-            HeapObj::Str(s) => s.clone(),
+        let s = match self.heap.try_get(v) {
+            Some(HeapObj::Str(s)) => s.clone(),
             _ => return Err(cold_type("bytes_fromhex() argument must be a string")),
         };
         let cleaned: String = s.chars().filter(|c| !c.is_ascii_whitespace()).collect();

@@ -1,0 +1,78 @@
+name: Fuzz
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: Seconds to fuzz (-V)
+        required: false
+        default: "1200"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: AFL++ campaign
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DURATION: ${{ github.event.inputs.duration || '1200' }}
+      AFL_SKIP_CPUFREQ: "1"
+      AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES: "1"
+      AFL_NO_AFFINITY: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-afl
+        run: cargo install cargo-afl
+
+      # Debug build keeps the overflow / debug-assertion checks the fuzzer hunts for.
+      - name: Seeds and instrumented build
+        working-directory: compiler/fuzz-afl
+        run: |
+          ./seeds.sh
+          cargo afl build
+
+      - name: Fuzz on all cores
+        working-directory: compiler/fuzz-afl
+        run: |
+          N=$(nproc)
+          # -t above the max bounded run, so slow-but-terminating inputs aren't flagged as hangs.
+          cargo afl fuzz -V "$DURATION" -t 5000 -i in -o out -x edge.dict -M m0 target/debug/afl-pipeline &
+          for i in $(seq 1 $((N-1))); do
+            cargo afl fuzz -V "$DURATION" -t 5000 -i in -o out -x edge.dict -S "s$i" target/debug/afl-pipeline &
+          done
+          wait
+
+      - name: Triage
+        working-directory: compiler/fuzz-afl
+        run: |
+          shopt -s nullglob
+          crashes=(out/*/crashes/id:*)
+          hangs=(out/*/hangs/id:*)
+          for f in "${hangs[@]}"; do echo "::warning::hang $(basename "$f")"; done
+          if (( ${#crashes[@]} )); then
+            for f in "${crashes[@]}"; do echo "::error::crash $f"; cat "$f"; echo; done
+            exit 1
+          fi
+          echo "no crashes (${#hangs[@]} hangs)"
+
+      - name: Upload findings
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: fuzz-findings
+          path: |
+            compiler/fuzz-afl/out/*/crashes
+            compiler/fuzz-afl/out/*/hangs
+          if-no-files-found: ignore
+          retention-days: 14

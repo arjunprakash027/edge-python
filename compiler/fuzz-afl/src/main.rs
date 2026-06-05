@@ -17,7 +17,11 @@ fn main() {
             return;
         }
 
-        // Bounded budget turns runaway loops and allocations into VmErr, not hangs.
-        let _ = VM::with_limits(&chunk, Limits::sandbox()).run();
+        // Bounded budget turns runaway loops and allocations into VmErr, not hangs. Tight `ops` so bounded loops finish within AFL's hang timeout; library default `sandbox()` is far larger.
+        let limits = Limits { ops: 100_000, ..Limits::sandbox() };
+        let mut vm = VM::with_limits(&chunk, limits);
+        // Host-driven input: never block on real stdin (AFL feeds the program via shmem).
+        vm.strict_input = true;
+        let _ = vm.run();
     });
 }
