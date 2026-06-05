@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   fuzz:
-    name: AFL++ campaign
+    name: American Fuzzy Lop (fuzzer)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
