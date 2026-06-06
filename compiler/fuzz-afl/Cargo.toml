@@ -18,3 +18,9 @@ default-features = false
 [[bin]]
 name = "afl-pipeline"
 path = "src/main.rs"
+
+# cargo-afl already forces opt-level/asserts/overflow; this only adds line-tables (file:line backtraces) + asserts for a plain `cargo build --release` repro.
+[profile.release]
+debug-assertions = true
+overflow-checks = true
+debug = "line-tables-only"

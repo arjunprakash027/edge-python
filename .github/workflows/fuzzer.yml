@@ -24,8 +24,6 @@ jobs:
     timeout-minutes: 45
     env:
       DURATION: ${{ github.event.inputs.duration || '1200' }}
-      AFL_SKIP_CPUFREQ: "1"
-      AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES: "1"
       AFL_NO_AFFINITY: "1"
     steps:
       - uses: actions/checkout@v6
@@ -35,23 +33,9 @@ jobs:
       - name: Install cargo-afl
         run: cargo install cargo-afl
 
-      # Debug build keeps the overflow / debug-assertion checks the fuzzer hunts for.
-      - name: Seeds and instrumented build
+      - name: Fuzz
         working-directory: compiler/fuzz-afl
-        run: |
-          bash ./seeds.sh
-          cargo afl build
-
-      - name: Fuzz on all cores
-        working-directory: compiler/fuzz-afl
-        run: |
-          N=$(nproc)
-          # -t above the max bounded run, so slow-but-terminating inputs aren't flagged as hangs.
-          cargo afl fuzz -V "$DURATION" -t 5000 -i in -o out -x edge.dict -M m0 target/debug/afl-pipeline &
-          for i in $(seq 1 $((N-1))); do
-            cargo afl fuzz -V "$DURATION" -t 5000 -i in -o out -x edge.dict -S "s$i" target/debug/afl-pipeline &
-          done
-          wait
+        run: bash ./deploy.sh
 
       - name: Triage
         working-directory: compiler/fuzz-afl

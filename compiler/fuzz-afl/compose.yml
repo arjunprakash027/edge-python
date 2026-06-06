@@ -1,0 +1,20 @@
+name: edge-python-afl
+
+services:
+  fuzzer:
+    build:
+      context: ../..
+      dockerfile: compiler/fuzz-afl/Dockerfile
+
+    volumes:
+      - findings:/app/fuzz-afl/out
+
+    environment:
+      - JOBS
+      - DURATION
+      - FRESH
+      - TIMEOUT_MS
+      - AFL_NO_AFFINITY=1 # containers hide cores; let scheduler place
+
+volumes:
+  findings:

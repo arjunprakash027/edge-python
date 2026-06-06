@@ -73,15 +73,15 @@ Coverage-guided fuzzing of the lex -> parse -> VM pipeline lives in [`fuzz-afl/`
 ```bash
 cd compiler/fuzz-afl
 ./seeds.sh # generate corpus + dictionary from vm.json (once)
-cargo afl build # instrument on stable, no nightly
-cargo afl fuzz -i in -o out -x edge.dict target/debug/afl-pipeline # runs until Ctrl-C; add -V 300 to stop after 300s
+cargo afl build --release # instrument on stable, no nightly
+cargo afl fuzz -i in -o out -x edge.dict target/release/afl-pipeline # runs until Ctrl-C; add -V 300 to stop after 300s
 
 cargo afl whatsup out # status summary of the ./out campaign; run in another terminal while fuzzing
 ```
 
-`./deploy.sh` runs a parallel campaign across most of the host cores (`CPU_PERCENT=75` by default; one `-M` plus N-1 `-S` instances sharing `out/`), and `.github/workflows/fuzzer.yml` runs the target daily in CI.
+`./deploy.sh` runs a parallel campaign across the host cores (one instance per logical core by default; override with `JOBS`; one `-M` plus N-1 `-S` instances sharing `out/`), `compose.yml` runs the same in a container with findings persisted in a volume, and `.github/workflows/fuzzer.yml` runs the target daily in CI. `deploy.sh`/compose/CI write findings to `out/m0/`, `out/s1/`, etc. (a bare `cargo afl fuzz` uses `out/default/`).
 
-Seeds and the dictionary are generated from `tests/cases/vm.json`, so they are gitignored. Reusing the same `out/` resumes the campaign: AFL recalibrates the saved queue (the dry-run pass) before fuzzing, so `execs` sits at 0 for a while; delete it with `rm -rf out` for a clean start. Under WSL, prefix the fuzz command with `AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1`. See [Fuzzing](https://edgepython.com/implementation/fuzzing) for details.
+Seeds and the dictionary are generated from `tests/cases/vm.json`, so they are gitignored. Reusing the same `out/` resumes the campaign: AFL recalibrates the saved queue (the dry-run pass) before fuzzing, so `execs` sits at 0 for a while; delete it with `rm -rf out` for a clean start. `deploy.sh` exports the WSL bypass vars itself; for a bare `cargo afl fuzz` under WSL, prefix it with `AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1`. See [Fuzzing](https://edgepython.com/implementation/fuzzing) for details.
 
 ## References
 
