@@ -26,6 +26,13 @@ For a parallel run across the host cores, `./deploy.sh` builds, regenerates seed
 
 For a long-running campaign in a container, `compose.yml` builds the image from `Dockerfile` and runs the same `deploy.sh`; findings persist in the `findings` volume mounted at `out/` instead of CI's 14-day artifact. It also sets `AFL_NO_AFFINITY=1`, since a container hides the host topology and AFL must not pin instances to cores it cannot see:
 
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JOBS` | `$(nproc)` | Number of AFL instances (one per logical core). |
+| `DURATION` | `0` | Campaign length in seconds. `0` runs until stopped. |
+| `FRESH` | `0` | Set to `1` to delete `out/` and start a clean campaign. |
+| `TIMEOUT_MS` | `5000` | Per-input hang threshold in ms. Should exceed the max bounded VM run. |
+
 ```bash
 cd compiler/fuzz-afl
 DURATION=3600 docker compose up --build -d # detached; same JOBS / FRESH / TIMEOUT_MS overrides apply
