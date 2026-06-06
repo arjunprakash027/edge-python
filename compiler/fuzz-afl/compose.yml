@@ -5,7 +5,7 @@ services:
     build:
       context: ../..
       dockerfile: compiler/fuzz-afl/Dockerfile
-
+    restart: unless-stopped
     volumes:
       - findings:/app/fuzz-afl/out
 
