@@ -24,7 +24,7 @@ cargo afl whatsup out # status summary of the ./out campaign; run in another ter
 
 For a parallel run across the host cores, `./deploy.sh` builds, regenerates seeds, and launches one `-M` plus N-1 `-S` instances sharing one `out/`. It runs one instance per logical core by default; override with `JOBS`, and `DURATION` / `FRESH` / `TIMEOUT_MS` are optional too. The same target runs on a daily schedule in CI via [`.github/workflows/fuzzer.yml`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/.github/workflows/fuzzer.yml) — which calls `deploy.sh` directly on the runner (no container) and fails the run on any saved crash.
 
-For a long-running campaign in a container, `compose.yml` builds the image from `Dockerfile` and runs the same `deploy.sh`; findings persist in the `findings` volume mounted at `out/` instead of CI's 14-day artifact. It sets `restart: unless-stopped` so the campaign survives host reboots and only stops when you explicitly run `docker compose down`. It also sets `AFL_NO_AFFINITY=1`, since a container hides the host topology and AFL must not pin instances to cores it cannot see:
+For a long-running campaign in a container, `compose.yml` builds the image from `Dockerfile` and runs the same `deploy.sh`; findings persist in the `findings` volume mounted at `compiler/fuzz-afl/out/` instead of CI's 14-day artifact. It sets `restart: unless-stopped` so the campaign survives host reboots and only stops when you explicitly run `docker compose down`. It also sets `AFL_NO_AFFINITY=1`, since a container hides the host topology and AFL must not pin instances to cores it cannot see:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -42,7 +42,7 @@ docker compose logs -f
 
 # Watch the live campaign status once instances are running.
 docker compose exec fuzzer bash
-cd fuzz-afl
+cd compiler/fuzz-afl
 watch -n 10 cargo afl whatsup out
 ```
 
