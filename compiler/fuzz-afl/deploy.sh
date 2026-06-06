@@ -16,7 +16,7 @@ export AFL_NO_UI=1
 echo "logical cores: $(nproc), instances: $JOBS"
 
 # Regenerate the seed corpus / dictionary if absent, then build the instrumented target.
-[ -d in ] && [ -n "$(ls -A in 2>/dev/null)" ] || ./seeds.sh
+[ -d in ] && [ -n "$(ls -A in 2>/dev/null)" ] || bash ./seeds.sh
 cargo afl build --release
 
 [ "$FRESH" = "1" ] && rm -rf out
