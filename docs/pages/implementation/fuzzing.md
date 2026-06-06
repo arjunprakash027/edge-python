@@ -45,6 +45,10 @@ docker compose exec fuzzer bash
 cd compiler/fuzz-afl
 watch -n 10 cargo afl whatsup out # individual metrics per instance
 watch -n 10 cargo afl whatsup -s out # aggregated summary only
+
+# Or as one-liners without entering the container:
+docker compose exec -it fuzzer bash -c "cd compiler/fuzz-afl && watch -n 10 cargo afl whatsup out"
+docker compose exec -it fuzzer bash -c "cd compiler/fuzz-afl && watch -n 10 cargo afl whatsup -s out"
 ```
 
 Reusing the same `out/` resumes the campaign: AFL recalibrates the saved queue (the dry-run pass) before fuzzing, so `execs` sits at 0 for a while; delete it with `rm -rf out` for a clean start.
