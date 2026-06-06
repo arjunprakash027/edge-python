@@ -71,6 +71,8 @@ impl<'a> VM<'a> {
                     (HeapObj::Str(x), HeapObj::Str(y)) => (x.clone(), y.clone()),
                     _ => return Ok(FastOutcome::TypeMiss),
                 };
+                // Charge copy cost like the slow path so looped concat stays bounded.
+                self.charge_steps(sa.len() + sb.len())?;
                 let mut r = String::with_capacity(sa.len() + sb.len());
                 r.push_str(&sa); r.push_str(&sb);
                 self.heap.alloc(HeapObj::Str(r))?

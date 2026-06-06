@@ -199,7 +199,10 @@ impl<'a> VM<'a> {
                 return self.require_str(r, "__repr__");
             }
         }
-        Ok(self.display(v))
+        let s = self.display(v);
+        // Render is O(size); charge it so reprinting growing data can't outrun the budget.
+        self.charge_steps(s.len())?;
+        Ok(s)
     }
 
     /* `repr(v)` semantics: instance `__repr__` wins; otherwise the built-in repr (which adds quotes for strings, etc.). */

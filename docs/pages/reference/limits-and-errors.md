@@ -130,7 +130,7 @@ Raised as `VmErr`; most catchable with `try` / `except`.
 | `Raised("TimeoutError")` | `TimeoutError` | `with_timeout` deadline expired |
 | `Raised("CancelledError")` | `CancelledError` | User-thrown cancellation |
 | `Raised("SystemExit")` | `SystemExit` | `raise SystemExit(code)`; uncaught = clean host exit with that code |
-| `CallDepth` | `RecursionError` | Past `max_calls` |
+| `CallDepth` | `RecursionError` | Past `max_calls`, or comparing self-referential containers |
 | `Heap` | `MemoryError` | Past heap limit |
 | `Budget` | `RuntimeError` | Past op limit |
 | `Runtime` | `RuntimeError` | Internal invariant or unsupported |

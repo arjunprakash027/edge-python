@@ -20,7 +20,8 @@ impl<'a> VM<'a> {
         if sync_frames.len() >= self.max_calls {
             return Err(cold_depth());
         }
-        self.charge_steps(sync_frames.len())?;
+        // Charge the whole cloned state (stack/slots/iters/frames), not just frame count.
+        self.charge_steps(sync_frames.len() + outer_stack.len() + outer_slots.len() + outer_iters.len())?;
 
         let saved_stack_len = self.stack.len();
         let saved_iter_len = self.iter_stack.len();
@@ -304,8 +305,8 @@ impl<'a> VM<'a> {
     /* Single scheduler driver: picks a Ready coro and steps it; on no Ready, classifies the wait-state and yields to the host (PendingTimer / PendingFrame / PendingHostCall / PendingEvent) or returns Ok when nothing alive remains. */
     pub(crate) fn top_loop(&mut self) -> Result<(), VmErr> {
         loop {
-            // Charge each scheduler tick so a coroutine that endlessly spawns/resumes is bounded.
-            self.charge_step()?;
+            // Charge the full scheduler scan so accumulating coroutines stay bounded.
+            self.charge_steps(self.scheduler.len().max(1))?;
             self.wake_waiting_outers();
             let mut next_ready: Option<usize> = None;
             let mut min_wake: Option<u64> = None;

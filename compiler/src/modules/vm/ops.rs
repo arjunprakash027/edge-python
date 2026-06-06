@@ -9,6 +9,9 @@ use core::cell::RefCell;
 /* Cap on nested-container rendering depth; stops self-referential prints from overflowing the stack. */
 const RENDER_DEPTH_MAX: usize = 100;
 
+/* Same cap for `<` descent; self-referential sequences raise RecursionError. */
+const CMP_DEPTH_MAX: usize = 100;
+
 /* Render `bytes` as `b'...'` (printable ASCII verbatim, rest escaped). */
 fn format_bytes(buf: &[u8]) -> String {
     let mut out = String::with_capacity(buf.len() + 3);
@@ -269,6 +272,12 @@ impl<'a> VM<'a> {
     }
 
     pub fn lt_vals(&self, a: Val, b: Val) -> Result<bool, VmErr> {
+        self.lt_vals_d(a, b, 0)
+    }
+
+    /* Depth-tracked `<`; past the cap surface RecursionError instead of overflowing the stack. */
+    fn lt_vals_d(&self, a: Val, b: Val, depth: usize) -> Result<bool, VmErr> {
+        if depth > CMP_DEPTH_MAX { return Err(cold_depth()); }
         let a = if a.is_bool() { Val::int(a.as_bool() as i64) } else { a };
         let b = if b.is_bool() { Val::int(b.as_bool() as i64) } else { b };
         if a.is_int() && b.is_int() { return Ok(a.as_int() < b.as_int()); }
@@ -282,11 +291,11 @@ impl<'a> VM<'a> {
                 // Sequences compare lexicographically; clone to drop the heap borrow before recursing.
                 (HeapObj::List(x), HeapObj::List(y)) => {
                     let (x, y) = (x.borrow().clone(), y.borrow().clone());
-                    return self.seq_lt(&x, &y);
+                    return self.seq_lt_d(&x, &y, depth + 1);
                 }
                 (HeapObj::Tuple(x), HeapObj::Tuple(y)) => {
                     let (x, y) = (x.clone(), y.clone());
-                    return self.seq_lt(&x, &y);
+                    return self.seq_lt_d(&x, &y, depth + 1);
                 }
                 _ => {}
             }
@@ -296,9 +305,14 @@ impl<'a> VM<'a> {
 
     /* Lexicographic `<` for sequences: first differing element decides; otherwise the shorter is less. Recurses through `lt_vals`, so nested sequences and mixed element types are handled (and rejected) consistently. */
     pub fn seq_lt(&self, xs: &[Val], ys: &[Val]) -> Result<bool, VmErr> {
+        self.seq_lt_d(xs, ys, 0)
+    }
+
+    fn seq_lt_d(&self, xs: &[Val], ys: &[Val], depth: usize) -> Result<bool, VmErr> {
+        if depth > CMP_DEPTH_MAX { return Err(cold_depth()); }
         for (&x, &y) in xs.iter().zip(ys.iter()) {
             if eq_vals_with_heap(x, y, &self.heap) { continue; }
-            return self.lt_vals(x, y);
+            return self.lt_vals_d(x, y, depth + 1);
         }
         Ok(xs.len() < ys.len())
     }
@@ -417,6 +431,8 @@ impl<'a> VM<'a> {
             }
             HeapObj::List(rc) => {
                 let src = rc.borrow().clone();
+                // Empty source: result is empty for any n, so skip the n-iteration loop.
+                if src.is_empty() { return self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(Vec::new())))); }
                 let cap = src.len().checked_mul(n).ok_or(cold_overflow())?;
                 if cap > self.heap.limit() { return Err(cold_heap()); }
                 let mut out = Vec::with_capacity(cap);
@@ -425,6 +441,8 @@ impl<'a> VM<'a> {
             }
             HeapObj::Tuple(v) => {
                 let src = v.clone();
+                // Empty source: result is empty for any n, so skip the n-iteration loop.
+                if src.is_empty() { return self.heap.alloc(HeapObj::Tuple(Vec::new())); }
                 let cap = src.len().checked_mul(n).ok_or(cold_overflow())?;
                 if cap > self.heap.limit() { return Err(cold_heap()); }
                 let mut out = Vec::with_capacity(cap);
