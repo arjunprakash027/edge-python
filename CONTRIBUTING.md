@@ -15,6 +15,7 @@ Run the following commands before sending a pull request to ensure code quality:
 - `cargo wasm` Build the `compiler.wasm`.
 - `cargo test --release --no-default-features` Run the compiler test suite.
 - `cargo clippy --all-targets --no-default-features -- -D warnings` Lint the Rust code.
+- For significant changes, execute the [fuzzer](https://edgepython.com/implementation/fuzzing/) to check for new crashes or performance regressions.
 
 *Other packages have their own build and test setup — take a look at the `README.md` in the relevant path.*
 

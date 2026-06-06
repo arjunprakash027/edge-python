@@ -29,9 +29,9 @@ jobs:
       AFL_NO_AFFINITY: "1"
     steps:
       - uses: actions/checkout@v6
-      - uses: Swatinem/rust-cache@v2
       - uses: dtolnay/rust-toolchain@stable
 
+      # No cargo cache on purpose (a restored ~/.cargo corrupts cargo-afl's state); install also builds the AFL LLVM runtime, so don't rebuild it.
       - name: Install cargo-afl
         run: cargo install cargo-afl
 
@@ -66,10 +66,18 @@ jobs:
           fi
           echo "no crashes (${#hangs[@]} hangs)"
 
-      # AFL names findings with colons (id:000000,...), which upload-artifact rejects. Tar them so the colons live inside the archive.
+      # AFL findings use colons in names (rejected by upload-artifact), so tar them; create an empty archive if out/ doesn't exist yet.
       - name: Package findings
         if: always()
-        run: tar -czf findings.tar.gz compiler/fuzz-afl/out/*/{crashes,hangs}
+        run: |
+          shopt -s nullglob
+          dirs=(compiler/fuzz-afl/out/*/crashes compiler/fuzz-afl/out/*/hangs)
+          if (( ${#dirs[@]} )); then
+            tar -czf findings.tar.gz "${dirs[@]}"
+          else
+            echo "no findings to package"
+            tar -czf findings.tar.gz --files-from /dev/null
+          fi
 
       - name: Upload findings
         if: always()
