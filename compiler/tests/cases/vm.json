@@ -793,6 +793,8 @@
   {"src": "print(''.join(['a', 'b', 'c']))", "output": ["abc"]},
   {"src": "print('-'.join(['1', '2', '3']))", "output": ["1-2-3"]},
   {"src": "print(','.join([]))", "output": [""]},
+  {"src": "print(''.join(2 ** 11))", "output": [], "error": "join() argument must be iterable"},
+  {"src": "print(''.join(2 * -100))", "output": [], "error": "join() argument must be iterable"},
   {"src": "print('hello'.replace('l', 'r'))", "output": ["herro"]},
   {"src": "print('hello'.replace('l', ''))", "output": ["heo"]},
   {"src": "print('hello'.replace('x', 'y'))", "output": ["hello"]},

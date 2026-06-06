@@ -149,9 +149,10 @@ pub fn split(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
 
 pub fn join(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let sep = recv_str(vm, recv)?;
-    let items = match vm.heap.get(pos[0]) {
-        HeapObj::List(rc) => rc.borrow().clone(),
-        HeapObj::Tuple(v) => v.clone(),
+    // `try_get` is panic-free: an inline int arg would make `heap.get` index a bogus slot and abort.
+    let items = match vm.heap.try_get(pos[0]) {
+        Some(HeapObj::List(rc)) => rc.borrow().clone(),
+        Some(HeapObj::Tuple(v)) => v.clone(),
         _ => return Err(cold_type("join() argument must be iterable")),
     };
     let mut parts: Vec<String> = Vec::with_capacity(items.len());
