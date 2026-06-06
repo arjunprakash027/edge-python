@@ -37,7 +37,10 @@ For a long-running campaign in a container, `compose.yml` builds the image from 
 cd compiler/fuzz-afl
 DURATION=3600 docker compose up --build -d # detached; same JOBS / FRESH / TIMEOUT_MS overrides apply
 
-# Container runs in the background; watch the live campaign status.
+# Container runs in the background; stream raw deploy output (seed count, instance count, startup errors).
+docker compose logs -f
+
+# Watch the live campaign status once instances are running.
 docker compose exec fuzzer bash
 cd fuzz-afl
 watch -n 10 cargo afl whatsup out
