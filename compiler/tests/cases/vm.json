@@ -1839,5 +1839,6 @@
   {"src": "print('a-b-c'.partition('-'))", "output": ["('a', '-', 'b-c')"]},
   {"src": "print('xyz'.partition('-'))", "output": ["('xyz', '', '')"]},
   {"src": "print('a-b-c'.rpartition('-'))", "output": ["('a-b', '-', 'c')"]},
-  {"src": "print('xyz'.rpartition('-'))", "output": ["('', '', 'xyz')"]}
+  {"src": "print('xyz'.rpartition('-'))", "output": ["('', '', 'xyz')"]},
+  {"src": "def g():\n    for i in range(5000):\n        def f():\n            return i\n        yield i\nprint(len(list(g())))", "output": ["5000"]}
 ]

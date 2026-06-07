@@ -444,14 +444,18 @@ impl<'a> VM<'a> {
                     return self.alloc_and_push_list(items);
                 }
                 HeapObj::Coroutine(..) => {
-                    let mut out = Vec::new();
+                    // Keep the coroutine and its yielded values rooted on the VM stack; each resume can allocate and trigger GC.
+                    self.push(o);
+                    let base = self.stack.len();
                     loop {
                         self.charge_step()?;
                         let v = self.resume_coroutine(o)?;
                         if !self.yielded { break; }
                         self.yielded = false;
-                        out.push(v);
+                        self.push(v);
                     }
+                    let out = self.stack.split_off(base);
+                    self.pop()?; // drop the rooted coroutine
                     return self.alloc_and_push_list(out);
                 }
                 _ => {}
