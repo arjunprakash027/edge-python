@@ -102,16 +102,42 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
+    // Operand packs kw<<8 | pos; keep counts distinct.
     pub fn call_dict(&mut self, op: u16) -> Result<(), VmErr> {
-        let dm = if op == 0 {
-            DictMap::new()
+        let pos = (op & 0xFF) as usize;
+        let kw = (op >> 8) as usize;
+        if pos > 1 {
+            return Err(cold_type("dict expected at most 1 argument"));
+        }
+        // Keyword pairs sit above the positional source.
+        let kw_flat = self.pop_n(kw * 2)?;
+        let mut dm = if pos == 1 {
+            let src = self.pop()?;
+            self.dict_from_source(src)?
         } else {
-            let args = self.pop_n((op as usize) * 2)?;
-            let mut dm = DictMap::with_capacity(op as usize);
-            for pair in args.chunks(2) { dm.insert(pair[0], pair[1]); }
-            dm
+            DictMap::with_capacity(kw)
         };
+        for pair in kw_flat.chunks(2) { dm.insert(pair[0], pair[1]); }
         self.alloc_and_push_dict(dm)
+    }
+
+    // dict(mapping) copies; dict(iterable) builds from pairs.
+    fn dict_from_source(&mut self, src: Val) -> Result<DictMap, VmErr> {
+        if let HeapObj::Dict(rc) = self.heap.get(src) {
+            let pairs: Vec<(Val, Val)> = rc.borrow().iter().collect();
+            return Ok(DictMap::from_pairs(pairs));
+        }
+        let items = self.extract_iter(src, true)?;
+        let mut dm = DictMap::with_capacity(items.len());
+        for item in items {
+            let pair = self.extract_iter(item, true)?;
+            if pair.len() != 2 {
+                return Err(cold_value("dictionary update sequence element has length != 2"));
+            }
+            self.require_hashable(pair[0])?;
+            dm.insert(pair[0], pair[1]);
+        }
+        Ok(dm)
     }
 
     pub fn call_set(&mut self, op: u16) -> Result<(), VmErr> {

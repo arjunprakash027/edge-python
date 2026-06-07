@@ -454,7 +454,8 @@ impl<'a> VM<'a> {
                         self.yielded = false;
                         self.push(v);
                     }
-                    let out = self.stack.split_off(base);
+                    // A shorter stack must not panic split_off; clamp.
+                    let out = self.stack.split_off(base.min(self.stack.len()));
                     self.pop()?; // drop the rooted coroutine
                     return self.alloc_and_push_list(out);
                 }

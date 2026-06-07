@@ -369,6 +369,15 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             return true;
         }
 
+        // dict() needs positional and keyword counts distinct.
+        if name == "dict" {
+            let (pos, kw) = self.parse_args();
+            let encoded = ((kw & 0xFF) << 8) | (pos & 0xFF);
+            self.chunk.emit(OpCode::CallDict, encoded);
+            self.chunk.record_call_pos(call_pos);
+            return true;
+        }
+
         if let Some((op, leaves_value)) = builtin(name.as_str()) {
             let (pos, kw) = self.parse_args();
             self.chunk.emit(op, pos + kw);
