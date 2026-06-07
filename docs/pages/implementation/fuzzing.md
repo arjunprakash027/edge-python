@@ -37,18 +37,13 @@ For a long-running campaign in a container, `compose.yml` builds the image from 
 cd compiler/fuzz-afl
 DURATION=3600 docker compose up --build -d # detached; same JOBS / FRESH / TIMEOUT_MS overrides apply
 
-# Container runs in the background; stream raw deploy output (seed count, instance count, startup errors).
-docker compose logs -f
+docker compose ps      # Up vs Restarting
+docker compose logs -f # raw deploy output: seed count, instance count, startup errors
 
-# Watch the live campaign status once instances are running.
-docker compose exec fuzzer bash
-cd compiler/fuzz-afl
-watch -n 10 cargo afl whatsup out # individual metrics per instance
-watch -n 10 cargo afl whatsup -s out # aggregated summary only
-
-# Or as one-liners without entering the container:
-docker compose exec -it fuzzer bash -c "cd compiler/fuzz-afl && watch -n 10 cargo afl whatsup out"
+# Live status (-s = aggregated summary; drop it for per-instance metrics).
 docker compose exec -it fuzzer bash -c "cd compiler/fuzz-afl && watch -n 10 cargo afl whatsup -s out"
+
+docker compose down    # stop the campaign
 ```
 
 Reusing the same `out/` resumes the campaign: AFL recalibrates the saved queue (the dry-run pass) before fuzzing, so `execs` sits at 0 for a while; delete it with `rm -rf out` for a clean start. Resume is only safe when the target binary is unchanged — after rebuilding it (any code change) the saved coverage map and `fastresume.bin` are incompatible and every instance aborts on startup, so always start fresh (`FRESH=1`, or `rm -rf out`) after a rebuild.
@@ -61,31 +56,18 @@ Where findings land depends on how you launched: a bare `cargo afl fuzz` (no `-M
 ./target/release/afl-pipeline < out/m0/crashes/<id> # out/default/crashes/<id> for a bare single-instance run
 ```
 
-## Triaging crashes with CASR
+## Triaging crashes
 
-A parallel campaign saves one file per crashing input, not one per bug — a single panic site can be reached by thousands of distinct inputs, so `out/*/crashes/` overstates the real bug count by orders of magnitude. [CASR](https://github.com/ispras/casr) (the only triage tool AFL++ lists for this) reproduces each crash, captures its backtrace, and groups them by stack trace, collapsing those thousands of files into the handful of unique bugs behind them. Reports are emitted as JSON, and severity is estimated per cluster.
+A parallel campaign saves one file per crashing *input*, not one per bug — a single panic site is reached by many distinct inputs, so `out/*/crashes/` overstates the real bug count. Reproduce each saved crash and group by panic site; each unique `file:line` is one bug to fix:
 
 ```bash
-cargo install casr # one-time, in the container or on the host
-
-# Triage the whole campaign: reproduce every crash, capture backtraces, write JSON reports.
-# The target reads stdin, so no @@ placeholder is needed — casr-afl reads each instance's cmdline.
-casr-afl -i out -o casr-reports
-
-# Collapse identical-backtrace crashes, then group the survivors into bug families.
-casr-cluster -d casr-reports casr-dedup
-casr-cluster -c casr-dedup casr-clustered
+for f in out/*/crashes/id*; do ./target/release/afl-pipeline < "$f" 2>&1 | grep -oE 'panicked at [^:]+:[0-9]+'; done | sort | uniq -c
 ```
 
-The cluster count is the real number of distinct bugs to fix. Triage the saved crashes before fixing so you patch each root cause once rather than chasing duplicates.
-
-CASR triages crashes, not hangs: it groups by backtrace, and a hang is a timeout with no crash signal and no stack trace to capture, so `casr-afl` reads `crashes/` and skips `hangs/`. The op-bound (`Limits { ops: 100_000 }`) turns a genuine runaway loop into a `VmErr`, so a saved hang is almost always an input that terminated but ran past `TIMEOUT_MS`, not a real lock-up. Sort the two apart by re-running each under a wall-clock timeout:
+Hangs have no backtrace to group by. The op-bound (`Limits { ops: 100_000 }`) turns a genuine runaway loop into a `VmErr`, so a saved hang is usually an input that terminated but ran past `TIMEOUT_MS`, not a real lock-up — confirm by re-running under a wall-clock timeout, where exit 124 means genuinely stuck:
 
 ```bash
-for f in out/*/hangs/id*; do
-  timeout 10 ./target/release/afl-pipeline < "$f" >/dev/null 2>&1
-  echo "$? $f" # exit 124 = still hung after 10s (a real non-termination bug); anything else = just slow, timeout noise
-done
+for f in out/*/hangs/id*; do timeout 10 ./target/release/afl-pipeline < "$f" >/dev/null 2>&1; echo "$? $f"; done
 ```
 
 ## Inputs are generated, not committed
