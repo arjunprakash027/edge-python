@@ -26,10 +26,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         if !self.saw_newline && matches!(self.peek(), Some(TokenType::If)) {
             self.advance();
             self.expr_bp(0);
-            self.chunk.emit(OpCode::JumpIfFalse, 0);
-            let jf = self.chunk.instructions.len() - 1;
-            self.chunk.emit(OpCode::Jump, 0);
-            let jmp = self.chunk.instructions.len() - 1;
+            let jf = self.emit_jump(OpCode::JumpIfFalse);
+            let jmp = self.emit_jump(OpCode::Jump);
             self.patch(jf);
             self.chunk.emit(OpCode::PopTop, 0);
             self.eat(TokenType::Else);
@@ -88,8 +86,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
             if matches!(op, OpCode::And | OpCode::Or) {
                 let jump_op = if op == OpCode::And { OpCode::JumpIfFalseOrPop } else { OpCode::JumpIfTrueOrPop };
-                self.chunk.emit(jump_op, 0);
-                let jmp = self.chunk.instructions.len() - 1;
+                let jmp = self.emit_jump(jump_op);
                 self.expr_bp(r_bp);
                 self.patch(jmp);
                 continue;
@@ -106,8 +103,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.chunk.emit(OpCode::StoreName, tmp);
                 self.chunk.emit(OpCode::LoadName, tmp);
                 self.chunk.emit(op, 0);
-                self.chunk.emit(OpCode::JumpIfFalseOrPop, 0);
-                let jmp = self.chunk.instructions.len() - 1;
+                let jmp = self.emit_jump(OpCode::JumpIfFalseOrPop);
                 self.chunk.emit(OpCode::LoadName, tmp);
                 self.infix_bp(min_bp);
                 self.patch(jmp);

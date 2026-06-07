@@ -20,8 +20,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
     pub(super) fn if_body(&mut self) {
         self.expr();
-        self.chunk.emit(OpCode::JumpIfFalse, 0);
-        let jf = self.chunk.instructions.len() - 1;
+        let jf = self.emit_jump(OpCode::JumpIfFalse);
 
         self.eat(TokenType::Colon);
         self.compile_block();
@@ -29,8 +28,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         match self.peek() {
             Some(TokenType::Elif) => {
                 self.advance();
-                self.chunk.emit(OpCode::Jump, 0);
-                let jmp = self.chunk.instructions.len() - 1;
+                let jmp = self.emit_jump(OpCode::Jump);
                 self.mid_block();
                 self.patch(jf);
                 self.if_body();
@@ -38,8 +36,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             }
             Some(TokenType::Else) => {
                 self.advance();
-                self.chunk.emit(OpCode::Jump, 0);
-                let jmp = self.chunk.instructions.len() - 1;
+                let jmp = self.emit_jump(OpCode::Jump);
                 self.mid_block();
                 self.patch(jf);
                 self.eat(TokenType::Colon);
@@ -75,15 +72,13 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             // Guard fail joins pattern fails; both land at the next case.
             if self.eat_if(TokenType::If) {
                 self.expr();
-                self.chunk.emit(OpCode::JumpIfFalse, 0);
-                fail_jumps.push(self.chunk.instructions.len() - 1);
+                fail_jumps.push(self.emit_jump(OpCode::JumpIfFalse));
             }
 
             self.eat(TokenType::Colon);
             self.compile_block();
 
-            self.chunk.emit(OpCode::Jump, 0);
-            end_jumps.push(self.chunk.instructions.len() - 1);
+            end_jumps.push(self.emit_jump(OpCode::Jump));
 
             for j in fail_jumps { self.patch(j); }
         }
@@ -106,8 +101,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             let mut this_alt_fails: Vec<usize> = Vec::new();
             self.parse_simple_pattern(subj, &mut this_alt_fails);
             // On match: jump past remaining alts.
-            self.chunk.emit(OpCode::Jump, 0);
-            succ_jumps.push(self.chunk.instructions.len() - 1);
+            succ_jumps.push(self.emit_jump(OpCode::Jump));
             // On mismatch: redirect fails to next alt; only last alt propagates to case-fail.
             alts.push(this_alt_fails);
             if !matches!(self.peek(), Some(TokenType::Vbar)) {
@@ -152,8 +146,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.chunk.emit(OpCode::LoadName, subj);
                 self.expr_bp(11);
                 self.chunk.emit(OpCode::Eq, 0);
-                self.chunk.emit(OpCode::JumpIfFalse, 0);
-                fail_jumps.push(self.chunk.instructions.len() - 1);
+                fail_jumps.push(self.emit_jump(OpCode::JumpIfFalse));
             }
         }
     }
@@ -209,8 +202,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.chunk.emit(OpCode::LoadConst, ci);
         let cmp = if star_count > 0 { OpCode::GtEq } else { OpCode::Eq };
         self.chunk.emit(cmp, 0);
-        self.chunk.emit(OpCode::JumpIfFalse, 0);
-        fail_jumps.push(self.chunk.instructions.len() - 1);
+        fail_jumps.push(self.emit_jump(OpCode::JumpIfFalse));
 
         // Pass 2: walk buffered tokens, emitting per-item bytecode.
         let saved: Vec<crate::modules::lexer::Token> = buffered;
@@ -325,8 +317,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                         let ci = self.chunk.push_const(v);
                         self.chunk.emit(OpCode::LoadConst, ci);
                         self.chunk.emit(OpCode::Eq, 0);
-                        self.chunk.emit(OpCode::JumpIfFalse, 0);
-                        fail_jumps.push(self.chunk.instructions.len() - 1);
+                        fail_jumps.push(self.emit_jump(OpCode::JumpIfFalse));
                     } else {
                         self.error_at(toks[0].start, toks.last().unwrap().end, "unsupported sub-pattern in sequence (use literals, names, or _)");
                     }
@@ -348,8 +339,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.loop_kinds.push(false);
 
         self.expr();
-        self.chunk.emit(OpCode::JumpIfFalse, 0);
-        let jf = self.chunk.instructions.len() - 1;
+        let jf = self.emit_jump(OpCode::JumpIfFalse);
 
         self.eat(TokenType::Colon);
         self.compile_block();
@@ -400,8 +390,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.loop_breaks.push(vec![]);
         self.loop_kinds.push(true);
 
-        self.chunk.emit(OpCode::ForIter, 0);
-        let fi = self.chunk.instructions.len() - 1;
+        let fi = self.emit_jump(OpCode::ForIter);
 
         if vars.len() == 1 && star_pos.is_none() {
             self.store_name(vars[0].clone());
@@ -442,15 +431,13 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.advance();
         self.eat(TokenType::Colon);
 
-        self.chunk.emit(OpCode::SetupExcept, 0);
-        let setup = self.chunk.instructions.len() - 1;
+        let setup = self.emit_jump(OpCode::SetupExcept);
 
         self.enter_block();
         self.compile_block();
 
         self.chunk.emit(OpCode::PopExcept, 0);
-        self.chunk.emit(OpCode::Jump, 0);
-        let success_jump = self.chunk.instructions.len() - 1;
+        let success_jump = self.emit_jump(OpCode::Jump);
 
         self.mid_block();
 
@@ -476,8 +463,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 let isinst_pos = self.last_end as u32;
                 self.chunk.emit(OpCode::CallIsInstance, 0);
                 self.chunk.record_call_pos(isinst_pos);
-                self.chunk.emit(OpCode::JumpIfFalse, 0);
-                next_arm_jump = Some(self.chunk.instructions.len() - 1);
+                next_arm_jump = Some(self.emit_jump(OpCode::JumpIfFalse));
 
                 if self.eat_if(TokenType::As) {
                     let n = self.advance_text();
@@ -492,8 +478,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 Some(TokenType::Except | TokenType::Else | TokenType::Finally)
             );
             if !had_bare || more {
-                self.chunk.emit(OpCode::Jump, 0);
-                end_jumps.push(self.chunk.instructions.len() - 1);
+                end_jumps.push(self.emit_jump(OpCode::Jump));
             }
         }
 

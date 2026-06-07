@@ -168,8 +168,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             self.chunk.emit(OpCode::GetIter, 0);
 
             let ls = self.chunk.instructions.len() as u16;
-            self.chunk.emit(OpCode::ForIter, 0);
-            let fi = self.chunk.instructions.len() - 1;
+            let fi = self.emit_jump(OpCode::ForIter);
 
             if vars.len() == 1 {
                 self.store_name(vars[0].clone());

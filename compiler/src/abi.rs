@@ -8,12 +8,23 @@ use alloc::{string::String, vec::Vec};
 
 pub use wasm_abi::{nan_box, EDGE_ABI_VERSION, TAG_INVALID};
 
-/* Op codes (sealed), values mirror `wasm_abi::op::*`. */
+/* Sealed enum + `from_u32` reverse map from one variant list, so the two can't drift. Values mirror `wasm_abi::*`. */
+macro_rules! abi_enum {
+    ($name:ident { $($variant:ident = $value:path),+ $(,)? }) => {
+        #[allow(non_camel_case_types)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u32)]
+        pub enum $name { $($variant = $value),+ }
+        impl $name {
+            pub fn from_u32(v: u32) -> Option<Self> {
+                match v { $($value => Some(Self::$variant),)+ _ => None }
+            }
+        }
+    };
+}
 
-#[allow(non_camel_case_types)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u32)]
-pub enum Op {
+/* Op codes (sealed), values mirror `wasm_abi::op::*`. */
+abi_enum!(Op {
     Call = wasm_abi::op::CALL,
     GetAttr = wasm_abi::op::GET_ATTR,
     SetAttr = wasm_abi::op::SET_ATTR,
@@ -28,36 +39,10 @@ pub enum Op {
     NewTuple = wasm_abi::op::NEW_TUPLE,
     NewSet = wasm_abi::op::NEW_SET,
     NewFrozenSet = wasm_abi::op::NEW_FROZENSET,
-}
-
-impl Op {
-    pub fn from_u32(op: u32) -> Option<Self> {
-        match op {
-            wasm_abi::op::CALL => Some(Self::Call),
-            wasm_abi::op::GET_ATTR => Some(Self::GetAttr),
-            wasm_abi::op::SET_ATTR => Some(Self::SetAttr),
-            wasm_abi::op::GET_ITEM => Some(Self::GetItem),
-            wasm_abi::op::SET_ITEM => Some(Self::SetItem),
-            wasm_abi::op::LEN => Some(Self::Len),
-            wasm_abi::op::ITER => Some(Self::Iter),
-            wasm_abi::op::ITER_NEXT => Some(Self::IterNext),
-            wasm_abi::op::NEW_DICT => Some(Self::NewDict),
-            wasm_abi::op::NEW_LIST => Some(Self::NewList),
-            wasm_abi::op::TYPE_OF => Some(Self::TypeOf),
-            wasm_abi::op::NEW_TUPLE => Some(Self::NewTuple),
-            wasm_abi::op::NEW_SET => Some(Self::NewSet),
-            wasm_abi::op::NEW_FROZENSET => Some(Self::NewFrozenSet),
-            _ => None,
-        }
-    }
-}
+});
 
 /* Tags (sealed), values mirror `wasm_abi::tag::*`. */
-
-#[allow(non_camel_case_types)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u32)]
-pub enum Tag {
+abi_enum!(Tag {
     None = wasm_abi::tag::NONE,
     Bool = wasm_abi::tag::BOOL,
     Int = wasm_abi::tag::INT,
@@ -66,28 +51,10 @@ pub enum Tag {
     Bytes = wasm_abi::tag::BYTES,
     // Opaque bytes: no UTF-8 validation, maps to Python `bytes`.
     Raw = wasm_abi::tag::RAW,
-}
-
-impl Tag {
-    pub fn from_u32(t: u32) -> Option<Self> {
-        match t {
-            wasm_abi::tag::NONE => Some(Self::None),
-            wasm_abi::tag::BOOL => Some(Self::Bool),
-            wasm_abi::tag::INT => Some(Self::Int),
-            wasm_abi::tag::FLOAT => Some(Self::Float),
-            wasm_abi::tag::BYTES => Some(Self::Bytes),
-            wasm_abi::tag::RAW => Some(Self::Raw),
-            _ => None,
-        }
-    }
-}
+});
 
 /* Error kinds (sealed), values mirror `wasm_abi::error_kind::*`. */
-
-#[allow(non_camel_case_types)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u32)]
-pub enum ErrorKind {
+abi_enum!(ErrorKind {
     Type = wasm_abi::error_kind::TYPE,
     Value = wasm_abi::error_kind::VALUE,
     Runtime = wasm_abi::error_kind::RUNTIME,
@@ -95,22 +62,7 @@ pub enum ErrorKind {
     Index = wasm_abi::error_kind::INDEX,
     Key = wasm_abi::error_kind::KEY,
     Custom = wasm_abi::error_kind::CUSTOM,
-}
-
-impl ErrorKind {
-    pub fn from_u32(k: u32) -> Option<Self> {
-        match k {
-            wasm_abi::error_kind::TYPE => Some(Self::Type),
-            wasm_abi::error_kind::VALUE => Some(Self::Value),
-            wasm_abi::error_kind::RUNTIME => Some(Self::Runtime),
-            wasm_abi::error_kind::ATTRIBUTE => Some(Self::Attribute),
-            wasm_abi::error_kind::INDEX => Some(Self::Index),
-            wasm_abi::error_kind::KEY => Some(Self::Key),
-            wasm_abi::error_kind::CUSTOM => Some(Self::Custom),
-            _ => None,
-        }
-    }
-}
+});
 
 /* Handle table */
 

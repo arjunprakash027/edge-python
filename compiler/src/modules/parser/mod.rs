@@ -124,6 +124,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.chunk.emit(OpCode::LoadConst, i);
     }
 
+    /* Emit a jump with a placeholder operand; returns its instruction index for later patching. */
+    pub(super) fn emit_jump(&mut self, op: OpCode) -> usize {
+        self.chunk.emit(op, 0);
+        self.chunk.instructions.len() - 1
+    }
+
     pub(super) fn store_name(&mut self, name: String) {
         if self.globals_decl.contains(&name) {
             let i = self.chunk.push_name(&name);

@@ -22,66 +22,36 @@ pub fn encode(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     vm.push(v); Ok(())
 }
 
-// str: zero-arg transforms.
-pub fn upper(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
-    let s = recv_str(vm, recv)?;
-    let v = vm.heap.alloc(HeapObj::Str(s.to_uppercase()))?;
-    vm.push(v); Ok(())
+// str: zero-arg transforms `recv_str -> f -> push`.
+macro_rules! str_transform {
+    ($name:ident, $f:expr) => {
+        pub fn $name(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
+            let s = recv_str(vm, recv)?;
+            vm.alloc_and_push_str($f(s.as_str()))
+        }
+    };
 }
+str_transform!(upper, |s: &str| s.to_uppercase());
+str_transform!(lower, |s: &str| s.to_lowercase());
+str_transform!(capitalize, capitalize_first);
+str_transform!(title, title_case);
 
-pub fn lower(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
-    let s = recv_str(vm, recv)?;
-    let v = vm.heap.alloc(HeapObj::Str(s.to_lowercase()))?;
-    vm.push(v); Ok(())
-}
-
-pub fn strip(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
+// str.strip / lstrip / rstrip: trim whitespace, or any char in the optional arg.
+enum Trim { Both, Start, End }
+fn strip_impl(vm: &mut VM, recv: Val, pos: &[Val], mode: Trim) -> Result<(), VmErr> {
     let s = recv_str(vm, recv)?;
     let out = if pos.is_empty() {
-        s.trim().to_string()
+        match mode { Trim::Both => s.trim(), Trim::Start => s.trim_start(), Trim::End => s.trim_end() }.to_string()
     } else {
         let p = val_to_str(vm, pos[0])?;
-        s.trim_matches(|c| p.contains(c)).to_string()
+        let f = |c: char| p.contains(c);
+        match mode { Trim::Both => s.trim_matches(f), Trim::Start => s.trim_start_matches(f), Trim::End => s.trim_end_matches(f) }.to_string()
     };
-    let v = vm.heap.alloc(HeapObj::Str(out))?;
-    vm.push(v); Ok(())
+    vm.alloc_and_push_str(out)
 }
-
-pub fn capitalize(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
-    let s = recv_str(vm, recv)?;
-    let v = vm.heap.alloc(HeapObj::Str(capitalize_first(&s)))?;
-    vm.push(v); Ok(())
-}
-
-pub fn title(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
-    let s = recv_str(vm, recv)?;
-    let v = vm.heap.alloc(HeapObj::Str(title_case(&s)))?;
-    vm.push(v); Ok(())
-}
-
-pub fn lstrip(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
-    let s = recv_str(vm, recv)?;
-    let out = if pos.is_empty() {
-        s.trim_start().to_string()
-    } else {
-        let p = val_to_str(vm, pos[0])?;
-        s.trim_start_matches(|c| p.contains(c)).to_string()
-    };
-    let v = vm.heap.alloc(HeapObj::Str(out))?;
-    vm.push(v); Ok(())
-}
-
-pub fn rstrip(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
-    let s = recv_str(vm, recv)?;
-    let out = if pos.is_empty() {
-        s.trim_end().to_string()
-    } else {
-        let p = val_to_str(vm, pos[0])?;
-        s.trim_end_matches(|c| p.contains(c)).to_string()
-    };
-    let v = vm.heap.alloc(HeapObj::Str(out))?;
-    vm.push(v); Ok(())
-}
+pub fn strip(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> { strip_impl(vm, recv, pos, Trim::Both) }
+pub fn lstrip(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> { strip_impl(vm, recv, pos, Trim::Start) }
+pub fn rstrip(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> { strip_impl(vm, recv, pos, Trim::End) }
 
 pub fn isdigit(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
     let s = recv_str(vm, recv)?;
@@ -157,16 +127,14 @@ pub fn join(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     };
     let mut parts: Vec<String> = Vec::with_capacity(items.len());
     for v in items { parts.push(val_to_str(vm, v)?); }
-    let v = vm.heap.alloc(HeapObj::Str(parts.join(sep.as_str())))?;
-    vm.push(v); Ok(())
+    vm.alloc_and_push_str(parts.join(sep.as_str()))
 }
 
 pub fn replace(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let s = recv_str(vm, recv)?;
     let old = val_to_str(vm, pos[0])?;
     let new = val_to_str(vm, pos[1])?;
-    let v = vm.heap.alloc(HeapObj::Str(s.replace(old.as_str(), new.as_str())))?;
-    vm.push(v); Ok(())
+    vm.alloc_and_push_str(s.replace(old.as_str(), new.as_str()))
 }
 
 // `str.removeprefix` / `removesuffix`, strip if present, else return unchanged.
@@ -174,16 +142,14 @@ pub fn removeprefix(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let s = recv_str(vm, recv)?;
     let p = val_to_str(vm, pos[0])?;
     let out = s.strip_prefix(p.as_str()).map(|t| t.to_string()).unwrap_or(s);
-    let v = vm.heap.alloc(HeapObj::Str(out))?;
-    vm.push(v); Ok(())
+    vm.alloc_and_push_str(out)
 }
 
 pub fn removesuffix(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let s = recv_str(vm, recv)?;
     let suf = val_to_str(vm, pos[0])?;
     let out = s.strip_suffix(suf.as_str()).map(|t| t.to_string()).unwrap_or(s);
-    let v = vm.heap.alloc(HeapObj::Str(out))?;
-    vm.push(v); Ok(())
+    vm.alloc_and_push_str(out)
 }
 
 // `str.splitlines()`, split on \n / \r / \r\n, dropping the separator (keepends=False).
@@ -204,33 +170,23 @@ pub fn splitlines(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
 }
 
 // `str.partition` / `rpartition`, (head, sep, tail); on miss returns (s,"","") / ("","",s).
-pub fn partition(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
+fn partition_impl(vm: &mut VM, recv: Val, pos: &[Val], from_right: bool) -> Result<(), VmErr> {
     let s = recv_str(vm, recv)?;
     let sep = val_to_str(vm, pos[0])?;
     if sep.is_empty() { return Err(cold_value("empty separator")); }
-    let (a, b, c): (String, String, String) = match s.find(sep.as_str()) {
+    let hit = if from_right { s.rfind(sep.as_str()) } else { s.find(sep.as_str()) };
+    let (a, b, c): (String, String, String) = match hit {
         Some(i) => (s[..i].to_string(), sep.clone(), s[i + sep.len()..].to_string()),
-        None => (s, String::new(), String::new()),
+        None if from_right => (String::new(), String::new(), s), // miss: original at the tail
+        None => (s, String::new(), String::new()), // miss: original at the head
     };
     let av = vm.heap.alloc(HeapObj::Str(a))?;
     let bv = vm.heap.alloc(HeapObj::Str(b))?;
     let cv = vm.heap.alloc(HeapObj::Str(c))?;
     vm.alloc_and_push_tuple(vec![av, bv, cv])
 }
-
-pub fn rpartition(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
-    let s = recv_str(vm, recv)?;
-    let sep = val_to_str(vm, pos[0])?;
-    if sep.is_empty() { return Err(cold_value("empty separator")); }
-    let (a, b, c): (String, String, String) = match s.rfind(sep.as_str()) {
-        Some(i) => (s[..i].to_string(), sep.clone(), s[i + sep.len()..].to_string()),
-        None => (String::new(), String::new(), s),
-    };
-    let av = vm.heap.alloc(HeapObj::Str(a))?;
-    let bv = vm.heap.alloc(HeapObj::Str(b))?;
-    let cv = vm.heap.alloc(HeapObj::Str(c))?;
-    vm.alloc_and_push_tuple(vec![av, bv, cv])
-}
+pub fn partition(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> { partition_impl(vm, recv, pos, false) }
+pub fn rpartition(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> { partition_impl(vm, recv, pos, true) }
 
 // str: padding.
 pub fn center(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
@@ -247,8 +203,7 @@ pub fn center(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let left = pad / 2;
     let right = pad - left;
     let out = fill.to_string().repeat(left) + &s + &fill.to_string().repeat(right);
-    let v = vm.heap.alloc(HeapObj::Str(out))?;
-    vm.push(v); Ok(())
+    vm.alloc_and_push_str(out)
 }
 
 pub fn zfill(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
@@ -268,6 +223,5 @@ pub fn zfill(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
             pad + &s
         }
     };
-    let v = vm.heap.alloc(HeapObj::Str(out))?;
-    vm.push(v); Ok(())
+    vm.alloc_and_push_str(out)
 }

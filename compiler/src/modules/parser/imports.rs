@@ -163,6 +163,28 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         exports
     }
 
+    /* Build a Native ImportKind from resolved bindings/classes/consts. */
+    fn native_import_kind(bindings: &[crate::modules::packages::NativeBinding], classes: &[crate::modules::packages::NativeClass], consts: &[crate::modules::packages::NativeBinding]) -> ImportKind {
+        ImportKind::Native {
+            funcs: bindings.iter().map(binding_to_extern).collect(),
+            classes: classes.iter().map(|c| NativeClassEntry {
+                name: c.name.clone(),
+                methods: c.methods.iter().map(binding_to_extern).collect(),
+            }).collect(),
+            consts: consts.iter().map(binding_to_extern).collect(),
+        }
+    }
+
+    /* Emit `LoadModule + LoadAttr(name) + StoreName(alias)`: bind a module attribute under `alias`. */
+    fn bind_module_attr(&mut self, import_idx: u16, name: &str, alias: &str) {
+        self.chunk.emit(OpCode::LoadModule, import_idx);
+        let attr_idx = self.chunk.push_name(name);
+        self.chunk.emit(OpCode::LoadAttr, attr_idx);
+        let ver = self.increment_version(alias);
+        let slot = self.push_ssa_name(alias, ver);
+        self.chunk.emit(OpCode::StoreName, slot);
+    }
+
     /* Named import: registers module, emits LoadModule+LoadAttr+StoreName; Native also populates extern_table for functions. */
     fn resolve_and_bind_named(&mut self, spec: &str, span: (usize, usize), names: Vec<(String, String)>) {
         let (_url, resolved) = match self.resolve_with_integrity(spec) {
@@ -176,22 +198,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         match resolved {
             Resolved::Native { bindings, classes, consts, .. } => {
                 // Register module first so LoadModule can target it for class and const imports.
-                let externs: Vec<crate::modules::vm::types::ExternFn> = bindings.iter().map(binding_to_extern).collect();
-                let class_entries: Vec<NativeClassEntry> = classes.iter().map(|c| NativeClassEntry {
-                    name: c.name.clone(),
-                    methods: c.methods.iter().map(binding_to_extern).collect(),
-                }).collect();
-                let const_entries: Vec<crate::modules::vm::types::ExternFn> = consts.iter().map(binding_to_extern).collect();
-                let import_idx = self.register_import(&url, ImportKind::Native { funcs: externs, classes: class_entries, consts: const_entries });
+                let import_idx = self.register_import(&url, Self::native_import_kind(&bindings, &classes, &consts));
                 // Classes and consts bind via LoadModule+LoadAttr (module attr); functions take the extern_table fast path.
                 for (name, alias) in &names {
                     if classes.iter().any(|c| c.name == *name) || consts.iter().any(|c| c.name == *name) {
-                        self.chunk.emit(OpCode::LoadModule, import_idx);
-                        let attr_idx = self.chunk.push_name(name);
-                        self.chunk.emit(OpCode::LoadAttr, attr_idx);
-                        let alias_ver = self.increment_version(alias);
-                        let alias_slot = self.push_ssa_name(alias, alias_ver);
-                        self.chunk.emit(OpCode::StoreName, alias_slot);
+                        self.bind_module_attr(import_idx, name, alias);
                         continue;
                     }
                     let Some(b) = bindings.iter().find(|b| b.name == *name) else {
@@ -215,12 +226,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                             &s!("module '", str &canonical, "' has no export '", str name, "'"));
                         continue;
                     }
-                    self.chunk.emit(OpCode::LoadModule, import_idx);
-                    let attr_idx = self.chunk.push_name(name);
-                    self.chunk.emit(OpCode::LoadAttr, attr_idx);
-                    let alias_ver = self.increment_version(alias);
-                    let alias_slot = self.push_ssa_name(alias, alias_ver);
-                    self.chunk.emit(OpCode::StoreName, alias_slot);
+                    self.bind_module_attr(import_idx, name, alias);
                 }
             }
         }
@@ -234,14 +240,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         };
         let import_idx = match resolved {
             Resolved::Native { bindings, classes, consts, canonical } => {
-                let externs: Vec<crate::modules::vm::types::ExternFn> =
-                    bindings.iter().map(binding_to_extern).collect();
-                let class_entries: Vec<NativeClassEntry> = classes.iter().map(|c| NativeClassEntry {
-                    name: c.name.clone(),
-                    methods: c.methods.iter().map(binding_to_extern).collect(),
-                }).collect();
-                let const_entries: Vec<crate::modules::vm::types::ExternFn> = consts.iter().map(binding_to_extern).collect();
-                self.register_import(&canonical, ImportKind::Native { funcs: externs, classes: class_entries, consts: const_entries })
+                self.register_import(&canonical, Self::native_import_kind(&bindings, &classes, &consts))
             }
             Resolved::Code { src, canonical } => {
                 let Some(sub) = self.parse_or_get_cached(&canonical, &src, span) else { return; };
@@ -267,22 +266,10 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     self.chunk.extern_table.push(binding_to_extern(b));
                     self.chunk.extern_index.insert(b.name.clone(), idx);
                 }
-                let externs: Vec<crate::modules::vm::types::ExternFn> =
-                    bindings.iter().map(binding_to_extern).collect();
-                let class_entries: Vec<NativeClassEntry> = classes.iter().map(|c| NativeClassEntry {
-                    name: c.name.clone(),
-                    methods: c.methods.iter().map(binding_to_extern).collect(),
-                }).collect();
-                let const_entries: Vec<crate::modules::vm::types::ExternFn> = consts.iter().map(binding_to_extern).collect();
-                let import_idx = self.register_import(&canonical, ImportKind::Native { funcs: externs, classes: class_entries, consts: const_entries });
+                let import_idx = self.register_import(&canonical, Self::native_import_kind(&bindings, &classes, &consts));
                 // Star import binds each class and const via LoadModule+LoadAttr+StoreName under its own name.
                 for name in classes.iter().map(|c| &c.name).chain(consts.iter().map(|c| &c.name)) {
-                    self.chunk.emit(OpCode::LoadModule, import_idx);
-                    let attr_idx = self.chunk.push_name(name);
-                    self.chunk.emit(OpCode::LoadAttr, attr_idx);
-                    let alias_ver = self.increment_version(name);
-                    let alias_slot = self.push_ssa_name(name, alias_ver);
-                    self.chunk.emit(OpCode::StoreName, alias_slot);
+                    self.bind_module_attr(import_idx, name, name);
                 }
             }
             Resolved::Code { src, canonical } => {
@@ -290,12 +277,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 let exports = Self::module_public_exports(&sub);
                 let import_idx = self.register_import(&canonical, ImportKind::Code(sub));
                 for name in &exports {
-                    self.chunk.emit(OpCode::LoadModule, import_idx);
-                    let attr_idx = self.chunk.push_name(name);
-                    self.chunk.emit(OpCode::LoadAttr, attr_idx);
-                    let v = self.increment_version(name);
-                    let s = self.push_ssa_name(name, v);
-                    self.chunk.emit(OpCode::StoreName, s);
+                    self.bind_module_attr(import_idx, name, name);
                 }
             }
         }

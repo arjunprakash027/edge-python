@@ -49,8 +49,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     self.expr();
                     self.chunk.emit(OpCode::GetIter, 0);
                     let loop_start = self.chunk.instructions.len() as u16;
-                    self.chunk.emit(OpCode::ForIter, 0);
-                    let fi = self.chunk.instructions.len() - 1;
+                    let fi = self.emit_jump(OpCode::ForIter);
                     self.chunk.emit(OpCode::Yield, 0);
                     self.chunk.emit(OpCode::PopTop, 0);
                     self.chunk.emit(OpCode::Jump, loop_start);
@@ -145,10 +144,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.expr();
                 if self.eat_if(TokenType::Comma) {
                     // `assert cond, msg` desugars to lazy `if not cond: raise AssertionError(msg)`.
-                    self.chunk.emit(OpCode::JumpIfFalse, 0); // false -> raise; pops cond
-                    let to_raise = self.chunk.instructions.len() - 1;
-                    self.chunk.emit(OpCode::Jump, 0); // true -> skip raise
-                    let to_end = self.chunk.instructions.len() - 1;
+                    let to_raise = self.emit_jump(OpCode::JumpIfFalse);
+                    let to_end = self.emit_jump(OpCode::Jump);
                     self.patch(to_raise);
                     let call_pos = self.last_end as u32;
                     let idx = self.chunk.push_name("AssertionError");
@@ -229,9 +226,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     if let Some(true) = self.loop_kinds.last() {
                         self.chunk.emit(OpCode::PopIter, 0);
                     }
-                    self.chunk.emit(OpCode::Jump, 0);
+                    let j = self.emit_jump(OpCode::Jump);
                     if let Some(breaks) = self.loop_breaks.last_mut() {
-                        breaks.push(self.chunk.instructions.len() - 1);
+                        breaks.push(j);
                     }
                 }
                 false

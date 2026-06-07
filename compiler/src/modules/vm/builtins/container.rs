@@ -8,7 +8,7 @@ use super::super::types::*;
 impl<'a> VM<'a> {
 
     /* Heap-alloc `s` and push the resulting Val. Used by builtins that produce string results. */
-    pub(in crate::modules::vm::builtins) fn alloc_and_push_str(&mut self, s: String) -> Result<(), VmErr> {
+    pub(crate) fn alloc_and_push_str(&mut self, s: String) -> Result<(), VmErr> {
         let v = self.heap.alloc(HeapObj::Str(s))?;
         self.push(v); Ok(())
     }
