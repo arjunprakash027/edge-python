@@ -391,10 +391,11 @@ impl<'a> VM<'a> {
                     if slot < fn_slots.len() { fn_slots[slot] = dict_val; }
                 }
                 ParamKind::Star => {
+                    // *args binds to an immutable tuple.
                     let rest: Vec<Val> = positional[pos_idx..].to_vec();
                     pos_idx = positional.len();
-                    let list_val = self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(rest))))?;
-                    if slot < fn_slots.len() { fn_slots[slot] = list_val; }
+                    let tuple_val = self.heap.alloc(HeapObj::Tuple(rest))?;
+                    if slot < fn_slots.len() { fn_slots[slot] = tuple_val; }
                 }
                 ParamKind::Normal => {
                     if pos_idx >= positional.len() { continue; }

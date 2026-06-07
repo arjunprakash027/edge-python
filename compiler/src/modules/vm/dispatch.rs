@@ -556,8 +556,10 @@ impl<'a> VM<'a> {
             OpCode::SetupWith => {
                 let _ = operand;
                 let cm = self.pop()?;
-                // instance `__enter__` runs at setup; its return value feeds the `as` target.
-                let bound = if let Some(r) = self.try_call_dunder(cm, "__enter__", &[], chunk, slots)? { r } else { cm };
+                // `with` needs the context-manager protocol; reject objects lacking `__enter__`. Its return feeds the `as` target.
+                let Some(bound) = self.try_call_dunder(cm, "__enter__", &[], chunk, slots)? else {
+                    return Err(VmErr::TypeMsg(s!("'", str self.type_name(cm), "' object does not support the context manager protocol")));
+                };
                 self.with_stack.push(cm);
                 self.push(bound);
             }
