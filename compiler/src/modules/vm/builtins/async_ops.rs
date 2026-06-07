@@ -16,8 +16,8 @@ impl<'a> VM<'a> {
                 return Err(cold_type("not a coroutine"));
             };
 
-        // Bound coroutine depth; charge per-resume clone work.
-        if sync_frames.len() >= self.max_calls {
+        // Bound depth: sync frames within a coroutine, plus nested resumes from mutual awaits (native-stack recursion).
+        if sync_frames.len() >= self.max_calls || self.depth >= self.max_calls {
             return Err(cold_depth());
         }
         // Charge the whole cloned state (stack/slots/iters/frames), not just frame count.

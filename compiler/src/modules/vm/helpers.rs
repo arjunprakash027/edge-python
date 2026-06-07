@@ -181,10 +181,11 @@ impl<'a> VM<'a> {
 
     /* Pick the first defined Phi source; if both are undef fall back to None. */
     pub(crate) fn exec_phi(op: u16, rip: usize, phi_map: &[usize], slots: &mut [Val], phi_sources: &[(u16, u16)]) {
-        let (ia, ib) = phi_sources[phi_map[rip]];
-        let a = slots[ia as usize];
+        // Parse recovery can leave a Phi indexing past `slots` (sized to names.len()); index defensively.
+        let Some(&(ia, ib)) = phi_map.get(rip).and_then(|&pi| phi_sources.get(pi)) else { return };
+        let a = slots.get(ia as usize).copied().unwrap_or_else(Val::undef);
         let val = if !a.is_undef() { a }
-        else { let b = slots[ib as usize]; if !b.is_undef() { b } else { Val::none() } };
-        slots[op as usize] = val;
+        else { let b = slots.get(ib as usize).copied().unwrap_or_else(Val::undef); if !b.is_undef() { b } else { Val::none() } };
+        if let Some(dst) = slots.get_mut(op as usize) { *dst = val; }
     }
 }

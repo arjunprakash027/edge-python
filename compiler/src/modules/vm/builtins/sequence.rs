@@ -132,9 +132,8 @@ impl<'a> VM<'a> {
             self.exec_call(1, chunk, slots)?;
             keys.push(self.pop()?);
         }
-        let mut indices: Vec<usize> = (0..items.len()).collect();
         let mut sort_err: Option<VmErr> = None;
-        indices.sort_by(|&a, &b| {
+        let order = Self::stable_sort_indices(items.len(), |a, b| {
             if sort_err.is_some() { return core::cmp::Ordering::Equal; }
             match self.lt_vals(keys[a], keys[b]) {
                 Ok(true) => core::cmp::Ordering::Less,
@@ -147,17 +146,18 @@ impl<'a> VM<'a> {
             }
         });
         if let Some(e) = sort_err { return Err(e); }
-        Ok(indices.into_iter().map(|i| items[i]).collect())
+        Ok(order.into_iter().map(|i| items[i]).collect())
     }
 
-    /* In-place sort via `lt_vals`. Stashes the first error and surfaces it after the sort, `sort_by` closures can't return Result. */
+    /* In-place sort via `lt_vals`. Stashes the first error and surfaces it after the sort. */
     pub(crate) fn sort_by_lt(&self, items: &mut [Val]) -> Result<(), VmErr> {
+        let snapshot = items.to_vec();
         let mut sort_err: Option<VmErr> = None;
-        items.sort_by(|&a, &b| {
+        let order = Self::stable_sort_indices(items.len(), |a, b| {
             if sort_err.is_some() { return core::cmp::Ordering::Equal; }
-            match self.lt_vals(a, b) {
+            match self.lt_vals(snapshot[a], snapshot[b]) {
                 Ok(true) => core::cmp::Ordering::Less,
-                Ok(false) => match self.lt_vals(b, a) {
+                Ok(false) => match self.lt_vals(snapshot[b], snapshot[a]) {
                     Ok(true) => core::cmp::Ordering::Greater,
                     Ok(false) => core::cmp::Ordering::Equal,
                     Err(e) => { sort_err = Some(e); core::cmp::Ordering::Equal }
@@ -165,7 +165,41 @@ impl<'a> VM<'a> {
                 Err(e) => { sort_err = Some(e); core::cmp::Ordering::Equal }
             }
         });
-        sort_err.map_or(Ok(()), Err)
+        if let Some(e) = sort_err { return Err(e); }
+        for (dst, &src) in order.iter().enumerate() { items[dst] = snapshot[src]; }
+        Ok(())
+    }
+
+    /* Stable merge sort over `0..n`; unlike `slice::sort_by` it tolerates a non-total `cmp` (NaN keys) without aborting. */
+    fn stable_sort_indices<F>(n: usize, mut cmp: F) -> Vec<usize>
+    where F: FnMut(usize, usize) -> core::cmp::Ordering {
+        let mut idx: Vec<usize> = (0..n).collect();
+        if n < 2 { return idx; }
+        let mut buf = idx.clone();
+        let mut width = 1;
+        while width < n {
+            let mut lo = 0;
+            while lo < n {
+                let mid = (lo + width).min(n);
+                let hi = (lo + 2 * width).min(n);
+                let (mut a, mut b, mut k) = (lo, mid, lo);
+                while a < mid && b < hi {
+                    // Take the right run only on a strict Less, so equal keys keep input order (stable).
+                    if cmp(idx[b], idx[a]) == core::cmp::Ordering::Less {
+                        buf[k] = idx[b]; b += 1;
+                    } else {
+                        buf[k] = idx[a]; a += 1;
+                    }
+                    k += 1;
+                }
+                while a < mid { buf[k] = idx[a]; a += 1; k += 1; }
+                while b < hi { buf[k] = idx[b]; b += 1; k += 1; }
+                lo += 2 * width;
+            }
+            core::mem::swap(&mut idx, &mut buf);
+            width *= 2;
+        }
+        idx
     }
 
     pub fn call_reversed(&mut self) -> Result<(), VmErr> {
@@ -370,6 +404,7 @@ impl<'a> VM<'a> {
         let o = self.pop()?;
         let mut cur = self.iter_cursor(o)?;
         while let Some(v) = cur.next(&mut self.heap)? {
+            self.charge_step()?; // native iteration over a huge range must charge the op-budget
             if !self.truthy(v) {
                 self.push(Val::bool(false));
                 return Ok(());
@@ -384,6 +419,7 @@ impl<'a> VM<'a> {
         let o = self.pop()?;
         let mut cur = self.iter_cursor(o)?;
         while let Some(v) = cur.next(&mut self.heap)? {
+            self.charge_step()?; // native iteration over a huge range must charge the op-budget
             if self.truthy(v) {
                 self.push(Val::bool(true));
                 return Ok(());

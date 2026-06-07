@@ -679,7 +679,7 @@ print(repr([1, "two", 3]))
 
 ### format
 
-`format(value)` -> display form. `format(value, spec)` applies the f-string spec mini-language (`[[fill]align][sign][#][0][width][,][.precision][type]`).
+`format(value)` -> display form. `format(value, spec)` applies the f-string spec mini-language (`[[fill]align][sign][#][0][width][,][.precision][type]`). Width and precision are capped (precision at 65,000); a larger value raises `ValueError` rather than allocating an oversized string.
 
 ```python
 print(format(42))

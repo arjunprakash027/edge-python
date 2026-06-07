@@ -30,6 +30,9 @@ fn eq_vals_depth(a: Val, b: Val, heap: &HeapPool, depth: usize) -> bool {
         return a.0 == b.0;
     }
 
+    // A heap object equals itself; short-circuits self-referential containers before the element walk.
+    if a.0 == b.0 { return true; }
+
     let d = depth + 1;
     match (heap.get(a), heap.get(b)) {
         (HeapObj::Str(x), HeapObj::Str(y)) => x == y,
