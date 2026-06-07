@@ -84,7 +84,7 @@ impl VmErr {
             Self::Type(m) | Self::Value(m) | Self::Runtime(m) => String::from(*m),
             Self::TypeMsg(m) | Self::Attribute(m) => m.clone(),
             // `Raised` carries "Class" or "Class: message"; the message is the part after the class (empty for a bare class), so re-wrapping into an ExcInstance doesn't double the class prefix.
-            Self::Raised(m) => m.split_once(": ").map_or(String::new(), |(_, msg)| msg.to_string()),
+            Self::Raised(m) => m.split_once(": ").map_or(String::new(), |(_, msg)| String::from(msg)),
             Self::ZeroDiv => String::from("division by zero"),
             Self::Overflow => String::from("integer too large for 128-bit int range"),
             Self::CallDepth => String::from("max depth"),
