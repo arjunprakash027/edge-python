@@ -52,7 +52,7 @@ impl<'a> VM<'a> {
                 let chars: Vec<char> = s.chars().collect();
                 let i = idx.as_int();
                 let ui = normalize_index(i, chars.len());
-                let c = chars.get(ui).copied().ok_or(cold_value("string index out of range"))?;
+                let c = chars.get(ui).copied().ok_or(cold_index("string index out of range"))?;
                 let val = self.heap.alloc(HeapObj::Str(c.to_string()))?;
                 self.push(val);
                 return Ok(true);
@@ -63,7 +63,7 @@ impl<'a> VM<'a> {
             && let HeapObj::Bytes(b) = self.heap.get(obj) {
                 let i = idx.as_int();
                 let ui = normalize_index(i, b.len());
-                let byte = *b.get(ui).ok_or(cold_value("bytes index out of range"))?;
+                let byte = *b.get(ui).ok_or(cold_index("bytes index out of range"))?;
                 self.push(Val::int(byte as i64));
                 return Ok(true);
         }
@@ -133,13 +133,13 @@ impl<'a> VM<'a> {
                 if !idx.is_int() { return Err(cold_type("list indices must be integers")); }
                 let b = v.borrow(); let i = idx.as_int();
                 let ui = normalize_index(i, b.len());
-                b.get(ui).copied().ok_or(cold_value("list index out of range"))
+                b.get(ui).copied().ok_or(cold_index("list index out of range"))
             }
             HeapObj::Tuple(v) => {
                 if !idx.is_int() { return Err(cold_type("tuple indices must be integers")); }
                 let i = idx.as_int();
                 let ui = normalize_index(i, v.len());
-                v.get(ui).copied().ok_or(cold_value("tuple index out of range"))
+                v.get(ui).copied().ok_or(cold_index("tuple index out of range"))
             }
             HeapObj::Dict(p) => {
                 p.borrow().get(&idx).copied().ok_or(cold_value("key not found"))
@@ -201,7 +201,7 @@ impl<'a> VM<'a> {
                 let mut b = v.borrow_mut();
                 let i = idx_val.as_int();
                 let ui = normalize_index(i, b.len());
-                if ui >= b.len() { return Err(cold_value("list assignment index out of range")); }
+                if ui >= b.len() { return Err(cold_index("list assignment index out of range")); }
                 b[ui] = value;
             }
             HeapObj::Dict(p) => { p.borrow_mut().insert(idx_val, value); }
@@ -230,12 +230,12 @@ impl<'a> VM<'a> {
                 if !idx_val.is_int() { return Err(cold_type("list indices must be integers")); }
                 let mut b = v.borrow_mut();
                 let ui = normalize_index(idx_val.as_int(), b.len());
-                if ui >= b.len() { return Err(cold_value("list index out of range")); }
+                if ui >= b.len() { return Err(cold_index("list index out of range")); }
                 b.remove(ui);
             }
             HeapObj::Dict(p) => {
                 if p.borrow_mut().remove(&idx_val).is_none() {
-                    return Err(cold_value("KeyError"));
+                    return Err(cold_key("key not found"));
                 }
             }
             HeapObj::Tuple(_) => return Err(cold_type("tuple does not support item deletion")),

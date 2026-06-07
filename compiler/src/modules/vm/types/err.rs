@@ -82,7 +82,9 @@ impl VmErr {
         match self {
             Self::Name(n) => crate::s!("name '", str n, "' is not defined"),
             Self::Type(m) | Self::Value(m) | Self::Runtime(m) => String::from(*m),
-            Self::TypeMsg(m) | Self::Attribute(m) | Self::Raised(m) => m.clone(),
+            Self::TypeMsg(m) | Self::Attribute(m) => m.clone(),
+            // `Raised` carries "Class" or "Class: message"; the message is the part after the class (empty for a bare class), so re-wrapping into an ExcInstance doesn't double the class prefix.
+            Self::Raised(m) => m.split_once(": ").map_or(String::new(), |(_, msg)| msg.to_string()),
             Self::ZeroDiv => String::from("division by zero"),
             Self::Overflow => String::from("integer too large for 128-bit int range"),
             Self::CallDepth => String::from("max depth"),
@@ -132,5 +134,7 @@ impl core::fmt::Display for VmErr {
 #[cold] #[inline(never)] pub fn cold_depth() -> VmErr { VmErr::CallDepth }
 #[cold] #[inline(never)] pub fn cold_type(m: &'static str) -> VmErr { VmErr::Type(m) }
 #[cold] #[inline(never)] pub fn cold_value(m: &'static str) -> VmErr { VmErr::Value(m) }
+#[cold] #[inline(never)] pub fn cold_index(m: &'static str) -> VmErr { VmErr::Raised(crate::s!("IndexError: ", str m)) }
+#[cold] #[inline(never)] pub fn cold_key(m: &'static str) -> VmErr { VmErr::Raised(crate::s!("KeyError: ", str m)) }
 #[cold] #[inline(never)] pub fn cold_runtime(m: &'static str) -> VmErr { VmErr::Runtime(m) }
 #[cold] #[inline(never)] pub fn cold_overflow() -> VmErr { VmErr::Overflow }

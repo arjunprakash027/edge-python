@@ -19,13 +19,27 @@ impl<'a> VM<'a> {
 
     pub fn call_type(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
-        // Exception instances report their concrete class (e.g. `ZeroDivisionError`), not the generic `exception`.
-        let name = match o.is_heap().then(|| self.heap.get(o)) {
-            Some(HeapObj::ExcInstance(n, _)) => n.clone(),
-            _ => self.type_name(o).to_string(), // interned, so shares the `set`/`int` singleton
-        };
+        let name = self.type_repr_name(o);
         let t = self.heap.alloc(HeapObj::Type(name))?;
         self.push(t);
         Ok(())
+    }
+
+    /* Name `type(x)` reports: a user instance's own class, an exception's concrete class, else the builtin type name. */
+    fn type_repr_name(&self, o: Val) -> alloc::string::String {
+        if o.is_heap() {
+            match self.heap.get(o) {
+                // Exception instances report their concrete class (e.g. `ZeroDivisionError`).
+                HeapObj::ExcInstance(n, _) => return n.clone(),
+                HeapObj::Instance(cls, _) => {
+                    let cls = *cls;
+                    if cls.is_heap() && let HeapObj::Class(n, _, _) = self.heap.get(cls) {
+                        return n.clone();
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.type_name(o).to_string() // interned, so shares the `set`/`int` singleton
     }
 }

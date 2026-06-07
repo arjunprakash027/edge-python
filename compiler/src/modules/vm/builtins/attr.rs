@@ -108,19 +108,9 @@ impl<'a> VM<'a> {
         self.alloc_and_push_dict(dm)
     }
 
-    /* `globals()`, module-level bindings as a dict. Merges `self.globals` (builtins/types/modules) with entry-chunk slots (user top-level names). Returned dict is a copy. */
+    /* `globals()`, module-level bindings as a dict. User top-level names only (entry-chunk slots + module state); builtins live in a separate namespace, matching CPython. Returned dict is a copy. */
     pub fn call_globals(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &[Val]) -> Result<(), VmErr> {
-        // Builtin/type/module pairs from `self.globals`, deduped to bare names.
         let mut out: crate::util::fx::FxHashMap<String, Val> = crate::util::fx::FxHashMap::default();
-        for (k, v) in self.globals.iter() {
-            // Drop SSA-mirrors (`x_0`, `x_1`); keep canonical bare name.
-            if let Some((bare, suf)) = k.rsplit_once('_') && suf.chars().all(|c| c.is_ascii_digit())
-            {
-                out.entry(bare.to_string()).or_insert(*v);
-                continue;
-            }
-            out.insert(k.clone(), *v);
-        }
         // Inside a function, entry slots sit at the bottom of `live_slots`; at top-level, use `slots` as-is.
         let (entry_chunk, entry_slots): (&crate::modules::parser::SSAChunk, &[Val]) =
             if core::ptr::eq(chunk as *const _, self.chunk as *const _) {
