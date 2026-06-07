@@ -45,8 +45,8 @@ docker compose exec -it fuzzer bash -c "cd compiler/fuzz-afl && watch -n 10 carg
 
 docker compose down # stop the campaign
 
-docker compose exec -T fuzzer bash -c 'cd compiler/fuzz-afl && ls -1 out/*/crashes/' # View the crashes throught all the containers
-docker compose exec -T fuzzer bash -c 'cd compiler/fuzz-afl && base64 out/<number>/crashes/<id>' # Take a look to the bug in base 64
+docker compose exec -T fuzzer bash -c 'cd compiler/fuzz-afl && find out -type f -path "*crashes*" ! -name README.txt' # Every saved crash across all instances and archived dirs
+docker compose exec -T fuzzer bash -c 'cd compiler/fuzz-afl && base64 out/m0/crashes/<id>' # Take a look to the bug in base 64
 ```
 
 If a container is stuck restarting and `docker compose down` won't clear it, force-remove it by id:
@@ -71,7 +71,7 @@ Where findings land depends on how you launched: a bare `cargo afl fuzz` (no `-M
 In a container campaign, list the saved crashes (the `m0`/`s1` dir is the instance) and reproduce one with a backtrace:
 
 ```bash
-docker compose exec -it fuzzer bash -c "ls compiler/fuzz-afl/out/*/crashes/id:*"
+docker compose exec -it fuzzer bash -c "cd compiler/fuzz-afl && find out -type f -path '*crashes*' ! -name README.txt"
 docker compose exec -it fuzzer bash -c "cd compiler/fuzz-afl && RUST_BACKTRACE=1 ./target/release/afl-pipeline < 'out/m0/crashes/<id>' 2>&1 | head -20"
 ```
 
@@ -80,8 +80,10 @@ docker compose exec -it fuzzer bash -c "cd compiler/fuzz-afl && RUST_BACKTRACE=1
 A parallel campaign saves one file per crashing *input*, not one per bug — a single panic site is reached by many distinct inputs, so `out/*/crashes/` overstates the real bug count. Reproduce each saved crash and group by panic site; each unique `file:line` is one bug to fix:
 
 ```bash
-for f in out/*/crashes/id*; do ./target/release/afl-pipeline < "$f" 2>&1 | grep -oE 'panicked at [^:]+:[0-9]+'; done | sort | uniq -c
+for f in $(find out -type f -path '*crashes*' ! -name README.txt); do ./target/release/afl-pipeline < "$f" 2>&1 | grep -oE 'panicked at [^:]+:[0-9]+'; done | sort | uniq -c
 ```
+
+Each time an instance resumes an existing `out/`, AFL archives the prior `crashes/` and `hangs/` to timestamped `crashes.<date>/` / `hangs.<date>/` and starts empty ones, so a long campaign accumulates many archive dirs (one per restart). Glob `*crashes*` / `*hangs*`, not just `crashes/`, or you only see the current — often empty — session. The live `fuzzer_stats` `saved_crashes` counter can read non-zero while the active `crashes/` holds nothing but `README.txt`; the files are in the archived dirs.
 
 Shrink one crash to its minimal reproducer with `cargo afl tmin` (feeds the case over stdin; no `@@`):
 
@@ -92,7 +94,7 @@ cargo afl tmin -i out/m0/crashes/<id> -o crash.min -- ./target/release/afl-pipel
 Hangs have no backtrace to group by. The op-bound (`Limits { ops: 100_000 }`) turns a genuine runaway loop into a `VmErr`, so a saved hang is usually an input that terminated but ran past `TIMEOUT_MS`, not a real lock-up — confirm by re-running under a wall-clock timeout, where exit 124 means genuinely stuck:
 
 ```bash
-for f in out/*/hangs/id*; do timeout 10 ./target/release/afl-pipeline < "$f" >/dev/null 2>&1; echo "$? $f"; done
+for f in $(find out -type f -path '*hangs*' ! -name README.txt); do timeout 10 ./target/release/afl-pipeline < "$f" >/dev/null 2>&1; echo "$? $f"; done
 ```
 
 ## Inputs are generated, not committed

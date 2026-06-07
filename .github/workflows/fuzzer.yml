@@ -41,8 +41,8 @@ jobs:
         working-directory: compiler/fuzz-afl
         run: |
           shopt -s nullglob
-          crashes=(out/*/crashes/id:*)
-          hangs=(out/*/hangs/id:*)
+          crashes=(out/*/crashes*/id:*)
+          hangs=(out/*/hangs*/id:*)
           for f in "${hangs[@]}"; do echo "::warning::hang $(basename "$f")"; done
           if (( ${#crashes[@]} )); then
             for f in "${crashes[@]}"; do echo "::error::crash $f"; cat "$f"; echo; done
@@ -55,7 +55,7 @@ jobs:
         if: always()
         run: |
           shopt -s nullglob
-          dirs=(compiler/fuzz-afl/out/*/crashes compiler/fuzz-afl/out/*/hangs)
+          dirs=(compiler/fuzz-afl/out/*/crashes* compiler/fuzz-afl/out/*/hangs*)
           if (( ${#dirs[@]} )); then
             tar -czf findings.tar.gz "${dirs[@]}"
           else
