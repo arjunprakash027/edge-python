@@ -64,17 +64,23 @@ impl<'a> VM<'a> {
                 let v = self.pop()?;
 
                 // Conversion flags consult the dunder-aware helpers so `f"{x!s}"` honours `__str__`.
+                // Charge each result's length; a big Str is one heap object the object quota misses.
                 let converted = match conv {
-                    1 => { let s = self.repr_op(v, chunk, slots)?; self.heap.alloc(HeapObj::Str(s))? }
-                    2 => { let s = self.display_op(v, chunk, slots)?; self.heap.alloc(HeapObj::Str(s))? }
-                    3 => self.heap.alloc(HeapObj::Str(super::format::display_inline(v, &self.heap).escape_default().collect::<String>()))?,
+                    1 => { let s = self.repr_op(v, chunk, slots)?; self.charge_steps(s.len())?; self.heap.alloc(HeapObj::Str(s))? }
+                    2 => { let s = self.display_op(v, chunk, slots)?; self.charge_steps(s.len())?; self.heap.alloc(HeapObj::Str(s))? }
+                    3 => {
+                        let raw = super::format::display_inline(v, &self.heap);
+                        self.charge_steps(raw.len())?;
+                        self.heap.alloc(HeapObj::Str(raw.escape_default().collect::<String>()))?
+                    }
                     _ => v,
                 };
 
                 let result = match spec_val {
                     Some(sv) => {
-                        let spec = match self.heap.get(sv) {
-                            HeapObj::Str(s) => s.clone(),
+                        // `try_get`: a non-heap spec value is a TypeError, not a bad-index heap access.
+                        let spec = match self.heap.try_get(sv) {
+                            Some(HeapObj::Str(s)) => s.clone(),
                             _ => return Err(cold_type("format spec must be a string")),
                         };
                         // Instance `__format__(spec)` runs through `format_op`; built-ins fall through to the spec engine.

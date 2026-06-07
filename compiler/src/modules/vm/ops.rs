@@ -9,6 +9,9 @@ use core::cell::RefCell;
 /* Cap on nested-container rendering depth; stops self-referential prints from overflowing the stack. */
 const RENDER_DEPTH_MAX: usize = 100;
 
+/* Cap on total rendered output; bounds breadth the way RENDER_DEPTH_MAX bounds depth. */
+const MAX_REPR_LEN: usize = 1_000_000;
+
 /* Same cap for `<` descent; self-referential sequences raise RecursionError. */
 const CMP_DEPTH_MAX: usize = 100;
 
@@ -174,7 +177,13 @@ impl<'a> VM<'a> {
 
     fn append_reprs<'b>(&self, out: &mut String, it: impl Iterator<Item = &'b Val>, seen: &mut Vec<u32>) {
         let mut first = true;
-        for v in it { if !first { out.push_str(", "); } out.push_str(&self.repr_d(*v, seen)); first = false; }
+        for v in it {
+            // Bound breadth: a wide structure re-referencing one big child would render without limit.
+            if out.len() > MAX_REPR_LEN { out.push_str(", ..."); break; }
+            if !first { out.push_str(", "); }
+            out.push_str(&self.repr_d(*v, seen));
+            first = false;
+        }
     }
 
     pub fn display(&self, v: Val) -> String { self.display_d(v, &mut Vec::new()) }
@@ -210,7 +219,7 @@ impl<'a> VM<'a> {
             HeapObj::Range(s,e,st) => if *st == 1 { s!("range(", int *s, ", ", int *e, ")") } else { s!("range(", int *s, ", ", int *e, ", ", int *st, ")") },
             HeapObj::List(l) => { let id = v.as_heap(); if seen.contains(&id) { return "[...]".into(); } seen.push(id); let mut o = s!(cap: 32; "["); self.append_reprs(&mut o, l.borrow().iter(), seen); o.push(']'); seen.pop(); o },
             HeapObj::Tuple(t) => { let id = v.as_heap(); if seen.contains(&id) { return "(...)".into(); } seen.push(id); let o = if t.len() == 1 { s!("(", str &self.repr_d(t[0], seen), ",)") } else { let mut o = s!(cap: 32; "("); self.append_reprs(&mut o, t.iter(), seen); o.push(')'); o }; seen.pop(); o },
-            HeapObj::Dict(d) => { let id = v.as_heap(); if seen.contains(&id) { return "{...}".into(); } seen.push(id); let mut o = s!(cap: 32; "{"); for (i,(k,val)) in d.borrow().iter().enumerate() { if i>0 { o.push_str(", "); } o.push_str(&self.repr_d(k, seen)); o.push_str(": "); o.push_str(&self.repr_d(val, seen)); } o.push('}'); seen.pop(); o },
+            HeapObj::Dict(d) => { let id = v.as_heap(); if seen.contains(&id) { return "{...}".into(); } seen.push(id); let mut o = s!(cap: 32; "{"); for (i,(k,val)) in d.borrow().iter().enumerate() { if o.len() > MAX_REPR_LEN { o.push_str(", ..."); break; } if i>0 { o.push_str(", "); } o.push_str(&self.repr_d(k, seen)); o.push_str(": "); o.push_str(&self.repr_d(val, seen)); } o.push('}'); seen.pop(); o },
             HeapObj::BoundMethod(_, id) => s!("<built-in method ", str id.name(), ">"),
             HeapObj::NativeFn(id) => s!("<built-in function ", str id.name(), ">"),
             HeapObj::Class(name, _, _) => crate::s!("<class '", str name, "'>"  ),

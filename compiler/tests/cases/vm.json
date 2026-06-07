@@ -1831,5 +1831,9 @@
   {"src": "print([1, 2, 3, 4, 5][61::-2])", "output": ["[5, 3, 1]"]},
   {"src": "xs = [1, 2, 3, 4, 5]\nxs[61::-2] = []\nprint(xs)", "output": ["[2, 4]"]},
   {"src": "d = {}\nd.update(-1)\nprint(d)", "output": [], "error": "'int' object is not iterable"},
-  {"src": "d = {}\nd.update([1, 2])\nprint(d)", "output": [], "error": "dictionary update sequence element must have length 2"}
+  {"src": "d = {}\nd.update([1, 2])\nprint(d)", "output": [], "error": "dictionary update sequence element must have length 2"},
+  {"src": "a = [1]\na.append(a)\na.append(a)\nprint(a == a)", "output": ["True"]},
+  {"src": "print(all(range(1, 5555555555)))", "output": [], "error": "budget exceeded"},
+  {"src": "s = \"x\"\nfor k in range(2000):\n    s = f\"{s!a}{s!a}\"\nprint(len(s))", "output": [], "error": "budget exceeded"},
+  {"src": "print(f'{1.:.75342E}')", "output": [], "error": "format precision exceeds limit"}
 ]
