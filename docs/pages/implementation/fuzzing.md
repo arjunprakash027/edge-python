@@ -37,21 +37,23 @@ For a long-running campaign in a container, `compose.yml` builds the image from 
 cd compiler/fuzz-afl
 DURATION=3600 docker compose up --build -d # detached; same JOBS / FRESH / TIMEOUT_MS overrides apply
 
-docker compose ps      # Up vs Restarting
+docker compose ps # Up vs Restarting
 docker compose logs -f # raw deploy output: seed count, instance count, startup errors
 
 # Live status (-s = aggregated summary; drop it for per-instance metrics).
 docker compose exec -it fuzzer bash -c "cd compiler/fuzz-afl && watch -n 10 cargo afl whatsup -s out"
 
-docker compose down    # stop the campaign
+docker compose down # stop the campaign
 ```
 
 If a container is stuck restarting and `docker compose down` won't clear it, force-remove it by id:
 
 ```bash
-docker ps            # find the container id
-docker rm -f <id>    # force-remove it, even mid-restart
+docker ps # find the container id
+docker rm -f <id> # force-remove it, even mid-restart
 ```
+
+For the lifecycle and recovery commands themselves, see Docker's own guides: [restart policies](https://docs.docker.com/engine/containers/start-containers-automatically/) (what `restart: unless-stopped` does and why a crash-looping process keeps coming back), [`docker compose down`](https://docs.docker.com/reference/cli/docker/compose/down/) (removes the container but **keeps named volumes** — only `down -v` deletes the `findings` volume holding the campaign), and [`docker compose up`](https://docs.docker.com/reference/cli/docker/compose/up/) (`--force-recreate` re-creates the container from the existing image, preserving the binary; add `--build` only to pick up code changes).
 
 Reusing the same `out/` resumes the campaign: AFL recalibrates the saved queue (the dry-run pass) before fuzzing, so `execs` sits at 0 for a while; delete it with `rm -rf out` for a clean start. Resume is only safe when the target binary is unchanged — after rebuilding it (any code change) the saved coverage map and `fastresume.bin` are incompatible and every instance aborts on startup, so always start fresh (`FRESH=1`, or `rm -rf out`) after a rebuild.
 
