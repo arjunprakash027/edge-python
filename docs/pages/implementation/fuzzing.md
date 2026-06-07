@@ -51,7 +51,7 @@ docker compose exec -it fuzzer bash -c "cd compiler/fuzz-afl && watch -n 10 carg
 docker compose exec -it fuzzer bash -c "cd compiler/fuzz-afl && watch -n 10 cargo afl whatsup -s out"
 ```
 
-Reusing the same `out/` resumes the campaign: AFL recalibrates the saved queue (the dry-run pass) before fuzzing, so `execs` sits at 0 for a while; delete it with `rm -rf out` for a clean start.
+Reusing the same `out/` resumes the campaign: AFL recalibrates the saved queue (the dry-run pass) before fuzzing, so `execs` sits at 0 for a while; delete it with `rm -rf out` for a clean start. Resume is only safe when the target binary is unchanged — after rebuilding it (any code change) the saved coverage map and `fastresume.bin` are incompatible and every instance aborts on startup, so always start fresh (`FRESH=1`, or `rm -rf out`) after a rebuild.
 
 `deploy.sh` sets the bypass vars itself; a bare `cargo afl fuzz` under WSL needs `AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1` prefixed to skip the core-pattern and CPU-governor checks.
 
@@ -60,36 +60,6 @@ Where findings land depends on how you launched: a bare `cargo afl fuzz` (no `-M
 ```bash
 ./target/release/afl-pipeline < out/m0/crashes/<id> # out/default/crashes/<id> for a bare single-instance run
 ```
-
-## Fixing bugs found during a campaign
-
-When crashes appear, stop the container, fix the code, and redeploy without deleting `out/`. Preserving the queue lets AFL recalibrate the existing corpus against the patched binary — inputs that used to crash will no longer crash, confirming the fix, and exploration continues from where it left off rather than starting over.
-
-**1. Download crashes before stopping** so they are available locally regardless of what happens to the server:
-
-```bash
-ssh fuzz "tar czf /root/crashes.tar.gz -C /root out-backup"
-scp -i ~/.ssh/main root@<ip>:/root/crashes.tar.gz ./crashes.tar.gz
-tar xzf crashes.tar.gz
-```
-
-**2. Stop, fix, and rebuild:**
-
-```bash
-# Stop the container (leaves the findings volume intact):
-ssh fuzz "cd edge-python/compiler/fuzz-afl && docker compose down"
-
-# After pushing fixes, pull and rebuild on the server:
-ssh fuzz "cd edge-python && git pull && cd compiler/fuzz-afl && docker compose up --build -d"
-```
-
-**3. Clear old crashes** after the rebuild so any new crash is unambiguously a new bug:
-
-```bash
-ssh fuzz "docker compose exec fuzzer bash -c 'rm -rf /app/compiler/fuzz-afl/out/*/crashes/*'"
-```
-
-If crash count stays at 0 after clearing, the fixes are solid. New crashes after that point are distinct bugs.
 
 ## Triaging crashes with CASR
 
@@ -107,7 +77,7 @@ casr-cluster -d casr-reports casr-dedup
 casr-cluster -c casr-dedup casr-clustered
 ```
 
-The cluster count is the real number of distinct bugs to fix. Triage the saved crashes before applying the [fix workflow](#fixing-bugs-found-during-a-campaign) above so you patch each root cause once rather than chasing duplicates.
+The cluster count is the real number of distinct bugs to fix. Triage the saved crashes before fixing so you patch each root cause once rather than chasing duplicates.
 
 CASR triages crashes, not hangs: it groups by backtrace, and a hang is a timeout with no crash signal and no stack trace to capture, so `casr-afl` reads `crashes/` and skips `hangs/`. The op-bound (`Limits { ops: 100_000 }`) turns a genuine runaway loop into a `VmErr`, so a saved hang is almost always an input that terminated but ran past `TIMEOUT_MS`, not a real lock-up. Sort the two apart by re-running each under a wall-clock timeout:
 
