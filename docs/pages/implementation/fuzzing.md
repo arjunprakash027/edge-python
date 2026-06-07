@@ -63,6 +63,13 @@ Where findings land depends on how you launched: a bare `cargo afl fuzz` (no `-M
 ./target/release/afl-pipeline < out/m0/crashes/<id> # out/default/crashes/<id> for a bare single-instance run
 ```
 
+In a container campaign, list the saved crashes (the `m0`/`s1` dir is the instance) and reproduce one with a backtrace:
+
+```bash
+docker compose exec -it fuzzer bash -c "ls compiler/fuzz-afl/out/*/crashes/id:*"
+docker compose exec -it fuzzer bash -c "cd compiler/fuzz-afl && RUST_BACKTRACE=1 ./target/release/afl-pipeline < 'out/m0/crashes/<id>' 2>&1 | head -20"
+```
+
 ## Triaging crashes
 
 A parallel campaign saves one file per crashing *input*, not one per bug — a single panic site is reached by many distinct inputs, so `out/*/crashes/` overstates the real bug count. Reproduce each saved crash and group by panic site; each unique `file:line` is one bug to fix:
