@@ -57,7 +57,7 @@ impl<'a> VM<'a> {
     pub fn call_id(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
         // Use the NaN-boxed bit pattern as identity. Truncate to fit `INT_MAX`.
-        let id = ((o.0 as i64).abs()) & Val::INT_MAX;
+        let id = ((o.0 as i64).wrapping_abs()) & Val::INT_MAX; // wrapping_abs: i64::MIN (e.g. -0.0 bits) would overflow plain abs
         self.push(Val::int(id));
         Ok(())
     }

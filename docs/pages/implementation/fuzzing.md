@@ -44,6 +44,9 @@ docker compose logs -f # raw deploy output: seed count, instance count, startup 
 docker compose exec -it fuzzer bash -c "cd compiler/fuzz-afl && watch -n 10 cargo afl whatsup -s out"
 
 docker compose down # stop the campaign
+
+docker compose exec -T fuzzer bash -c 'cd compiler/fuzz-afl && ls -1 out/*/crashes/' # View the crashes throught all the containers
+docker compose exec -T fuzzer bash -c 'cd compiler/fuzz-afl && base64 out/<number>/crashes/<id>' # Take a look to the bug in base 64
 ```
 
 If a container is stuck restarting and `docker compose down` won't clear it, force-remove it by id:
