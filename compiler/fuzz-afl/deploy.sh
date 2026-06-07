@@ -11,6 +11,7 @@ TIMEOUT_MS="${TIMEOUT_MS:-5000}" # > max bounded run, so slow-but-terminating in
 export AFL_SKIP_CPUFREQ=1
 export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
 export AFL_NO_UI=1
+export AFL_AUTORESUME=1 # resume existing out/ on restart instead of aborting; FRESH=1 wipes it first
 
 (( JOBS < 1 )) && JOBS=1
 echo "logical cores: $(nproc), instances: $JOBS"
