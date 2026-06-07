@@ -46,6 +46,13 @@ docker compose exec -it fuzzer bash -c "cd compiler/fuzz-afl && watch -n 10 carg
 docker compose down    # stop the campaign
 ```
 
+If a container is stuck restarting and `docker compose down` won't clear it, force-remove it by id:
+
+```bash
+docker ps            # find the container id
+docker rm -f <id>    # force-remove it, even mid-restart
+```
+
 Reusing the same `out/` resumes the campaign: AFL recalibrates the saved queue (the dry-run pass) before fuzzing, so `execs` sits at 0 for a while; delete it with `rm -rf out` for a clean start. Resume is only safe when the target binary is unchanged — after rebuilding it (any code change) the saved coverage map and `fastresume.bin` are incompatible and every instance aborts on startup, so always start fresh (`FRESH=1`, or `rm -rf out`) after a rebuild.
 
 `deploy.sh` sets the bypass vars itself; a bare `cargo afl fuzz` under WSL needs `AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1` prefixed to skip the core-pattern and CPU-governor checks.
