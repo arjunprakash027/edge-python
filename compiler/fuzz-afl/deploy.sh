@@ -19,8 +19,9 @@ echo "logical cores: $(nproc), instances: $JOBS"
 [ -d in ] && [ -n "$(ls -A in 2>/dev/null)" ] || bash ./seeds.sh
 cargo afl build --release
 
-[ "$FRESH" = "1" ] && rm -rf out
-mkdir -p logs
+# `out` is a mounted volume in the container; clear its contents, not the mount point itself.
+[ "$FRESH" = "1" ] && { find out -mindepth 1 -delete 2>/dev/null || true; }
+mkdir -p out logs
 
 # -V time-box only when DURATION > 0.
 vflag=()
