@@ -80,6 +80,12 @@ A parallel campaign saves one file per crashing *input*, not one per bug — a s
 for f in out/*/crashes/id*; do ./target/release/afl-pipeline < "$f" 2>&1 | grep -oE 'panicked at [^:]+:[0-9]+'; done | sort | uniq -c
 ```
 
+Shrink one crash to its minimal reproducer with `cargo afl tmin` (feeds the case over stdin; no `@@`):
+
+```bash
+cargo afl tmin -i out/m0/crashes/<id> -o crash.min -- ./target/release/afl-pipeline
+```
+
 Hangs have no backtrace to group by. The op-bound (`Limits { ops: 100_000 }`) turns a genuine runaway loop into a `VmErr`, so a saved hang is usually an input that terminated but ran past `TIMEOUT_MS`, not a real lock-up — confirm by re-running under a wall-clock timeout, where exit 124 means genuinely stuck:
 
 ```bash
