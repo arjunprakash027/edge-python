@@ -1835,5 +1835,9 @@
   {"src": "a = [1]\na.append(a)\na.append(a)\nprint(a == a)", "output": ["True"]},
   {"src": "print(all(range(1, 5555555555)))", "output": [], "error": "budget exceeded"},
   {"src": "s = \"x\"\nfor k in range(2000):\n    s = f\"{s!a}{s!a}\"\nprint(len(s))", "output": [], "error": "budget exceeded"},
-  {"src": "print(f'{1.:.75342E}')", "output": [], "error": "format precision exceeds limit"}
+  {"src": "print(f'{1.:.75342E}')", "output": [], "error": "format precision exceeds limit"},
+  {"src": "print('a-b-c'.partition('-'))", "output": ["('a', '-', 'b-c')"]},
+  {"src": "print('xyz'.partition('-'))", "output": ["('xyz', '', '')"]},
+  {"src": "print('a-b-c'.rpartition('-'))", "output": ["('a-b', '-', 'c')"]},
+  {"src": "print('xyz'.rpartition('-'))", "output": ["('', '', 'xyz')"]}
 ]
