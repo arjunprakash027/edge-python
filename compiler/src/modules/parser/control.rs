@@ -111,7 +111,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             let here = self.chunk.instructions.len();
             for j in alts.last_mut().unwrap().drain(..) {
                 let target = here as u16;
-                self.chunk.instructions[j].operand = target;
+                self.patch_to(j, target);
             }
             self.advance(); // consume `|`
         }
@@ -549,9 +549,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
         // Patch SetupExcept handler IPs and the skip-cleanup jump.
         for (i, &se_idx) in setup_except_idxs.iter().enumerate() {
-            self.chunk.instructions[se_idx].operand = cleanup_pad_positions[i] as u16;
+            self.patch_to(se_idx, cleanup_pad_positions[i] as u16);
         }
-        self.chunk.instructions[skip_cleanup_jump].operand = end_label as u16;
+        self.patch_to(skip_cleanup_jump, end_label as u16);
     }
 
     /* Delegates to imports.rs; compile-time only, no import opcodes reach the VM. */

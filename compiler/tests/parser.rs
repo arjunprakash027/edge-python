@@ -81,4 +81,19 @@ mod test {
             }
         }
     }
+
+    // Overflow past MAX_INSTRUCTIONS + a trailing `with` must error, not panic on a stale jump index.
+    #[test]
+    fn instruction_overflow_does_not_panic() {
+        let mut src = String::with_capacity(180_000);
+        for _ in 0..40_000 { src.push_str("a=1\n"); }
+        src.push_str("with a as b:\n    pass\n");
+        let (tokens, _) = lex(&src);
+        let (_chunk, diagnostics) = Parser::new(&src, tokens.into_iter()).parse();
+        assert!(
+            diagnostics.iter().any(|d| d.msg.contains("program too large")),
+            "expected 'program too large', got {:?}",
+            diagnostics.iter().map(|d| &d.msg).collect::<Vec<_>>()
+        );
+    }
 }

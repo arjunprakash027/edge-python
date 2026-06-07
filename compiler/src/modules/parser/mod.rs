@@ -362,6 +362,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         if let Some(ins) = self.chunk.instructions.get_mut(pos) { ins.operand = target; }
     }
 
+    /* Patch a jump to an explicit target; bounds-safe so instruction overflow (`emit` freezes at MAX_INSTRUCTIONS) can't panic on a stale index. */
+    pub(super) fn patch_to(&mut self, pos: usize, target: u16) {
+        if let Some(ins) = self.chunk.instructions.get_mut(pos) { ins.operand = target; }
+    }
+
     /* Consumes kind or emits diagnostic; for missing closers anchors at opener and drops cascade. */
     pub(super) fn eat(&mut self, kind: TokenType) {
         if matches!(self.peek(), Some(k) if k == kind) {
