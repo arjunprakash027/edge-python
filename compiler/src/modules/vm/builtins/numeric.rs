@@ -1,4 +1,4 @@
-use alloc::{string::String, vec, vec::Vec};
+use alloc::string::String;
 
 use super::super::VM;
 use super::super::types::*;
@@ -115,7 +115,8 @@ impl<'a> VM<'a> {
 
     fn call_minmax(&mut self, op: u16, is_min: bool) -> Result<(), VmErr> {
         let args = self.pop_n(op as usize)?;
-        let items = self.unwrap_single_iterable(args)?;
+        // One arg iterable; many args are values.
+        let items = if args.len() == 1 { self.iter_to_vec_general(args[0])? } else { args };
         let label = if is_min { "min() arg is an empty sequence" } else { "max() arg is an empty sequence" };
         if items.is_empty() { return Err(cold_value(label)); }
         let m = items[1..].iter().try_fold(items[0], |m, &x| {
@@ -123,20 +124,6 @@ impl<'a> VM<'a> {
             self.lt_vals(l, r).map(|lt| if lt { x } else { m })
         })?;
         self.push(m); Ok(())
-    }
-
-    /* If a single arg is a list/tuple/set, return its items; otherwise pass args through unchanged. Used by min/max / etc. for varargs vs iterable. */
-    fn unwrap_single_iterable(&self, args: Vec<Val>) -> Result<Vec<Val>, VmErr> {
-        if args.len() == 1 && args[0].is_heap() {
-            match self.heap.get(args[0]) {
-                HeapObj::List(v) => return Ok(v.borrow().clone()),
-                HeapObj::Tuple(v) => return Ok(v.clone()),
-                HeapObj::Set(v) => return Ok(v.borrow().iter().cloned().collect()),
-                HeapObj::FrozenSet(v) => return Ok(v.iter().cloned().collect()),
-                _ => {}
-            }
-        }
-        Ok(args)
     }
 
     pub fn call_sum(&mut self, op: u16) -> Result<(), VmErr> {
@@ -199,7 +186,7 @@ impl<'a> VM<'a> {
         let (q, r) = if (r != 0) && ((r < 0) != (bi < 0)) { (q - 1, r + bi) } else { (q, r) };
         let qv = self.int_to_val(Some(q))?;
         let rv = self.int_to_val(Some(r))?;
-        self.alloc_and_push_tuple(vec![qv, rv])
+        self.alloc_and_push_tuple(alloc::vec![qv, rv])
     }
 
     pub fn call_pow(&mut self, op: u16) -> Result<(), VmErr> {

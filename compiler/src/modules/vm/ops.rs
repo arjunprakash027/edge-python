@@ -326,21 +326,25 @@ impl<'a> VM<'a> {
         Ok(xs.len() < ys.len())
     }
 
-    /* Item presence in list/tuple/dict/set, or substring in string. */
-    pub fn contains(&self, container: Val, item: Val) -> bool {
-        if !container.is_heap() { return false; }
-        match self.heap.get(container) {
-            HeapObj::List(v) => v.borrow().iter().any(|x| eq_vals_with_heap(*x, item, &self.heap)),
-            HeapObj::Tuple(v) => v.iter().any(|x| eq_vals_with_heap(*x, item, &self.heap)),
-            HeapObj::Dict(p) => p.borrow().contains_key(&item),
-            HeapObj::Set(s) => s.borrow().iter().any(|x| eq_vals_with_heap(*x, item, &self.heap)),
-            HeapObj::FrozenSet(s) => s.iter().any(|x| eq_vals_with_heap(*x, item, &self.heap)),
-            HeapObj::Str(s) => {
-                if item.is_heap() && let HeapObj::Str(sub) = self.heap.get(item) { return s.contains(sub.as_str()); }
-                false
+    /* Item presence in list/tuple/dict/set, or substring in string. Non-iterable container raises TypeError. */
+    pub fn contains(&self, container: Val, item: Val) -> Result<bool, VmErr> {
+        if container.is_heap() {
+            match self.heap.get(container) {
+                HeapObj::List(v) => return Ok(v.borrow().iter().any(|x| eq_vals_with_heap(*x, item, &self.heap))),
+                HeapObj::Tuple(v) => return Ok(v.iter().any(|x| eq_vals_with_heap(*x, item, &self.heap))),
+                HeapObj::Dict(p) => return Ok(p.borrow().contains_key(&item)),
+                HeapObj::Set(s) => return Ok(s.borrow().iter().any(|x| eq_vals_with_heap(*x, item, &self.heap))),
+                HeapObj::FrozenSet(s) => return Ok(s.iter().any(|x| eq_vals_with_heap(*x, item, &self.heap))),
+                HeapObj::Str(s) => {
+                    if item.is_heap() && let HeapObj::Str(sub) = self.heap.get(item) { return Ok(s.contains(sub.as_str())); }
+                    return Ok(false);
+                }
+                // Iterable kinds keep prior non-raising behavior.
+                HeapObj::Range(..) | HeapObj::Bytes(..) | HeapObj::Coroutine(..) => return Ok(false),
+                _ => {}
             }
-            _ => false
         }
+        Err(VmErr::TypeMsg(s!("argument of type '", str self.type_name(container), "' is not iterable")))
     }
     pub fn add_vals(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
         // Inline-int fast path; overflow falls through to the i128 slow path.

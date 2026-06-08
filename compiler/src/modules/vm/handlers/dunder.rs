@@ -164,7 +164,7 @@ impl<'a> VM<'a> {
             }
         }
 
-        Ok(self.contains(container, item))
+        self.contains(container, item)
     }
 
     /* `==` with dunder dispatch and pointer-eq fallback; used wherever `contains_op` walks a sequence. */
