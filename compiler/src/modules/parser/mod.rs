@@ -431,6 +431,16 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             false
         }
     }
+
+    // Comma list with forward-progress guard.
+    pub(super) fn comma_list(&mut self, is_end: impl Fn(TokenType) -> bool, mut elem: impl FnMut(&mut Self)) {
+        while !matches!(self.peek(), Some(t) if is_end(t)) && self.peek().is_some() {
+            let progress = self.last_end;
+            elem(self);
+            self.eat_if(TokenType::Comma);
+            if self.last_end == progress { break; }
+        }
+    }
 }
 
 // Parser constructors and parse entry point.

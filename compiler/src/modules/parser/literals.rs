@@ -398,11 +398,10 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let call_pos = self.last_end as u32;
         self.advance();
         let mut argc = 0u16;
-        while !matches!(self.peek(), Some(TokenType::Rpar) | None) {
-            self.expr();
-            argc += 1;
-            self.eat_if(TokenType::Comma);
-        }
+        self.comma_list(|t| t == TokenType::Rpar, |s| {
+            s.expr();
+            argc = argc.saturating_add(1);
+        });
         self.eat(TokenType::Rpar);
         self.chunk.emit(OpCode::CallRange, argc);
         self.chunk.record_call_pos(call_pos);
@@ -412,51 +411,47 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.advance();
         let mut pos = 0u16;
         let mut kw = 0u16;
-        while !matches!(self.peek(), Some(TokenType::Rpar) | None) {
-            // Forward-progress guard: malformed input must not spin and overflow `pos`.
-            let progress = self.last_end;
-            let unpack = if self.eat_if(TokenType::DoubleStar) { Some(2u16) }
-                else if self.eat_if(TokenType::Star) { Some(1u16) }
+        self.comma_list(|t| t == TokenType::Rpar, |s| {
+            let unpack = if s.eat_if(TokenType::DoubleStar) { Some(2u16) }
+                else if s.eat_if(TokenType::Star) { Some(1u16) }
                 else { None };
             if let Some(kind) = unpack {
-                self.expr();
-                self.chunk.emit(OpCode::UnpackArgs, kind);
+                s.expr();
+                s.chunk.emit(OpCode::UnpackArgs, kind);
                 pos = pos.saturating_add(1);
-            } else if matches!(self.peek(), Some(TokenType::Name)) {
-                let t = self.advance();
-                if matches!(self.peek(), Some(TokenType::Equal)) {
-                    let kw_name = self.lexeme(&t).to_string();
-                    self.advance();
-                    let i = self.chunk.push_const(Value::Str(kw_name));
-                    self.chunk.emit(OpCode::LoadConst, i);
-                    self.expr();
+            } else if matches!(s.peek(), Some(TokenType::Name)) {
+                let t = s.advance();
+                if matches!(s.peek(), Some(TokenType::Equal)) {
+                    let kw_name = s.lexeme(&t).to_string();
+                    s.advance();
+                    let i = s.chunk.push_const(Value::Str(kw_name));
+                    s.chunk.emit(OpCode::LoadConst, i);
+                    s.expr();
                     kw = kw.saturating_add(1);
                 } else {
-                    let elem_start = self.chunk.instructions.len();
-                    self.name(t);
-                    self.infix_bp(0);
-                    if matches!(self.peek(), Some(TokenType::For)) {
-                        let versions_before = self.ssa_versions.clone();
-                        let elem_ins: Vec<Instruction> = self.chunk.instructions.drain(elem_start..).collect();
-                        self.chunk.emit(OpCode::BuildList, 0);
-                        self.comprehension_loop(&[(elem_start, elem_ins)], OpCode::ListAppend, &versions_before);
+                    let elem_start = s.chunk.instructions.len();
+                    s.name(t);
+                    s.infix_bp(0);
+                    if matches!(s.peek(), Some(TokenType::For)) {
+                        let versions_before = s.ssa_versions.clone();
+                        let elem_ins: Vec<Instruction> = s.chunk.instructions.drain(elem_start..).collect();
+                        s.chunk.emit(OpCode::BuildList, 0);
+                        s.comprehension_loop(&[(elem_start, elem_ins)], OpCode::ListAppend, &versions_before);
                     }
                     pos = pos.saturating_add(1);
                 }
             } else {
-                let elem_start = self.chunk.instructions.len();
-                self.expr();
-                if matches!(self.peek(), Some(TokenType::For)) {
-                    let versions_before = self.ssa_versions.clone();
-                    let elem_ins: Vec<Instruction> = self.chunk.instructions.drain(elem_start..).collect();
-                    self.chunk.emit(OpCode::BuildList, 0);
-                    self.comprehension_loop(&[(elem_start, elem_ins)], OpCode::ListAppend, &versions_before);
+                let elem_start = s.chunk.instructions.len();
+                s.expr();
+                if matches!(s.peek(), Some(TokenType::For)) {
+                    let versions_before = s.ssa_versions.clone();
+                    let elem_ins: Vec<Instruction> = s.chunk.instructions.drain(elem_start..).collect();
+                    s.chunk.emit(OpCode::BuildList, 0);
+                    s.comprehension_loop(&[(elem_start, elem_ins)], OpCode::ListAppend, &versions_before);
                 }
                 pos = pos.saturating_add(1);
             }
-            self.eat_if(TokenType::Comma);
-            if self.last_end == progress { break; }
-        }
+        });
         self.eat(TokenType::Rpar);
         (pos, kw)
     }
