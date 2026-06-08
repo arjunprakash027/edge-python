@@ -575,6 +575,7 @@
   {"src": "print(dict({'a': 1, 'b': 2}))", "output": ["{'a': 1, 'b': 2}"]},
   {"src": "print(dict(a=1, b=2))", "output": ["{'a': 1, 'b': 2}"]},
   {"src": "print(dict(1, 2))", "output": [], "error": "dict expected at most 1 argument"},
+  {"src": "print(dict(-1))", "output": [], "error": "TypeError"},
   {"src": "if (n := 10) > 5:\n    print(n)", "output": ["10"]},
   {"src": "xs = [1, 2, 3, 4, 5]\nresult = [y for x in xs if (y := x * 2) > 4]\nprint(result)", "output": ["[6, 8, 10]"]},
   {"src": "data = [1, 2, 3]\nwhile (n := len(data)) > 0:\n    print(data.pop())", "output": ["3", "2", "1"]},

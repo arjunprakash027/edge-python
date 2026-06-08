@@ -123,7 +123,7 @@ impl<'a> VM<'a> {
 
     // dict(mapping) copies; dict(iterable) builds from pairs.
     fn dict_from_source(&mut self, src: Val) -> Result<DictMap, VmErr> {
-        if let HeapObj::Dict(rc) = self.heap.get(src) {
+        if let Some(HeapObj::Dict(rc)) = self.heap.try_get(src) {
             let pairs: Vec<(Val, Val)> = rc.borrow().iter().collect();
             return Ok(DictMap::from_pairs(pairs));
         }
