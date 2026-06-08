@@ -66,7 +66,7 @@ if (n := len(data)) > 0:
 
 ## Numbers
 
-Integer literals: hex (`0x`), octal (`0o`), binary (`0b`); `_` digit separators between digits. Range and promotion: [Data types, Integer](/language/data-types#integer).
+Integer literals: hex (`0x`), octal (`0o`), binary (`0b`). `_` separates digits. Range and promotion: [Data types, Integer](/language/data-types#integer).
 
 ```python
 print(0xDEAD_BEEF)
@@ -125,14 +125,14 @@ hello world
 
 ### Escape sequences
 
-Supported: `\n`, `\t`, `\r`, `\a`, `\b`, `\f`, `\v`, `\\`, `\'`, `\"`, `\0`, `\xHH`, `\uHHHH`, `\UHHHHHHHH`, `\NNN` (1–3 octal digits). Named-char escapes (`\N{GREEK SMALL LETTER ALPHA}`) not supported — use `\u`.
+Supported: `\n`, `\t`, `\r`, `\a`, `\b`, `\f`, `\v`, `\\`, `\'`, `\"`, `\0`, `\xHH`, `\uHHHH`, `\UHHHHHHHH`, `\NNN` (1–3 octal digits). Named-char escapes (`\N{GREEK SMALL LETTER ALPHA}`) are not supported. Use `\u`.
 
 ```python
 print('\n line break')
 print('\t tab')
 print('\x41 hex')
 print('\u00e9 unicode')
-print('\101') # octal escape — 'A'
+print('\101') # octal escape, 'A'
 ```
 
 ```text Output
@@ -203,7 +203,7 @@ print(-5, +5)
 
 ### Comparison and chaining
 
-Ordering comparisons (`<`, `>`, `<=`, `>=`) work on numbers, strings, bytes, and tuples/lists (compared lexicographically); mixing un-orderable types raises `TypeError`.
+Ordering comparisons (`<`, `>`, `<=`, `>=`) work on numbers, strings, bytes, and tuples/lists (compared lexicographically). Mixing un-orderable types raises `TypeError`.
 
 ```python
 print(1 < 2 < 3) # chained
@@ -344,7 +344,7 @@ print(max(x for x in [3, 1, 4, 1, 5]))
 
 ## Type annotations
 
-Annotations parse on variables, parameters, and return positions but have no runtime effect: drained by the parser, they never reach the VM. No `__annotations__`, no runtime check. Treat them as docs for humans and static analysers.
+Annotations parse on variables, parameters, and return positions but have no runtime effect. The parser drains them; they never reach the VM. No `__annotations__`, no runtime check. Treat them as docs for humans and static analysers.
 
 ```python
 counter: int = 0

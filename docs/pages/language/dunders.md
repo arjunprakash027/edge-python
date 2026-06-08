@@ -3,7 +3,7 @@ title: "Dunder methods"
 description: "Protocol methods Edge Python invokes on user classes; operators, indexing, iteration, hashing, context managers, attribute fallback."
 ---
 
-Dunders (`__add__`, `__eq__`, `__getitem__`, ...) plug a class into language protocols. Define them in the class body; the VM calls them when the corresponding operator, builtin, or syntax form runs.
+Dunders (`__add__`, `__eq__`, `__getitem__`, ...) plug a class into language protocols. Define them in the class body. The VM calls them when the matching operator, builtin, or syntax form runs.
 
 ```python
 class V:
@@ -23,7 +23,7 @@ print(V(3) == V(3))
 True
 ```
 
-Dunders are looked up on the class chain (instance dict skipped). Subclasses inherit and may override; operator overloading composes with [single-level inheritance](/language/classes#inheritance-and-super). Monomorphic sites (same class for both operands) promote through the IC after 4 hits and bypass lookup entirely.
+Dunders are looked up on the class chain. The instance dict is skipped. Subclasses inherit and may override. Operator overloading composes with [single-level inheritance](/language/classes#inheritance-and-super). Monomorphic sites (same class for both operands) promote through the IC after 4 hits, then bypass lookup entirely.
 
 ## Arithmetic
 
@@ -36,11 +36,11 @@ Dunders are looked up on the class chain (instance dict skipped). Subclasses inh
 | `a // b` | `__floordiv__` | `__rfloordiv__` |
 | `a % b` | `__mod__` | `__rmod__` |
 | `a ** b` | `__pow__` | `__rpow__` |
-| `-a` | `__neg__` | — |
+| `-a` | `__neg__` | - |
 
-Returning `NotImplemented` from the forward op tells the VM to try the reflected op on the other operand. Both `NotImplemented` (or neither defined) -> `TypeError`.
+Return `NotImplemented` from the forward op to make the VM try the reflected op on the other operand. Both `NotImplemented` (or neither defined) -> `TypeError`.
 
-Subclass-first: when `type(b)` is a strict subclass of `type(a)`, `b.__radd__` runs before `a.__add__` — letting a subclass override an inherited reflected op without touching the base.
+Subclass-first: when `type(b)` is a strict subclass of `type(a)`, `b.__radd__` runs before `a.__add__`. This lets a subclass override an inherited reflected op without touching the base.
 
 ```python
 class Money:
@@ -70,7 +70,7 @@ print((3 + Money(7)).n)
 | `a > b` | `__gt__` | `__lt__` |
 | `a >= b` | `__ge__` | `__le__` |
 
-`!=` falls back to `not __eq__` when `__ne__` is absent. Results coerce to `bool` — `__lt__` returning `'A.lt'` yields `True`, not the string.
+`!=` falls back to `not __eq__` when `__ne__` is absent. Results coerce to `bool`: `__lt__` returning `'A.lt'` yields `True`, not the string.
 
 ## Truth and length
 
@@ -80,7 +80,7 @@ print((3 + Money(7)).n)
 2. `__len__` if defined -> `False` when length is 0, else `True`.
 3. Default `True`.
 
-`len(x)` calls `__len__` directly; must return a non-negative int.
+`len(x)` calls `__len__` directly. It must return a non-negative int.
 
 ```python
 class Empty:
@@ -166,9 +166,9 @@ True
 
 ## Hashing
 
-`hash(x)` calls `__hash__`; must return `int` (masked to `INT_MAX`).
+`hash(x)` calls `__hash__`. It must return `int` (masked to `INT_MAX`).
 
-Eq/hash invariant: a class defining `__eq__` without `__hash__` is unhashable — `hash(x)` and `{x: 1}` raise `TypeError`. Prevents inconsistent dict keys.
+Eq/hash invariant: a class defining `__eq__` without `__hash__` is unhashable: `hash(x)` and `{x: 1}` raise `TypeError`. Prevents inconsistent dict keys.
 
 ```python
 class K:
@@ -188,7 +188,7 @@ print({k: 'found'}[k]) # same instance reference looks up reliably
 found
 ```
 
-Built-in dict/set still compare instance keys by identity (`Val` bits); user `__hash__` is returned by `hash()` but doesn't change containment in built-in containers. Use the same instance reference to look up reliably.
+Built-in dict/set compare instance keys by identity (`Val` bits). User `__hash__` is returned by `hash()`, but doesn't change containment in built-in containers. Use the same instance reference to look up reliably.
 
 ## Representation
 
@@ -198,13 +198,13 @@ Built-in dict/set still compare instance keys by identity (`Val` bits); user `__
 | `str(x)`, `print(x)`| `__str__` | `__repr__`, then default |
 | `f"{x}"` (no spec) | `__str__` | same as `str(x)` |
 | `f"{x:spec}"` | `__format__` | built-in format spec engine |
-| `f"{x!r}"` | `__repr__` | — |
+| `f"{x!r}"` | `__repr__` | - |
 
 `__format__(spec)` receives the spec string and must return `str`.
 
 ## Attribute access fallback
 
-`__getattr__(self, name)` runs only when normal lookup (instance dict -> class chain) misses. Receives the name as a string; returns the value or raises `AttributeError` to surface a real miss.
+`__getattr__(self, name)` runs only when normal lookup (instance dict -> class chain) misses. It receives the name as a string. Return the value, or raise `AttributeError` to surface a real miss.
 
 ```python
 class Proxy:
@@ -221,11 +221,11 @@ computed:anything
 computed:foo
 ```
 
-Existing attributes bypass `__getattr__`; only misses trigger it.
+Existing attributes bypass `__getattr__`. Only misses trigger it.
 
 ## Context managers
 
-`with cm() as x:` invokes `__enter__`; its return binds to `as`. On exit, `__exit__(exc_type, exc_value, traceback)` runs — `(None, None, None)` for normal exit, live exception info on raise. Truthy return suppresses; falsy propagates.
+`with cm() as x:` invokes `__enter__`. Its return binds to `as`. On exit, `__exit__(exc_type, exc_value, traceback)` runs: `(None, None, None)` for normal exit, live exception info on raise. A truthy return suppresses the exception; a falsy one propagates it.
 
 ```python
 class Suppress:
@@ -243,7 +243,7 @@ print("after")
 after
 ```
 
-Multiple managers (`with a(), b() as x:`) nest LIFO — `b` enters last, exits first. Each has its own implicit handler, so inner suppression still lets outer managers run their normal `__exit__(None, None, None)`.
+Multiple managers (`with a(), b() as x:`) nest LIFO: `b` enters last, exits first. Each has its own implicit handler, so inner suppression still lets outer managers run their normal `__exit__(None, None, None)`.
 
 If `__exit__` itself raises, the new exception replaces the original.
 

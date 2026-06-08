@@ -5,9 +5,9 @@ description: "Compiler architecture, dispatch model, and runtime layout."
 
 ## Overview
 
-The release build is less than 200 KB on `wasm32-unknown-unknown` (`panic=abort`, `opt-level=z`, `lto=true`, `codegen-units=1`). The pipeline: LUT-driven lexer -> single-pass Pratt parser emitting SSA-versioned bytecode directly -> peephole constant-folding optimiser -> token-threaded interpreter with two layers of adaptive specialisation.
+The release build is sub-200 KB on `wasm32-unknown-unknown` (`panic=abort`, `opt-level=z`, `lto=true`, `codegen-units=1`). The pipeline: LUT-driven lexer -> single-pass Pratt parser emitting SSA-versioned bytecode directly -> peephole constant-folding optimiser -> token-threaded interpreter with two layers of adaptive specialisation.
 
-No AST, no IR: bytecode is the only intermediate representation. Around 13,000 lines of Rust; production deps are `hashbrown` and `itoa` (SHA-256 in-tree). WASM build adds `lol_alloc` for a single-threaded leaking bump allocator.
+No AST, no IR. Bytecode is the only intermediate representation. Around 13,000 lines of Rust. Production deps are `hashbrown` and `itoa` (SHA-256 in-tree). The WASM build adds `lol_alloc` for a single-threaded leaking bump allocator.
 
 Classes support single-level inheritance, `super()`, full dunder dispatch, `@property` / `@x.setter`. Functional-first: composition preferred, monomorphic dispatch optimised via instance-dunder IC.
 
@@ -23,7 +23,7 @@ Classes support single-level inheritance, `super()`, full dunder dispatch, `@pro
 
 ## Bytecode shape
 
-Each `Instruction` is 4 bytes: 1-byte `OpCode` (`#[repr(u8)]` planned), 2-byte operand, 1 byte padding. Opcodes span 17 categories: load, store, arith, bitwise, compare, logic, identity, control flow, iter, build, container, comprehension, function, ssa (Phi), yield, side effects, unsupported (raises at runtime). Around 40 specialised `Call*` variants for hot builtins; `LoadAttr + Call(0)` pairs fuse into `CallMethod + CallMethodArgs` after first dispatch.
+Each `Instruction` is 4 bytes: 1-byte `OpCode` (`#[repr(u8)]` planned), 2-byte operand, 1 byte padding. Opcodes span 17 categories: load, store, arith, bitwise, compare, logic, identity, control flow, iter, build, container, comprehension, function, ssa (Phi), yield, side effects, unsupported (raises at runtime). Around 40 specialised `Call*` variants cover hot builtins. `LoadAttr + Call(0)` pairs fuse into `CallMethod + CallMethodArgs` after first dispatch.
 
 ```text
 OpCode::LoadConst -> operand = constant index
@@ -39,9 +39,9 @@ OpCode::ForIter   -> operand = jump target on iterator exhaustion
 
 Hot loop reads `cache.fused_ref()[ip]`, a snapshot of the instruction stream with `LoadAttr + Call(0)` pairs fused into `CallMethod + CallMethodArgs`. Fusion runs once per chunk, cached.
 
-For arith/compare opcodes, the loop checks `cache.get_fast(ip)`: if a `FastOp` is present, it runs inline without a function call; type-guard miss invalidates the slot and falls back to the generic handler. IC is per-instruction, so monomorphic sites stabilise independently.
+For arith/compare opcodes, the loop checks `cache.get_fast(ip)`. If a `FastOp` is present, it runs inline without a function call. A type-guard miss invalidates the slot and falls back to the generic handler. IC is per-instruction, so monomorphic sites stabilise independently.
 
-`LoadConst` reads a pre-materialised `Vec<Val>` (`OpcodeCache::const_vals`) built on first dispatch. Inline-range ints (47-bit) stored inline; ints from 2⁴⁷ to 2¹²⁷ allocate a `HeapObj::LongInt` slot. Literals beyond ±2¹²⁷ are rejected at parse time.
+`LoadConst` reads a pre-materialised `Vec<Val>` (`OpcodeCache::const_vals`) built on first dispatch. Inline-range ints (47-bit) stay inline. Ints from 2⁴⁷ to 2¹²⁷ allocate a `HeapObj::LongInt` slot. Literals beyond ±2¹²⁷ are rejected at parse time.
 
 ## Memory model
 
@@ -57,11 +57,11 @@ For arith/compare opcodes, the loop checks `cache.get_fast(ip)`: if a `FastOp` i
 | False | `QNAN \| 3` | |
 | Heap | `QNAN \| 4 \| (i28 << 4)` | 28-bit index into `HeapPool` (max `1 << 28` slots) |
 
-`INT_MAX = 140_737_488_355_327`, `INT_MIN = -140_737_488_355_328`. Inline ints take one ALU op per arithmetic; overflow promotes to `HeapObj::LongInt(i128)` until results fit inline again. LongInts are interned by value so equal values share a heap index (consistent `hash`/`eq`). Hard cap ±2¹²⁷; wider raises `OverflowError`. Arbitrary-precision bigints would need a `Vec<u32>`-limb variant (heap-allocs per op, Knuth D / Karatsuba code) or dropping NaN-boxing, both regress WASM-size and inner-loop goals.
+`INT_MAX = 140_737_488_355_327`, `INT_MIN = -140_737_488_355_328`. Inline ints take one ALU op per arithmetic. Overflow promotes to `HeapObj::LongInt(i128)` until results fit inline again. LongInts are interned by value, so equal values share a heap index (consistent `hash`/`eq`). The hard cap is ±2¹²⁷; wider raises `OverflowError`. Arbitrary-precision bigints would need a `Vec<u32>`-limb variant (heap-allocs per op, Knuth D / Karatsuba code) or dropping NaN-boxing. Both regress WASM-size and inner-loop goals.
 
-`PartialEq` / `Hash` for `Val` reconcile value-equal numerics so `1 == 1.0` and `hash(1) == hash(1.0)` — dicts/sets see them as one key. `Hash` writes an inline int (and any integral float in range) as its `i64` value, falling back to `f64` bits only for non-integral floats; hashing the `f64` bits directly would funnel small integers (whose low mantissa bits are zero) into one `FxHasher` bucket and collapse int-keyed dict/set to O(n²). `FxBuildHasher` uses a fixed seed for reproducible iteration order across runs.
+`PartialEq` / `Hash` for `Val` reconcile value-equal numerics, so `1 == 1.0` and `hash(1) == hash(1.0)`. Dicts and sets see them as one key. `Hash` writes an inline int (and any integral float in range) as its `i64` value, falling back to `f64` bits only for non-integral floats. Hashing the `f64` bits directly would funnel small integers (whose low mantissa bits are zero) into one `FxHasher` bucket and collapse int-keyed dict/set to O(n²). `FxBuildHasher` uses a fixed seed for reproducible iteration order across runs.
 
-Heap is a `Vec<HeapSlot>` arena with a free list (capped 524,288, sorted to prefer low indices). Strings, bytes (<=128 B), and LongInts are interned in side hashes, so equal values collapse to one slot, short literals short-circuit through identity, and dict/set lookups stay consistent across allocations. Live-object cap is `Limits.heap` (default 10M; sandbox 100K). Single-colour mark-and-sweep, no refcount, cycles reclaimed natively.
+Heap is a `Vec<HeapSlot>` arena with a free list (capped 524,288, sorted to prefer low indices). Strings, bytes (<=128 B), and LongInts are interned in side hashes. So equal values collapse to one slot, short literals short-circuit through identity, and dict/set lookups stay consistent across allocations. Live-object cap is `Limits.heap` (default 10M, sandbox 100K). Single-colour mark-and-sweep, no refcount, cycles reclaimed natively.
 
 `HeapObj` variants: `Str`, `Bytes`, `List` (`Rc<RefCell<Vec<Val>>>`), `Dict` (insertion-ordered), `Set`, `FrozenSet`, `Tuple`, `Func(fn_idx, defaults, captures)`, `Range`, `Slice`, `Ellipsis` (singleton, distinct from `'...'`), `Type`, `ExcInstance`, `BoundMethod`, `NativeFn`, `Class(name, members)`, `Instance(class, attrs)`, `BoundUserMethod(recv, fn)`, `Coroutine(ip, slots, stack, body, iter_stack, sync_frames)` (shared by generators, `async def`, and the implicit module-body coro; `body` is `BodyRef::Fn(usize)` or `BodyRef::Module`; `sync_frames` stacks suspended sync sub-calls so a plain `def` hitting a yielding builtin can resume mid-body), `Module(spec, attrs)`, `Extern(Arc<dyn Fn>)`.
 
@@ -72,20 +72,20 @@ Heap is a `Vec<HeapSlot>` arena with a free list (capped 524,288, sorted to pref
 - No dead-store elimination beyond what falls out of constant folding.
 - No IR, one representation between source and dispatch.
 - No JIT (single-tier, pure Rust). Method JITs need per-arch stencils; trace JITs duplicate the execution model and complicate GC.
-- No runtime module system — imports resolve at parse time through a host-injected `Resolver`. See [Imports](/reference/imports).
-- No bigints, complex numbers, `bytearray`, `memoryview`, `Decimal`, `Fraction`. No `gen.send` / `throw` / `close`. No `asyncio` module — concurrency primitives are top-level builtins ([Async](/language/async)).
+- No runtime module system: imports resolve at parse time through a host-injected `Resolver`. See [Imports](/reference/imports).
+- No bigints, complex numbers, `bytearray`, `memoryview`, `Decimal`, `Fraction`. No `gen.send` / `throw` / `close`. No `asyncio` module: concurrency primitives are top-level builtins ([Async](/language/async)).
 
 ## Coroutine and context-manager dispatch
 
 `async def` and `yield`-bearing `def` both produce `HeapObj::Coroutine`. `run()` drives the scheduler; the other primitives are top-level builtins ([Async](/language/async)).
 
-A plain `def` inside a coroutine calling a yielding builtin gets its state (`ip`, slots, stack/iter deltas) snapshotted as a `SyncFrame` pushed on the enclosing Coroutine's `sync_frames` (innermost-last). `resume_coroutine` walks this stack inside-out before re-entering the outer body, so each helper's return value lands at the original `Call` site; otherwise the outer's `resume_ip` would skip past the unfinished helper.
+A plain `def` inside a coroutine that calls a yielding builtin gets its state (`ip`, slots, stack/iter deltas) snapshotted as a `SyncFrame`, pushed on the enclosing Coroutine's `sync_frames` (innermost-last). `resume_coroutine` walks this stack inside-out before re-entering the outer body, so each helper's return value lands at the original `Call` site. Otherwise the outer's `resume_ip` would skip past the unfinished helper.
 
-`vm.run()` wraps the module body as an implicit coroutine with `BodyRef::Module`; top-level statements suspend like `async def` bodies. Single-driver: `top_loop` is the only place that picks coros; `run` / `gather` / `with_timeout` are non-driving: they push targets to the scheduler, park the outer in `CoroState::WaitingForChildren { tasks, kind: WaitKind }`, and yield. `WaitKind` picks finalize behavior: `Run(target)` returns its value, `Gather` returns the list of results, and `Timeout { deadline_ns, target }` enforces a deadline. `wake_waiting_outers` (gated by `waiting_for_children_count`) drops terminal children, splices the result into the outer's saved stack placeholder, marks the outer `Ready`, or `raise_into_outer` injects the exception.
+`vm.run()` wraps the module body as an implicit coroutine with `BodyRef::Module`. Top-level statements suspend like `async def` bodies. Dispatch is single-driver: `top_loop` is the only place that picks coros. `run` / `gather` / `with_timeout` are non-driving. They push targets to the scheduler, park the outer in `CoroState::WaitingForChildren { tasks, kind: WaitKind }`, and yield. `WaitKind` picks finalize behavior: `Run(target)` returns its value, `Gather` returns the list of results, and `Timeout { deadline_ns, target }` enforces a deadline. `wake_waiting_outers` (gated by `waiting_for_children_count`) drops terminal children, splices the result into the outer's saved stack placeholder, and marks the outer `Ready`. Or `raise_into_outer` injects the exception.
 
-Coroutines carry their own `exception_frames` (7th tuple field). `resume_coroutine` denormalises stored depths (relative to `saved_stack_len` / `saved_iter_len`) on entry, pushes them onto the live `exception_stack`, renormalises on yield-save; `dispatch.rs::exec` honors `pending_exec_exc_base` so handler search includes restored frames. Net: `try`/`except` survives yields; `try: run(coro) except E:` catches a child's raise across multiple `run_resume` cycles. `SyncFrame.exception_delta` does the same for sync-helper try blocks spanning a yield.
+Coroutines carry their own `exception_frames` (7th tuple field). On entry, `resume_coroutine` denormalises stored depths (relative to `saved_stack_len` / `saved_iter_len`), pushes them onto the live `exception_stack`, and renormalises on yield-save. `dispatch.rs::exec` honors `pending_exec_exc_base`, so handler search includes restored frames. Net: `try`/`except` survives yields. `try: run(coro) except E:` catches a child's raise across multiple `run_resume` cycles. `SyncFrame.exception_delta` does the same for sync-helper try blocks spanning a yield.
 
-`with` invokes `__enter__` / `__exit__(exc_type, exc_val, traceback)`; truthy `__exit__` return suppresses. `async with` reuses sync `__enter__` / `__exit__` (no async dunders).
+`with` invokes `__enter__` / `__exit__(exc_type, exc_val, traceback)`. A truthy `__exit__` return suppresses. `async with` reuses sync `__enter__` / `__exit__` (no async dunders).
 
 ## References
 

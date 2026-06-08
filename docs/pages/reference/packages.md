@@ -3,9 +3,9 @@ title: "Official packages"
 description: "The ready-made modules maintained alongside Edge Python, what they are, where they live, and how to import them."
 ---
 
-Edge Python ships no bundled stdlib (see [What it is](/getting-started/what-it-is)); every module is external. This page is the catalog of the **official, ready-to-use packages** maintained alongside the compiler. You don't have to write these yourself: import them and go. To build your own, see [Writing modules](/reference/writing-modules).
+Edge Python ships no bundled stdlib (see [What it is](/getting-started/what-it-is)). Every module is external. This page is the catalog of the **official, ready-to-use packages** maintained alongside the compiler. You don't write these yourself: import them and go. To build your own, see [Writing modules](/reference/writing-modules).
 
-There are two families, matching two of the three [delivery paths](/reference/writing-modules):
+Two families, matching two of the three [delivery paths](/reference/writing-modules):
 
 | Family | Source | Form | Where it runs | Path |
 |---|---|---|---|---|
@@ -16,7 +16,7 @@ Standard packages are host-agnostic (they run wherever WASM runs). Host librarie
 
 ## Standard packages
 
-Language-agnostic `.wasm` plugins over the [WASM module ABI](/reference/wasm-abi). Import by bare name (the browser runtime resolves the official ones by default; see [Defaults](#defaults)), by URL, or via a `packages.json` alias; the host fetches the `.wasm` and treats its exports as native bindings.
+Language-agnostic `.wasm` plugins over the [WASM module ABI](/reference/wasm-abi). Import by bare name (the browser runtime resolves the official ones by default; see [Defaults](#defaults)), by URL, or via a `packages.json` alias. The host fetches the `.wasm` and treats its exports as native bindings.
 
 ### `json`
 
@@ -32,7 +32,7 @@ print(dumps({"k": [1, 2, 3], "ok": True})) # {"k":[1,2,3],"ok":true}
 
 Pre-built `.wasm` is served from `https://cdn.edgepython.com/std/json.wasm`. Full API: [`std/json/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/json).
 
-> **`json` is an external `.wasm` package, not built into `compiler.wasm`** — the browser runtime just resolves it by [default](#defaults), so `from json import ...` works with no manifest.
+> **`json` is an external `.wasm` package, not built into `compiler.wasm`**. The browser runtime resolves it by [default](#defaults), so `from json import ...` works with no manifest.
 
 ### `re`
 
@@ -46,11 +46,18 @@ print(sub(r'\s+', '_', 'a  b   c')) # a_b_c
 print(findall(r'\w+', 'one two three')) # ['one', 'two', 'three']
 ```
 
-Functions: `match`, `search`, `fullmatch`, `findall`, `groups`, `span`, `sub`; flags go inline (`(?i)`, `(?s)`, `(?m)`). Pre-built `.wasm` is served from `https://cdn.edgepython.com/std/re.wasm`. Full API: [`std/re/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/re).
+Functions: `match`, `search`, `fullmatch`, `findall`, `groups`, `span`, `sub`. Flags go inline (`(?i)`, `(?s)`, `(?m)`). Pre-built `.wasm` is served from `https://cdn.edgepython.com/std/re.wasm`. Full API: [`std/re/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/re).
 
 ### `math`
 
-CPython-style `math`, scalar transcendentals on `libm` (no platform libc) with CPython domain errors (`sqrt(-1)` raises `ValueError: math domain error`). Module constants `pi`, `e`, `tau`, `inf`, `nan`; integer helpers `factorial`, `gcd`, `lcm`, `isqrt`, `comb`, `perm`; tuple returns `modf`, `frexp`; variadic `hypot` and `gcd`. A packed-f64 batch path (`sqrt_all`, `fsum_all`, and friends) processes a whole `bytes` buffer in one host crossing for bulk work.
+CPython-style `math`, scalar transcendentals on `libm` (no platform libc) with CPython domain errors (`sqrt(-1)` raises `ValueError: math domain error`).
+
+- Module constants: `pi`, `e`, `tau`, `inf`, `nan`
+- Integer helpers: `factorial`, `gcd`, `lcm`, `isqrt`, `comb`, `perm`
+- Tuple returns: `modf`, `frexp`
+- Variadic: `hypot` and `gcd`
+
+A packed-f64 batch path (`sqrt_all`, `fsum_all`, and friends) processes a whole `bytes` buffer in one host crossing for bulk work.
 
 ```python
 from math import sqrt, pi, hypot, factorial
@@ -61,7 +68,7 @@ print(hypot(3, 4, 12)) # 13.0
 print(factorial(5)) # 120
 ```
 
-Integers are bounded by the VM's `i128`, so `factorial`, `comb`, `perm`, and `lcm` raise `ValueError` past that range, and there is no `complex` / `cmath`. Pre-built `.wasm` is served from `https://cdn.edgepython.com/std/math.wasm`. Full API: [`std/math/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/math).
+Integers are bounded by the VM's `i128`, so `factorial`, `comb`, `perm`, and `lcm` raise `ValueError` past that range. There is no `complex` / `cmath`. Pre-built `.wasm` is served from `https://cdn.edgepython.com/std/math.wasm`. Full API: [`std/math/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/math).
 
 ### `test`
 
@@ -86,13 +93,19 @@ def test_div():
 run() # prints PASS/FAIL lines and a summary, then raises SystemExit(0 if all passed, else 1)
 ```
 
-`@fixture` registers a `def` under its name and injects it by keyword into the tests that ask for it; `@test(description, *uses)` registers a test plus the fixtures it pulls; `raises(ExcType)` is a context manager asserting the block raises `ExcType` (a subclass, or any type in a tuple); `run()` executes every registered test, prints `PASS` / `FAIL` / `ERROR` and a summary, then raises `SystemExit(1 if any failed, else 0)` so a host can read the result as a process exit code.
+`@fixture` registers a `def` under its name and injects it by keyword into the tests that ask for it. `@test(description, *uses)` registers a test plus the fixtures it pulls. `raises(ExcType)` is a context manager asserting the block raises `ExcType` (a subclass, or any type in a tuple). `run()` executes every registered test, prints `PASS` / `FAIL` / `ERROR` and a summary, then raises `SystemExit(1 if any failed, else 0)` so a host can read the result as a process exit code.
 
-Unlike the other standard packages, `test` ships as **pure Edge Python source** (`src/entry.py`), not a compiled `.wasm`, so there is no `cargo` build; it is served from `https://cdn.edgepython.com/std/test.py` and the browser runtime resolves it by default, importing the `.py` directly (see [Defaults](#defaults)). Full API: [`std/test/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/test).
+Unlike the other standard packages, `test` ships as **pure Edge Python source** (`src/entry.py`), not a compiled `.wasm`, so there is no `cargo` build. It is served from `https://cdn.edgepython.com/std/test.py`. The browser runtime resolves it by default, importing the `.py` directly (see [Defaults](#defaults)). Full API: [`std/test/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/std/test).
 
 ## Host libraries
 
-Plain-JS capabilities that run on the browser's main thread, registered declaratively via the `host` field of [`packages.json`](/reference/imports#packagesjson) (with the `<edge-python>` element), programmatically via `createWorker({ hostModules })`, or resolved by default with no config at all (see [Defaults](#defaults)). No `.wasm`, no Rust, no build step. Each call defers to the main thread over `postMessage` (around 0.1 to 0.4 ms); Python sees a synchronous call. The ESM loads lazily, the first time a run imports it.
+Plain-JS capabilities that run on the browser's main thread. Register them:
+
+- declaratively via the `host` field of [`packages.json`](/reference/imports#packagesjson) (with the `<edge-python>` element)
+- programmatically via `createWorker({ hostModules })`
+- by default with no config at all (see [Defaults](#defaults))
+
+No `.wasm`, no Rust, no build step. Each call defers to the main thread over `postMessage` (around 0.1 to 0.4 ms). Python sees a synchronous call. The ESM loads lazily, the first time a run imports it.
 
 ### `dom`
 
@@ -109,7 +122,7 @@ Representative handlers: `query`, `query_all`, `create_element`, `append_child`,
 
 ### `network`
 
-HTTP fetch, WebSocket, and Server-Sent Events. HTTP calls suspend the coroutine and compose with `gather` / `with_timeout`; WS/SSE stream events through `receive()`.
+HTTP fetch, WebSocket, and Server-Sent Events. HTTP calls suspend the coroutine and compose with `gather` / `with_timeout`. WS/SSE stream events through `receive()`.
 
 ```python
 from network import fetch_text, ws_open, ws_send
@@ -123,7 +136,7 @@ Handlers: `fetch`, `fetch_text`, `fetch_json`, `abort_request`, `ws_open`, `ws_s
 
 ### `storage`
 
-Persistent client-side storage: `localStorage`, `sessionStorage`, `IndexedDB`. KV handlers are synchronous; IndexedDB handlers suspend like `network`'s `fetch`.
+Persistent client-side storage: `localStorage`, `sessionStorage`, `IndexedDB`. KV handlers are synchronous. IndexedDB handlers suspend like `network`'s `fetch`.
 
 ```python
 from storage import local_set, local_get, idb_open, idb_put
@@ -138,7 +151,7 @@ Handlers: `local_get/set/remove/clear/keys`, `session_*` (same surface), `idb_op
 
 ### `time`
 
-Wall and monotonic clocks, sleep, and calendar formatting, a sandbox-friendly subset of CPython's `time`. Clock reads are synchronous; `sleep` suspends the coroutine like `network`'s `fetch`, composing with `gather` / `with_timeout`. A `struct_time` crosses as a JSON nine-tuple string, decode it with `json` to read fields.
+Wall and monotonic clocks, sleep, and calendar formatting, a sandbox-friendly subset of CPython's `time`. Clock reads are synchronous. `sleep` suspends the coroutine like `network`'s `fetch`, composing with `gather` / `with_timeout`. A `struct_time` crosses as a JSON nine-tuple string. Decode it with `json` to read fields.
 
 ```python
 from time import time, sleep, strftime, gmtime

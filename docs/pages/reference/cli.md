@@ -3,7 +3,7 @@ title: "Command Line Interface"
 description: "The Edge Python developer command line interface (CLI): run, serve, repl, init, package management, and build."
 ---
 
-The `edge` developer CLI. Write `.py`, run it, serve it, ship it — you never compile anything yourself. `edge` hosts the [Edge Python runtime](/getting-started/what-it-is#where-it-runs) in a headless Chromium provisioned at install time, then runs your code against it. You just point it at a file.
+The `edge` developer CLI. Write `.py`, run it, serve it, ship it. You never compile anything yourself. `edge` hosts the [Edge Python runtime](/getting-started/what-it-is#where-it-runs) in a headless Chromium provisioned at install time, then runs your code against it. You point it at a file.
 
 ```bash
 edge run app.py     # run a script
@@ -17,12 +17,12 @@ edge build          # bundle to dist/
 edge uninstall      # remove the binary, PATH entry, optionally the bundled browser
 ```
 
-The runtime does the actual work; `edge` is the loop around it. It launches the headless browser, serves the runtime alongside your code, runs everything in that browser, and streams output back to your terminal. `edge serve` opens the same setup in your own browser.
+The runtime does the actual work. `edge` is the loop around it. It launches the headless browser, serves the runtime alongside your code, runs everything in that browser, and streams output back to your terminal. `edge serve` opens the same setup in your own browser.
 
 ## Install
 
 ```bash
-# Prebuilt binary (recommended) — compatible with macOS, Linux and WSL
+# Prebuilt binary (recommended), compatible with macOS, Linux and WSL
 curl -fsSL https://cdn.edgepython.com/cli/install.sh | sh
 
 # Or from source (any platform with Rust and Cargo)
@@ -31,11 +31,11 @@ cargo install --path cli
 
 `install.sh` drops the binary at `~/.local/bin/edge` and appends that directory to your `~/.bashrc` or `~/.zshrc` if it isn't already on `PATH`. Open a new shell (or `source` the file it printed) and `edge --version` should work. Re-run the same `curl … | sh` line any time to upgrade. To remove everything: `curl -fsSL https://cdn.edgepython.com/cli/uninstall.sh | sh` (asks before removing the bundled browser cache).
 
-`install.sh` also downloads a pinned `chrome-headless-shell` into `~/.cache/edge` when no browser is already reachable; this needs `unzip`, with no package manager and no `sudo`. An existing browser on `PATH`, or an `EDGE_CHROME_PATH` you set, is used as-is. Linux arm64 has no such build: install Chrome/Chromium manually and set `EDGE_CHROME_PATH`. See [Bring your own browser](#bring-your-own-browser).
+`install.sh` also downloads a pinned `chrome-headless-shell` into `~/.cache/edge` when no browser is already reachable. This needs `unzip`, with no package manager and no `sudo`. An existing browser on `PATH`, or an `EDGE_CHROME_PATH` you set, is used as-is. Linux arm64 has no such build: install Chrome/Chromium manually and set `EDGE_CHROME_PATH`. See [Bring your own browser](#bring-your-own-browser).
 
-## `edge run` — run a Python file
+## `edge run`: run a Python file
 
-Runs a script and streams its output to the terminal. Imports resolve through [`packages.json`](/reference/imports#packagesjson); uncaught errors print a traceback to stderr and exit with code 1.
+Runs a script and streams its output to the terminal. Imports resolve through [`packages.json`](/reference/imports#packagesjson). Uncaught errors print a traceback to stderr and exit with code 1.
 
 ```text
 $ edge run hello.py
@@ -53,11 +53,11 @@ error: ZeroDivisionError: division by zero
   | ^
 ```
 
-A `raise SystemExit(code)` with an integer (or no argument) exits cleanly with that code and no traceback; a string argument is reported as an error and exits 1.
+A `raise SystemExit(code)` with an integer (or no argument) exits cleanly with that code and no traceback. A string argument is reported as an error and exits 1.
 
-Flags: `--packages <file>` (custom manifest). When no path is given, `edge run` reads from stdin if it is piped (`cat hello.py | edge run`); it errors out if stdin is a terminal.
+Flags: `--packages <file>` (custom manifest). With no path, `edge run` reads from stdin if it is piped (`cat hello.py | edge run`). It errors out if stdin is a terminal.
 
-## `edge serve` — local dev server
+## `edge serve`: local dev server
 
 A dev server for browser apps. Serves your project directory and reloads the page on any file change via an injected polling client.
 
@@ -69,7 +69,7 @@ $ edge serve
 
 Flags: `--port <n>` (default `5173`), `--open` (open the browser).
 
-## `edge repl` — interactive shell (demo)
+## `edge repl`: interactive shell (demo)
 
 An interactive Edge Python shell for quick experiments.
 
@@ -84,17 +84,25 @@ Edge Python 0.1.0  ·  .exit, Ctrl+C or Ctrl+D to quit
 >>> .exit
 ```
 
-History (arrow keys) and multi-line blocks (a line ending in `:` continues until a blank line) are supported. `.exit`, `Ctrl+C`, or `Ctrl+D` quit; `.reset` wipes the accumulated session. Expression results are not auto-printed — use `print()` explicitly.
+History (arrow keys) and multi-line blocks (a line ending in `:` continues until a blank line) are supported. `.exit`, `Ctrl+C`, or `Ctrl+D` quit. `.reset` wipes the accumulated session. Expression results are not auto-printed. Use `print()` explicitly.
 
-State is preserved by **recompiling and rerunning the accumulated session on every prompt**: the runtime resets its VM on each `run_start`, so imports and definitions only persist by replay. Trade-offs — side effects (`time()`, `random()`, network, IO) re-fire on every input, the chunk heap grows linearly with session length, and each eval pays the recompile cost. For long sessions or side-effect-heavy code, prefer `edge run` on a script.
+State is preserved by **recompiling and rerunning the accumulated session on every prompt**. The runtime resets its VM on each `run_start`, so imports and definitions only persist by replay.
+
+Trade-offs:
+
+- Side effects (`time()`, `random()`, network, IO) re-fire on every input.
+- The chunk heap grows linearly with session length.
+- Each eval pays the recompile cost.
+
+For long sessions or side-effect-heavy code, prefer `edge run` on a script.
 
 > This is a demo: actual cost is O(n²). A first-class incremental compile path in the VM is the proper fix and is tracked for a future runtime change.
 
-## `edge test` — test runner
+## `edge test`: test runner
 
-Not implemented yet. The `test` package itself (the harness you import) is available: `edge add test` writes it to `packages.json`, and both `edge run` and `edge serve` resolve it by default, so a script can already `from test import fixture, test, raises, run` and call `run()` itself.
+Not implemented yet. The `test` package itself (the harness you import) is available. `edge add test` writes it to `packages.json`, and both `edge run` and `edge serve` resolve it by default. A script can already `from test import fixture, test, raises, run` and call `run()` itself.
 
-## `edge init` — scaffold a workspace
+## `edge init`: scaffold a workspace
 
 Scaffolds a ready-to-run project: an entry script, an HTML host page, and a manifest.
 
@@ -111,9 +119,9 @@ $ edge init my-app
 
 `--bare` skips `index.html` for script-only projects.
 
-## `edge add` / `edge remove` — package manager
+## `edge add` / `edge remove`: package manager
 
-Manage [`packages.json`](/reference/imports#packagesjson) by name. `edge` knows the official std (`json`, `re`, `math`, `test`) and host (`dom`, `network`, `storage`, `time`) packages, so you don't paste URLs. Most std packages are `.wasm`; `test` is pure Edge Python, so it resolves to `test.py`. See [Official packages](/reference/packages) for the full catalog.
+Manage [`packages.json`](/reference/imports#packagesjson) by name. `edge` knows the official std (`json`, `re`, `math`, `test`) and host (`dom`, `network`, `storage`, `time`) packages, so you don't paste URLs. Most std packages are `.wasm`. `test` is pure Edge Python, so it resolves to `test.py`. See [Official packages](/reference/packages) for the full catalog.
 
 ```text
 $ edge add math network
@@ -132,9 +140,9 @@ $ edge remove network
 
 Point a package at a custom URL with `edge add foo=https://example.com/foo.wasm`.
 
-## `edge build` — portable bundle
+## `edge build`: portable bundle
 
-Bundles your app into a self-contained `dist/` for offline use or self-hosting: the runtime, the `compiler.wasm`, your scripts, and every package vendored locally so nothing is fetched at runtime.
+Bundles your app into a self-contained `dist/` for offline use or self-hosting. It vendors the runtime, the `compiler.wasm`, your scripts, and every package locally, so nothing is fetched at runtime.
 
 ```text
 $ edge build
@@ -155,7 +163,7 @@ Flags: `--out <dir>` (default `dist/`).
 
 ## `edge uninstall`
 
-Removes the binary and its `PATH` entry, and asks before removing the bundled `chrome-headless-shell` cache (never touches system Chromium). Equivalent to the `uninstall.sh` one-liner in [Install](#install).
+Removes the binary and its `PATH` entry. Asks before removing the bundled `chrome-headless-shell` cache (never touches system Chromium). Equivalent to the `uninstall.sh` one-liner in [Install](#install).
 
 ## Global flags
 
@@ -169,4 +177,10 @@ Removes the binary and its `PATH` entry, and asks before removing the bundled `c
 
 ## Bring your own browser
 
-`edge` uses, in order: `EDGE_CHROME_PATH` if set, the bundled `chrome-headless-shell` in `~/.cache/edge`, or a system `chromium` / `chromium-browser` / `google-chrome` / `microsoft-edge` on `PATH`. `install.sh` downloads `chrome-headless-shell` when none is present; Linux arm64 has no build, so install Chrome/Chromium manually and point `EDGE_CHROME_PATH=/path/to/chrome` at it.
+`edge` uses, in order:
+
+1. `EDGE_CHROME_PATH` if set.
+2. The bundled `chrome-headless-shell` in `~/.cache/edge`.
+3. A system `chromium` / `chromium-browser` / `google-chrome` / `microsoft-edge` on `PATH`.
+
+`install.sh` downloads `chrome-headless-shell` when none is present. Linux arm64 has no build, so install Chrome/Chromium manually and point `EDGE_CHROME_PATH=/path/to/chrome` at it.

@@ -3,9 +3,9 @@ title: "Methods"
 description: "Built-in methods on strings, bytes, lists, dicts, and sets."
 ---
 
-Built-in methods on `str`, `bytes`, `list`, `dict`, `set`. Curated to cover common operations; rarely used variants are omitted (documented per section).
+Built-in methods on `str`, `bytes`, `list`, `dict`, `set`. The set is curated for common operations. Rarely used variants are omitted, documented per section.
 
-No methods on `int`, `float`, or `tuple`, primitive types stay dispatch-free. `(5).bit_length()`, `(255).to_bytes(...)`, `(3.14).is_integer()`, `(1, 2).count(1)` all raise `AttributeError`. For ints use [`int_from_bytes` / `int_to_bytes`](/reference/builtins#bytes_fromhex-int_from_bytes-int_to_bytes); for tuple counting use `sum(1 for x in t if x == v)`.
+`int`, `float`, and `tuple` have no methods. Primitive types stay dispatch-free. `(5).bit_length()`, `(255).to_bytes(...)`, `(3.14).is_integer()`, `(1, 2).count(1)` all raise `AttributeError`. For ints, use [`int_from_bytes` / `int_to_bytes`](/reference/builtins#bytes_fromhex-int_from_bytes-int_to_bytes). For tuple counting, use `sum(1 for x in t if x == v)`.
 
 ```python
 # Methods are accessed with dot notation
@@ -84,7 +84,7 @@ Not provided: `casefold`, `swapcase`, `isspace`, `isascii`, `isidentifier`, `isn
 
 ### Search and count
 
-`startswith`, `endswith`, `find`, `count` take a single string arg, no `start` / `end` slice positions. `find` returns a code-point index (not byte offset), `-1` if missing. No `rfind`, `index`, `rindex`, combine `find` with reversal.
+`startswith`, `endswith`, `find`, `count` take a single string arg. No `start` / `end` slice positions. `find` returns a code-point index (not byte offset), `-1` if missing. No `rfind`, `index`, `rindex`. Combine `find` with reversal.
 
 ```python
 print("hello".startswith("he"))
@@ -104,7 +104,7 @@ True
 
 ### Split, join, replace
 
-`split` no-arg splits on whitespace runs; explicit separator splits on every occurrence. No `maxsplit`, no `rsplit`. `replace` always replaces all (no `count` cap). `splitlines` drops separators (no `keepends`).
+`split` with no arg splits on whitespace runs. An explicit separator splits on every occurrence. No `maxsplit`, no `rsplit`. `replace` always replaces all (no `count` cap). `splitlines` drops separators (no `keepends`).
 
 ```python
 print("a,b,c".split(","))
@@ -132,7 +132,7 @@ foo
 
 ### Padding
 
-`center(width[, fill])` and `zfill(width)` measure in code points, not bytes, `'ñ'.center(5, '*')` produces `**ñ**` (5 visible chars). Not provided: `ljust`, `rjust`, `expandtabs`, `translate`, `maketrans`, `format`, `format_map`.
+`center(width[, fill])` and `zfill(width)` measure in code points, not bytes. `'ñ'.center(5, '*')` produces `**ñ**` (5 visible chars). Not provided: `ljust`, `rjust`, `expandtabs`, `translate`, `maketrans`, `format`, `format_map`.
 
 ```python
 print("abc".center(7, "-"))
@@ -164,7 +164,7 @@ b'hi'
 
 ## Bytes methods
 
-Small method set. `bytes.find` returns a byte offset (not a code-point index). `bytes.index` raises `ValueError` ("subsection not found") if absent. `split` needs an explicit separator (no whitespace-split mode). `bytearray` / `memoryview` unimplemented.
+Small method set. `bytes.find` returns a byte offset (not a code-point index). `bytes.index` raises `ValueError` ("subsection not found") if absent. `split` needs an explicit separator (no whitespace-split mode). `bytearray` and `memoryview` are unimplemented.
 
 ```python
 b = b"\x48\x65\x6c\x6c\x6f"
@@ -277,7 +277,7 @@ print(xs)
 
 ### Views
 
-`keys`, `values`, `items` return concrete `list` snapshots, not live views. Dict mutations don't affect captured snapshots, intentional: live views are shared mutable state, conflicting with the functional paradigm.
+`keys`, `values`, `items` return concrete `list` snapshots, not live views. Dict mutations don't affect captured snapshots. This is intentional: live views are shared mutable state, which conflicts with the functional paradigm.
 
 ```python
 d = {"a": 1, "b": 2, "c": 3}
@@ -317,7 +317,7 @@ None
 
 ### Mutation
 
-`update` accepts a `dict` or iterable of length-2 sequences. Kwargs form (`d.update(a=1)`) not supported. `popitem` returns the last-inserted entry; empty -> `ValueError`. No `clear` / `fromkeys`, use `d = {}` / a comprehension.
+`update` accepts a `dict` or an iterable of length-2 sequences. The kwargs form (`d.update(a=1)`) is not supported. `popitem` returns the last-inserted entry. Empty -> `ValueError`. No `clear` or `fromkeys`. Use `d = {}` or a comprehension.
 
 ```python
 d = {"a": 1}
@@ -357,7 +357,7 @@ print(d)
 
 ### Mutation
 
-`remove` raises `KeyError` if absent; `discard` is silent. `pop` removes arbitrary element; empty -> `ValueError`. `update` accepts any iterable.
+`remove` raises `KeyError` if absent. `discard` is silent. `pop` removes an arbitrary element. Empty -> `ValueError`. `update` accepts any iterable.
 
 ```python
 s = {1, 2, 3}
@@ -389,7 +389,7 @@ set()
 
 ### Algebra
 
-`union`, `intersection`, `difference`, `symmetric_difference` return fresh sets; operator forms (`|`, `&`, `-`, `^`) and augmented assignment (`|=`, `&=`, `-=`, `^=`) work the same. In-place `*_update` variants not provided, use augmented form (`s &= other`).
+`union`, `intersection`, `difference`, `symmetric_difference` return fresh sets. Operator forms (`|`, `&`, `-`, `^`) and augmented assignment (`|=`, `&=`, `-=`, `^=`) work the same. In-place `*_update` variants are not provided. Use the augmented form (`s &= other`).
 
 ```python
 a = {1, 2, 3}

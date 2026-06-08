@@ -19,7 +19,7 @@ p("aliased")
 aliased
 ```
 
-Edge Python is functional-first. Introspection helpers (`eval`, `exec`, `compile`, `dir`, `ascii`, `help`, `__import__`, `breakpoint`, `open`) are intentionally absent: the static-import contract and lack of a writable global module table make them either impossible or inconsistent with the paradigm. `staticmethod` / `classmethod` are omitted (use the namespace pattern or free functions); `super` and `property` are supported. See [`/language/classes`](/language/classes), [`/language/dunders`](/language/dunders).
+Edge Python is functional-first. Introspection helpers (`eval`, `exec`, `compile`, `dir`, `ascii`, `help`, `__import__`, `breakpoint`, `open`) are absent by design. The static-import contract and the lack of a writable global module table make them impossible or inconsistent with the paradigm. `staticmethod` / `classmethod` are omitted; use the namespace pattern or free functions. `super` and `property` are supported. See [`/language/classes`](/language/classes), [`/language/dunders`](/language/dunders).
 
 ## Output
 
@@ -446,9 +446,9 @@ handle("prod", req)
 handle("dev",  req)
 ```
 
-Candidates must be imported statically somewhere; `import_module` is a runtime *lookup*, not a *fetch*. Preserves lockfile and integrity: every reachable module is verified at compile time. Unknown name -> `NameError`; non-module global -> `TypeError`.
+Candidates must be imported statically somewhere. `import_module` is a runtime *lookup*, not a *fetch*. It preserves lockfile and integrity: every reachable module is verified at compile time. Unknown name -> `NameError`. Non-module global -> `TypeError`.
 
-Dynamic loading (`importlib.import_module`, `__import__`) doesn't exist by design; static-import + runtime-dispatch replaces it.
+Dynamic loading (`importlib.import_module`, `__import__`) doesn't exist by design. Static-import plus runtime-dispatch replaces it.
 
 ### bytes
 
@@ -477,7 +477,7 @@ See [Bytes](/language/data-types#bytes) for literal syntax (`b"..."`), indexing,
 
 ### bytes_fromhex, int_from_bytes, int_to_bytes
 
-Free functions, not int/bytes methods — primitives have no bound methods (`(5).bit_length()`, `(255).to_bytes(...)` don't exist).
+Free functions, not int/bytes methods. Primitives have no bound methods (`(5).bit_length()`, `(255).to_bytes(...)` don't exist).
 
 - `bytes_fromhex(s)`: hex string -> bytes. Inner whitespace ignored; non-hex -> `ValueError`.
 - `int_from_bytes(b, order)`: `order` is `"big"` or `"little"`. Unsigned (high bit never sign).
@@ -522,7 +522,7 @@ False
 
 ### type
 
-`type(x)` returns the type object for `x`, shown as `<class 'name'>`. Built-in type names (`int`, `set`, `list`, ...) are these same objects, so `type(x) is int` and `type(x) == int` hold, and calling one constructs it (`type([1])([2, 3])` gives `[2, 3]`). No metaclass or `dir`.
+`type(x)` returns the type object for `x`, shown as `<class 'name'>`. Built-in type names (`int`, `set`, `list`, ...) are these same objects. So `type(x) is int` and `type(x) == int` hold, and calling one constructs it (`type([1])([2, 3])` gives `[2, 3]`). No metaclass or `dir`.
 
 ```python
 print(type(42))
@@ -585,7 +585,7 @@ True
 
 ### issubclass
 
-`issubclass(C, B)`: both `C` and `B` are classes (`B` may be a tuple of classes); arg 1 must itself be a class or it raises `TypeError`. Built-in and exception classes walk the standard hierarchy (`issubclass(ZeroDivisionError, Exception)`), `bool` is a subclass of `int`, and user classes walk the inheritance chain.
+`issubclass(C, B)`: both `C` and `B` are classes (`B` may be a tuple of classes). Arg 1 must itself be a class, or it raises `TypeError`. Built-in and exception classes walk the standard hierarchy (`issubclass(ZeroDivisionError, Exception)`), `bool` is a subclass of `int`, and user classes walk the inheritance chain.
 
 ```python
 print(issubclass(ZeroDivisionError, Exception))
@@ -630,7 +630,7 @@ False
 
 ### id, hash
 
-`id(x)`: stable identifier (NaN-box bit pattern masked to int range). `hash(x)`: hash for hashable values; `hash(1) == hash(1.0)` so int/float keys collapse to one dict slot.
+`id(x)`: stable identifier (NaN-box bit pattern masked to int range). `hash(x)`: hash for hashable values. `hash(1) == hash(1.0)`, so int/float keys collapse to one dict slot.
 
 ```python
 x = 42
@@ -679,7 +679,7 @@ print(repr([1, "two", 3]))
 
 ### format
 
-`format(value)` -> display form. `format(value, spec)` applies the f-string spec mini-language (`[[fill]align][sign][#][0][width][,][.precision][type]`). Width and precision are capped (precision at 65,000); a larger value raises `ValueError` rather than allocating an oversized string.
+`format(value)` -> display form. `format(value, spec)` applies the f-string spec mini-language (`[[fill]align][sign][#][0][width][,][.precision][type]`). Width and precision are capped (precision at 65,000). A larger value raises `ValueError` rather than allocating an oversized string.
 
 ```python
 print(format(42))
@@ -699,7 +699,7 @@ print(format("hi", ">10"))
 
 ## Attribute access
 
-`getattr` / `hasattr` consult the built-in method table for primitives (str/list/dict/set/bytes) and the instance `__dict__` for user-class instances. They don't walk user-class method definitions — `hasattr(MyClass(), 'my_method')` is `False`. Functional pattern: call functions with values, don't look up methods reflectively.
+`getattr` / `hasattr` consult the built-in method table for primitives (str/list/dict/set/bytes) and the instance `__dict__` for user-class instances. They don't walk user-class method definitions: `hasattr(MyClass(), 'my_method')` is `False`. Functional pattern: call functions with values, don't look up methods reflectively.
 
 ### getattr
 
@@ -759,7 +759,7 @@ print(f())
 {'a': 1, 'b': 2}
 ```
 
-Dicts are copies; mutation doesn't change VM bindings.
+Dicts are copies. Mutation doesn't change VM bindings.
 
 ### setattr, delattr
 
@@ -864,19 +864,19 @@ print(c.x)
 
 ## Async
 
-Concurrency primitives; full model in [Async](/language/async).
+Concurrency primitives. Full model in [Async](/language/async).
 
 ### run
 
-`run(*coros)`: schedules every arg, drains until each reaches a terminal state, returns the first arg's result. Errors from peers other than the first are discarded; for fan-out collecting every result, use `gather`.
+`run(*coros)`: schedules every arg, drains until each reaches a terminal state, returns the first arg's result. Errors from peers other than the first are discarded. For fan-out that collects every result, use `gather`.
 
 ### sleep
 
-`sleep(seconds)`: yield and resume after the duration. Negative clamps to zero. Without a host time hook, a virtual clock advances; with one, scheduler signals `PendingTimer(deadline_ns)` and the embedder resumes via `run_resume`.
+`sleep(seconds)`: yield and resume after the duration. Negative clamps to zero. Without a host time hook, a virtual clock advances. With one, the scheduler signals `PendingTimer(deadline_ns)` and the embedder resumes via `run_resume`.
 
 ### frame
 
-`frame()`: yield until the host's next render frame. Coro -> `WaitingFrame`, scheduler signals `PendingFrame`; browser embedders hook `requestAnimationFrame`. Use for animation loops at display refresh rate.
+`frame()`: yield until the host's next render frame. Coro -> `WaitingFrame`, scheduler signals `PendingFrame`. Browser embedders hook `requestAnimationFrame`. Use for animation loops at display refresh rate.
 
 ```python
 async def animate(node):
@@ -887,7 +887,7 @@ async def animate(node):
 
 ### receive
 
-`receive()`: pop the oldest message from the scheduler queue. Empty -> parks in `WaitingEvent`, scheduler signals `PendingEvent`; embedder resumes via `run_push_event(bytes)`. Messages are arbitrary strings (e.g. DOM event names from `bind_event`).
+`receive()`: pop the oldest message from the scheduler queue. Empty -> parks in `WaitingEvent`, scheduler signals `PendingEvent`. Embedder resumes via `run_push_event(bytes)`. Messages are arbitrary strings (e.g. DOM event names from `bind_event`).
 
 ### gather
 
@@ -925,4 +925,4 @@ timed out
 
 ### cancel
 
-`cancel(coro)`: flag a registered coroutine for cancellation; next tick stops it. Cooperative and silent — the body doesn't observe `CancelledError`. For deadline-driven exception-style cancellation, use `with_timeout`.
+`cancel(coro)`: flag a registered coroutine for cancellation. The next tick stops it. Cooperative and silent: the body doesn't observe `CancelledError`. For deadline-driven exception-style cancellation, use `with_timeout`.

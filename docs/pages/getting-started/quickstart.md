@@ -5,17 +5,17 @@ description: "Run your first Edge Python program in under a minute."
 
 ## Run it
 
-Edge Python ships as a sub-200 KB WASM module. Fastest way to try it: the playground, where no install is needed and everything runs client-side.
+Edge Python ships as a sub-200 KB WASM module. The fastest way to try it is the playground. No install. Everything runs client-side.
 
 [Open the playground ->](https://demo.edgepython.com)
 
 ## Embed it
 
-To put Edge Python in your own page, drop in the `<edge-python>` element below. Building the `.wasm` from source or embedding in Rust/WASI is covered in [Where it runs](/getting-started/what-it-is#where-it-runs).
+To put Edge Python in your own page, drop in the `<edge-python>` element below. Building the `.wasm` from source or embedding in Rust/WASI: see [Where it runs](/getting-started/what-it-is#where-it-runs).
 
 ### Drop-in HTML element
 
-In the browser, the runtime's `<edge-python>` element runs a `.py` file declaratively, no JS wiring. With a host library like `dom` (declared in `packages.json`), the script renders straight into the page:
+In the browser, the `<edge-python>` element runs a `.py` file declaratively. No JS wiring. With a host library like `dom` (declared in `packages.json`), the script renders straight into the page:
 
 ```html
 <!DOCTYPE html>
@@ -42,7 +42,9 @@ from dom import query, set_text
 set_text(query("#app"), "Hello from Python")
 ```
 
-`dom` is one of the official [host libraries](/reference/packages#host-libraries) (`dom`, `network`, `storage`...); standard `.wasm` packages like [`json`](/reference/packages#json) sit alongside them. The `packages.json` above declares `dom` explicitly, but the browser runtime also resolves the official packages by bare name with no manifest (see [Defaults](/reference/packages#defaults)), fetching each lazily on first import. See [Official packages](/reference/packages) for the full catalog, and the [runtime README](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) for all `<edge-python>` attributes and the `imports` field for `.py` / `.wasm` modules.
+`dom` is one of the official [host libraries](/reference/packages#host-libraries) (`dom`, `network`, `storage`...). Standard `.wasm` packages like [`json`](/reference/packages#json) sit alongside them. The `packages.json` above declares `dom` explicitly. The browser runtime also resolves the official packages by bare name, with no manifest (see [Defaults](/reference/packages#defaults)). Each is fetched lazily on first import.
+
+See [Official packages](/reference/packages) for the full catalog. See the [runtime README](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) for all `<edge-python>` attributes and the `imports` field for `.py` / `.wasm` modules.
 
 ## Your first program
 

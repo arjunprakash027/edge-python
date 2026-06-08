@@ -3,7 +3,7 @@ title: "Functions"
 description: "First-class functions, lambdas, closures, generators."
 ---
 
-Functions are the central abstraction: values that can be passed, returned, stored, and composed.
+Functions are the central abstraction. They are values. Pass them, return them, store them, compose them.
 
 ## def
 
@@ -78,7 +78,7 @@ print(opts(host="api", port=443))
 
 ### Keyword-only parameters
 
-A bare `*` marks every following parameter as keyword-only; positional args never reach them.
+A bare `*` marks every following parameter as keyword-only. Positional args never reach them.
 
 ```python
 def connect(host, *, port=80, secure=False):
@@ -120,7 +120,7 @@ print(f(1, **{"b": 2, "c": 3}))
 
 ## lambda
 
-Anonymous function; body is a single expression.
+Anonymous function. The body is a single expression.
 
 ```python
 double = lambda x: x * 2
@@ -333,8 +333,7 @@ True False
 ```
 
 <Note>
-Pure functions called repeatedly with the same arguments are automatically memoized after two hits. The VM detects purity (no I/O, no mutation, no raise, no yield) and caches results in a per-function template table.
-Naive recursion runs at memoized cost without source-level changes.
+Pure functions are memoized after two calls with the same arguments. The VM detects purity: no I/O, no mutation, no raise, no yield. It caches results in a per-function template table. Naive recursion runs at memoized cost with no source changes.
 </Note>
 
 ## Generators
@@ -390,7 +389,7 @@ print(list(nums()))
 ```
 
 <Note>
-Generators are one-way: producer to consumer. `gen.send(value)`, `gen.throw(exc)`, and `gen.close()` are not exposed; bidirectional communication is a procedural pattern inconsistent with the functional paradigm. For task coordination with bidirectional flow, use the cooperative scheduler (`run` / `sleep` / `gather`) and pass values through arguments and return values.
+Generators are one-way: producer to consumer. `gen.send(value)`, `gen.throw(exc)`, and `gen.close()` are not exposed. Bidirectional communication is a procedural pattern, inconsistent with the functional paradigm. For bidirectional flow, use the cooperative scheduler (`run` / `sleep` / `gather`). Pass values through arguments and return values.
 </Note>
 
 ## Generator expressions
@@ -409,7 +408,7 @@ print(max(i for i in [3, 1, 4, 1, 5]))
 
 ## Decorators
 
-A decorator wraps another callable. Applies to both functions and classes (see [Classes](/language/classes#class-decorators)):
+A decorator wraps another callable. It applies to both functions and classes (see [Classes](/language/classes#class-decorators)):
 
 ```python
 def trace(f):
@@ -452,7 +451,7 @@ print(base(5))
 12
 ```
 
-Parameterised decorators are factories — a function taking decorator args and returning the actual decorator. The wrapped function captures both scopes.
+Parameterised decorators are factories. A function takes the decorator args and returns the actual decorator. The wrapped function captures both scopes.
 
 ```python
 def repeat(n):

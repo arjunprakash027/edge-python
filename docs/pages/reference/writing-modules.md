@@ -15,7 +15,7 @@ Edge Python has no bundled stdlib. Three ways to add native functionality:
 
 ## Path A: `.wasm` module by URL
 
-Contract: the [WASM module ABI](/reference/wasm-abi), language-agnostic, three scalar types. Rust authors use the bundled [`wasm-pdk`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) (`#[plugin_fn]` for free functions, `#[plugin_class]` + `#[plugin_methods]` for Python-visible classes, typed `Handle` / `Value` / `Error`); other languages use community PDKs or hand-roll the boilerplate.
+Contract: the [WASM module ABI](/reference/wasm-abi), language-agnostic, three scalar types. Rust authors use the bundled [`wasm-pdk`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/wasm-pdk) (`#[plugin_fn]` for free functions, `#[plugin_class]` + `#[plugin_methods]` for Python-visible classes, typed `Handle` / `Value` / `Error`). Other languages use community PDKs or hand-roll the boilerplate.
 
 Worked examples (with and without the SDK), encoding tables, and language-specific snippets: [WASM module ABI](/reference/wasm-abi). Script side:
 
@@ -26,11 +26,11 @@ print(add(2, 3)) # -> 5
 
 ## Path B: host capability
 
-Some native functionality can't live in a CDN-distributed `.wasm` (Path A) because the work happens outside the WASM sandbox — DOM mutation, WASI filesystem I/O, native crypto. Path A modules see only the sealed 6 `env.*` imports; they have no channel to the host runtime. Path B closes that gap.
+Some native functionality can't live in a CDN-distributed `.wasm` (Path A): the work happens outside the WASM sandbox. DOM mutation, WASI filesystem I/O, native crypto. Path A modules see only the sealed 6 `env.*` imports. They have no channel to the host runtime. Path B closes that gap.
 
-A host capability is shipped as part of a custom embedder. The embedder declares additional host imports beyond the sealed plugin ABI — these imports are the embedder's private contract with its host runtime, not part of the public plugin contract.
+A host capability is shipped as part of a custom embedder. The embedder declares additional host imports beyond the sealed plugin ABI. These imports are the embedder's private contract with its host runtime, not part of the public plugin contract.
 
-Precedent: `print(...)` calls the embedder's `host_print` import; `input()` drains a buffer the host fills via `set_input`. The same shape generalises — a browser-host distribution can register `dom` as a native module whose `query`, `set_text`, `append_child` operations bridge to JS through embedder-specific host imports. A WASI-host distribution can register `fs` against `wasi_snapshot_preview1`. Scripts see them as ordinary native modules:
+Precedent: `print(...)` calls the embedder's `host_print` import. `input()` drains a buffer the host fills via `set_input`. The same shape generalises. A browser-host distribution can register `dom` as a native module whose `query`, `set_text`, `append_child` operations bridge to JS through embedder-specific host imports. A WASI-host distribution can register `fs` against `wasi_snapshot_preview1`. Scripts see them as ordinary native modules:
 
 ```python
 from dom import document, query # browser host
@@ -63,15 +63,21 @@ The custom `compiler.wasm` declares `env.host_dom_op` alongside the standard `en
 
 ### Why this is not a third module flavor
 
-Scripts still see two flavors (code and native; see [Imports](/reference/imports)). Path B is a distribution pattern that ships additional bridges through the embedder; the compiler dispatches them the same way as built-in operations. Keeps the public language surface and the [WASM module ABI](/reference/wasm-abi) untouched.
+Scripts still see two flavors (code and native; see [Imports](/reference/imports)). Path B is a distribution pattern that ships additional bridges through the embedder. The compiler dispatches them the same way as built-in operations. The public language surface and the [WASM module ABI](/reference/wasm-abi) stay untouched.
 
 ## Path C: JS host module
 
-Browsers run the engine in a Web Worker (no `document`, no `window`). Path C bridges: a capability ships as plain JavaScript, registers with `createWorker({ mainThreadModules })`, runs on the main thread. The runtime synthesises the native module registration so Python can `from <name> import ...`; each call is decoded in the Worker, shipped to main via `postMessage`, executed against `document`/`window`/etc., and the result encoded back. Python sees a synchronous call.
+Browsers run the engine in a Web Worker (no `document`, no `window`). Path C bridges it: a capability ships as plain JavaScript, registers with `createWorker({ mainThreadModules })`, and runs on the main thread. The runtime synthesises the native module registration, so Python can `from <name> import ...`. Each call is decoded in the Worker, shipped to main via `postMessage`, executed against `document`/`window`/etc., and the result encoded back. Python sees a synchronous call.
 
-Async handlers (returning a `Promise`) run concurrently when several coroutines call them under `gather`: each result is routed back to the coroutine that issued it, and a rejected handler raises a catchable exception in that one coroutine without disturbing its peers.
+Async handlers (returning a `Promise`) run concurrently when several coroutines call them under `gather`. Each result is routed back to the coroutine that issued it. A rejected handler raises a catchable exception in that one coroutine without disturbing its peers.
 
-Three ways to register: pass the imported object to `mainThreadModules` (eager, shown below); give a URL to `hostModules` or the `packages.json` `host` field, imported lazily the first time a run uses it; or, for the official libraries, rely on the runtime [defaults](/reference/packages#defaults) with no config. No `.wasm`, no Rust, no build step.
+Three ways to register:
+
+- Pass the imported object to `mainThreadModules` (eager, shown below).
+- Give a URL to `hostModules` or the `packages.json` `host` field, imported lazily the first time a run uses it.
+- For the official libraries, rely on the runtime [defaults](/reference/packages#defaults) with no config.
+
+No `.wasm`, no Rust, no build step.
 
 ### Sketch
 

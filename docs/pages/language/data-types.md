@@ -33,7 +33,7 @@ For runtime membership in a type, use [`isinstance`](/reference/builtins#isinsta
 
 ## Integer
 
-One `int` type, transparently two-tier: a fast inline path that auto-promotes to wide integers, capped at ±2¹²⁷ (full mechanics in [Integer width](/reference/limits-and-errors#integer-width)). No CPython unbounded ints; no complex (`1j`, `2+3j`).
+One `int` type, transparently two-tier. A fast inline path auto-promotes to wide integers, capped at ±2¹²⁷ (full mechanics in [Integer width](/reference/limits-and-errors#integer-width)). No CPython unbounded ints. No complex (`1j`, `2+3j`).
 
 ```python
 # Modular exponentiation
@@ -104,11 +104,11 @@ b
 c
 ```
 
-`len(s)` and padding (`str.center` / `str.zfill`) measure in code points, not bytes — `'ñ'.center(5, '*')` -> `'**ñ**'` (5 visual chars).
+`len(s)` and padding (`str.center` / `str.zfill`) measure in code points, not bytes. `'ñ'.center(5, '*')` -> `'**ñ**'` (5 visual chars).
 
 ## Bytes
 
-Immutable sequence of bytes (each 0–255). Distinct from `str`: stores raw octets, not Unicode. Indexing returns an `int`, not a single-byte slice.
+Immutable sequence of bytes (each 0-255). Distinct from `str`: it stores raw octets, not Unicode. Indexing returns an `int`, not a single-byte slice.
 
 ```python
 data = b"hello"
@@ -178,7 +178,7 @@ print(encoded, decoded)
 b'Edge Python' Edge Python
 ```
 
-`bytes` is hashable and comparable to other `bytes`; `bytes == str` is always `False` (even for valid UTF-8). Methods include `decode`, `hex`, `find`, `count`, `replace`, `split`, `startswith`, `endswith` (see [Methods](/reference/methods)). Encodings: `"utf-8"` (default), `"ascii"`.
+`bytes` is hashable and comparable to other `bytes`. `bytes == str` is always `False`, even for valid UTF-8. Methods include `decode`, `hex`, `find`, `count`, `replace`, `split`, `startswith`, `endswith` (see [Methods](/reference/methods)). Encodings: `"utf-8"` (default), `"ascii"`.
 
 ## List
 
@@ -237,7 +237,7 @@ print(xs)
 
 ## Tuple
 
-Immutable sequence. Fastest container for fixed-size data, and the usual hashable container for compound dict keys (frozensets also work).
+Immutable sequence. It is the fastest container for fixed-size data. It is also the usual hashable container for compound dict keys (frozensets also work).
 
 ```python
 t = (1, 2, 3)
@@ -256,7 +256,7 @@ print(()) # empty
 
 ## Dict
 
-Insertion-ordered mapping. Keys must be hashable: numbers, strings, bytes, bools, `None`, frozensets, tuples of hashables. Mutable containers as keys -> `TypeError: unhashable type`. Numerically equal keys (`1`/`1.0`, `True`/`1`) collapse; the second insertion overwrites.
+Insertion-ordered mapping. Keys must be hashable: numbers, strings, bytes, bools, `None`, frozensets, tuples of hashables. Mutable containers as keys -> `TypeError: unhashable type`. Numerically equal keys (`1`/`1.0`, `True`/`1`) collapse. The second insertion overwrites.
 
 ```python
 d = {"a": 1, "b": 2}
@@ -289,7 +289,7 @@ y
 
 ## Set
 
-Unordered, no duplicates, hashable values. Mutators (`add`, `remove`, `discard`, `pop`, `clear`, `update`) and algebraic operators (`|`, `&`, `-`, `^` and named methods); see [Methods](/reference/methods).
+Unordered, no duplicates, hashable values. Mutators (`add`, `remove`, `discard`, `pop`, `clear`, `update`) and algebraic operators (`|`, `&`, `-`, `^` and named methods). See [Methods](/reference/methods).
 
 ```python
 s = {1, 2, 2, 3}
@@ -319,7 +319,7 @@ True
 
 ## Unpacking in literals
 
-`*` spreads an iterable into a list/set literal; `**` spreads a mapping into a dict literal. Mix freely with regular elements; for dicts, later keys win.
+`*` spreads an iterable into a list/set literal. `**` spreads a mapping into a dict literal. Mix freely with regular elements. For dicts, later keys win.
 
 ```python
 xs = [1, 2]
@@ -372,7 +372,7 @@ True
 
 ## Ellipsis
 
-`...` is a singleton of type `ellipsis`. Compares equal only to itself; distinct from `'...'`.
+`...` is a singleton of type `ellipsis`. It compares equal only to itself. It is distinct from `'...'`.
 
 ```python
 print(...)

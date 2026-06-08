@@ -3,9 +3,11 @@ title: "What Edge Python is"
 description: "A subset of Python, compiled to bytecode and run on a sandboxed VM."
 ---
 
-A sandboxed Python subset with classes, async/await, structural pattern matching, and `packages.json` imports, compiled to bytecode and run on a stack VM with adaptive inline caching and pure-function memoisation. See [Design](/implementation/design) for internals.
+A sandboxed Python subset. Classes, async/await, structural pattern matching, and `packages.json` imports.
 
-Reads like Python (parses Python syntax). Runs differently, what it executes is curated.
+Compiled to bytecode. Run on a stack VM with adaptive inline caching and pure-function memoisation. See [Design](/implementation/design) for internals.
+
+It reads like Python: it parses Python syntax. It runs differently. What it executes is curated.
 
 ## What it supports
 
@@ -23,18 +25,18 @@ Reads like Python (parses Python syntax). Runs differently, what it executes is 
 - **Walrus operator**: `:=` in expressions (Name target only).
 - **Type annotations**: parsed and discarded, no runtime `__annotations__`, no enforcement.
 - **Module identity**: `__name__` is bound to `"__main__"` in the entry chunk and to the module's spec inside imported modules, so the canonical `if __name__ == "__main__":` guard works as expected.
-- **Modules**: `import`, `from <spec> import names`, and `from <spec> import *` resolve at parse time through a host-injected resolver, with optional `#sha256-<hex>` integrity on URL specs. Two flavors: `.py` source modules and native modules; see [Imports](/reference/imports) for resolution semantics, [Writing modules](/reference/writing-modules) for the three delivery paths, and [Official packages](/reference/packages) for the ready-made modules (`json`, `dom`, `network`, `storage`, and more).
+- **Modules**: `import`, `from <spec> import names`, and `from <spec> import *` resolve at parse time through a host-injected resolver, with optional `#sha256-<hex>` integrity on URL specs. Two flavors: `.py` source modules and native modules. See [Imports](/reference/imports) for resolution semantics, [Writing modules](/reference/writing-modules) for the three delivery paths, and [Official packages](/reference/packages) for the ready-made modules (`json`, `dom`, `network`, `storage`, and more).
 
 ## What it doesn't support
 
-These parse for syntactic compatibility but raise at runtime, or simply don't exist:
+These parse for syntactic compatibility. They raise at runtime, or don't exist:
 
-- **Standard library**: no bundled stdlib; every module is external (see **Modules*- above).
-- **I/O**: `input()` reads from a host-provided buffer. There is no file system, no network, no `os`, no `sys`: these surface only when the host runtime registers them as [host capabilities](/reference/writing-modules#path-b-host-capability) (the same mechanism behind `print` and `input` themselves).
-- **Async surface**: `async def` creates real coroutines and the VM runs a cooperative scheduler, but there is no `asyncio` module: primitives are top-level builtins ([Async](/language/async)). Coroutines do not expose `.send()` / `.throw()` / `.close()`.
+- **Standard library**: no bundled stdlib. Every module is external (see **Modules*- above).
+- **I/O**: `input()` reads from a host-provided buffer. No file system, no network, no `os`, no `sys`. These surface only when the host runtime registers them as [host capabilities](/reference/writing-modules#path-b-host-capability), the same mechanism behind `print` and `input` themselves.
+- **Async surface**: `async def` creates real coroutines, and the VM runs a cooperative scheduler. But there is no `asyncio` module. Primitives are top-level builtins ([Async](/language/async)). Coroutines do not expose `.send()` / `.throw()` / `.close()`.
 - **Metaclasses, descriptor protocol, `__slots__`**: not modeled.
 - **Dynamic code**: no `exec`, no `eval`, no `compile`, no `__import__` (use the `import_module(name)` builtin to look up an already-imported module by alias).
-- **Reflection**: nothing beyond `type`, `id`, `hash`, `repr`, `callable`, `getattr`, `hasattr`, `vars`, `globals`, `locals`, `isinstance`, and `issubclass`; `dir` is absent.
+- **Reflection**: nothing beyond `type`, `id`, `hash`, `repr`, `callable`, `getattr`, `hasattr`, `vars`, `globals`, `locals`, `isinstance`, and `issubclass`. `dir` is absent.
 - **Relative imports**: `from . import x` is not supported; use the resolver-aware `import` / `from <spec> import` forms.
 
 ## Design philosophy
@@ -48,11 +50,11 @@ Multi-paradigm sandboxed compiler:
 
 ## Sandbox guarantees
 
-Inherits WASM-host guarantees (no syscalls, no FS, no network, isolated linear memory). On top, embedders enforce per-VM caps via `Limits::sandbox()`; hits raise recoverable `RuntimeError` / `MemoryError` / `RecursionError` rather than crashing the host. See [Limits and errors](/reference/limits-and-errors#sandbox-limits).
+Inherits WASM-host guarantees: no syscalls, no FS, no network, isolated linear memory. On top, embedders enforce per-VM caps via `Limits::sandbox()`. Hits raise recoverable `RuntimeError` / `MemoryError` / `RecursionError` rather than crashing the host. See [Limits and errors](/reference/limits-and-errors#sandbox-limits).
 
 ## Where it runs
 
-Single `.wasm` artifact (`compiler.wasm`, to a less than 200 KB release) runs anywhere WebAssembly does:
+One `.wasm` artifact (`compiler.wasm`, a sub-200 KB release) runs anywhere WebAssembly does:
 
 - **Browser**: served alongside the [`runtime/`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) JS package, which bridges `print()` and module imports across the `WASM <-> JS` boundary.
 - **Server / edge runtimes**: Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute, Spin. The host runtime owns I/O, fetching, and module loading.

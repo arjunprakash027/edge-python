@@ -5,7 +5,7 @@ description: "Sandbox limits, error types, and runtime guarantees."
 
 ## Sandbox limits
 
-Two profiles via `VM::with_limits`: the same `compiler.wasm` runs unsandboxed in trusted contexts, clamped in untrusted.
+Two profiles via `VM::with_limits`. The same `compiler.wasm` runs unsandboxed in trusted contexts, clamped in untrusted ones.
 
 | Limit | `none()` (default) | `sandbox()` | What hitting it raises |
 |----------------|--------------------|---------------|------------------------|
@@ -20,7 +20,7 @@ Two-tier:
 * **Inline (fast)**: 47-bit signed in a NaN-boxed `Val`. Range `+/-2^47` (`+/-140_737_488_355_327`). One ALU op per arithmetic, no allocation.
 * **Wide (slow)**: i128 in `HeapObj::LongInt`. Range `+/-2^127 - 1`. Auto-used when a literal exceeds 47-bit or inline arithmetic overflows.
 
-Outside `+/-2^127` raises `OverflowError`. Promotion is automatic; user code doesn't see the boundary.
+Outside `+/-2^127` raises `OverflowError`. Promotion is automatic. User code doesn't see the boundary.
 
 ```python
 print(140737488355327) # inline, fast path
@@ -42,8 +42,8 @@ overflow
 ### Caveats
 
 - **`pow(a, b, m)` modular**: modulus must be `< 2^63` (larger overflows i128 in the multiply). Hard cap without arbitrary-precision arithmetic.
-- **No CPython-style unbounded ints**: by design, edge workloads don't need wider than 128 bits; crypto-scale math is out of scope.
-- **Float vs LongInt mixing**: `==` works (LongInt -> f64), but dict/set hashing follows raw `Val` bits — `{long_int: x}` indexed by a same-magnitude float misses. Coerce explicitly.
+- **No CPython-style unbounded ints**: by design, edge workloads don't need wider than 128 bits. Crypto-scale math is out of scope.
+- **Float vs LongInt mixing**: `==` works (LongInt -> f64), but dict/set hashing follows raw `Val` bits, so `{long_int: x}` indexed by a same-magnitude float misses. Coerce explicitly.
 
 ### Triggering limits
 
@@ -74,7 +74,7 @@ except MemoryError:
 
 ## Source size
 
-Source must be under 10 MiB; larger rejected at lex time.
+Source must be under 10 MiB. Larger input is rejected at lex time.
 
 ## Token limits
 
@@ -91,7 +91,7 @@ Prevent asymmetric DoS: small input producing an exponentially large parse tree.
 
 ### Compile-time
 
-Reported as `Diagnostic { start, end, msg }`, byte offsets into source; line/column computed lazily by `render()`. Caught before any code runs.
+Reported as `Diagnostic { start, end, msg }`, byte offsets into source. Line and column are computed lazily by `render()`. Caught before any code runs.
 
 | Diagnostic | Cause |
 |-------------------------------------------|----------------------------------------|
@@ -112,7 +112,7 @@ Reported as `Diagnostic { start, end, msg }`, byte offsets into source; line/col
 
 ### Runtime
 
-Raised as `VmErr`; most catchable with `try` / `except`.
+Raised as `VmErr`. Most are catchable with `try` / `except`.
 
 | Variant | Class name | When |
 |-----------------|----------------------|------------------------------------|
@@ -138,7 +138,7 @@ Raised as `VmErr`; most catchable with `try` / `except`.
 
 #### Exception hierarchy
 
-Flat tree rooted at `BaseException -> Exception`. `except` walks parent links — `except Exception` catches `RuntimeError`, `ValueError`, `KeyError`, `AssertionError`, etc.; `except RuntimeError` catches `RecursionError`, `NotImplementedError`. `SystemExit` sits directly under `BaseException`, so `except Exception` does not catch it (use `except SystemExit` or a bare `except`).
+Flat tree rooted at `BaseException -> Exception`. `except` walks parent links. `except Exception` catches `RuntimeError`, `ValueError`, `KeyError`, `AssertionError`, etc. `except RuntimeError` catches `RecursionError`, `NotImplementedError`. `SystemExit` sits directly under `BaseException`, so `except Exception` does not catch it (use `except SystemExit` or a bare `except`).
 
 ```python
 try:
@@ -157,11 +157,15 @@ caught via parent: oops
 caught IndexError as Exception
 ```
 
-User-defined classes don't auto-extend the built-in `BaseException` tree but support single-level inheritance among themselves: `except UserBase` catches a raised `UserSub` when `UserSub` inherits from `UserBase`. `raise X from Y` raises `X`; the cause is discarded (no `__cause__` / `__context__` chaining).
+User-defined classes don't auto-extend the built-in `BaseException` tree. They support single-level inheritance among themselves: `except UserBase` catches a raised `UserSub` when `UserSub` inherits from `UserBase`. `raise X from Y` raises `X`. The cause is discarded (no `__cause__` / `__context__` chaining).
 
 ### Exception arguments
 
-Caught exceptions expose constructor args as `e.args` (tuple). `raise X("msg")` and `raise X(a, b)` carry through; runtime-raised errors carry their message as a single arg; bare `raise X` produces an empty tuple.
+Caught exceptions expose constructor args as `e.args` (tuple):
+
+- `raise X("msg")` and `raise X(a, b)` carry through.
+- Runtime-raised errors carry their message as a single arg.
+- Bare `raise X` produces an empty tuple.
 
 ```python
 try:
@@ -214,7 +218,7 @@ type
 
 ### Environmental errors
 
-Failures surfaced before the source reaches the compiler: no line/column preview, no parsed code to anchor to. Emitted as plain text, uncatchable from Python.
+Failures surfaced before the source reaches the compiler. No line/column preview. No parsed code to anchor to. Emitted as plain text, uncatchable from Python.
 
 | Error | When | Resolution |
 |---------------------------------------------|-----------------------------------------------|---------------------------------------|
@@ -225,7 +229,7 @@ Handle at the embedder layer (path validation, encoding, size check) before invo
 
 ## Unavailable modules
 
-Unavailable modules (`os`, `sys`, `asyncio`, …) parse for syntactic compatibility but have no resolver entry, so they are rejected at **compile time** before any code runs — a parse-time diagnostic, not a catchable runtime exception. See [Imports, Errors](/reference/imports#errors). For code reuse, use higher-order functions.
+Unavailable modules (`os`, `sys`, `asyncio`, …) parse for syntactic compatibility but have no resolver entry. So they are rejected at **compile time** before any code runs. This is a parse-time diagnostic, not a catchable runtime exception. See [Imports, Errors](/reference/imports#errors). For code reuse, use higher-order functions.
 
 ## Determinism
 
