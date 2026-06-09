@@ -47,6 +47,7 @@ docker compose down # stop the campaign
 
 docker compose exec -T fuzzer bash -c 'cd compiler/fuzz-afl && find out -type f -path "*crashes*" ! -name README.txt' # Every saved crash across all instances and archived dirs
 docker compose exec -T fuzzer bash -c 'cd compiler/fuzz-afl && base64 out/m0/crashes/<id>' # Take a look to the bug in base 64
+docker compose exec -T fuzzer bash -c "cd compiler/fuzz-afl && find out -type f -path '*crashes*' ! -name README.txt -print0 | tar --null -cf - -T -" > ~/crashes.tar # Bundle every crash into a tar on the host
 ```
 
 If a container is stuck restarting and `docker compose down` won't clear it, force-remove it by id:
