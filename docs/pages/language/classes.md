@@ -186,4 +186,4 @@ See [Dunder methods](/language/dunders) for the full matrix.
 * `@staticmethod` / `@classmethod`: use the namespace pattern or free functions.
 * Async dunders; see [Dunders, What's not dispatched](/language/dunders#whats-not-dispatched).
 
-Reuse behaviour through free functions and composition by default. Dispatch is fast and aligns with the functional-first identity. Reach for inheritance and operator overloading when the abstraction genuinely calls for them.
+Reuse behaviour through free functions and composition by default. Dispatch is fast and aligns with the multi-paradigm identity. Reach for inheritance and operator overloading when the abstraction genuinely calls for them.

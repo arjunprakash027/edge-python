@@ -9,7 +9,7 @@ The release build is sub-200 KB on `wasm32-unknown-unknown` (`panic=abort`, `opt
 
 No AST, no IR. Bytecode is the only intermediate representation. Around 13,000 lines of Rust. Production deps are `hashbrown` and `itoa` (SHA-256 in-tree). The WASM build adds `lol_alloc` for a single-threaded leaking bump allocator.
 
-Classes support single-level inheritance, `super()`, full dunder dispatch, `@property` / `@x.setter`. Functional-first: composition preferred, monomorphic dispatch optimised via instance-dunder IC.
+Classes support single-level inheritance, `super()`, full dunder dispatch, `@property` / `@x.setter`. Multi-paradigm: composition preferred, monomorphic dispatch optimised via instance-dunder IC.
 
 ## Concepts
 
