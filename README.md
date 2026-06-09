@@ -8,7 +8,7 @@
 
 <br/>
 
-Edge is a sandboxed subset of Python, compiled to a less than 200 KB WebAssembly binary and built in Rust to run in the browser. Embed your full business logic, run LLMs client-side, and build frontend apps.
+Single-pass SSA bytecode compiler and threaded-code stack VM for a sandboxed Python subset: NaN-boxed values, inline caching, super-instruction fusion, pure-function memoization, mark-sweep GC. Coverage-guided fuzzing; sub-200 KB WebAssembly module runs in the browser.
 
 - Secure by default. No file, network, or environment access, unless explicitly enabled by the [host](https://edgepython.com/reference/packages#host-libraries).
 - Less than 200 KB footprint. The full compiler and runtime ship as a single WASM binary.
