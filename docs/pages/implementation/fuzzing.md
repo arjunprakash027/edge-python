@@ -30,7 +30,7 @@ For a long-running campaign in a container, `compose.yml` builds the image from 
 |----------|---------|-------------|
 | `JOBS` | `$(nproc)` | Number of AFL instances (one per logical core). |
 | `DURATION` | `0` | Campaign length in seconds. `0` runs until stopped. |
-| `FRESH` | `0` | Set to `1` to delete `out/` and start a clean campaign. |
+| `FRESH` | `0` | Set to `1` to delete `out/` and start a clean campaign. `deploy.sh` also forces this automatically when the binary changed since the last run. |
 | `TIMEOUT_MS` | `5000` | Per-input hang threshold in ms. Should exceed the max bounded VM run. |
 
 ```bash
@@ -57,13 +57,24 @@ docker ps # find the container id
 docker rm -f <id> # force-remove it, even mid-restart
 ```
 
+Removing the container (or `docker compose down`) leaves the `findings` volume and the built image behind. The next `up` then resumes the old `out/` from that volume, which is the usual cause of a campaign that starts stuck. For a full reset that frees the host:
+
+```bash
+docker compose down -v # remove container and the findings volume
+docker volume ls # confirm no edge-python-afl_findings remains
+docker rmi edge-python-afl-fuzzer:latest # drop the image
+docker builder prune -f # reclaim the build cache
+```
+
 For the lifecycle and recovery commands themselves, see Docker's own guides:
 
 - [restart policies](https://docs.docker.com/engine/containers/start-containers-automatically/): what `restart: unless-stopped` does and why a crash-looping process keeps coming back.
 - [`docker compose down`](https://docs.docker.com/reference/cli/docker/compose/down/): removes the container but **keeps named volumes**; only `down -v` deletes the `findings` volume holding the campaign.
 - [`docker compose up`](https://docs.docker.com/reference/cli/docker/compose/up/): `--force-recreate` re-creates the container from the existing image, preserving the binary; add `--build` only to pick up code changes.
 
-Reusing the same `out/` resumes the campaign. AFL recalibrates the saved queue (the dry-run pass) before fuzzing, so `execs` sits at 0 for a while. Delete it with `rm -rf out` for a clean start. Resume is only safe when the target binary is unchanged. After a rebuild (any code change) the saved coverage map and `fastresume.bin` are incompatible, and every instance aborts on startup. Always start fresh (`FRESH=1`, or `rm -rf out`) after a rebuild.
+Reusing the same `out/` resumes the campaign. AFL recalibrates the saved queue (the dry-run pass) before fuzzing, so `execs` sits at 0 for a while. Delete it with `rm -rf out` for a clean start. Resume is only safe when the target binary is unchanged. After a rebuild (any code change) the saved coverage map and `fastresume.bin` no longer match the new binary. With `AFL_AUTORESUME=1` (which `deploy.sh` sets) the instances do not abort cleanly: they stall re-calibrating the entire inherited queue, which can be tens of thousands of entries from a long prior campaign. While they grind through it `cargo afl whatsup` reports them as dead with `execs` and run time at 0, and shows the stale coverage percentage from the previous session's `fuzzer_stats`. That looks like a crash but is just resume over a changed binary.
+
+`deploy.sh` guards against this automatically. After the build it sha1-sums the instrumented binary and compares it to the hash saved in `out/.binary-hash`; on a mismatch it forces `FRESH=1` and wipes `out/` before launching, then records the new hash. So a rebuilt binary always starts a clean campaign without manual intervention. A bare `cargo afl fuzz` (without `deploy.sh`) has no such guard, so always start fresh (`rm -rf out`) yourself after a rebuild.
 
 `deploy.sh` sets the bypass vars itself. A bare `cargo afl fuzz` under WSL needs `AFL_SKIP_CPUFREQ=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1` prefixed, to skip the core-pattern and CPU-governor checks.
 

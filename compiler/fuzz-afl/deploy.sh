@@ -20,9 +20,18 @@ echo "logical cores: $(nproc), instances: $JOBS"
 [ -d in ] && [ -n "$(ls -A in 2>/dev/null)" ] || bash ./seeds.sh
 cargo afl build --release
 
+# Rebuild invalidates resume; force clean start.
+bin=target/release/afl-pipeline
+newhash=$(sha1sum "$bin" | cut -d' ' -f1)
+if [ -s out/.binary-hash ] && [ "$(cat out/.binary-hash)" != "$newhash" ]; then
+  echo "instrumented binary changed; forcing FRESH start"
+  FRESH=1
+fi
+
 # `out` is a mounted volume in the container; clear its contents, not the mount point itself.
 [ "$FRESH" = "1" ] && { find out -mindepth 1 -delete 2>/dev/null || true; }
 mkdir -p out logs
+printf '%s\n' "$newhash" > out/.binary-hash
 
 # -V time-box only when DURATION > 0.
 vflag=()
