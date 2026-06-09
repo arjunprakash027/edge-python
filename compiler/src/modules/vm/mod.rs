@@ -114,6 +114,8 @@ pub struct VM<'a> {
     /* Cached `ops == usize::MAX` so the hot path skips the budget decrement. */
     pub(crate) sandbox_off: bool,
     pub(crate) with_stack: Vec<Val>,
+    /* GC roots for operands popped off the stack but still read after a dunder call that can collect. */
+    pub(crate) temp_roots: Vec<Val>,
     pub(crate) pending: Pending,
     /* Monotonic correlation id handed to each deferred host call; matched by `set_host_result_by_id`. */
     pub(crate) next_host_call_id: u64,
@@ -167,6 +169,7 @@ impl<'a> VM<'a> {
             depth: 0,
             max_calls: limits.calls,
             with_stack: Vec::new(),
+            temp_roots: Vec::new(),
             pending: Pending::new(),
             next_host_call_id: 0,
             pending_sync_frames: Vec::new(),

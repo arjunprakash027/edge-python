@@ -7,6 +7,7 @@ impl<'a> VM<'a> {
     pub(crate) fn collect(&mut self, current_slots: &[Val]) {
         for &v in &self.stack { self.heap.mark(v); }
         for &v in &self.with_stack { self.heap.mark(v); }
+        for &v in &self.temp_roots { self.heap.mark(v); }
         for &v in &self.yields { self.heap.mark(v); }
         for &v in &self.event_queue { self.heap.mark(v); }
         // Scheduler holds parked coroutines (and their `WaitingForChildren` task lists) across `top_loop` resumes; mark them so the saved state isn't swept under us.

@@ -130,7 +130,8 @@ impl<'a> VM<'a> {
     #[inline]
     pub(crate) fn record_dunder_hit(&self, ip: usize, cache: &mut OpcodeCache, recv: Val, name: &str, arity: u8) {
         if !recv.is_heap() { return; }
-        let HeapObj::Instance(cls, _) = self.heap.get(recv) else { return; };
+        // try_get is a backstop; callers root operands across the dunder call.
+        let Some(HeapObj::Instance(cls, _)) = self.heap.try_get(recv) else { return; };
         let cls = *cls;
         let Some((method, _)) = self.lookup_class_member(cls, name) else { return; };
         cache.record_inst(ip, cls.as_heap(), method, arity);

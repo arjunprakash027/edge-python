@@ -39,8 +39,15 @@ impl<'a> VM<'a> {
 
         let (a, b) = self.pop2()?;
 
+        // Root operands: the dunder runs user code that can GC, and we read a/b after it (record + fallback).
+        let roots = self.temp_roots.len();
+        self.temp_roots.push(a);
+        self.temp_roots.push(b);
+        let dunder = self.try_binary_dunder(op, a, b, chunk, slots);
+        self.temp_roots.truncate(roots);
+
         // instance dunder protocol, try user-defined operator before any builtin coercion.
-        if let Some(r) = self.try_binary_dunder(op, a, b, chunk, slots)? {
+        if let Some(r) = dunder? {
             // record the resolved class+method so the IC can fire on subsequent iterations of a hot loop.
             if let Some(name) = binary_dunder_name(op) {
                 self.record_dunder_hit(rip, cache, a, name, 2);
@@ -179,8 +186,15 @@ impl<'a> VM<'a> {
         // Record type-key for every compare op; `cache::specialize` picks the FastOp variant.
         cached_binop!(self.heap, rip, &op, a, b, cache);
 
+        // Root operands: the dunder runs user code that can GC, and we read a/b after it (record + fallback).
+        let roots = self.temp_roots.len();
+        self.temp_roots.push(a);
+        self.temp_roots.push(b);
+        let dunder = self.try_compare_dunder(op, a, b, chunk, slots);
+        self.temp_roots.truncate(roots);
+
         // try the user-defined comparison dunder before falling back to numeric/string compare.
-        if let Some(r) = self.try_compare_dunder(op, a, b, chunk, slots)? {
+        if let Some(r) = dunder? {
             // monomorphic comparison sites cache the resolved method like arithmetic ones.
             if let Some(name) = compare_dunder_name(op) {
                 self.record_dunder_hit(rip, cache, a, name, 2);
