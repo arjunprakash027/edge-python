@@ -43,7 +43,7 @@ cargo test --release --no-default-features # host-side test suite (skips the pre
 
 The test suite (`tests/`, fixtures in `tests/cases/vm.json`) runs every case under `Limits::sandbox()`, not the default `none()`. The budget, heap, and call-depth guards short-circuit under `none` (`sandbox_off`), so only the bounded profile exercises them — that way a regression that lets a loop run unbounded, recurse without limit, or materialise an oversized collection becomes a failing `MemoryError` / `RecursionError` assertion instead of a hang. Every fixture must stay within the sandbox budget.
 
-The host runtime owns I/O, network, and module fetching; there is no native CLI. Browser hosts use the [`runtime/`](../runtime/) JS package; server/edge runtimes use wasmtime, wasmer, Cloudflare Workers, Fastly Compute, Spin.
+The host runtime owns I/O, network, and module fetching; there is no native CLI. Browser hosts use the [`runtime/`](../runtime/) JS package; Rust embedders instantiate `compiler.wasm` directly.
 
 ### Consuming the release from another Rust crate
 

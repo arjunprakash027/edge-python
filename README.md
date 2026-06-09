@@ -8,7 +8,7 @@
 
 <br/>
 
-Edge is a sandboxed subset of Python, compiled to a less than 200 KB WebAssembly binary and built in Rust to run on Cloudflare Workers and in the browser. Embed your full business logic, run LLMs client-side, build frontend apps and serverless workloads.
+Edge is a sandboxed subset of Python, compiled to a less than 200 KB WebAssembly binary and built in Rust to run in the browser. Embed your full business logic, run LLMs client-side, and build frontend apps.
 
 - Secure by default. No file, network, or environment access, unless explicitly enabled by the [host](https://edgepython.com/reference/packages#host-libraries).
 - Less than 200 KB footprint. The full compiler and runtime ship as a single WASM binary.
@@ -79,13 +79,13 @@ edge -h # List all commands
 
 The runtime spawns a Web Worker that pre-fetches imports, dispatches native calls, and streams `print()` output back.
 
-### Rust host / server / edge runtimes
+### Rust host
 
-Edge Python is a `cdylib`: your host instantiates `compiler.wasm` and calls its exports (Wasmtime, Wasmer, Cloudflare Workers, Fastly Compute, Spin). The same `.wasm` served to browsers is the server-side artifact; the host owns I/O. Declaring `edge-python` as a Cargo dependency fetches the matching release `.wasm` automatically, see [`compiler/README.md`](compiler/README.md).
+Edge Python is a `cdylib`: a Rust host can instantiate `compiler.wasm` and call its exports directly, the same `.wasm` that ships to browsers; the host owns I/O. Declaring `edge-python` as a Cargo dependency fetches the matching release `.wasm` automatically, see [`compiler/README.md`](compiler/README.md).
 
 ## What it is
 
-Edge Python targets sandboxed edge computing: a dynamic, multi-paradigm Python subset with classes, async/await, structural pattern matching, and compile-time module resolution. There is no bundled stdlib, modules are external artifacts.
+Edge Python targets sandboxed in-browser execution: a dynamic, multi-paradigm Python subset with classes, async/await, structural pattern matching, and compile-time module resolution. There is no bundled stdlib, modules are external artifacts.
 
 Full language reference, scope, and what intentionally isn't supported: [What Edge Python is](https://edgepython.com/getting-started/what-it-is). Architecture details: [`compiler/README.md`](compiler/README.md).
 

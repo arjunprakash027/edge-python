@@ -70,7 +70,7 @@ await el.run("print(1 + 1)"); // 2
 
 ### Registration
 
-Where `customElements` is absent (Cloudflare Workers, Deno, SSR), append `?setElement=false` to the script URL to skip the auto-call, then register manually with the exported `defineElement(tag = "edge-python")`, where custom tags must contain a hyphen:
+Where `customElements` is absent (Deno, Node, SSR), append `?setElement=false` to the script URL to skip the auto-call, then register manually with the exported `defineElement(tag = "edge-python")`, where custom tags must contain a hyphen:
 
 ```js
 import { defineElement } from "https://cdn.edgepython.com/runtime/src/element.js?setElement=false";

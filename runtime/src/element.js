@@ -47,6 +47,6 @@ export function defineElement( tag = 'edge-python' ) {
     customElements.define(tag, EdgePythonElement);
 }
 
-// In some environment (e.g., cloudflare workers, deno) use: `?setElement=false` to skip auto-defining the element, due to `customElements` doesn't exist in that environment.
+// In some environment (e.g., deno, node) use: `?setElement=false` to skip auto-defining the element, due to `customElements` doesn't exist in that environment.
 const setElement = new URL(import.meta.url).searchParams.get("setElement");
 if (setElement != "false") defineElement();
