@@ -788,6 +788,7 @@ impl<'a> VM<'a> {
         if let HeapObj::Instance(cls_val, _) = self.heap.get(obj) {
             let cls_val = *cls_val;
             if let Some((member, _)) = self.lookup_class_member(cls_val, ssa_strip(&name))
+                && member.is_heap()
                 && let HeapObj::Property(_, setter) = self.heap.get(member) {
                 let setter = *setter;
                 if setter.is_none() {

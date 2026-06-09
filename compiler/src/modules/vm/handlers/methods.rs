@@ -98,11 +98,18 @@ impl<'a> VM<'a> {
                     .map(|(_, v)| *v);
                 if let Some(v) = found { return Ok(AttrLookup::InstanceField(v)); }
                 if let Some((mv, defining)) = self.lookup_class_member(cls_val, bare) {
-                    // A Property member triggers getter invocation in `handle_load_attr`; plain methods stay bound to the receiver.
-                    if let HeapObj::Property(getter, _) = self.heap.get(mv) {
-                        return Ok(AttrLookup::PropertyGet { recv: obj, getter: *getter });
+                    // Guard on is_heap before heap.get: a non-heap data member (e.g. a wide int) would otherwise be read as a heap pointer and index a garbage slot.
+                    if mv.is_heap() {
+                        match self.heap.get(mv) {
+                            // A Property member triggers getter invocation in `handle_load_attr`.
+                            HeapObj::Property(getter, _) => return Ok(AttrLookup::PropertyGet { recv: obj, getter: *getter }),
+                            // Functions stay bound to the receiver via the descriptor protocol.
+                            HeapObj::Func(..) => return Ok(AttrLookup::InstanceMethod { recv: obj, func: mv, class: defining }),
+                            _ => {}
+                        }
                     }
-                    return Ok(AttrLookup::InstanceMethod { recv: obj, func: mv, class: defining });
+                    // Plain data class attribute: returned as-is, like access via the class itself.
+                    return Ok(AttrLookup::ClassMember(mv));
                 }
                 let ty = self.type_name(obj);
                 return Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str name, "'")));
