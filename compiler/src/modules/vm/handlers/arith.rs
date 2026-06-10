@@ -185,6 +185,10 @@ impl<'a> VM<'a> {
             let rendered = super::format::format_value(fval, &spec, &self.heap).map_err(cold_value)?;
             out.push_str(&rendered);
         }
+        // Every supplied arg must be consumed, like CPython.
+        if ai != args.len() {
+            return Err(cold_type("not all arguments converted during string formatting"));
+        }
         self.heap.alloc(HeapObj::Str(out))
     }
 

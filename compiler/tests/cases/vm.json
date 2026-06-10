@@ -2066,5 +2066,18 @@
   {"src": "def f(a, b=2):\n    return a\nprint(f(1, 2, 3))", "output": [], "error": "too many positional"},
   {"src": "class C:\n    def m(self):\n        return 1\nprint(C().m(99))", "output": [], "error": "too many positional"},
   {"src": "f = lambda x: x\nprint(f(1, 2))", "output": [], "error": "too many positional"},
-  {"src": "def connect(host, *, port=80):\n    return port\nprint(connect('a', 443))", "output": [], "error": "too many positional"}
+  {"src": "def connect(host, *, port=80):\n    return port\nprint(connect('a', 443))", "output": [], "error": "too many positional"},
+  {"src": "print('a  b'.split(None, 1))", "output": ["['a', 'b']"]},
+  {"src": "print('  a  b  c  '.split(None, 1))", "output": ["['a', 'b  c  ']"]},
+  {"src": "print('  a  b  c  '.rsplit(None, 1))", "output": ["['  a  b', 'c']"]},
+  {"src": "print('a b  c'.rsplit(None, 1))", "output": ["['a b', 'c']"]},
+  {"src": "print('a    '.split(None, 1))", "output": ["['a']"]},
+  {"src": "print(int('0x_1f', 16))", "output": ["31"]},
+  {"src": "print(int('0x_1f', 0))", "output": ["31"]},
+  {"src": "print(int('0x__1f', 16))", "output": [], "error": "invalid literal"},
+  {"src": "print(int('_1f', 16))", "output": [], "error": "invalid literal"},
+  {"src": "print('{}{0}'.format(7))", "output": [], "error": "cannot switch from automatic field numbering"},
+  {"src": "print('{0}{}'.format(7))", "output": [], "error": "cannot switch from manual field specification"},
+  {"src": "print('%d' % (1, 2))", "output": [], "error": "not all arguments converted"},
+  {"src": "print('100%%' % ())", "output": ["100%"]}
 ]

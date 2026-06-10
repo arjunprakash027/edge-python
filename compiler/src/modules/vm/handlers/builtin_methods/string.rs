@@ -134,6 +134,40 @@ pub fn count(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     Ok(())
 }
 
+// Whitespace split capped at m, collapsing runs.
+fn split_ws_max(s: &str, m: usize) -> Vec<String> {
+    let chars: Vec<char> = s.chars().collect();
+    let n = chars.len();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < n {
+        while i < n && chars[i].is_whitespace() { i += 1; }
+        if i >= n { break; }
+        if out.len() == m { out.push(chars[i..].iter().collect()); break; }
+        let start = i;
+        while i < n && !chars[i].is_whitespace() { i += 1; }
+        out.push(chars[start..i].iter().collect());
+    }
+    out
+}
+
+// Right-to-left counterpart for rsplit(None, m).
+fn rsplit_ws_max(s: &str, m: usize) -> Vec<String> {
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = chars.len();
+    let mut out = Vec::new();
+    loop {
+        while i > 0 && chars[i - 1].is_whitespace() { i -= 1; }
+        if i == 0 { break; }
+        if out.len() == m { out.push(chars[..i].iter().collect()); break; }
+        let end = i;
+        while i > 0 && !chars[i - 1].is_whitespace() { i -= 1; }
+        out.push(chars[i..end].iter().collect());
+    }
+    out.reverse();
+    out
+}
+
 pub fn split(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let s = recv_str(vm, recv)?;
     // Optional second arg: maxsplit (<0 means unlimited).
@@ -145,7 +179,7 @@ pub fn split(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let strs: Vec<String> = if pos.is_empty() || pos[0].is_none() {
         // No separator: split on runs of whitespace, dropping empties.
         match maxsplit {
-            Some(m) => s.splitn(m + 1, char::is_whitespace).filter(|p| !p.is_empty()).map(String::from).collect(),
+            Some(m) => split_ws_max(&s, m),
             None => s.split_whitespace().map(String::from).collect(),
         }
     } else {
@@ -196,7 +230,7 @@ pub fn rsplit(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     };
     let mut strs: Vec<String> = if pos.is_empty() || pos[0].is_none() {
         match maxsplit {
-            Some(m) => { let mut v: Vec<String> = s.rsplitn(m + 1, char::is_whitespace).filter(|p| !p.is_empty()).map(String::from).collect(); v.reverse(); v }
+            Some(m) => rsplit_ws_max(&s, m),
             None => s.split_whitespace().map(String::from).collect(),
         }
     } else {
@@ -217,6 +251,8 @@ pub fn format(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let chars: Vec<char> = tmpl.chars().collect();
     let mut out = String::with_capacity(tmpl.len());
     let mut auto = 0usize;
+    // Numbering mode: Some(true)=manual, Some(false)=auto.
+    let mut manual: Option<bool> = None;
     let mut ci = 0;
     while ci < chars.len() {
         let c = chars[ci];
@@ -230,9 +266,13 @@ pub fn format(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
             let (name_conv, spec) = match field.split_once(':') { Some((a, b)) => (a, b.to_string()), None => (field.as_str(), String::new()) };
             let (name, conv) = match name_conv.split_once('!') { Some((a, b)) => (a, Some(b)), None => (name_conv, None) };
             let val = if name.is_empty() {
+                if manual == Some(true) { return Err(cold_value("cannot switch from manual field specification to automatic field numbering")); }
+                manual = Some(false);
                 let v = *pos.get(auto).ok_or(cold_index("Replacement index out of range"))?;
                 auto += 1; v
             } else if let Ok(idx) = name.parse::<usize>() {
+                if manual == Some(false) { return Err(cold_value("cannot switch from automatic field numbering to manual field specification")); }
+                manual = Some(true);
                 *pos.get(idx).ok_or(cold_index("Replacement index out of range"))?
             } else {
                 return Err(cold_type("str.format() does not support keyword fields"));

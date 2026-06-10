@@ -52,9 +52,10 @@ fn parse_int_radix(s: &str, base: i64) -> Result<i128, VmErr> {
     } else { None };
     let mut radix = base as u32;
     let mut body = rest;
+    let mut had_prefix = false;
     if base == 0 {
         match prefix {
-            Some(p) => { radix = p; body = &rest[2..]; }
+            Some(p) => { radix = p; body = &rest[2..]; had_prefix = true; }
             None => {
                 radix = 10;
                 // base 0 rejects superfluous leading zeros ("010"); "0"/"00" stay valid.
@@ -66,7 +67,10 @@ fn parse_int_radix(s: &str, base: i64) -> Result<i128, VmErr> {
     } else if prefix == Some(base as u32) {
         // Explicit base may carry its matching prefix, e.g. int("0x1f", 16).
         body = &rest[2..];
+        had_prefix = true;
     }
+    // One underscore may follow the base prefix, e.g. "0x_1f".
+    if had_prefix && body.starts_with('_') { body = &body[1..]; }
     let cleaned: alloc::string::String = if body.contains('_') {
         if body.starts_with('_') || body.ends_with('_') || body.contains("__") {
             return Err(cold_value("int(): invalid literal"));
