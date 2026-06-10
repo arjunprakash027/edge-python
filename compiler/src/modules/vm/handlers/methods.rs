@@ -28,11 +28,11 @@ pub(crate) enum AttrLookup {
 }
 
 impl<'a> VM<'a> {
-    // Direct-then-DFS member lookup; first hit wins. Cycles are impossible: bases are validated at `MakeClass` time and `HeapObj::Class` is immutable, so the class graph is a static DAG. Returns `(value, defining_class)` so callers building `BoundUserMethod` / `InstanceMethod` can record where the method came from for `super()`.
+    // Direct-then-DFS member lookup; first hit wins. Cycles are impossible: bases are validated at `MakeClass` time and a class's `bases` are immutable (only its members can change), so the class graph is a static DAG. Returns `(value, defining_class)` so callers building `BoundUserMethod` / `InstanceMethod` can record where the method came from for `super()`.
     pub(crate) fn lookup_class_member(&self, cls: Val, name: &str) -> Option<(Val, Val)> {
         if !cls.is_heap() { return None; }
         let HeapObj::Class(_, bases, members) = self.heap.get(cls) else { return None; };
-        if let Some((_, v)) = members.iter().find(|(n, _)| n == name) { return Some((*v, cls)); }
+        if let Some(&(_, v)) = members.borrow().iter().find(|(n, _)| n == name) { return Some((v, cls)); }
         for &b in bases {
             if let Some(found) = self.lookup_class_member(b, name) { return Some(found); }
         }
@@ -130,6 +130,14 @@ impl<'a> VM<'a> {
             && matches!(self.heap.get(obj), HeapObj::Property(..))
             && bare == "setter" {
                 return Ok(AttrLookup::PropertySetterRef(obj));
+            }
+
+        // Builtin classmethods accessed on the type object (e.g. dict.fromkeys, bytes.fromhex, int.from_bytes): resolve under the type's own name rather than "type".
+        if obj.is_heap()
+            && let HeapObj::Type(n) = self.heap.get(obj)
+            && matches!(bare, "fromkeys" | "fromhex" | "from_bytes") {
+                let n = n.clone();
+                if let Some(id) = lookup_method(&n, bare) { return Ok(AttrLookup::BuiltinMethod(id)); }
             }
 
         // Builtin type method.

@@ -12,49 +12,31 @@ pub fn fpowi(mut base: f64, exp: i32) -> f64 {
 
 #[inline]
 pub fn fround(x: f64) -> f64 {
-    let i = x as i64;
-    let t = i as f64;
-    let d = x - t;
-    if d > 0.5 { t + 1.0 }
-    else if d < -0.5 { t - 1.0 }
-    else if d == 0.5 { if i % 2 == 0 { t } else { t + 1.0 } }
-    else if d == -0.5 { if i % 2 == 0 { t } else { t - 1.0 } }
-    else { t }
+    // Round half to even, no i64 cast so large/huge values are exact.
+    if !x.is_finite() { return x; }
+    let fl = libm::floor(x);
+    let diff = x - fl;
+    if diff < 0.5 { fl }
+    else if diff > 0.5 { fl + 1.0 }
+    // Exactly .5: pick the even neighbour. `fl` is integral here, so test evenness without a cast.
+    else if libm::floor(fl / 2.0) * 2.0 == fl { fl }
+    else { fl + 1.0 }
 }
 
-pub fn fln(x: f64) -> f64 {
-    let bits = f64::to_bits(x);
-    let exp = ((bits >> 52) & 0x7FF) as i64 - 1023;
-    let m = f64::from_bits((bits & 0x000F_FFFF_FFFF_FFFF) | 0x3FF0_0000_0000_0000);
-    let t = (m - 1.0) / (m + 1.0); let t2 = t * t;
-    2.0 * t * (1.0 + t2 * (1.0/3.0 + t2 * (1.0/5.0 + t2 * (1.0/7.0 + t2 / 9.0)))) + exp as f64 * core::f64::consts::LN_2
-}
+pub fn fln(x: f64) -> f64 { libm::log(x) }
 
-pub fn fexp(x: f64) -> f64 {
-    if x > 709.0 { return f64::INFINITY; }
-    if x < -709.0 { return 0.0; }
-    let k = (x * core::f64::consts::LOG2_E) as i64;
-    let r = x - k as f64 * core::f64::consts::LN_2;
-    let e = 1.0 + r * (1.0 + r * (0.5 + r * (1.0/6.0 + r * (1.0/24.0 + r * (1.0/120.0 + r / 720.0)))));
-    f64::from_bits(((k + 1023) as u64) << 52) * e
-}
+pub fn fexp(x: f64) -> f64 { libm::exp(x) }
 
 #[inline]
 pub fn fpowf(base: f64, exp: f64) -> f64 {
     let ei = exp as i32;
-    if (ei as f64) == exp { return fpowi(base, ei); }
-    if base <= 0.0 {
-        if base == 0.0 { return if exp > 0.0 { 0.0 } else { f64::INFINITY }; }
-        return f64::NAN;
-    }
-    fexp(exp * fln(base))
+    // Exact integer exponents stay on the squaring path; everything else uses libm `pow`.
+    if (ei as f64) == exp && exp.abs() < 1024.0 { return fpowi(base, ei); }
+    libm::pow(base, exp)
 }
 
 #[inline]
-pub fn ffloor(x: f64) -> f64 {
-    let i = x as i64 as f64;
-    if x < i { i - 1.0 } else { i }
-}
+pub fn ffloor(x: f64) -> f64 { libm::floor(x) }
 
 #[inline]
 pub fn fabs(x: f64) -> f64 {
@@ -62,9 +44,7 @@ pub fn fabs(x: f64) -> f64 {
 }
 
 #[inline]
-pub fn ftrunc(x: f64) -> f64 {
-    if x >= 0.0 { ffloor(x) } else { -ffloor(-x) }
-}
+pub fn ftrunc(x: f64) -> f64 { libm::trunc(x) }
 
 #[inline]
 pub fn fsignum(x: f64) -> f64 {
@@ -72,4 +52,4 @@ pub fn fsignum(x: f64) -> f64 {
 }
 
 #[inline]
-pub fn flog10(x: f64) -> f64 { fln(x) / core::f64::consts::LN_10 }
+pub fn flog10(x: f64) -> f64 { libm::log10(x) }

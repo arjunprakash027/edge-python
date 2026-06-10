@@ -61,10 +61,17 @@ pub struct Val(pub(crate) u64);
 impl PartialEq for Val {
     #[inline] fn eq(&self, o: &Self) -> bool {
         if self.0 == o.0 { return true; }
-        // Mirror Hash: 1 == 1.0 must dedupe in dict/set keys.
-        if self.is_int() && o.is_float() { return (self.as_int() as f64) == o.as_float(); }
-        if self.is_float() && o.is_int() { return self.as_float() == (o.as_int() as f64); }
-        false
+        // Mirror Hash: numeric immediates unify by value so True==1==1.0 share a dict/set key.
+        let num = |v: &Val| -> Option<f64> {
+            if v.is_int() { Some(v.as_int() as f64) }
+            else if v.is_bool() { Some(v.as_bool() as i64 as f64) }
+            else if v.is_float() { Some(v.as_float()) }
+            else { None }
+        };
+        match (num(self), num(o)) {
+            (Some(x), Some(y)) => x == y,
+            _ => false,
+        }
     }
 }
 impl Eq for Val {}
@@ -75,6 +82,9 @@ impl core::hash::Hash for Val {
         // Hash ints as i64 and integral floats as that same int so 1 and 1.0 share a key (47-bit ints fit f64 losslessly). Bit-hashing int-valued f64s clusters (zero low mantissa bits) and degrades int-keyed dict/set to O(n^2).
         if self.is_int() {
             state.write_i64(self.as_int());
+        } else if self.is_bool() {
+            // bool unifies with int 0/1 so True and 1 share a dict/set slot.
+            state.write_i64(self.as_bool() as i64);
         } else if self.is_float() {
             let f = self.as_float();
             // Round-trip via i64 tests "integral and in i64 range" in one step (the cast saturates out-of-range / non-finite, so they fail to round-trip). No std `f64::fract`.
@@ -164,7 +174,8 @@ pub enum HeapObj {
     BoundMethod(Val, BuiltinMethodId),
     NativeFn(NativeFnId),
     // `bases` lists direct parents in declared order; `resolve_attr` DFS-walks them on miss.
-    Class(String, Vec<Val>, Vec<(String, Val)>),
+    // Members are mutable so a decorator or `cls.attr = ...` can add or replace class attributes.
+    Class(String, Vec<Val>, Rc<RefCell<Vec<(String, Val)>>>),
     Instance(Val, Rc<RefCell<DictMap>>),
     // `(recv, func, class)`; `class` is where `func` was found so the called frame knows what `super()` should skip past.
     BoundUserMethod(Val, Val, Val),
@@ -309,7 +320,7 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
         HeapObj::BoundMethod(recv, _) => f(*recv),
         HeapObj::Class(_, bases, methods) => {
             for &v in bases { f(v); }
-            for (_, v) in methods { f(*v); }
+            for (_, v) in methods.borrow().iter() { f(*v); }
         }
         HeapObj::BoundUserMethod(r, fu, cls) => { f(*r); f(*fu); f(*cls); }
         HeapObj::Super(cls, recv) => { f(*cls); f(*recv); }

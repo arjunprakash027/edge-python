@@ -199,7 +199,12 @@ impl<'a> VM<'a> {
                 return self.require_str(r, "__repr__");
             }
         }
-        let s = self.display(v);
+        // Containers render their elements with repr, dispatching user __repr__ on instances.
+        let s = if self.is_container_val(v) {
+            self.repr_deep(v, chunk, slots, &mut Vec::new())?
+        } else {
+            self.display(v)
+        };
         // Render is O(size); charge it so reprinting growing data can't outrun the budget.
         self.charge_steps(s.len())?;
         Ok(s)
@@ -211,7 +216,114 @@ impl<'a> VM<'a> {
             && let Some(r) = self.try_call_dunder(v, "__repr__", &[], chunk, slots)? {
             return self.require_str(r, "__repr__");
         }
-        Ok(self.repr(v))
+        let s = if self.is_container_val(v) {
+            self.repr_deep(v, chunk, slots, &mut Vec::new())?
+        } else {
+            self.repr(v)
+        };
+        self.charge_steps(s.len())?;
+        Ok(s)
+    }
+
+    fn is_container_val(&self, v: Val) -> bool {
+        v.is_heap() && matches!(
+            self.heap.get(v),
+            HeapObj::List(_) | HeapObj::Tuple(_) | HeapObj::Dict(_) | HeapObj::Set(_) | HeapObj::FrozenSet(_)
+        )
+    }
+
+    /* Container-aware repr: dispatches `__repr__` on nested instances; elements always use repr, with `seen` tracking heap ids for cycle detection. */
+    pub(crate) fn repr_deep(&mut self, v: Val, chunk: &SSAChunk, slots: &mut [Val], seen: &mut Vec<u32>) -> Result<String, VmErr> {
+        const DEEP_MAX: usize = 100;
+        if !v.is_heap() { return Ok(self.repr(v)); }
+        if !self.is_container_val(v) {
+            if matches!(self.heap.get(v), HeapObj::Instance(..))
+                && let Some(r) = self.try_call_dunder(v, "__repr__", &[], chunk, slots)? {
+                return self.require_str(r, "__repr__");
+            }
+            return Ok(self.repr(v));
+        }
+        let id = v.as_heap();
+        if seen.contains(&id) {
+            return Ok(match self.heap.get(v) {
+                HeapObj::Dict(_) | HeapObj::Set(_) => "{...}".into(),
+                HeapObj::Tuple(_) => "(...)".into(),
+                HeapObj::FrozenSet(_) => "frozenset({...})".into(),
+                _ => "[...]".into(),
+            });
+        }
+        if seen.len() > DEEP_MAX { return Ok("...".into()); }
+        seen.push(id);
+        let body = self.repr_container_body(v, chunk, slots, seen);
+        seen.pop();
+        body
+    }
+
+    /* Builds the bracketed body for a container `v` (caller has pushed `v` to `seen`). */
+    fn repr_container_body(&mut self, v: Val, chunk: &SSAChunk, slots: &mut [Val], seen: &mut Vec<u32>) -> Result<String, VmErr> {
+        // Clone element handles first so a dunder call (which may GC/mutate) can't dangle a borrow.
+        match self.heap.get(v) {
+            HeapObj::List(rc) => {
+                let items = rc.borrow().clone();
+                let mut out = String::from("[");
+                self.join_reprs(&mut out, &items, chunk, slots, seen)?;
+                out.push(']');
+                Ok(out)
+            }
+            HeapObj::Tuple(t) => {
+                let items = t.clone();
+                let mut out = String::from("(");
+                if items.len() == 1 {
+                    let r = self.repr_deep(items[0], chunk, slots, seen)?;
+                    out.push_str(&r);
+                    out.push(',');
+                } else {
+                    self.join_reprs(&mut out, &items, chunk, slots, seen)?;
+                }
+                out.push(')');
+                Ok(out)
+            }
+            HeapObj::Set(s) => {
+                let items: Vec<Val> = s.borrow().iter().copied().collect();
+                if items.is_empty() { return Ok("set()".into()); }
+                let mut out = String::from("{");
+                self.join_reprs(&mut out, &items, chunk, slots, seen)?;
+                out.push('}');
+                Ok(out)
+            }
+            HeapObj::FrozenSet(s) => {
+                let items: Vec<Val> = s.iter().copied().collect();
+                if items.is_empty() { return Ok("frozenset()".into()); }
+                let mut out = String::from("frozenset({");
+                self.join_reprs(&mut out, &items, chunk, slots, seen)?;
+                out.push_str("})");
+                Ok(out)
+            }
+            HeapObj::Dict(d) => {
+                let entries = d.borrow().entries.clone();
+                let mut out = String::from("{");
+                for (i, (k, val)) in entries.iter().enumerate() {
+                    if i > 0 { out.push_str(", "); }
+                    let kr = self.repr_deep(*k, chunk, slots, seen)?;
+                    out.push_str(&kr);
+                    out.push_str(": ");
+                    let vr = self.repr_deep(*val, chunk, slots, seen)?;
+                    out.push_str(&vr);
+                }
+                out.push('}');
+                Ok(out)
+            }
+            _ => Ok(self.repr(v)),
+        }
+    }
+
+    fn join_reprs(&mut self, out: &mut String, items: &[Val], chunk: &SSAChunk, slots: &mut [Val], seen: &mut Vec<u32>) -> Result<(), VmErr> {
+        for (i, e) in items.iter().enumerate() {
+            if i > 0 { out.push_str(", "); }
+            let r = self.repr_deep(*e, chunk, slots, seen)?;
+            out.push_str(&r);
+        }
+        Ok(())
     }
 
     fn require_str(&self, v: Val, name: &str) -> Result<String, VmErr> {

@@ -83,16 +83,16 @@ pub fn remove(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
 
 pub fn pop(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let popped = list_mut(vm, recv, "pop: receiver is not a list", |list| {
-        if list.is_empty() { return Err(cold_value("pop from empty list")); }
+        if list.is_empty() { return Err(cold_index("pop from empty list")); }
         if pos.is_empty() { return Ok(list.pop().unwrap()); }
         if !pos[0].is_int() { return Err(cold_type("list indices must be integers")); }
         let i = pos[0].as_int();
         let ui = if i < 0 {
             let adj = (list.len() as i64).saturating_add(i);
-            if adj < 0 { return Err(cold_value("pop index out of range")); }
+            if adj < 0 { return Err(cold_index("pop index out of range")); }
             adj as usize
         } else { i as usize };
-        if ui >= list.len() { return Err(cold_value("pop index out of range")); }
+        if ui >= list.len() { return Err(cold_index("pop index out of range")); }
         Ok(list.remove(ui))
     })?;
     vm.push(popped); Ok(())

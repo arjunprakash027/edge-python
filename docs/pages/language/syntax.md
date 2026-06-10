@@ -89,6 +89,7 @@ Underscores are validated: `1_`, `1__2`, `0x_1`, `1e_5` -> `SyntaxError`. Must s
 print(3.14)
 print(1e-5)
 print(.5)
+print(1e16) # repr switches to scientific notation
 
 # Mixed arithmetic coerces to float
 print(2 + 3.0)
@@ -96,8 +97,9 @@ print(2 + 3.0)
 
 ```text Output
 3.14
-0.00001
+1e-05
 0.5
+1e+16
 5.0
 ```
 
@@ -200,6 +202,8 @@ print(-5, +5)
 2 1 1024
 -5 5
 ```
+
+`/` always yields a float; `//` and `%` follow floored division (the result of `%` takes the divisor's sign). With a string left operand, `%` is printf-style formatting instead of modulo (see [Formatting](/reference/methods#formatting)).
 
 ### Comparison and chaining
 

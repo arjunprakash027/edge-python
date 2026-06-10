@@ -29,6 +29,7 @@ prebuilt = []
 wasm-abi = { workspace = true }
 hashbrown = { workspace = true }
 itoa = { workspace = true }
+libm = { workspace = true }
 
 # WASM-only global allocator. Pulled into wasm32 builds automatically; absent on host builds (where std's allocator is fine and `compiler.wasm` is just a library artifact, not the runtime target).
 [target.'cfg(target_arch = "wasm32")'.dependencies]

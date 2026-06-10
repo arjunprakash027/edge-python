@@ -142,7 +142,11 @@ impl<'a> VM<'a> {
                 v.get(ui).copied().ok_or(cold_index("tuple index out of range"))
             }
             HeapObj::Dict(p) => {
-                p.borrow().get(&idx).copied().ok_or(cold_value("key not found"))
+                match p.borrow().get(&idx).copied() {
+                    Some(v) => Ok(v),
+                    // raises KeyError, and its str is the key's repr.
+                    None => Err(VmErr::Raised(crate::s!("KeyError: ", str &self.repr(idx)))),
+                }
             }
             _ => Err(cold_type("object is not subscriptable")),
         }

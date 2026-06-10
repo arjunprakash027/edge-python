@@ -122,3 +122,60 @@ pub fn split(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     parts.push(vm.heap.alloc(HeapObj::Bytes(buf[start..].to_vec()))?);
     vm.alloc_and_push_list(parts)
 }
+
+// `bytes.fromhex(s)` classmethod: parse pairs of hex digits, skipping ASCII whitespace.
+pub fn fromhex(vm: &mut VM, _recv: Val, pos: &[Val]) -> Result<(), VmErr> {
+    let s = val_to_str(vm, pos[0])?;
+    let mut out: Vec<u8> = Vec::new();
+    let mut hi: Option<u8> = None;
+    for c in s.chars() {
+        if c.is_whitespace() { continue; }
+        let d = c.to_digit(16).ok_or(cold_value("non-hexadecimal number found in fromhex() arg"))? as u8;
+        match hi { None => hi = Some(d), Some(h) => { out.push((h << 4) | d); hi = None; } }
+    }
+    if hi.is_some() { return Err(cold_value("non-hexadecimal number found in fromhex() arg")); }
+    let v = vm.heap.alloc(HeapObj::Bytes(out))?;
+    vm.push(v); Ok(())
+}
+
+pub fn lower(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
+    let mut buf = recv_bytes(vm, recv)?;
+    buf.make_ascii_lowercase();
+    let v = vm.heap.alloc(HeapObj::Bytes(buf))?; vm.push(v); Ok(())
+}
+
+pub fn upper(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
+    let mut buf = recv_bytes(vm, recv)?;
+    buf.make_ascii_uppercase();
+    let v = vm.heap.alloc(HeapObj::Bytes(buf))?; vm.push(v); Ok(())
+}
+
+// bytes strip: ASCII whitespace, or any byte in the optional argument.
+fn bstrip(vm: &mut VM, recv: Val, pos: &[Val], left: bool, right: bool) -> Result<(), VmErr> {
+    let buf = recv_bytes(vm, recv)?;
+    let chars = match pos.first() { Some(&a) => Some(recv_bytes(vm, a)?), None => None };
+    let strip = |b: u8| -> bool { match &chars { Some(set) => set.contains(&b), None => b.is_ascii_whitespace() } };
+    let mut s = 0usize;
+    let mut e = buf.len();
+    if left { while s < e && strip(buf[s]) { s += 1; } }
+    if right { while e > s && strip(buf[e - 1]) { e -= 1; } }
+    let v = vm.heap.alloc(HeapObj::Bytes(buf[s..e].to_vec()))?; vm.push(v); Ok(())
+}
+pub fn strip(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> { bstrip(vm, recv, pos, true, true) }
+pub fn lstrip(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> { bstrip(vm, recv, pos, true, false) }
+pub fn rstrip(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> { bstrip(vm, recv, pos, false, true) }
+
+pub fn join(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
+    let sep = recv_bytes(vm, recv)?;
+    let items = match vm.heap.try_get(pos[0]) {
+        Some(HeapObj::List(rc)) => rc.borrow().clone(),
+        Some(HeapObj::Tuple(t)) => t.clone(),
+        _ => return Err(cold_type("can only join an iterable of bytes")),
+    };
+    let mut out: Vec<u8> = Vec::new();
+    for (i, it) in items.iter().enumerate() {
+        if i > 0 { out.extend_from_slice(&sep); }
+        out.extend_from_slice(&recv_bytes(vm, *it)?);
+    }
+    let v = vm.heap.alloc(HeapObj::Bytes(out))?; vm.push(v); Ok(())
+}

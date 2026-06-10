@@ -349,7 +349,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let call_pos = self.last_end as u32;
         if name == "print" {
             let (pos, kw) = self.parse_args();
-            self.chunk.emit(OpCode::CallPrint, pos + kw);
+            // Same (kw<<8)|pos layout as Call so the VM can split sep/end kwargs from positionals.
+            self.chunk.emit(OpCode::CallPrint, ((kw & 0xFF) << 8) | (pos & 0xFF));
             self.chunk.record_call_pos(call_pos);
             return false;
         }
@@ -374,6 +375,15 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             let (pos, kw) = self.parse_args();
             let encoded = ((kw & 0xFF) << 8) | (pos & 0xFF);
             self.chunk.emit(OpCode::CallDict, encoded);
+            self.chunk.record_call_pos(call_pos);
+            return true;
+        }
+
+        // min()/max() take a `default=` keyword, so keep positional and keyword counts distinct.
+        if name == "min" || name == "max" {
+            let op = if name == "min" { OpCode::CallMin } else { OpCode::CallMax };
+            let (pos, kw) = self.parse_args();
+            self.chunk.emit(op, ((kw & 0xFF) << 8) | (pos & 0xFF));
             self.chunk.record_call_pos(call_pos);
             return true;
         }
@@ -640,12 +650,36 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             | OpCode::Raise
             | OpCode::RaiseFrom
             | OpCode::Yield
-        ));
+        )) && !Self::body_reads_free_name(&body, params);
         // Pre-compute is_generator to avoid O(n) scan per `exec_call`.
         body.is_generator = body.instructions.iter().any(|i| matches!(
             i.opcode,
             OpCode::Yield
         ));
         body
+    }
+
+    /* A body is memoizable-pure only if every name it loads is bound locally; free names (globals, builtins) introduce mutable state, making memoization stale. */
+    fn body_reads_free_name(body: &SSAChunk, params: &[String]) -> bool {
+        // SSA names are `base_version`; strip the trailing `_<digits>` to compare bases.
+        fn base(n: &str) -> &str {
+            match n.rfind('_') {
+                Some(i) if i + 1 < n.len() && n[i + 1..].bytes().all(|b| b.is_ascii_digit()) => &n[..i],
+                _ => n,
+            }
+        }
+        let mut locals: crate::util::fx::FxHashSet<&str> =
+            params.iter().map(|p| p.trim_start_matches(['*', '~'])).collect();
+        for ins in &body.instructions {
+            if ins.opcode == OpCode::StoreName
+                && let Some(n) = body.names.get(ins.operand as usize) {
+                locals.insert(base(n));
+            }
+        }
+        body.instructions.iter().any(|ins| match ins.opcode {
+            OpCode::LoadGlobal => true,
+            OpCode::LoadName => body.names.get(ins.operand as usize).is_none_or(|n| !locals.contains(base(n))),
+            _ => false,
+        })
     }
 }

@@ -37,11 +37,20 @@ pub fn copy(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
 // `dict.popitem()`, pop the last (k, v); KeyError on empty dict.
 pub fn popitem(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
     let pair = dict_mut(vm, recv, "popitem: receiver is not a dict", |dict| {
-        let (k, v) = dict.entries.last().copied().ok_or(cold_value("popitem(): dictionary is empty"))?;
+        let (k, v) = dict.entries.last().copied().ok_or(cold_key("popitem(): dictionary is empty"))?;
         dict.remove(&k);
         Ok((k, v))
     })?;
     vm.alloc_and_push_tuple(vec![pair.0, pair.1])
+}
+
+// `dict.fromkeys(iterable, value=None)` classmethod: new dict mapping each key to `value`.
+pub fn fromkeys(vm: &mut VM, _recv: Val, pos: &[Val]) -> Result<(), VmErr> {
+    let keys = vm.extract_iter(pos[0], true)?;
+    let value = pos.get(1).copied().unwrap_or(Val::none());
+    let mut dm = DictMap::with_capacity(keys.len());
+    for k in keys { dm.insert(k, value); }
+    vm.alloc_and_push_dict(dm)
 }
 
 pub fn get(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
@@ -54,22 +63,22 @@ pub fn get(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
 }
 
 pub fn update(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
-    // Accept a dict or an iterable of 2-element pairs.
-    let pairs: Vec<(Val, Val)> = if let Some(HeapObj::Dict(rc)) = vm.heap.try_get(pos[0]) {
-        rc.borrow().entries.clone()
-    } else {
-        let items = vm.extract_iter(pos[0], true)?;
-        let mut out = Vec::with_capacity(items.len());
-        for it in items {
-            let pair = match vm.heap.try_get(it) {
-                Some(HeapObj::Tuple(v)) if v.len() == 2 => (v[0], v[1]),
-                Some(HeapObj::List(v)) if v.borrow().len() == 2 => { let v = v.borrow(); (v[0], v[1]) }
-                _ => return Err(cold_value("dictionary update sequence element must have length 2")),
-            };
-            out.push(pair);
+    // Merge each source in order; dispatcher packs kwargs as trailing dict.
+    let mut pairs: Vec<(Val, Val)> = Vec::new();
+    for &src in pos {
+        if let Some(HeapObj::Dict(rc)) = vm.heap.try_get(src) {
+            pairs.extend(rc.borrow().entries.iter().copied());
+        } else {
+            for it in vm.extract_iter(src, true)? {
+                let pair = match vm.heap.try_get(it) {
+                    Some(HeapObj::Tuple(v)) if v.len() == 2 => (v[0], v[1]),
+                    Some(HeapObj::List(v)) if v.borrow().len() == 2 => { let v = v.borrow(); (v[0], v[1]) }
+                    _ => return Err(cold_value("dictionary update sequence element must have length 2")),
+                };
+                pairs.push(pair);
+            }
         }
-        out
-    };
+    }
     dict_mut(vm, recv, "update: receiver is not a dict", |dict| {
         for (k, v) in pairs { dict.insert(k, v); }
         Ok(())
@@ -79,12 +88,15 @@ pub fn update(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
 
 pub fn pop(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let default = if pos.len() == 2 { Some(pos[1]) } else { None };
-    let result = dict_mut(vm, recv, "pop: receiver is not a dict", |dict| {
-        match dict.remove(&pos[0]) {
-            Some(val) => Ok(val),
-            None => default.ok_or(cold_value("key not found")),
-        }
-    })?;
+    let removed = dict_mut(vm, recv, "pop: receiver is not a dict", |dict| Ok(dict.remove(&pos[0])))?;
+    let result = match removed {
+        Some(val) => val,
+        None => match default {
+            Some(d) => d,
+            // raises KeyError whose str is the missing key's repr.
+            None => return Err(VmErr::Raised(crate::s!("KeyError: ", str &vm.repr(pos[0])))),
+        },
+    };
     vm.push(result); Ok(())
 }
 

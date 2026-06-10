@@ -15,6 +15,7 @@ repository = "https://github.com/dylan-sutton-chavez/edge-python/"
 wasm-abi = { path = "wasm-abi" }
 hashbrown = { version = "0.17", default-features = false }
 itoa = "1"
+libm = "0.2"
 lol_alloc = "0.4"
 proc-macro2 = "1"
 quote = "1"

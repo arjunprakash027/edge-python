@@ -194,6 +194,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             self.error_at(buffered[0].start, buffered.last().unwrap().end, "multiple stars in sequence pattern");
         }
 
+        // Type guard: a non-sequence subject fails the pattern instead of erroring on len().
+        self.chunk.emit(OpCode::LoadName, subj);
+        self.chunk.emit(OpCode::MatchSeq, 0);
+        fail_jumps.push(self.emit_jump(OpCode::JumpIfFalse));
+
         // Length check: exact without star, >= (count-1) with star.
         let len_min = if star_count > 0 { item_count - 1 } else { item_count };
         self.chunk.emit(OpCode::LoadName, subj);

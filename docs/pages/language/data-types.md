@@ -178,7 +178,7 @@ print(encoded, decoded)
 b'Edge Python' Edge Python
 ```
 
-`bytes` is hashable and comparable to other `bytes`. `bytes == str` is always `False`, even for valid UTF-8. Methods include `decode`, `hex`, `find`, `count`, `replace`, `split`, `startswith`, `endswith` (see [Methods](/reference/methods)). Encodings: `"utf-8"` (default), `"ascii"`.
+`bytes` is hashable and comparable to other `bytes`. `bytes == str` is always `False`, even for valid UTF-8. Methods include `decode`, `hex`, `find`, `count`, `replace`, `split`, `startswith`, `endswith`, `lower`, `upper`, `strip`, `join`, and the `bytes.fromhex` classmethod (see [Methods](/reference/methods#bytes-methods)). Encodings: `"utf-8"` (default), `"ascii"`.
 
 ## List
 

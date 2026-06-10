@@ -5,20 +5,80 @@ use super::super::types::*;
 
 impl<'a> VM<'a> {
 
-    /* Pops N args, joins with single spaces. Calls `print_hook` if set (streaming), otherwise buffers into `output`. */
+    /* `print(*args, sep=' ', end='\n')`: joins args with `sep`, appends `end`; streams via `print_hook` or buffers line-by-line. */
     pub fn call_print(&mut self, op: u16, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
-        let args = self.pop_n(op as usize)?;
-        let mut out = String::new();
-        for (i, v) in args.iter().enumerate() {
-            if i > 0 { out.push(' '); }
+        let (positional, kw_flat, _np, _nk) = self.parse_call_args(op)?;
+        let mut sep = String::from(" ");
+        let mut end = String::from("\n");
+        for pair in kw_flat.chunks_exact(2) {
+            let kname = match self.heap.try_get(pair[0]) {
+                Some(HeapObj::Str(s)) => s.clone(),
+                _ => String::new(),
+            };
+            match kname.as_str() {
+                "sep" => sep = self.print_str_kwarg(pair[1], " ", "sep")?,
+                "end" => end = self.print_str_kwarg(pair[1], "\n", "end")?,
+                // No file/stdout selection or buffering in the sandbox; accept and ignore.
+                "file" | "flush" => {}
+                _ => return Err(VmErr::TypeMsg(crate::s!("'", str &kname, "' is an invalid keyword argument for print()"))),
+            }
+        }
+        let mut body = String::new();
+        for (i, v) in positional.iter().enumerate() {
+            if i > 0 { body.push_str(&sep); }
             // each arg goes through `display_op` so user `__str__` / `__repr__` are honoured.
-            out.push_str(&self.display_op(*v, chunk, slots)?);
+            let s = self.display_op(*v, chunk, slots)?;
+            body.push_str(&s);
         }
         match self.print_hook {
-            Some(hook) => hook(&out),
-            None       => self.output.push(out),
+            Some(hook) => {
+                // Host appends the line break, so hand it the text minus one trailing '\n'.
+                body.push_str(&end);
+                if body.ends_with('\n') { body.pop(); }
+                hook(&body);
+            }
+            None => {
+                body.push_str(&end);
+                self.emit_buffered_output(&body);
+            }
         }
         Ok(())
+    }
+
+    /* `sep`/`end` accept a string or None (None keeps the default). */
+    fn print_str_kwarg(&self, v: Val, default: &str, name: &'static str) -> Result<String, VmErr> {
+        if v.is_none() { return Ok(String::from(default)); }
+        match self.heap.try_get(v) {
+            Some(HeapObj::Str(s)) => Ok(s.clone()),
+            _ => Err(VmErr::TypeMsg(crate::s!(str name, " must be None or a string, not ", str self.type_name(v)))),
+        }
+    }
+
+    /* Append `text` to the line-buffered output; '\n' closes a line, text without one leaves the line open so a later `print(end="")` continues it. */
+    fn emit_buffered_output(&mut self, text: &str) {
+        let mut rest = text;
+        loop {
+            match rest.find('\n') {
+                Some(i) => {
+                    self.append_open_line(&rest[..i]);
+                    self.output_open = false;
+                    rest = &rest[i + 1..];
+                }
+                None => {
+                    if !rest.is_empty() { self.append_open_line(rest); }
+                    break;
+                }
+            }
+        }
+    }
+
+    fn append_open_line(&mut self, s: &str) {
+        if self.output_open && let Some(last) = self.output.last_mut() {
+            last.push_str(s);
+            return;
+        }
+        self.output.push(String::from(s));
+        self.output_open = true;
     }
 
     /* Returns empty string in sandbox; no stdin access in WASM. */
