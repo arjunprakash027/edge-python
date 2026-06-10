@@ -4,6 +4,8 @@ Built-in methods for `str` receivers. Arity is checked by the dispatcher.
 
 use super::prelude::*;
 
+use core::iter;
+
 // `str.encode([encoding])`, UTF-8/ASCII only; other names error to block silent mismatches.
 pub fn encode(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let s = recv_str(vm, recv)?;
@@ -312,7 +314,7 @@ fn justify(vm: &mut VM, recv: Val, pos: &[Val], right: bool) -> Result<(), VmErr
         match (cs.next(), cs.next()) { (Some(c), None) => c, _ => return Err(cold_type("The fill character must be exactly one character long")) }
     } else { ' ' };
     let pad = width.saturating_sub(s.chars().count());
-    let fills: String = core::iter::repeat(fill).take(pad).collect();
+    let fills: String = iter::repeat_n(fill, pad).collect();
     let out = if right { fills + &s } else { s + &fills };
     vm.alloc_and_push_str(out)
 }

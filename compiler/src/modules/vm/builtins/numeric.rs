@@ -126,7 +126,7 @@ impl<'a> VM<'a> {
             let f = o.as_float();
             if f.is_nan() { return Err(cold_value("cannot convert float NaN to integer")); }
             if f.is_infinite() { return Err(VmErr::Raised(alloc::string::String::from("OverflowError: cannot convert float infinity to integer"))); }
-            let t = f.trunc();
+            let t = ftrunc(f);
             // i128::MAX as f64 rounds up past the true max, so reject before the saturating cast.
             if !(-1.7014118346046923e38..=1.7014118346046921e38).contains(&t) { return Err(cold_overflow()); }
             t as i128

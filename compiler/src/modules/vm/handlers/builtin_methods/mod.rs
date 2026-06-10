@@ -150,8 +150,8 @@ pub(crate) fn dispatch_method(vm: &mut VM, id: BuiltinMethodId, recv: Val, pos: 
     let m = &ALL_METHODS[id.0 as usize];
     if !kw.is_empty() {
         // `dict.update(**kwargs)` is the one builtin method taking keywords: pack them into a dict and append as a positional, which `dict::update` already merges.
-        if m.ty == "dict" && m.name == "update" {
-            if let Some(kwd) = VM::pack_kw_dict(&mut vm.heap, kw)? {
+        if m.ty == "dict" && m.name == "update" 
+            && let Some(kwd) = VM::pack_kw_dict(&mut vm.heap, kw)? {
                 let mut p = alloc::vec::Vec::with_capacity(pos.len() + 1);
                 p.extend_from_slice(pos);
                 p.push(kwd);
@@ -159,7 +159,7 @@ pub(crate) fn dispatch_method(vm: &mut VM, id: BuiltinMethodId, recv: Val, pos: 
                 if result.is_ok() { vm.mark_impure(); }
                 return result;
             }
-        }
+
         return Err(cold_type("builtin method takes no keyword arguments"));
     }
     let n = pos.len();
