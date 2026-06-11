@@ -1,4 +1,4 @@
-/* f64 → string: shortest round-trip digits, fixed for exponents in (-4, 16], else scientific with sign and ≥2 exp digits; always includes `.0` or exponent so floats never read as ints. */
+/* f64 -> string: shortest round-trip digits, fixed for exponents in (-4, 16], else scientific with sign and ≥2 exp digits; always includes `.0` or exponent so floats never read as ints. */
 pub fn format_f64(f: f64) -> alloc::string::String {
     use alloc::string::String;
     use core::fmt::Write;
