@@ -116,7 +116,7 @@ fn dispatch_set_attr(recv_h: u32, name: &str, args: &[Val]) -> Result<Val, VmErr
         if let HeapObj::Instance(_cls, attrs) = vm.heap.get(recv) {
             let attrs = attrs.clone();
             let key = vm.heap.alloc(HeapObj::Str(name.to_string()))?;
-            attrs.borrow_mut().insert(key, value);
+            attrs.borrow_mut().insert(key, value, &vm.heap);
             return Ok(Val::none());
         }
         Err(VmErr::Type("cannot set attribute on this type"))
