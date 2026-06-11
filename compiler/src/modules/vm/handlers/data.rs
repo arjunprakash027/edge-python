@@ -26,7 +26,7 @@ impl<'a> VM<'a> {
             OpCode::BuildDict => {
                 let flat = self.pop_n(operand as usize * 2)?;
                 for pair in flat.chunks(2) { self.require_hashable(pair[0])?; }
-                let dm = DictMap::from_pairs(flat.chunks(2).map(|c| (c[0], c[1])).collect());
+                let dm = DictMap::from_pairs(flat.chunks(2).map(|c| (c[0], c[1])).collect(), &self.heap);
                 let val = self.heap.alloc(HeapObj::Dict(Rc::new(RefCell::new(dm))))?;
                 self.push(val);
             }
@@ -119,8 +119,8 @@ impl<'a> VM<'a> {
         if !acc.is_heap() { return Err(corrupt()); }
         match (kind, self.heap.get(acc)) {
             ("list", HeapObj::List(rc)) => { rc.borrow_mut().push(value); }
-            ("set", HeapObj::Set(rc))  => set_insert(&mut rc.borrow_mut(), value, &self.heap),
-            ("dict", HeapObj::Dict(rc)) => { rc.borrow_mut().insert(key.unwrap(), value); }
+            ("set", HeapObj::Set(rc))  => { rc.borrow_mut().insert(value, &self.heap); }
+            ("dict", HeapObj::Dict(rc)) => { rc.borrow_mut().insert(key.unwrap(), value, &self.heap); }
             _ => return Err(corrupt()),
         }
         Ok(())
@@ -140,7 +140,7 @@ impl<'a> VM<'a> {
                 };
                 if let HeapObj::Dict(rc) = self.heap.get(acc) {
                     let mut m = rc.borrow_mut();
-                    for (k, v) in pairs { m.insert(k, v); }
+                    for (k, v) in pairs { m.insert(k, v, &self.heap); }
                 }
             }
             OpCode::SetUpdate => {
@@ -148,7 +148,7 @@ impl<'a> VM<'a> {
                 for it in items {
                     self.require_hashable(it)?;
                     match self.heap.get(acc) {
-                        HeapObj::Set(rc) => set_insert(&mut rc.borrow_mut(), it, &self.heap),
+                        HeapObj::Set(rc) => { rc.borrow_mut().insert(it, &self.heap); }
                         _ => return Err(cold_runtime("spread accumulator corrupted")),
                     }
                 }

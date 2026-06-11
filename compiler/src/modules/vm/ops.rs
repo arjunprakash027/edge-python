@@ -139,10 +139,12 @@ impl<'a> VM<'a> {
             (HeapObj::Set(x), HeapObj::Set(y)) => (x.borrow().clone(), y.borrow().clone()),
             _ => return Err(cold_runtime("set_binop on non-set operands")),
         };
+        // Content membership so distinct-handle equal elements combine correctly; alloc dedups.
         let items: Vec<Val> = match op {
-            OpCode::BitOr => sa.union(&sb).copied().collect(),
-            OpCode::BitAnd => sa.intersection(&sb).copied().collect(),
-            OpCode::BitXor => sa.symmetric_difference(&sb).copied().collect(),
+            OpCode::BitOr => sa.iter().chain(sb.iter()).copied().collect(),
+            OpCode::BitAnd => sa.iter().filter(|&&v| sb.contains(v, &self.heap)).copied().collect(),
+            OpCode::BitXor => sa.iter().filter(|&&v| !sb.contains(v, &self.heap))
+                .chain(sb.iter().filter(|&&v| !sa.contains(v, &self.heap))).copied().collect(),
             _ => return Err(cold_runtime("set_binop with non-bitwise opcode")),
         };
         self.alloc_and_push_set(items)
@@ -156,7 +158,7 @@ impl<'a> VM<'a> {
         };
         // Content-based so distinct-handle equal elements (tuples, long strings) compare correctly.
         let eq = eq_set(&sa, &sb, |a, b| eq_vals_with_heap(a, b, &self.heap));
-        let subset = |x: &crate::util::fx::FxHashSet<Val>, y: &crate::util::fx::FxHashSet<Val>|
+        let subset = |x: &ValSet, y: &ValSet|
             x.iter().all(|&v| y.iter().any(|&w| eq_vals_with_heap(v, w, &self.heap)));
         let result = match op {
             OpCode::Eq => eq,
@@ -354,7 +356,7 @@ impl<'a> VM<'a> {
             match self.heap.get(container) {
                 HeapObj::List(v) => return Ok(v.borrow().iter().any(|x| eq_vals_with_heap(*x, item, &self.heap))),
                 HeapObj::Tuple(v) => return Ok(v.iter().any(|x| eq_vals_with_heap(*x, item, &self.heap))),
-                HeapObj::Dict(p) => return Ok(p.borrow().contains_key(&item)),
+                HeapObj::Dict(p) => return Ok(p.borrow().contains_key(&item, &self.heap)),
                 HeapObj::Set(s) => return Ok(s.borrow().iter().any(|x| eq_vals_with_heap(*x, item, &self.heap))),
                 HeapObj::FrozenSet(s) => return Ok(s.iter().any(|x| eq_vals_with_heap(*x, item, &self.heap))),
                 HeapObj::Str(s) => {
@@ -424,7 +426,7 @@ impl<'a> VM<'a> {
         // Set difference: fresh set of `a` elements not in `b`.
         if a.is_heap() && b.is_heap()
             && let (HeapObj::Set(sa), HeapObj::Set(sb)) = (self.heap.get(a), self.heap.get(b)) {
-            let items: Vec<Val> = sa.borrow().difference(&sb.borrow()).copied().collect();
+            let items: Vec<Val> = sa.borrow().iter().filter(|&&v| !sb.borrow().contains(v, &self.heap)).copied().collect();
             return self.alloc_set_value(items);
         }
         Err(VmErr::TypeMsg(s!("unsupported operand type(s) for -: '", str self.type_name(a), "' and '", str self.type_name(b), "'")))
@@ -432,8 +434,8 @@ impl<'a> VM<'a> {
 
     /* Set counterpart of `alloc_list` for `sub_vals`'s set-difference path. */
     fn alloc_set_value(&mut self, items: Vec<Val>) -> Result<Val, VmErr> {
-        let mut s = crate::util::fx::FxHashSet::default();
-        for v in items { s.insert(v); }
+        let mut s = ValSet::with_capacity(items.len());
+        for v in items { s.insert(v, &self.heap); }
         self.heap.alloc(HeapObj::Set(Rc::new(RefCell::new(s))))
     }
 

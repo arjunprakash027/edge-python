@@ -837,9 +837,9 @@ impl<'a> VM<'a> {
             return Ok(());
         }
         let key = self.heap.alloc(HeapObj::Str(name))?;
-        match self.heap.get_mut(obj) {
+        match self.heap.get(obj) {
             HeapObj::Instance(_, attrs) => {
-                attrs.borrow_mut().insert(key, value);
+                attrs.borrow_mut().insert(key, value, &self.heap);
             }
             _ => return Err(cold_type("cannot set attribute on this type")),
         }

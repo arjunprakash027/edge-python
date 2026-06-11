@@ -1,6 +1,5 @@
 use core::cell::RefCell;
 use alloc::{rc::Rc, string::String, vec::Vec};
-use crate::util::fx::FxHashSet as HashSet;
 
 use super::super::VM;
 use super::super::types::*;
@@ -24,7 +23,7 @@ impl<'a> VM<'a> {
         self.push(v); Ok(())
     }
 
-    // Allocate a Set from `items` (deduped by Val bit-eq) and push. Mirrors `alloc_and_push_list`.
+    // Allocate a Set from `items` (deduped by content) and push. Mirrors `alloc_and_push_list`.
     pub(crate) fn alloc_and_push_set(&mut self, items: Vec<Val>) -> Result<(), VmErr> {
         let v = self.alloc_set(items)?;
         self.push(v); Ok(())
@@ -43,8 +42,8 @@ impl<'a> VM<'a> {
     }
 
     fn alloc_set(&mut self, items: Vec<Val>) -> Result<Val, VmErr> {
-        let mut set = HashSet::with_capacity_and_hasher(items.len(), Default::default());
-        for v in items { set_insert(&mut set, v, &self.heap); }
+        let mut set = ValSet::with_capacity(items.len());
+        for v in items { set.insert(v, &self.heap); }
         self.heap.alloc(HeapObj::Set(Rc::new(RefCell::new(set))))
     }
 
@@ -62,8 +61,8 @@ impl<'a> VM<'a> {
     // Build a frozenset Val from items, rejecting unhashable elements first.
     pub(crate) fn frozenset_from_items(&mut self, items: Vec<Val>) -> Result<Val, VmErr> {
         for v in &items { self.require_hashable(*v)?; }
-        let mut set = HashSet::with_capacity_and_hasher(items.len(), Default::default());
-        for v in items { set_insert(&mut set, v, &self.heap); }
+        let mut set = ValSet::with_capacity(items.len());
+        for v in items { set.insert(v, &self.heap); }
         self.heap.alloc(HeapObj::FrozenSet(Rc::new(set)))
     }
 
@@ -117,7 +116,7 @@ impl<'a> VM<'a> {
         } else {
             DictMap::with_capacity(kw)
         };
-        for pair in kw_flat.chunks(2) { dm.insert(pair[0], pair[1]); }
+        for pair in kw_flat.chunks(2) { dm.insert(pair[0], pair[1], &self.heap); }
         self.alloc_and_push_dict(dm)
     }
 
@@ -125,7 +124,7 @@ impl<'a> VM<'a> {
     fn dict_from_source(&mut self, src: Val) -> Result<DictMap, VmErr> {
         if let Some(HeapObj::Dict(rc)) = self.heap.try_get(src) {
             let pairs: Vec<(Val, Val)> = rc.borrow().iter().collect();
-            return Ok(DictMap::from_pairs(pairs));
+            return Ok(DictMap::from_pairs(pairs, &self.heap));
         }
         let items = self.extract_iter(src, true)?;
         let mut dm = DictMap::with_capacity(items.len());
@@ -135,7 +134,7 @@ impl<'a> VM<'a> {
                 return Err(cold_value("dictionary update sequence element has length != 2"));
             }
             self.require_hashable(pair[0])?;
-            dm.insert(pair[0], pair[1]);
+            dm.insert(pair[0], pair[1], &self.heap);
         }
         Ok(dm)
     }

@@ -30,15 +30,15 @@ pub fn items(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
 pub fn copy(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
     let entries = dict_entries(vm, recv)?;
     let mut dm = DictMap::with_capacity(entries.len());
-    for (k, v) in entries { dm.insert(k, v); }
+    for (k, v) in entries { dm.insert(k, v, &vm.heap); }
     vm.alloc_and_push_dict(dm)
 }
 
 // `dict.popitem()`, pop the last (k, v); KeyError on empty dict.
 pub fn popitem(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
-    let pair = dict_mut(vm, recv, "popitem: receiver is not a dict", |dict| {
+    let pair = dict_mut(vm, recv, "popitem: receiver is not a dict", |dict, heap| {
         let (k, v) = dict.entries.last().copied().ok_or(cold_key("popitem(): dictionary is empty"))?;
-        dict.remove(&k);
+        dict.remove(&k, heap);
         Ok((k, v))
     })?;
     vm.alloc_and_push_tuple(vec![pair.0, pair.1])
@@ -49,14 +49,14 @@ pub fn fromkeys(vm: &mut VM, _recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let keys = vm.extract_iter(pos[0], true)?;
     let value = pos.get(1).copied().unwrap_or(Val::none());
     let mut dm = DictMap::with_capacity(keys.len());
-    for k in keys { dm.insert(k, value); }
+    for k in keys { dm.insert(k, value, &vm.heap); }
     vm.alloc_and_push_dict(dm)
 }
 
 pub fn get(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let default = if pos.len() == 2 { pos[1] } else { Val::none() };
     let result = match vm.heap.get(recv) {
-        HeapObj::Dict(rc) => rc.borrow().get(&pos[0]).copied().unwrap_or(default),
+        HeapObj::Dict(rc) => rc.borrow().get(&pos[0], &vm.heap).copied().unwrap_or(default),
         _ => return Err(cold_type("get: receiver is not a dict")),
     };
     vm.push(result); Ok(())
@@ -79,8 +79,8 @@ pub fn update(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
             }
         }
     }
-    dict_mut(vm, recv, "update: receiver is not a dict", |dict| {
-        for (k, v) in pairs { dict.insert(k, v); }
+    dict_mut(vm, recv, "update: receiver is not a dict", |dict, heap| {
+        for (k, v) in pairs { dict.insert(k, v, heap); }
         Ok(())
     })?;
     vm.push(Val::none()); Ok(())
@@ -88,7 +88,7 @@ pub fn update(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
 
 pub fn pop(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let default = if pos.len() == 2 { Some(pos[1]) } else { None };
-    let removed = dict_mut(vm, recv, "pop: receiver is not a dict", |dict| Ok(dict.remove(&pos[0])))?;
+    let removed = dict_mut(vm, recv, "pop: receiver is not a dict", |dict, heap| Ok(dict.remove(&pos[0], heap)))?;
     let result = match removed {
         Some(val) => val,
         None => match default {
@@ -102,9 +102,9 @@ pub fn pop(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
 
 pub fn setdefault(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let default = if pos.len() > 1 { pos[1] } else { Val::none() };
-    let result = dict_mut(vm, recv, "setdefault: receiver is not a dict", |dict| {
-        if let Some(v) = dict.get(&pos[0]).copied() { Ok(v) }
-        else { dict.insert(pos[0], default); Ok(default) }
+    let result = dict_mut(vm, recv, "setdefault: receiver is not a dict", |dict, heap| {
+        if let Some(v) = dict.get(&pos[0], heap).copied() { Ok(v) }
+        else { dict.insert(pos[0], default, heap); Ok(default) }
     })?;
     vm.push(result); Ok(())
 }

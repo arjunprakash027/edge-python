@@ -43,7 +43,6 @@ overflow
 
 - **`pow(a, b, m)` modular**: modulus must be `< 2^63` (larger overflows i128 in the multiply). Hard cap without arbitrary-precision arithmetic.
 - **No CPython-style unbounded ints**: by design, edge workloads don't need wider than 128 bits. Crypto-scale math is out of scope.
-- **Float vs LongInt mixing**: `==` works (LongInt -> f64), but dict/set hashing follows raw `Val` bits, so `{long_int: x}` indexed by a same-magnitude float misses. Coerce explicitly.
 
 ### Triggering limits
 

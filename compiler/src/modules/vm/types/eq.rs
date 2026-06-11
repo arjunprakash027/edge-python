@@ -1,13 +1,13 @@
-use super::{DictMap, HeapObj, HeapPool, Val, as_i128};
+use super::{DictMap, HeapObj, HeapPool, Val, ValSet, as_i128};
 
 pub(in crate::modules::vm) fn eq_seq(a: &[Val], b: &[Val], eq: impl Fn(Val,Val)->bool) -> bool {
     a.len() == b.len() && a.iter().zip(b).all(|(x,y)| eq(*x,*y))
 }
-pub(in crate::modules::vm) fn eq_dict(a: &DictMap, b: &DictMap, eq: impl Fn(Val,Val)->bool) -> bool {
-    a.len() == b.len() && a.iter().all(|(k,v)| b.get(&k).is_some_and(|&v2| eq(v,v2)))
+pub(in crate::modules::vm) fn eq_dict(a: &DictMap, b: &DictMap, heap: &HeapPool, eq: impl Fn(Val,Val)->bool) -> bool {
+    a.len() == b.len() && a.iter().all(|(k,v)| b.get(&k, heap).is_some_and(|&v2| eq(v,v2)))
 }
 /* Content set-equality: same size and every element of `a` content-matches one in `b`. */
-pub(in crate::modules::vm) fn eq_set(a: &crate::util::fx::FxHashSet<Val>, b: &crate::util::fx::FxHashSet<Val>, eq: impl Fn(Val,Val)->bool) -> bool {
+pub(in crate::modules::vm) fn eq_set(a: &ValSet, b: &ValSet, eq: impl Fn(Val,Val)->bool) -> bool {
     a.len() == b.len() && a.iter().all(|&x| b.iter().any(|&y| eq(x, y)))
 }
 
@@ -18,10 +18,36 @@ pub fn eq_vals_with_heap(a: Val, b: Val, heap: &HeapPool) -> bool {
     eq_vals_depth(a, b, heap, 0)
 }
 
-/* Insert into a set, deduping non-interned heap values by content; interned ones dedup O(1) via handle. */
-pub fn set_insert(set: &mut crate::util::fx::FxHashSet<Val>, v: Val, heap: &HeapPool) {
-    if v.is_heap() && !heap.is_interned(v) && set.iter().any(|&x| eq_vals_with_heap(x, v, heap)) { return; }
-    set.insert(v);
+/* Content hash, consistent with eq_vals_with_heap: values that compare equal hash equal (numeric unified). */
+pub fn hash_val_with_heap(v: Val, heap: &HeapPool) -> u64 {
+    hash_depth(v, heap, 0)
+}
+fn hash_depth(v: Val, heap: &HeapPool, depth: usize) -> u64 {
+    use core::hash::Hasher;
+    let mut h = crate::util::fx::FxHasher::default();
+    // Numeric unification: int / bool / integral-float / in-range LongInt all hash as the same i64.
+    if v.is_int() { h.write_i64(v.as_int()); return h.finish(); }
+    if v.is_bool() { h.write_i64(v.as_bool() as i64); return h.finish(); }
+    if v.is_float() {
+        let f = v.as_float();
+        if f as i64 as f64 == f { h.write_i64(f as i64); } else { h.write_u64(f.to_bits()); }
+        return h.finish();
+    }
+    if !v.is_heap() || depth > EQ_DEPTH_MAX { h.write_u64(v.0); return h.finish(); }
+    match heap.get(v) {
+        // i128 in i64 range hashes like the equal int/float; wider values hash their two halves.
+        HeapObj::LongInt(i) => match i64::try_from(*i) {
+            Ok(n) => h.write_i64(n),
+            Err(_) => { h.write_u64(*i as u64); h.write_u64((*i >> 64) as u64); }
+        },
+        HeapObj::Str(s) => { h.write_u8(1); h.write(s.as_bytes()); }
+        HeapObj::Bytes(b) => { h.write_u8(2); h.write(b); }
+        HeapObj::Tuple(t) => { h.write_u8(3); h.write_usize(t.len()); for &e in t { h.write_u64(hash_depth(e, heap, depth + 1)); } }
+        // Order-independent so equal frozensets (any order/handle) hash equal.
+        HeapObj::FrozenSet(s) => { h.write_u8(4); let acc = s.iter().fold(0u64, |a, &e| a.wrapping_add(hash_depth(e, heap, depth + 1))); h.write_u64(acc); }
+        _ => h.write_u64(v.0),
+    }
+    h.finish()
 }
 
 /* f64 view of any numeric Val (int/bool/float/LongInt); None for non-numerics. */
@@ -64,7 +90,7 @@ fn eq_vals_depth(a: Val, b: Val, heap: &HeapPool, depth: usize) -> bool {
         (HeapObj::FrozenSet(x), HeapObj::FrozenSet(y)) => eq_set(x, y, |a,b| eq_vals_depth(a, b, heap, d)),
         (HeapObj::Set(x), HeapObj::FrozenSet(y)) => eq_set(&x.borrow(), y, |a,b| eq_vals_depth(a, b, heap, d)),
         (HeapObj::FrozenSet(x), HeapObj::Set(y)) => eq_set(x, &y.borrow(), |a,b| eq_vals_depth(a, b, heap, d)),
-        (HeapObj::Dict(x), HeapObj::Dict(y)) => eq_dict(&x.borrow(), &y.borrow(), |a,b| eq_vals_depth(a, b, heap, d)),
+        (HeapObj::Dict(x), HeapObj::Dict(y)) => eq_dict(&x.borrow(), &y.borrow(), heap, |a,b| eq_vals_depth(a, b, heap, d)),
         (HeapObj::Type(x), HeapObj::Type(y)) => x == y, // by name; interning also makes `is` hold
         (HeapObj::Range(s1,e1,t1), HeapObj::Range(s2,e2,t2)) => {
             // CPython: equal length, then matching start/step only when non-empty.

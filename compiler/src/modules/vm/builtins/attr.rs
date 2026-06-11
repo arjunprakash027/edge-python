@@ -69,8 +69,8 @@ impl<'a> VM<'a> {
             return Err(cold_type("setattr() target must be an instance or class"));
         }
         let key = self.heap.alloc(HeapObj::Str(name))?;
-        if let HeapObj::Instance(_, attrs) = self.heap.get_mut(obj) {
-            attrs.borrow_mut().insert(key, value);
+        if let HeapObj::Instance(_, attrs) = self.heap.get(obj) {
+            attrs.borrow_mut().insert(key, value, &self.heap);
         }
         self.push(Val::none());
         Ok(())
@@ -93,7 +93,7 @@ impl<'a> VM<'a> {
         // Strings <=128 bytes are interned, so re-alloc'ing yields the same Val key StoreAttr used.
         let key = self.heap.alloc(HeapObj::Str(name))?;
         if let HeapObj::Instance(_, attrs) = self.heap.get(obj) {
-            attrs.borrow_mut().remove(&key);
+            attrs.borrow_mut().remove(&key, &self.heap);
         }
         self.push(Val::none());
         Ok(())
@@ -132,7 +132,7 @@ impl<'a> VM<'a> {
             }
         };
         let mut dm = DictMap::with_capacity(entries.len());
-        for (k, v) in entries { dm.insert(k, v); }
+        for (k, v) in entries { dm.insert(k, v, &self.heap); }
         self.alloc_and_push_dict(dm)
     }
 
@@ -164,7 +164,7 @@ impl<'a> VM<'a> {
         let mut dm = DictMap::with_capacity(out.len());
         for (k, v) in out {
             let key = self.heap.alloc(HeapObj::Str(k))?;
-            dm.insert(key, v);
+            dm.insert(key, v, &self.heap);
         }
         self.alloc_and_push_dict(dm)
     }
@@ -192,7 +192,7 @@ impl<'a> VM<'a> {
         let mut dm = DictMap::with_capacity(latest.len());
         for (name, (_, v)) in latest {
             let key = self.heap.alloc(HeapObj::Str(name))?;
-            dm.insert(key, v);
+            dm.insert(key, v, &self.heap);
         }
         self.alloc_and_push_dict(dm)
     }

@@ -234,7 +234,7 @@ impl<'a> VM<'a> {
     /* Pack a flat `[name, val, name, val, ...]` slice into a heap dict for the trailing kwargs slot. `None` when there are no kwargs so the FFI layer can serialize handle 0 on the wire. */
     pub(crate) fn pack_kw_dict(heap: &mut super::super::types::HeapPool, kw_flat: &[Val]) -> Result<Option<Val>, VmErr> {
         if kw_flat.is_empty() { return Ok(None); }
-        let dm = super::super::types::DictMap::from_pairs(kw_flat.chunks_exact(2).map(|p| (p[0], p[1])).collect());
+        let dm = super::super::types::DictMap::from_pairs(kw_flat.chunks_exact(2).map(|p| (p[0], p[1])).collect(), heap);
         Ok(Some(heap.alloc(super::super::types::HeapObj::Dict(Rc::new(RefCell::new(dm))))?))
     }
 
@@ -392,7 +392,7 @@ impl<'a> VM<'a> {
             let (kind, slot) = self.param_slots[fi][i];
             match kind {
                 ParamKind::DoubleStar => {
-                    let dm = DictMap::from_pairs(kw_flat.chunks_exact(2).map(|p| (p[0], p[1])).collect());
+                    let dm = DictMap::from_pairs(kw_flat.chunks_exact(2).map(|p| (p[0], p[1])).collect(), &self.heap);
                     let dict_val = self.heap.alloc(HeapObj::Dict(Rc::new(RefCell::new(dm))))?;
                     if slot < fn_slots.len() { fn_slots[slot] = dict_val; }
                 }

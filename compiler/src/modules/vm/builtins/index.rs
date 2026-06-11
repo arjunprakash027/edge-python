@@ -142,7 +142,7 @@ impl<'a> VM<'a> {
                 v.get(ui).copied().ok_or(cold_index("tuple index out of range"))
             }
             HeapObj::Dict(p) => {
-                match p.borrow().get(&idx).copied() {
+                match p.borrow().get(&idx, &self.heap).copied() {
                     Some(v) => Ok(v),
                     // raises KeyError, and its str is the key's repr.
                     None => Err(VmErr::Raised(crate::s!("KeyError: ", str &self.repr(idx)))),
@@ -199,7 +199,7 @@ impl<'a> VM<'a> {
         if matches!(self.heap.get(cont), HeapObj::Dict(_)) {
             self.require_hashable(idx_val)?;
         }
-        match self.heap.get_mut(cont) {
+        match self.heap.get(cont) {
             HeapObj::List(v) => {
                 if !idx_val.is_int() { return Err(cold_type("list indices must be integers")); }
                 let mut b = v.borrow_mut();
@@ -208,7 +208,7 @@ impl<'a> VM<'a> {
                 if ui >= b.len() { return Err(cold_index("list assignment index out of range")); }
                 b[ui] = value;
             }
-            HeapObj::Dict(p) => { p.borrow_mut().insert(idx_val, value); }
+            HeapObj::Dict(p) => { p.borrow_mut().insert(idx_val, value, &self.heap); }
             HeapObj::Tuple(_) => return Err(cold_type("tuple does not support item assignment")),
             _ => return Err(cold_type("object does not support item assignment")),
         }
@@ -229,7 +229,7 @@ impl<'a> VM<'a> {
         {
             return self.store_slice(cont, start, stop, step, Vec::new());
         }
-        match self.heap.get_mut(cont) {
+        match self.heap.get(cont) {
             HeapObj::List(v) => {
                 if !idx_val.is_int() { return Err(cold_type("list indices must be integers")); }
                 let mut b = v.borrow_mut();
@@ -238,7 +238,7 @@ impl<'a> VM<'a> {
                 b.remove(ui);
             }
             HeapObj::Dict(p) => {
-                if p.borrow_mut().remove(&idx_val).is_none() {
+                if p.borrow_mut().remove(&idx_val, &self.heap).is_none() {
                     return Err(cold_key("key not found"));
                 }
             }

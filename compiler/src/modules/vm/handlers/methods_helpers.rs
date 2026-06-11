@@ -57,15 +57,17 @@ where F: FnOnce(&mut Vec<Val>) -> Result<R, VmErr>
     }
 }
 
-// Same shape as `list_mut` for dict receivers.
+// Same shape as `list_mut` for dict receivers; clones the Rc so `&heap` stays free for content hashing.
 #[inline]
 pub(super) fn dict_mut<F, R>(vm: &mut VM, recv: Val, err: &'static str, f: F) -> Result<R, VmErr>
-where F: FnOnce(&mut DictMap) -> Result<R, VmErr>
+where F: FnOnce(&mut DictMap, &HeapPool) -> Result<R, VmErr>
 {
-    match vm.heap.try_get_mut(recv) {
-        Some(HeapObj::Dict(rc)) => f(&mut rc.borrow_mut()),
-        _ => Err(cold_type(err)),
-    }
+    let rc = match vm.heap.try_get(recv) {
+        Some(HeapObj::Dict(rc)) => rc.clone(),
+        _ => return Err(cold_type(err)),
+    };
+    let r = f(&mut rc.borrow_mut(), &vm.heap);
+    r
 }
 
 // Snapshot a set as Vec so the heap stays free for subsequent allocations.
@@ -77,15 +79,17 @@ pub(super) fn set_clone(vm: &VM, recv: Val) -> Result<Vec<Val>, VmErr> {
     }
 }
 
-// Same shape as `list_mut` for set receivers.
+// Same shape as `list_mut` for set receivers; clones the Rc so `&heap` stays free for content hashing.
 #[inline]
 pub(super) fn set_mut<F, R>(vm: &mut VM, recv: Val, err: &'static str, f: F) -> Result<R, VmErr>
-where F: FnOnce(&mut crate::util::fx::FxHashSet<Val>) -> Result<R, VmErr>
+where F: FnOnce(&mut ValSet, &HeapPool) -> Result<R, VmErr>
 {
-    match vm.heap.get_mut(recv) {
-        HeapObj::Set(rc) => f(&mut rc.borrow_mut()),
-        _ => Err(cold_type(err)),
-    }
+    let rc = match vm.heap.try_get(recv) {
+        Some(HeapObj::Set(rc)) => rc.clone(),
+        _ => return Err(cold_type(err)),
+    };
+    let r = f(&mut rc.borrow_mut(), &vm.heap);
+    r
 }
 
 /* List or tuple items as Vec. `try_get` is panic-free: an inline int arg would make `heap.get` index a bogus slot and abort. */

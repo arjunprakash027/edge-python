@@ -1,6 +1,6 @@
 use alloc::{rc::Rc, string::String, vec::Vec};
 use core::cell::RefCell;
-use crate::util::fx::{FxHashMap as HashMap, FxHashSet as HashSet};
+use crate::util::fx::FxHashMap as HashMap;
 
 pub mod coro;
 pub mod eq;
@@ -155,9 +155,9 @@ pub enum HeapObj {
     Bytes(Vec<u8>),
     List(Rc<RefCell<Vec<Val>>>),
     Dict(Rc<RefCell<DictMap>>),
-    Set(Rc<RefCell<HashSet<Val>>>),
+    Set(Rc<RefCell<ValSet>>),
     /* Immutable, hashable counterpart of Set; built via `frozenset(iter)`. */
-    FrozenSet(Rc<HashSet<Val>>),
+    FrozenSet(Rc<ValSet>),
     Tuple(Vec<Val>),
     Func(usize, Vec<Val>, Vec<(usize, Val)>),
     Range(i64, i64, i64),
@@ -235,33 +235,74 @@ impl NativeFnId {
     }
 }
 
-/* Insertion-ordered dict: Vec for ordering, HashMap as index for O(1) get. */
+/* Content-hashed set: equal-by-content values dedup in O(1) regardless of heap identity. */
+#[derive(Clone, Debug, Default)]
+pub struct ValSet {
+    t: hashbrown::HashTable<Val>,
+}
+
+impl ValSet {
+    pub fn new() -> Self { Self { t: hashbrown::HashTable::new() } }
+    pub fn with_capacity(cap: usize) -> Self { Self { t: hashbrown::HashTable::with_capacity(cap) } }
+    pub fn len(&self) -> usize { self.t.len() }
+    pub fn is_empty(&self) -> bool { self.t.is_empty() }
+    pub fn clear(&mut self) { self.t.clear(); }
+    pub fn iter(&self) -> impl Iterator<Item = &Val> + '_ { self.t.iter() }
+
+    pub fn contains(&self, v: Val, heap: &HeapPool) -> bool {
+        let h = hash_val_with_heap(v, heap);
+        self.t.find(h, |&k| eq_vals_with_heap(k, v, heap)).is_some()
+    }
+    /* Returns true when newly inserted (content-equal value not already present). */
+    pub fn insert(&mut self, v: Val, heap: &HeapPool) -> bool {
+        let h = hash_val_with_heap(v, heap);
+        if self.t.find(h, |&k| eq_vals_with_heap(k, v, heap)).is_some() { return false; }
+        self.t.insert_unique(h, v, |&k| hash_val_with_heap(k, heap));
+        true
+    }
+    pub fn remove(&mut self, v: Val, heap: &HeapPool) -> bool {
+        let h = hash_val_with_heap(v, heap);
+        match self.t.find_entry(h, |&k| eq_vals_with_heap(k, v, heap)) {
+            Ok(e) => { e.remove(); true }
+            Err(_) => false,
+        }
+    }
+}
+
+/* Insertion-ordered dict: Vec for ordering, content-hashed HashTable<usize> index for O(1) get. */
 #[derive(Clone, Debug)]
 pub struct DictMap {
     pub entries: Vec<(Val, Val)>,
-    index: HashMap<Val, usize>,
+    index: hashbrown::HashTable<usize>,
 }
 
 impl DictMap {
     pub fn with_capacity(cap: usize) -> Self {
-        Self { entries: Vec::with_capacity(cap), index: HashMap::with_capacity_and_hasher(cap, Default::default()) }
+        Self { entries: Vec::with_capacity(cap), index: hashbrown::HashTable::with_capacity(cap) }
     }
 
-    pub fn get(&self, key: &Val) -> Option<&Val> {
-        self.index.get(key).map(|&i| &self.entries[i].1)
+    pub fn get(&self, key: &Val, heap: &HeapPool) -> Option<&Val> {
+        let e = &self.entries;
+        let h = hash_val_with_heap(*key, heap);
+        self.index.find(h, |&i| eq_vals_with_heap(e[i].0, *key, heap)).map(|&i| &self.entries[i].1)
     }
 
-    pub fn contains_key(&self, key: &Val) -> bool {
-        self.index.contains_key(key)
+    pub fn contains_key(&self, key: &Val, heap: &HeapPool) -> bool {
+        let e = &self.entries;
+        let h = hash_val_with_heap(*key, heap);
+        self.index.find(h, |&i| eq_vals_with_heap(e[i].0, *key, heap)).is_some()
     }
 
-    pub fn insert(&mut self, key: Val, value: Val) {
-        if let Some(&i) = self.index.get(&key) {
+    pub fn insert(&mut self, key: Val, value: Val, heap: &HeapPool) {
+        let h = hash_val_with_heap(key, heap);
+        let e = &self.entries;
+        if let Some(&i) = self.index.find(h, |&i| eq_vals_with_heap(e[i].0, key, heap)) {
             self.entries[i].1 = value;
         } else {
             let i = self.entries.len();
             self.entries.push((key, value));
-            self.index.insert(key, i);
+            let e = &self.entries;
+            self.index.insert_unique(h, i, |&j| hash_val_with_heap(e[j].0, heap));
         }
     }
 
@@ -276,10 +317,20 @@ impl DictMap {
         self.entries.iter().map(|&(k, _)| k)
     }
 
-    pub fn from_pairs(pairs: Vec<(Val, Val)>) -> Self {
+    pub fn from_pairs(pairs: Vec<(Val, Val)>, heap: &HeapPool) -> Self {
         let mut dm = Self::with_capacity(pairs.len());
-        for (k, v) in pairs { dm.insert(k, v); }
+        for (k, v) in pairs { dm.insert(k, v, heap); }
         dm
+    }
+
+    /* Vec shift after remove invalidates stored positions; rebuild the whole index. */
+    fn reindex(&mut self, heap: &HeapPool) {
+        self.index.clear();
+        for i in 0..self.entries.len() {
+            let e = &self.entries;
+            let h = hash_val_with_heap(e[i].0, heap);
+            self.index.insert_unique(h, i, |&j| hash_val_with_heap(e[j].0, heap));
+        }
     }
 }
 
@@ -288,22 +339,15 @@ impl Default for DictMap {
 }
 
 impl DictMap {
-    pub fn new() -> Self { Self { entries: Vec::new(), index: HashMap::default() } }
+    pub fn new() -> Self { Self { entries: Vec::new(), index: hashbrown::HashTable::new() } }
 
-    pub fn remove(&mut self, key: &Val) -> Option<Val> {
-        let &idx = self.index.get(key)?;
+    pub fn remove(&mut self, key: &Val, heap: &HeapPool) -> Option<Val> {
+        let e = &self.entries;
+        let h = hash_val_with_heap(*key, heap);
+        let idx = *self.index.find(h, |&i| eq_vals_with_heap(e[i].0, *key, heap))?;
         let val = self.entries[idx].1;
-
-        self.index.remove(key);
-
         self.entries.remove(idx);
-
-        for (i, (k, _)) in self.entries[idx..].iter().enumerate() {
-            if let Some(entry) = self.index.get_mut(k) {
-                *entry = idx + i;
-            }
-        }
-
+        self.reindex(heap);
         Some(val)
     }
 }
@@ -538,16 +582,6 @@ impl HeapPool {
 
     /* Object-count budget, reused as a byte cap for single oversized allocations. */
     pub fn limit(&self) -> usize { self.limit }
-
-    /* Interned: handle identity equals content identity, so handle-based Hash/Eq dedups without a scan. */
-    pub fn is_interned(&self, v: Val) -> bool {
-        match self.try_get(v) {
-            Some(HeapObj::LongInt(_) | HeapObj::Type(_) | HeapObj::Ellipsis | HeapObj::NotImplemented) => true,
-            Some(HeapObj::Str(s)) => s.len() <= 128,
-            Some(HeapObj::Bytes(b)) => b.len() <= 128,
-            _ => false,
-        }
-    }
 
     #[inline(always)] pub fn get(&self, v: Val) -> &HeapObj {
         self.slots[v.as_heap() as usize].obj
