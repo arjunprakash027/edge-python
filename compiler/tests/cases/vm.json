@@ -2148,5 +2148,11 @@
   {"src": "print(len({(1, 2), (1, 2), (1, 3)}))", "output": ["2"]},
   {"src": "print(len(set([(1, 2), (1, 2), (1, 3)])))", "output": ["2"]},
   {"src": "print(sorted(frozenset([(1, 2), (1, 2)])))", "output": ["[(1, 2)]"]},
-  {"src": "print(len({'a' * 200, 'a' * 200}))", "output": ["1"]}
+  {"src": "print(len({'a' * 200, 'a' * 200}))", "output": ["1"]},
+  {"src": "print({(1, 2)} == {(1, 2)})", "output": ["True"]},
+  {"src": "print({(1, 2)} == {(1, 3)})", "output": ["False"]},
+  {"src": "print(frozenset([(1, 2)]) == frozenset([(1, 2)]))", "output": ["True"]},
+  {"src": "print((1, 2) in {(1, 2), (3, 4)})", "output": ["True"]},
+  {"src": "print({(1, 2)} <= {(1, 2), (3, 4)})", "output": ["True"]},
+  {"src": "print({(1, 2)} < {(1, 2)})", "output": ["False"]}
 ]

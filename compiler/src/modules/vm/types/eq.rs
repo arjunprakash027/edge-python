@@ -6,6 +6,10 @@ pub(in crate::modules::vm) fn eq_seq(a: &[Val], b: &[Val], eq: impl Fn(Val,Val)-
 pub(in crate::modules::vm) fn eq_dict(a: &DictMap, b: &DictMap, eq: impl Fn(Val,Val)->bool) -> bool {
     a.len() == b.len() && a.iter().all(|(k,v)| b.get(&k).is_some_and(|&v2| eq(v,v2)))
 }
+/* Content set-equality: same size and every element of `a` content-matches one in `b`. */
+pub(in crate::modules::vm) fn eq_set(a: &crate::util::fx::FxHashSet<Val>, b: &crate::util::fx::FxHashSet<Val>, eq: impl Fn(Val,Val)->bool) -> bool {
+    a.len() == b.len() && a.iter().all(|&x| b.iter().any(|&y| eq(x, y)))
+}
 
 /* Recursion cap so self-referential containers fall back instead of overflowing the stack. */
 const EQ_DEPTH_MAX: usize = 100;
@@ -56,10 +60,10 @@ fn eq_vals_depth(a: Val, b: Val, heap: &HeapPool, depth: usize) -> bool {
         (HeapObj::Bytes(x), HeapObj::Bytes(y)) => x == y,
         (HeapObj::Tuple(x), HeapObj::Tuple(y)) => eq_seq(x, y, |a,b| eq_vals_depth(a, b, heap, d)),
         (HeapObj::List(x), HeapObj::List(y)) => eq_seq(&x.borrow(), &y.borrow(), |a,b| eq_vals_depth(a, b, heap, d)),
-        (HeapObj::Set(x), HeapObj::Set(y)) => *x.borrow() == *y.borrow(),
-        (HeapObj::FrozenSet(x), HeapObj::FrozenSet(y)) => **x == **y,
-        (HeapObj::Set(x), HeapObj::FrozenSet(y)) => *x.borrow() == **y,
-        (HeapObj::FrozenSet(x), HeapObj::Set(y)) => **x == *y.borrow(),
+        (HeapObj::Set(x), HeapObj::Set(y)) => eq_set(&x.borrow(), &y.borrow(), |a,b| eq_vals_depth(a, b, heap, d)),
+        (HeapObj::FrozenSet(x), HeapObj::FrozenSet(y)) => eq_set(x, y, |a,b| eq_vals_depth(a, b, heap, d)),
+        (HeapObj::Set(x), HeapObj::FrozenSet(y)) => eq_set(&x.borrow(), y, |a,b| eq_vals_depth(a, b, heap, d)),
+        (HeapObj::FrozenSet(x), HeapObj::Set(y)) => eq_set(x, &y.borrow(), |a,b| eq_vals_depth(a, b, heap, d)),
         (HeapObj::Dict(x), HeapObj::Dict(y)) => eq_dict(&x.borrow(), &y.borrow(), |a,b| eq_vals_depth(a, b, heap, d)),
         (HeapObj::Type(x), HeapObj::Type(y)) => x == y, // by name; interning also makes `is` hold
         (HeapObj::Range(s1,e1,t1), HeapObj::Range(s2,e2,t2)) => {

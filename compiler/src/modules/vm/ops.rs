@@ -154,13 +154,17 @@ impl<'a> VM<'a> {
             (HeapObj::Set(x), HeapObj::Set(y)) => (x.borrow(), y.borrow()),
             _ => return Err(cold_runtime("set_compare on non-set operands")),
         };
+        // Content-based so distinct-handle equal elements (tuples, long strings) compare correctly.
+        let eq = eq_set(&sa, &sb, |a, b| eq_vals_with_heap(a, b, &self.heap));
+        let subset = |x: &crate::util::fx::FxHashSet<Val>, y: &crate::util::fx::FxHashSet<Val>|
+            x.iter().all(|&v| y.iter().any(|&w| eq_vals_with_heap(v, w, &self.heap)));
         let result = match op {
-            OpCode::Eq => *sa == *sb,
-            OpCode::NotEq => *sa != *sb,
-            OpCode::Lt => sa.is_subset(&sb) && *sa != *sb,
-            OpCode::LtEq => sa.is_subset(&sb),
-            OpCode::Gt => sb.is_subset(&sa) && *sa != *sb,
-            OpCode::GtEq => sb.is_subset(&sa),
+            OpCode::Eq => eq,
+            OpCode::NotEq => !eq,
+            OpCode::Lt => subset(&sa, &sb) && !eq,
+            OpCode::LtEq => subset(&sa, &sb),
+            OpCode::Gt => subset(&sb, &sa) && !eq,
+            OpCode::GtEq => subset(&sb, &sa),
             _ => return Err(cold_runtime("set_compare with non-compare opcode")),
         };
         drop(sa); drop(sb);
