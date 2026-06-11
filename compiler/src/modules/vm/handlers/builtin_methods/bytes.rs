@@ -4,7 +4,7 @@ Built-in methods for `bytes` receivers. Arity is checked by the dispatcher.
 
 use super::prelude::*;
 
-// `bytes.decode([encoding])`, invalid UTF-8 errors as ValueError.
+// `bytes.decode([encoding[, errors]])`. 'strict' raises on invalid UTF-8; 'ignore'/'replace' recover.
 pub fn decode(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let buf = recv_bytes(vm, recv)?;
     if let Some(arg) = pos.first() {
@@ -13,10 +13,40 @@ pub fn decode(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
             return Err(cold_value("unsupported encoding (expected 'utf-8' or 'ascii')"));
         }
     }
-    let text = alloc::string::String::from_utf8(buf)
-        .map_err(|_| cold_value("invalid UTF-8 in bytes.decode()"))?;
+    let errors = match pos.get(1) {
+        Some(a) => val_to_str(vm, *a)?,
+        None => alloc::string::String::from("strict"),
+    };
+    let text = match errors.as_str() {
+        "strict" => alloc::string::String::from_utf8(buf)
+            .map_err(|_| cold_value("invalid UTF-8 in bytes.decode()"))?,
+        "ignore" => decode_recover(&buf, false),
+        "replace" => decode_recover(&buf, true),
+        _ => return Err(cold_value("unknown error handler (expected 'strict', 'ignore', or 'replace')")),
+    };
     let v = vm.heap.alloc(HeapObj::Str(text))?;
     vm.push(v); Ok(())
+}
+
+// Decode dropping invalid bytes (replace=false) or substituting U+FFFD (replace=true).
+fn decode_recover(buf: &[u8], replace: bool) -> alloc::string::String {
+    let mut out = alloc::string::String::with_capacity(buf.len());
+    let mut i = 0;
+    while i < buf.len() {
+        match core::str::from_utf8(&buf[i..]) {
+            Ok(s) => { out.push_str(s); break; }
+            Err(e) => {
+                let valid = e.valid_up_to();
+                out.push_str(core::str::from_utf8(&buf[i..i + valid]).unwrap());
+                if replace { out.push('\u{FFFD}'); }
+                match e.error_len() {
+                    Some(n) => i += valid + n,
+                    None => break, // incomplete sequence at the end
+                }
+            }
+        }
+    }
+    out
 }
 
 // `bytes.hex()`, lowercase hex of every byte. No separator.

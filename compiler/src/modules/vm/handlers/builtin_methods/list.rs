@@ -6,8 +6,13 @@ use super::prelude::*;
 
 pub fn index(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let items = list_clone(vm, recv)?;
-    let idx = items.iter()
-        .position(|&v| eq_vals_with_heap(v, pos[0], &vm.heap))
+    let len = items.len() as i64;
+    // Optional start/end clamp like CPython; negatives count from the end.
+    let norm = |v: Val| (if v.as_int() < 0 { len + v.as_int() } else { v.as_int() }).clamp(0, len) as usize;
+    let start = pos.get(1).filter(|v| v.is_int()).map_or(0, |&v| norm(v));
+    let stop = pos.get(2).filter(|v| v.is_int()).map_or(items.len(), |&v| norm(v)).max(start);
+    let idx = (start..stop)
+        .find(|&i| eq_vals_with_heap(items[i], pos[0], &vm.heap))
         .map(|i| i as i64)
         .ok_or(cold_value("value not found in list"))?;
     vm.push(Val::int(idx));

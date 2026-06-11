@@ -207,7 +207,7 @@ b'hi'
 
 ## Bytes methods
 
-`bytes.find` returns a byte offset (not a code-point index). `bytes.index` raises `ValueError` if absent. `split` needs an explicit separator (no whitespace-split mode). `lower` / `upper` case-fold ASCII bytes; `strip` / `lstrip` / `rstrip` trim ASCII whitespace (or any byte in the optional set). `join` concatenates an iterable of bytes. `bytes.fromhex(s)` parses a hex string (whitespace ignored). `bytearray` and `memoryview` are unimplemented.
+`bytes.decode([encoding[, errors]])` takes `encoding` (`utf-8` or `ascii`) and an `errors` handler: `strict` (default) raises on invalid UTF-8, `ignore` drops the bad bytes, `replace` substitutes `U+FFFD`. `bytes.find` returns a byte offset (not a code-point index). `bytes.index` raises `ValueError` if absent. `split` needs an explicit separator (no whitespace-split mode). `lower` / `upper` case-fold ASCII bytes; `strip` / `lstrip` / `rstrip` trim ASCII whitespace (or any byte in the optional set). `join` concatenates an iterable of bytes. `bytes.fromhex(s)` parses a hex string (whitespace ignored). `bytearray` and `memoryview` are unimplemented.
 
 ```python
 b = b"\x48\x65\x6c\x6c\x6f"
@@ -243,10 +243,13 @@ b'Hello'
 
 ### Pure (return a new value or query)
 
+`index` accepts optional `start` / `end` bounds (negatives count from the end) and raises `ValueError` if the value isn't found in that range; `copy` returns a shallow copy.
+
 ```python
 xs = [1, 2, 3, 2]
 
 print(xs.index(2))
+print(xs.index(2, 2)) # search from index 2
 print(xs.count(2))
 
 ys = xs.copy()
@@ -257,6 +260,7 @@ print(ys)
 
 ```text Output
 1
+3
 2
 [1, 2, 3, 2]
 [1, 2, 3, 2, 99]
