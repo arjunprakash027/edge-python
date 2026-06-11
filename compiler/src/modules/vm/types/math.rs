@@ -23,10 +23,6 @@ pub fn fround(x: f64) -> f64 {
     else { fl + 1.0 }
 }
 
-pub fn fln(x: f64) -> f64 { libm::log(x) }
-
-pub fn fexp(x: f64) -> f64 { libm::exp(x) }
-
 #[inline]
 pub fn fpowf(base: f64, exp: f64) -> f64 {
     let ei = exp as i32;

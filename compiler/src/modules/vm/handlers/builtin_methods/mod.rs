@@ -33,117 +33,133 @@ impl BuiltinMethodId {
     #[inline] pub fn name(self) -> &'static str { ALL_METHODS[self.0 as usize].name }
 }
 
-pub static ALL_METHODS: &[MethodDesc] = &[
-    // str (0..25)
-    MethodDesc { ty: "str", name: "encode", func: string::encode, mutating: false, min_args: 0, max_args: 1 },
-    MethodDesc { ty: "str", name: "upper", func: string::upper, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "str", name: "lower", func: string::lower, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "str", name: "strip", func: string::strip, mutating: false, min_args: 0, max_args: 1 },
-    MethodDesc { ty: "str", name: "capitalize", func: string::capitalize, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "str", name: "title", func: string::title, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "str", name: "lstrip", func: string::lstrip, mutating: false, min_args: 0, max_args: 1 },
-    MethodDesc { ty: "str", name: "rstrip", func: string::rstrip, mutating: false, min_args: 0, max_args: 1 },
-    MethodDesc { ty: "str", name: "isdigit", func: string::isdigit, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "str", name: "isalpha", func: string::isalpha, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "str", name: "isalnum", func: string::isalnum, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "str", name: "startswith", func: string::startswith, mutating: false, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "str", name: "endswith", func: string::endswith, mutating: false, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "str", name: "find", func: string::find, mutating: false, min_args: 1, max_args: 3 },
-    MethodDesc { ty: "str", name: "count", func: string::count, mutating: false, min_args: 1, max_args: 3 },
-    MethodDesc { ty: "str", name: "split", func: string::split, mutating: false, min_args: 0, max_args: 2 },
-    MethodDesc { ty: "str", name: "join", func: string::join, mutating: false, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "str", name: "replace", func: string::replace, mutating: false, min_args: 2, max_args: 3 },
-    MethodDesc { ty: "str", name: "removeprefix", func: string::removeprefix, mutating: false, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "str", name: "removesuffix", func: string::removesuffix, mutating: false, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "str", name: "splitlines", func: string::splitlines, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "str", name: "partition", func: string::partition, mutating: false, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "str", name: "rpartition", func: string::rpartition, mutating: false, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "str", name: "center", func: string::center, mutating: false, min_args: 1, max_args: 2 },
-    MethodDesc { ty: "str", name: "zfill", func: string::zfill, mutating: false, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "str", name: "rsplit", func: string::rsplit, mutating: false, min_args: 0, max_args: 2 },
-    MethodDesc { ty: "str", name: "casefold", func: string::casefold, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "str", name: "swapcase", func: string::swapcase, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "str", name: "ljust", func: string::ljust, mutating: false, min_args: 1, max_args: 2 },
-    MethodDesc { ty: "str", name: "rjust", func: string::rjust, mutating: false, min_args: 1, max_args: 2 },
-    MethodDesc { ty: "str", name: "expandtabs", func: string::expandtabs, mutating: false, min_args: 0, max_args: 1 },
-    MethodDesc { ty: "str", name: "rfind", func: string::rfind, mutating: false, min_args: 1, max_args: 3 },
-    MethodDesc { ty: "str", name: "index", func: string::index, mutating: false, min_args: 1, max_args: 3 },
-    MethodDesc { ty: "str", name: "rindex", func: string::rindex, mutating: false, min_args: 1, max_args: 3 },
-    MethodDesc { ty: "str", name: "isspace", func: string::isspace, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "str", name: "isupper", func: string::isupper, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "str", name: "islower", func: string::islower, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "str", name: "istitle", func: string::istitle, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "str", name: "format", func: string::format, mutating: false, min_args: 0, max_args: 255 },
+// Builds `ALL_METHODS` grouped by receiver type. `ro`/`rw` = read-only/mutating; `min..max` is the arity (max 255 = variadic).
+macro_rules! methods {
+    ( $( $ty:literal { $( $name:literal => $func:path, $m:ident, $min:literal .. $max:literal );* $(;)? } )* ) => {
+        &[ $( $( MethodDesc {
+            ty: $ty, name: $name, func: $func,
+            mutating: methods!(@m $m), min_args: $min, max_args: $max,
+        } ),* ),* ]
+    };
+    (@m ro) => { false };
+    (@m rw) => { true };
+}
 
-    // bytes (25..34)
-    MethodDesc { ty: "bytes", name: "decode", func: bytes::decode, mutating: false, min_args: 0, max_args: 2 },
-    MethodDesc { ty: "bytes", name: "hex", func: bytes::hex, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "bytes", name: "startswith", func: bytes::startswith, mutating: false, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "bytes", name: "endswith", func: bytes::endswith, mutating: false, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "bytes", name: "find", func: bytes::find, mutating: false, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "bytes", name: "index", func: bytes::index, mutating: false, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "bytes", name: "count", func: bytes::count, mutating: false, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "bytes", name: "replace", func: bytes::replace, mutating: false, min_args: 2, max_args: 2 },
-    MethodDesc { ty: "bytes", name: "split", func: bytes::split, mutating: false, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "bytes", name: "lower", func: bytes::lower, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "bytes", name: "upper", func: bytes::upper, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "bytes", name: "strip", func: bytes::strip, mutating: false, min_args: 0, max_args: 1 },
-    MethodDesc { ty: "bytes", name: "lstrip", func: bytes::lstrip, mutating: false, min_args: 0, max_args: 1 },
-    MethodDesc { ty: "bytes", name: "rstrip", func: bytes::rstrip, mutating: false, min_args: 0, max_args: 1 },
-    MethodDesc { ty: "bytes", name: "join", func: bytes::join, mutating: false, min_args: 1, max_args: 1 },
-
-    // list (34..45)
-    MethodDesc { ty: "list", name: "index", func: list::index, mutating: false, min_args: 1, max_args: 3 },
-    MethodDesc { ty: "list", name: "count", func: list::count, mutating: false, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "list", name: "copy", func: list::copy, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "list", name: "append", func: list::append, mutating: true, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "list", name: "clear", func: list::clear, mutating: true, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "list", name: "reverse", func: list::reverse, mutating: true, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "list", name: "extend", func: list::extend, mutating: true, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "list", name: "insert", func: list::insert, mutating: true, min_args: 2, max_args: 2 },
-    MethodDesc { ty: "list", name: "remove", func: list::remove, mutating: true, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "list", name: "pop", func: list::pop, mutating: true, min_args: 0, max_args: 1 },
-    MethodDesc { ty: "list", name: "sort", func: list::sort, mutating: true, min_args: 0, max_args: 0 },
-
-    // dict (45..54)
-    MethodDesc { ty: "dict", name: "keys", func: dict::keys, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "dict", name: "values", func: dict::values, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "dict", name: "items", func: dict::items, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "dict", name: "copy", func: dict::copy, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "dict", name: "popitem", func: dict::popitem, mutating: true, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "dict", name: "get", func: dict::get, mutating: false, min_args: 1, max_args: 2 },
-    MethodDesc { ty: "dict", name: "update", func: dict::update, mutating: true, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "dict", name: "pop", func: dict::pop, mutating: true, min_args: 1, max_args: 2 },
-    MethodDesc { ty: "dict", name: "setdefault", func: dict::setdefault, mutating: true, min_args: 1, max_args: 2 },
-
-    // set (54..68)
-    MethodDesc { ty: "set", name: "add", func: set::add, mutating: true, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "set", name: "remove", func: set::remove, mutating: true, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "set", name: "discard", func: set::discard, mutating: true, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "set", name: "pop", func: set::pop, mutating: true, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "set", name: "clear", func: set::clear, mutating: true, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "set", name: "update", func: set::update, mutating: true, min_args: 0, max_args: 255 },
-    MethodDesc { ty: "set", name: "copy", func: set::copy, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "set", name: "union", func: set::union, mutating: false, min_args: 0, max_args: 255 },
-    MethodDesc { ty: "set", name: "intersection", func: set::intersection, mutating: false, min_args: 0, max_args: 255 },
-    MethodDesc { ty: "set", name: "difference", func: set::difference, mutating: false, min_args: 0, max_args: 255 },
-    MethodDesc { ty: "set", name: "symmetric_difference", func: set::symmetric_difference, mutating: false, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "set", name: "intersection_update", func: set::intersection_update, mutating: true, min_args: 0, max_args: 255 },
-    MethodDesc { ty: "set", name: "difference_update", func: set::difference_update, mutating: true, min_args: 0, max_args: 255 },
-    MethodDesc { ty: "set", name: "symmetric_difference_update", func: set::symmetric_difference_update, mutating: true, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "set", name: "issubset", func: set::issubset, mutating: false, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "set", name: "issuperset", func: set::issuperset, mutating: false, min_args: 1, max_args: 1 },
-    MethodDesc { ty: "set", name: "isdisjoint", func: set::isdisjoint, mutating: false, min_args: 1, max_args: 1 },
-
-    // int / float methods + classmethods (resolved via the type's own name).
-    MethodDesc { ty: "int", name: "bit_length", func: numeric::bit_length, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "int", name: "bit_count", func: numeric::bit_count, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "int", name: "to_bytes", func: numeric::to_bytes, mutating: false, min_args: 0, max_args: 2 },
-    MethodDesc { ty: "int", name: "from_bytes", func: numeric::from_bytes, mutating: false, min_args: 1, max_args: 2 },
-    MethodDesc { ty: "float", name: "is_integer", func: numeric::is_integer, mutating: false, min_args: 0, max_args: 0 },
-    MethodDesc { ty: "dict", name: "fromkeys", func: dict::fromkeys, mutating: false, min_args: 1, max_args: 2 },
-    MethodDesc { ty: "bytes", name: "fromhex", func: bytes::fromhex, mutating: false, min_args: 1, max_args: 1 },
-];
+// Lookup scans by (ty, name), so order is irrelevant; group however reads best.
+pub static ALL_METHODS: &[MethodDesc] = methods! {
+    "str" {
+        "encode" => string::encode, ro, 0..1;
+        "upper" => string::upper, ro, 0..0;
+        "lower" => string::lower, ro, 0..0;
+        "strip" => string::strip, ro, 0..1;
+        "capitalize" => string::capitalize, ro, 0..0;
+        "title" => string::title, ro, 0..0;
+        "lstrip" => string::lstrip, ro, 0..1;
+        "rstrip" => string::rstrip, ro, 0..1;
+        "isdigit" => string::isdigit, ro, 0..0;
+        "isalpha" => string::isalpha, ro, 0..0;
+        "isalnum" => string::isalnum, ro, 0..0;
+        "startswith" => string::startswith, ro, 1..1;
+        "endswith" => string::endswith, ro, 1..1;
+        "find" => string::find, ro, 1..3;
+        "count" => string::count, ro, 1..3;
+        "split" => string::split, ro, 0..2;
+        "join" => string::join, ro, 1..1;
+        "replace" => string::replace, ro, 2..3;
+        "removeprefix" => string::removeprefix, ro, 1..1;
+        "removesuffix" => string::removesuffix, ro, 1..1;
+        "splitlines" => string::splitlines, ro, 0..0;
+        "partition" => string::partition, ro, 1..1;
+        "rpartition" => string::rpartition, ro, 1..1;
+        "center" => string::center, ro, 1..2;
+        "zfill" => string::zfill, ro, 1..1;
+        "rsplit" => string::rsplit, ro, 0..2;
+        "casefold" => string::casefold, ro, 0..0;
+        "swapcase" => string::swapcase, ro, 0..0;
+        "ljust" => string::ljust, ro, 1..2;
+        "rjust" => string::rjust, ro, 1..2;
+        "expandtabs" => string::expandtabs, ro, 0..1;
+        "rfind" => string::rfind, ro, 1..3;
+        "index" => string::index, ro, 1..3;
+        "rindex" => string::rindex, ro, 1..3;
+        "isspace" => string::isspace, ro, 0..0;
+        "isupper" => string::isupper, ro, 0..0;
+        "islower" => string::islower, ro, 0..0;
+        "istitle" => string::istitle, ro, 0..0;
+        "format" => string::format, ro, 0..255;
+    }
+    "bytes" {
+        "decode" => bytes::decode, ro, 0..2;
+        "hex" => bytes::hex, ro, 0..0;
+        "startswith" => bytes::startswith, ro, 1..1;
+        "endswith" => bytes::endswith, ro, 1..1;
+        "find" => bytes::find, ro, 1..1;
+        "index" => bytes::index, ro, 1..1;
+        "count" => bytes::count, ro, 1..1;
+        "replace" => bytes::replace, ro, 2..2;
+        "split" => bytes::split, ro, 1..1;
+        "lower" => bytes::lower, ro, 0..0;
+        "upper" => bytes::upper, ro, 0..0;
+        "strip" => bytes::strip, ro, 0..1;
+        "lstrip" => bytes::lstrip, ro, 0..1;
+        "rstrip" => bytes::rstrip, ro, 0..1;
+        "join" => bytes::join, ro, 1..1;
+        "fromhex" => bytes::fromhex, ro, 1..1;
+    }
+    "list" {
+        "index" => list::index, ro, 1..3;
+        "count" => list::count, ro, 1..1;
+        "copy" => list::copy, ro, 0..0;
+        "append" => list::append, rw, 1..1;
+        "clear" => list::clear, rw, 0..0;
+        "reverse" => list::reverse, rw, 0..0;
+        "extend" => list::extend, rw, 1..1;
+        "insert" => list::insert, rw, 2..2;
+        "remove" => list::remove, rw, 1..1;
+        "pop" => list::pop, rw, 0..1;
+        "sort" => list::sort, rw, 0..0;
+    }
+    "dict" {
+        "keys" => dict::keys, ro, 0..0;
+        "values" => dict::values, ro, 0..0;
+        "items" => dict::items, ro, 0..0;
+        "copy" => dict::copy, ro, 0..0;
+        "popitem" => dict::popitem, rw, 0..0;
+        "get" => dict::get, ro, 1..2;
+        "update" => dict::update, rw, 1..1;
+        "pop" => dict::pop, rw, 1..2;
+        "setdefault" => dict::setdefault, rw, 1..2;
+        "fromkeys" => dict::fromkeys, ro, 1..2;
+    }
+    "set" {
+        "add" => set::add, rw, 1..1;
+        "remove" => set::remove, rw, 1..1;
+        "discard" => set::discard, rw, 1..1;
+        "pop" => set::pop, rw, 0..0;
+        "clear" => set::clear, rw, 0..0;
+        "update" => set::update, rw, 0..255;
+        "copy" => set::copy, ro, 0..0;
+        "union" => set::union, ro, 0..255;
+        "intersection" => set::intersection, ro, 0..255;
+        "difference" => set::difference, ro, 0..255;
+        "symmetric_difference" => set::symmetric_difference, ro, 1..1;
+        "intersection_update" => set::intersection_update, rw, 0..255;
+        "difference_update" => set::difference_update, rw, 0..255;
+        "symmetric_difference_update" => set::symmetric_difference_update, rw, 1..1;
+        "issubset" => set::issubset, ro, 1..1;
+        "issuperset" => set::issuperset, ro, 1..1;
+        "isdisjoint" => set::isdisjoint, ro, 1..1;
+    }
+    "int" {
+        "bit_length" => numeric::bit_length, ro, 0..0;
+        "bit_count" => numeric::bit_count, ro, 0..0;
+        "to_bytes" => numeric::to_bytes, ro, 0..2;
+        "from_bytes" => numeric::from_bytes, ro, 1..2;
+    }
+    "float" {
+        "is_integer" => numeric::is_integer, ro, 0..0;
+    }
+};
 
 #[inline]
 pub(crate) fn dispatch_method(vm: &mut VM, id: BuiltinMethodId, recv: Val, pos: &[Val], kw: &[Val]) -> Result<(), VmErr> {
