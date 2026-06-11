@@ -167,32 +167,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     if self.eat_if(TokenType::Lsqb) {
                         // del `x[k]` or `x[a:b]`: BuildSlice so DelItem sees HeapObj::Slice.
                         self.emit_load_ssa(name);
-                        let is_slice = matches!(self.peek(), Some(TokenType::Colon));
-                        if is_slice {
-                            self.chunk.emit(OpCode::LoadNone, 0);
-                        } else {
-                            self.expr();
-                        }
-                        if self.eat_if(TokenType::Colon) {
-                            let mut parts = 2u16;
-                            if matches!(self.peek(), Some(TokenType::Colon | TokenType::Rsqb)) {
-                                self.chunk.emit(OpCode::LoadNone, 0);
-                            } else {
-                                self.expr();
-                            }
-                            if self.eat_if(TokenType::Colon) {
-                                parts = 3;
-                                if matches!(self.peek(), Some(TokenType::Rsqb)) {
-                                    self.chunk.emit(OpCode::LoadNone, 0);
-                                } else {
-                                    self.expr();
-                                }
-                            }
-                            self.eat(TokenType::Rsqb);
-                            self.chunk.emit(OpCode::BuildSlice, parts);
-                        } else {
-                            self.eat(TokenType::Rsqb);
-                        }
+                        self.parse_subscript();
                         self.chunk.emit(OpCode::DelItem, 0);
                     } else {
                         let idx = self.push_ssa_name(&name, self.current_version(&name));
@@ -348,21 +323,23 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Name-led statement: assign, augmented-op, attr, index, call, or tuple unpack. */
-    pub(super) fn name_stmt(&mut self, t: Token) -> bool {
-        let name = self.lexeme(&t).to_string();
-
-    if self.eat_if(TokenType::Colon) {
-        // Annotation: discard tokens up to `=`; Edge Python is dynamically typed.
+    /* Annotation: discard tokens up to `=`; Edge Python is dynamically typed. Returns true when an assignment follows. */
+    fn skip_annotation(&mut self) -> bool {
         while !matches!(
             self.peek(),
             Some(TokenType::Equal | TokenType::Dedent | TokenType::Endmarker) | None
         ) {
             self.advance();
         }
-        if !matches!(self.peek(), Some(TokenType::Equal)) {
-            return false;
-        }
+        matches!(self.peek(), Some(TokenType::Equal))
+    }
+
+    /* Name-led statement: assign, augmented-op, attr, index, call, or tuple unpack. */
+    pub(super) fn name_stmt(&mut self, t: Token) -> bool {
+        let name = self.lexeme(&t).to_string();
+
+    if self.eat_if(TokenType::Colon) && !self.skip_annotation() {
+        return false;
     }
 
         match self.peek() {
@@ -383,26 +360,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.emit_load_ssa(name);
                 self.advance();
                 // Slice form: BuildSlice+StoreItem; runtime recognises HeapObj::Slice as splice index.
-                let is_slice = matches!(self.peek(), Some(TokenType::Colon));
-                if is_slice { self.chunk.emit(OpCode::LoadNone, 0); }
-                else { self.expr(); }
-                if self.eat_if(TokenType::Colon) {
-                    let mut parts = 2u16;
-                    if matches!(self.peek(), Some(TokenType::Colon | TokenType::Rsqb)) {
-                        self.chunk.emit(OpCode::LoadNone, 0);
-                    } else {
-                        self.expr();
-                    }
-                    if self.eat_if(TokenType::Colon) {
-                        parts = 3;
-                        if matches!(self.peek(), Some(TokenType::Rsqb)) {
-                            self.chunk.emit(OpCode::LoadNone, 0);
-                        } else {
-                            self.expr();
-                        }
-                    }
-                    self.eat(TokenType::Rsqb);
-                    self.chunk.emit(OpCode::BuildSlice, parts);
+                if self.parse_subscript() {
                     if matches!(self.peek(), Some(TokenType::Equal)) {
                         self.advance();
                         self.expr();
@@ -413,7 +371,6 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     self.expr_tails();
                     return true;
                 }
-                self.eat(TokenType::Rsqb);
                 if matches!(self.peek(), Some(TokenType::Equal)) {
                     self.advance();
                     self.expr();
@@ -432,17 +389,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.advance();
                 let t = self.advance();
                 let (attr_start, attr_end) = (t.start, t.end);
-                if self.eat_if(TokenType::Colon) {
-                    // Attribute annotation: discard tokens up to `=`.
-                    while !matches!(
-                        self.peek(),
-                        Some(TokenType::Equal | TokenType::Dedent | TokenType::Endmarker) | None
-                    ) {
-                        self.advance();
-                    }
-                    if !matches!(self.peek(), Some(TokenType::Equal)) {
-                        return false;
-                    }
+                if self.eat_if(TokenType::Colon) && !self.skip_annotation() {
+                    return false;
                 }
                 if matches!(self.peek(), Some(TokenType::Equal)) {
                     self.emit_load_ssa(name);

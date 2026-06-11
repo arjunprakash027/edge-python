@@ -82,7 +82,7 @@ impl<'a> VM<'a> {
         let defaults = if n_defaults > 0 { self.pop_n(n_defaults)? } else { vec![] };
 
         let (params, body, _, _) = self.functions[global];
-        let param_names: crate::util::fx::FxHashSet<String> = params.iter().map(|p| s!(str p.trim_start_matches(['*', '~']), "_0")).collect();
+        let param_names: crate::util::fx::FxHashSet<String> = params.iter().map(|p| s!(str crate::modules::parser::types::param_base_name(p), "_0")).collect();
         let mut captures: Vec<(usize, Val)> = Vec::new();
         // Capture once per canonical slot, skipping formal params. Linear scan over `chunk.names` beats a HashMap at typical body sizes (<30) and avoids a per-call monomorphisation.
         let mut seen_canonical: crate::util::fx::FxHashSet<usize> = crate::util::fx::FxHashSet::default();
@@ -423,8 +423,7 @@ impl<'a> VM<'a> {
                     Some(HeapObj::Str(s)) => s.clone(),
                     _ => return Err(cold_runtime("malformed kwarg on stack")),
                 };
-                // Strip `*`/`**`/`~` prefixes from the declared name before matching the kw key.
-                if params.iter().any(|p| p.trim_start_matches(['*', '~']) == key.as_str()) {
+                if params.iter().any(|p| crate::modules::parser::types::param_base_name(p) == key.as_str()) {
                     let pname = s!(str &key, "_0");
                     if let Some(&s) = body_map.get(pname.as_str()) {
                         fn_slots[s] = pair[1];

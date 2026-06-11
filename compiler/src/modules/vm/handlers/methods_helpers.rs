@@ -88,6 +88,16 @@ where F: FnOnce(&mut crate::util::fx::FxHashSet<Val>) -> Result<R, VmErr>
     }
 }
 
+/* List or tuple items as Vec. `try_get` is panic-free: an inline int arg would make `heap.get` index a bogus slot and abort. */
+#[inline]
+pub(super) fn extract_sequence(vm: &VM, v: Val, err: &'static str) -> Result<Vec<Val>, VmErr> {
+    match vm.heap.try_get(v) {
+        Some(HeapObj::List(rc)) => Ok(rc.borrow().clone()),
+        Some(HeapObj::Tuple(t)) => Ok(t.clone()),
+        _ => Err(cold_type(err)),
+    }
+}
+
 // `Vec<Val>` from any iterable (str/range/dict/bytes/frozenset/list/tuple/set), for set ops.
 #[inline]
 pub(super) fn iter_to_vec(vm: &mut VM, v: Val) -> Result<Vec<Val>, VmErr> {

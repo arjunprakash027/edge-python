@@ -67,19 +67,6 @@ macro_rules! s {
     ($($t:tt)*) => {{ let mut _s = alloc::string::String::new(); $crate::s!(@b _s; $($t)*); _s }};
 }
 
-/* Formats little-endian base-10^9 groups as decimal; highest unpadded, rest zero-padded to 9. */
-pub fn format_dec_groups(groups: &[u32]) -> alloc::string::String {
-    let mut out = alloc::string::String::new();
-    for (i, &g) in groups.iter().rev().enumerate() {
-        let mut b = itoa::Buffer::new();
-        let s = b.format(g);
-        if i == 0 { out.push_str(s); continue; }
-        for _ in 0..9usize.saturating_sub(s.len()) { out.push('0'); }
-        out.push_str(s);
-    }
-    out
-}
-
 pub enum E {
     Parse { ctx: &'static str },
     Custom { msg: alloc::string::String },

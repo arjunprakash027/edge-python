@@ -251,7 +251,7 @@ impl<'a> VM<'a> {
         // True iff the body references names not in params/builtins/captures.
         vm.needs_caller_slots = (0..vm.functions.len()).map(|fi| {
             let (params, body, _, _) = vm.functions[fi];
-            let param_names: crate::util::fx::FxHashSet<&str> = params.iter().map(|p| p.trim_start_matches(['*', '~'])).collect();
+            let param_names: crate::util::fx::FxHashSet<&str> = params.iter().map(|p| crate::modules::parser::types::param_base_name(p)).collect();
             body.names.iter().any(|n| {
                 let base = crate::modules::parser::ssa_strip(n);
                 !param_names.contains(base) && !vm.globals.contains_key(n)

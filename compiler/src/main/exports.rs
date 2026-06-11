@@ -6,7 +6,7 @@ use alloc::{boxed::Box, string::{String, ToString}};
 use core::ptr::NonNull;
 use crate::s;
 
-use super::{ModuleEntry, PausedRun, SZ, VmGuard, now_ns_host, safe_bytes, stream_print, with_runtime, write_out};
+use super::{ModuleEntry, PausedRun, SZ, VmGuard, now_ns_host, safe_bytes, safe_str_owned, stream_print, with_runtime, write_out};
 use super::resolver::WasmHostResolver;
 
 /* Packed `u32` from `run_start` / `run_resume`: top 3 bits = kind, low 29 = out-buffer length. */
@@ -49,15 +49,15 @@ pub unsafe extern "C" fn wasm_free(ptr: *mut u8, size: u32) {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn register_code_module(spec_ptr: *const u8, spec_len: u32, src_ptr: *const u8, src_len: u32) {
-    let spec = core::str::from_utf8(unsafe { safe_bytes(spec_ptr, spec_len) }).unwrap_or("").to_string();
-    let src = core::str::from_utf8(unsafe { safe_bytes(src_ptr, src_len) }).unwrap_or("").to_string();
+    let spec = unsafe { safe_str_owned(spec_ptr, spec_len) };
+    let src = unsafe { safe_str_owned(src_ptr, src_len) };
     with_runtime(|rt| rt.registry.push((spec, ModuleEntry::Code(src))));
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn register_native_module(spec_ptr: *const u8, spec_len: u32, names_ptr: *const u8, names_len: u32, base_id: u32) {
     use alloc::vec::Vec;
-    let spec = core::str::from_utf8(unsafe { safe_bytes(spec_ptr, spec_len) }).unwrap_or("").to_string();
+    let spec = unsafe { safe_str_owned(spec_ptr, spec_len) };
     let names_str = core::str::from_utf8(unsafe { safe_bytes(names_ptr, names_len) }).unwrap_or("");
     let funcs: Vec<(String, u32)> = names_str.split('\n')
         .filter(|n| !n.is_empty())
@@ -258,47 +258,36 @@ pub unsafe extern "C" fn run_push_event(ptr: *const u8, len: u32) -> i32 {
     })
 }
 
-/* Wake a `WaitingHostCall` coro: inject `handle`'s Val into its saved-stack top. 0 ok / 1 stale / 2 no waiter / 3 no paused run. */
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn set_host_result(handle: u32) -> i32 {
-    let val = match super::get_val(handle) {
-        Some(v) => v,
-        None => return 1,
-    };
+/* `set_host_*` prologue: take `handle`'s Val (1 = stale) and run `f` on the paused VM (3 = no paused run). */
+fn with_paused_vm(handle: u32, f: impl FnOnce(&mut VM<'static>, crate::modules::vm::types::Val) -> i32) -> i32 {
+    let Some(val) = super::get_val(handle) else { return 1; };
     super::with_runtime(|rt| { rt.handles.release(handle); });
     super::with_runtime(|rt| {
         let Some(paused) = rt.paused_run.as_mut() else { return 3; };
         let Some(vm) = paused.vm.as_mut() else { return 3; };
-        if vm.inject_host_result(val) { 0 } else { 2 }
+        f(vm, val)
     })
+}
+
+/* Wake a `WaitingHostCall` coro: inject `handle`'s Val into its saved-stack top. 0 ok / 1 stale / 2 no waiter / 3 no paused run. */
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn set_host_result(handle: u32) -> i32 {
+    with_paused_vm(handle, |vm, val| if vm.inject_host_result(val) { 0 } else { 2 })
 }
 
 /* Wake the `WaitingHostCall(id)` coro with `handle`'s Val; lets the host resolve concurrent calls out of order. Same return codes as `set_host_result`. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn set_host_result_by_id(id: u32, handle: u32) -> i32 {
-    let val = match super::get_val(handle) {
-        Some(v) => v,
-        None => return 1,
-    };
-    super::with_runtime(|rt| { rt.handles.release(handle); });
-    super::with_runtime(|rt| {
-        let Some(paused) = rt.paused_run.as_mut() else { return 3; };
-        let Some(vm) = paused.vm.as_mut() else { return 3; };
-        if vm.inject_host_result_by_id(id as u64, val) { 0 } else { 2 }
-    })
+    with_paused_vm(handle, |vm, val| if vm.inject_host_result_by_id(id as u64, val) { 0 } else { 2 })
 }
 
 /* Raise an error into the `WaitingHostCall(id)` coro so its try/except can catch it; one failed host call affects only its coro. `msg_handle` is a string Val (via `encodeAny`). Same return codes as `set_host_result`. */
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn set_host_error_by_id(id: u32, kind: u32, msg_handle: u32) -> i32 {
-    let Some(val) = super::get_val(msg_handle) else { return 1; };
-    super::with_runtime(|rt| { rt.handles.release(msg_handle); });
-    super::with_runtime(|rt| {
-        let Some(paused) = rt.paused_run.as_mut() else { return 3; };
-        let Some(vm) = paused.vm.as_mut() else { return 3; };
+    with_paused_vm(msg_handle, |vm, val| {
         let msg = match vm.heap.get(val) {
-            crate::modules::vm::types::HeapObj::Str(s) => s.clone(),
-            _ => alloc::string::String::new(),
+            HeapObj::Str(s) => s.clone(),
+            _ => String::new(),
         };
         let e = super::errors::error_from_kind(kind, msg);
         if vm.inject_host_error_by_id(id as u64, e) { 0 } else { 2 }
