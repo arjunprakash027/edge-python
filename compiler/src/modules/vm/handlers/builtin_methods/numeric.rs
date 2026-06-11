@@ -24,6 +24,7 @@ pub fn to_bytes(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let length = match pos.first() { Some(v) if v.is_int() => v.as_int().max(0) as usize, None => 1, _ => return Err(cold_type("length must be an integer")) };
     // Length is user-controlled; cap it against the heap budget so a huge count errors instead of aborting in the allocator.
     if length > vm.heap.limit() { return Err(cold_heap()); }
+    vm.charge_steps(length)?; // Charge the O(length) fill so a huge `length` hits the op budget, not a native spin.
     let big = byteorder_is_big(vm, pos.get(1))?;
     let mut v = n.unsigned_abs();
     let mut out = alloc::vec![0u8; length];

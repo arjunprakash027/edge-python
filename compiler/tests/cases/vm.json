@@ -2140,5 +2140,10 @@
   {"src": "y = 0\nprint([x for x in [1, 2, 3] if (y := x) > 1])\nprint(y)", "output": ["[2, 3]", "3"]},
   {"src": "print([x for row in [[1, 2], [3, 4]] for x in row if x > 1])", "output": ["[2, 3, 4]"]},
   {"src": "s = \"\"\"line1\nline2\"\"\"\nprint(s)", "output": ["line1", "line2"]},
-  {"src": "print(...)", "output": ["Ellipsis"]}
+  {"src": "print(...)", "output": ["Ellipsis"]},
+  {"src": "(255).to_bytes(99999)\n(255).to_bytes(99999)\n(255).to_bytes(99999)", "output": [], "error": "operation limit"},
+  {"src": "'x'.ljust(999999999)", "output": [], "error": "MemoryError"},
+  {"src": "'1'.zfill(999999999)", "output": [], "error": "MemoryError"},
+  {"src": "'x'.center(999999999)", "output": [], "error": "MemoryError"},
+  {"src": "'\\t'.expandtabs(999999999)", "output": [], "error": "MemoryError"}
 ]
