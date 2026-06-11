@@ -2129,6 +2129,7 @@
   {"src": "'x'.ljust(3, 'ab')", "output": [], "error": "The fill character must be exactly one character long"},
   {"src": "print((255).to_bytes(1))", "output": ["b'\\xff'"]},
   {"src": "(256).to_bytes(1)", "output": [], "error": "int too big to convert"},
+  {"src": "(10).to_bytes(999999999, 'big')", "output": [], "error": "MemoryError"},
   {"src": "print(int.from_bytes(b'\\x01\\x00'))", "output": ["256"]},
   {"src": "bytes.fromhex('zz')", "output": [], "error": "non-hexadecimal number found in fromhex() arg"},
   {"src": "print(bytes.fromhex('00 ff').hex())", "output": ["00ff"]},
