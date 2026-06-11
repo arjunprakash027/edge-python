@@ -231,6 +231,14 @@ Handle at the embedder layer (path validation, encoding, size check) before invo
 
 Unavailable modules (`os`, `sys`, `asyncio`, …) parse for syntactic compatibility but have no resolver entry. So they are rejected at **compile time** before any code runs. This is a parse-time diagnostic, not a catchable runtime exception. See [Imports, Errors](/reference/imports#errors). For code reuse, use higher-order functions.
 
+## Behavioral notes
+
+A few supported operations have implementation-defined or by-design behavior worth knowing:
+
+- **Set iteration / `repr` order**: sets store elements in a Rust hash table (`FxHash`), so iteration and `repr` follow hash order, not insertion order. It is implementation-defined — don't rely on it. `{3, 1, 2}` may `repr` as `{3, 2, 1}`.
+- **`is` on numbers**: small/inline integers are compared by value (NaN-box), so `a = 1000; b = 1000; a is b` is `True`. Use `==` for value equality and reserve `is` for `None` and identity checks.
+- **`str.casefold`**: simple lowercasing, without full Unicode case-fold expansion — `'ß'.casefold()` stays `'ß'` rather than expanding to `'ss'`.
+
 ## Determinism
 
 Same source + input -> same output across runs and architectures (`x86_64`, `aarch64`, `wasm32`). No time, randomness, threading, or OS interaction. Heap-pool slot reuse is the only nondeterminism: observable through `id(x)` only, never `==`, `repr`, or any other operation.

@@ -120,7 +120,11 @@ pub fn replace(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let old = recv_bytes(vm, pos[0])?;
     let new = recv_bytes(vm, pos[1])?;
     if old.is_empty() {
-        let v = vm.heap.alloc(HeapObj::Bytes(buf))?;
+        // CPython inserts `new` before each byte and once at the end.
+        let mut out: Vec<u8> = Vec::with_capacity(new.len() * (buf.len() + 1) + buf.len());
+        out.extend_from_slice(&new);
+        for &b in &buf { out.push(b); out.extend_from_slice(&new); }
+        let v = vm.heap.alloc(HeapObj::Bytes(out))?;
         vm.push(v); return Ok(());
     }
     let mut out: Vec<u8> = Vec::with_capacity(buf.len());

@@ -296,18 +296,20 @@ print(len(range(100)))
 
 ### range
 
-`range(stop)`, `range(start, stop)`, `range(start, stop, step)`. Lazy. `step=0` -> `ValueError`; non-int args -> `TypeError`.
+`range(stop)`, `range(start, stop)`, `range(start, stop, step)`. Lazy. `step=0` -> `ValueError`; non-int args -> `TypeError`. Two ranges compare equal when they produce the same value sequence: `range(0) == range(1, 1)` is `True`, `range(5) == range(0, 5, 1)` is `True`.
 
 ```python
 print(list(range(5)))
 print(list(range(2, 8)))
 print(list(range(10, 0, -2)))
+print(range(0, 6, 2) == range(0, 5, 2))
 ```
 
 ```text Output
 [0, 1, 2, 3, 4]
 [2, 3, 4, 5, 6, 7]
 [10, 8, 6, 4, 2]
+True
 ```
 
 ### sorted

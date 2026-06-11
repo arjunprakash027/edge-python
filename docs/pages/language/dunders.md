@@ -70,7 +70,7 @@ print((3 + Money(7)).n)
 | `a > b` | `__gt__` | `__lt__` |
 | `a >= b` | `__ge__` | `__le__` |
 
-`!=` falls back to `not __eq__` when `__ne__` is absent. Results coerce to `bool`: `__lt__` returning `'A.lt'` yields `True`, not the string.
+`!=` falls back to `not __eq__` (coerced to `bool`) when `__ne__` is absent. Every other comparison returns the dunder's raw result: `__lt__` returning `'A.lt'` yields the string, not `True`.
 
 ## Truth and length
 

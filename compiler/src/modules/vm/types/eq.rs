@@ -56,7 +56,18 @@ fn eq_vals_depth(a: Val, b: Val, heap: &HeapPool, depth: usize) -> bool {
         (HeapObj::FrozenSet(x), HeapObj::Set(y)) => **x == *y.borrow(),
         (HeapObj::Dict(x), HeapObj::Dict(y)) => eq_dict(&x.borrow(), &y.borrow(), |a,b| eq_vals_depth(a, b, heap, d)),
         (HeapObj::Type(x), HeapObj::Type(y)) => x == y, // by name; interning also makes `is` hold
+        (HeapObj::Range(s1,e1,t1), HeapObj::Range(s2,e2,t2)) => {
+            // CPython: equal length, then matching start/step only when non-empty.
+            let (l1, l2) = (range_len(*s1,*e1,*t1), range_len(*s2,*e2,*t2));
+            l1 == l2 && (l1 == 0 || (s1 == s2 && (l1 == 1 || t1 == t2)))
+        }
         // Cross-type comparisons fall through to false. Notably `bytes == str` is False, even when the bytes are valid UTF-8 of the str.
         _ => false,
     }
+}
+
+/* Count of values range(start, stop, step) yields; step is never zero. */
+fn range_len(s: i64, e: i64, t: i64) -> i128 {
+    let (lo, hi, step) = if t > 0 { (s as i128, e as i128, t as i128) } else { (e as i128, s as i128, -(t as i128)) };
+    if hi > lo { (hi - lo + step - 1) / step } else { 0 }
 }

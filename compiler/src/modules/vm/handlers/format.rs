@@ -5,7 +5,14 @@ Returns Err(msg); caller raises ValueError.
 */
 
 use alloc::string::{String, ToString};
-use crate::modules::vm::types::{Val, HeapObj, HeapPool, fabs, ffloor, flog10, fsignum, ftrunc};
+use crate::modules::vm::types::{Val, HeapObj, HeapPool, VmErr, cold_value, fabs, ffloor, flog10, fsignum, ftrunc};
+
+// `%c`/`{:c}` out-of-range raises OverflowError; other format errors are ValueError.
+pub const C_RANGE_ERR: &str = "%c arg not in range(0x110000)";
+
+pub fn fmt_err(m: &'static str) -> VmErr {
+    if m == C_RANGE_ERR { VmErr::Raised(crate::s!("OverflowError: ", str m)) } else { cold_value(m) }
+}
 
 pub fn format_value(v: Val, spec: &str, heap: &HeapPool) -> Result<String, &'static str> {
     if spec.is_empty() {
@@ -134,6 +141,7 @@ fn apply(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static str> {
         }
         // `n` is locale-aware decimal; paradigm has no locale, so alias to `d`.
         b'd' | b'b' | b'o' | b'x' | b'X' | b'n' => {
+            if s.precision.is_some() { return Err("precision not allowed in integer format spec"); }
             let mut s2 = s.clone();
             if s2.ty == b'n' { s2.ty = b'd'; }
             format_int(v, &s2, heap)
@@ -163,7 +171,7 @@ fn format_percent(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static 
 fn format_char(v: Val, s: &Spec) -> Result<String, &'static str> {
     if !v.is_int() { return Err("'c' format spec requires an integer"); }
     let i = v.as_int();
-    if !(0..=0x10FFFF).contains(&i) { return Err("'c' format spec arg out of range"); }
+    if !(0..=0x10FFFF).contains(&i) { return Err(C_RANGE_ERR); }
     let ch = char::from_u32(i as u32).ok_or("'c' format spec arg not a valid char")?;
     Ok(pad_string(s, &ch.to_string()))
 }

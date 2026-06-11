@@ -69,7 +69,7 @@ impl<'a> VM<'a> {
     }
 
     /* Comparison dunder dispatch. `__eq__` reflects to itself; `__ne__` falls back to `not __eq__`; `<` reflects to `>` and vice-versa. */
-    pub(crate) fn try_compare_dunder(&mut self, op: OpCode, a: Val, b: Val, chunk: &SSAChunk, slots: &mut [Val]) -> Result<Option<bool>, VmErr> {
+    pub(crate) fn try_compare_dunder(&mut self, op: OpCode, a: Val, b: Val, chunk: &SSAChunk, slots: &mut [Val]) -> Result<Option<Val>, VmErr> {
         let a_cls = self.instance_class(a);
         let b_cls = self.instance_class(b);
         if a_cls.is_none() && b_cls.is_none() { return Ok(None); }
@@ -102,8 +102,8 @@ impl<'a> VM<'a> {
         };
 
         let Some(r) = raw else { return Ok(None); };
-        let truthy = self.truthy(r);
-        Ok(Some(if negate { !truthy } else { truthy }))
+        // `!=` negates `__eq__`; other comparisons return the raw dunder result.
+        Ok(Some(if negate { Val::bool(!self.truthy(r)) } else { r }))
     }
 
     /* Python `bool()` semantics: try `__bool__`, then `__len__` (0 = False), else default True for instances. Pass-through for built-in types. */
@@ -169,7 +169,7 @@ impl<'a> VM<'a> {
 
     /* `==` with dunder dispatch and pointer-eq fallback; used wherever `contains_op` walks a sequence. */
     pub(crate) fn eq_op(&mut self, a: Val, b: Val, chunk: &SSAChunk, slots: &mut [Val]) -> Result<bool, VmErr> {
-        if let Some(r) = self.try_compare_dunder(OpCode::Eq, a, b, chunk, slots)? { return Ok(r); }
+        if let Some(r) = self.try_compare_dunder(OpCode::Eq, a, b, chunk, slots)? { return Ok(self.truthy(r)); }
         Ok(eq_vals_with_heap(a, b, &self.heap))
     }
 
@@ -339,7 +339,7 @@ impl<'a> VM<'a> {
                 return self.require_str(r, "__format__");
             }
         }
-        super::format::format_value(v, spec, &self.heap).map_err(cold_value)
+        super::format::format_value(v, spec, &self.heap).map_err(super::format::fmt_err)
     }
 
     /* Coerce a `__len__` / `__length_hint__` return value to bool semantics; rejects negatives. */

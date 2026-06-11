@@ -286,7 +286,7 @@ pub fn format(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
                 Some("s") => { let d = vm.display(val); vm.heap.alloc(HeapObj::Str(d))? }
                 Some(_) => return Err(cold_value("unknown conversion specifier")),
             };
-            let rendered = crate::modules::vm::handlers::format::format_value(target, &spec, &vm.heap).map_err(cold_value)?;
+            let rendered = crate::modules::vm::handlers::format::format_value(target, &spec, &vm.heap).map_err(crate::modules::vm::handlers::format::fmt_err)?;
             out.push_str(&rendered);
         } else if c == '}' {
             if chars.get(ci + 1) == Some(&'}') { out.push('}'); ci += 2; continue; }

@@ -181,7 +181,7 @@ impl<'a> VM<'a> {
             spec.push_str(&width);
             if has_prec { spec.push('.'); spec.push_str(if prec.is_empty() { "0" } else { &prec }); }
             if let Some(t) = ty { spec.push(t); }
-            let rendered = super::format::format_value(fval, &spec, &self.heap).map_err(cold_value)?;
+            let rendered = super::format::format_value(fval, &spec, &self.heap).map_err(super::format::fmt_err)?;
             out.push_str(&rendered);
         }
         // Every supplied arg must be consumed, like CPython.
@@ -286,7 +286,7 @@ impl<'a> VM<'a> {
             if let Some(name) = compare_dunder_name(op) {
                 self.record_dunder_hit(rip, cache, a, name, 2);
             }
-            self.push(Val::bool(r));
+            self.push(r);
             return Ok(());
         }
 
