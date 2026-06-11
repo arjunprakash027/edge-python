@@ -2140,5 +2140,13 @@
   {"src": "y = 0\nprint([x for x in [1, 2, 3] if (y := x) > 1])\nprint(y)", "output": ["[2, 3]", "3"]},
   {"src": "print([x for row in [[1, 2], [3, 4]] for x in row if x > 1])", "output": ["[2, 3, 4]"]},
   {"src": "s = \"\"\"line1\nline2\"\"\"\nprint(s)", "output": ["line1", "line2"]},
-  {"src": "print(...)", "output": ["Ellipsis"]}
+  {"src": "print(...)", "output": ["Ellipsis"]},
+  {"src": "print(len({10**18 for _ in range(3)}))", "output": ["1"]},
+  {"src": "print(len({(1, x // 2) for x in range(4)}))", "output": ["2"]},
+  {"src": "print(len({'a' * 200 for _ in range(3)}))", "output": ["1"]},
+  {"src": "print(len({*[10**18, 10**18], *[(1, 2), (1, 2)]}))", "output": ["2"]},
+  {"src": "print(len({(1, 2), (1, 2), (1, 3)}))", "output": ["2"]},
+  {"src": "print(len(set([(1, 2), (1, 2), (1, 3)])))", "output": ["2"]},
+  {"src": "print(sorted(frozenset([(1, 2), (1, 2)])))", "output": ["[(1, 2)]"]},
+  {"src": "print(len({'a' * 200, 'a' * 200}))", "output": ["1"]}
 ]

@@ -119,14 +119,7 @@ impl<'a> VM<'a> {
         if !acc.is_heap() { return Err(corrupt()); }
         match (kind, self.heap.get(acc)) {
             ("list", HeapObj::List(rc)) => { rc.borrow_mut().push(value); }
-            ("set", HeapObj::Set(rc))  => {
-                // Non-heap values dedup correctly via Hash/Eq; only heap values need a content scan.
-                let already = value.is_heap()
-                    && rc.borrow().iter().any(|&x| eq_vals_with_heap(x, value, &self.heap));
-                if !already && let HeapObj::Set(rc) = self.heap.get(acc) {
-                    rc.borrow_mut().insert(value);
-                }
-            }
+            ("set", HeapObj::Set(rc))  => set_insert(&mut rc.borrow_mut(), value, &self.heap),
             ("dict", HeapObj::Dict(rc)) => { rc.borrow_mut().insert(key.unwrap(), value); }
             _ => return Err(corrupt()),
         }
@@ -154,11 +147,10 @@ impl<'a> VM<'a> {
                 let items = self.iter_to_vec_for_spread(src)?;
                 for it in items {
                     self.require_hashable(it)?;
-                    let dup = match self.heap.get(acc) {
-                        HeapObj::Set(rc) => rc.borrow().iter().any(|&x| eq_vals_with_heap(x, it, &self.heap)),
+                    match self.heap.get(acc) {
+                        HeapObj::Set(rc) => set_insert(&mut rc.borrow_mut(), it, &self.heap),
                         _ => return Err(cold_runtime("spread accumulator corrupted")),
-                    };
-                    if !dup && let HeapObj::Set(rc) = self.heap.get(acc) { rc.borrow_mut().insert(it); }
+                    }
                 }
             }
             OpCode::ListExtend => {

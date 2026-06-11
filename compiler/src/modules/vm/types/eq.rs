@@ -14,6 +14,12 @@ pub fn eq_vals_with_heap(a: Val, b: Val, heap: &HeapPool) -> bool {
     eq_vals_depth(a, b, heap, 0)
 }
 
+/* Insert into a set, deduping non-interned heap values by content; interned ones dedup O(1) via handle. */
+pub fn set_insert(set: &mut crate::util::fx::FxHashSet<Val>, v: Val, heap: &HeapPool) {
+    if v.is_heap() && !heap.is_interned(v) && set.iter().any(|&x| eq_vals_with_heap(x, v, heap)) { return; }
+    set.insert(v);
+}
+
 /* f64 view of any numeric Val (int/bool/float/LongInt); None for non-numerics. */
 fn num_as_f64(v: Val, heap: &HeapPool) -> Option<f64> {
     if v.is_float() { Some(v.as_float()) }

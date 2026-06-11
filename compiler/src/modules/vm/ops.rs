@@ -453,6 +453,14 @@ impl<'a> VM<'a> {
             return Err(VmErr::TypeMsg(s!("unsupported operand type(s) for *: '", str self.type_name(a), "' and '", str self.type_name(b), "'")));
         };
         let n = count.max(0) as usize;
+        // Charge the fill up front so repeated `[x]*n` is bounded by the op budget, not just heap.
+        let fill_cost = match self.heap.get(seq_val) {
+            HeapObj::Str(s) => s.len().checked_mul(n),
+            HeapObj::List(rc) => rc.borrow().len().checked_mul(n),
+            HeapObj::Tuple(v) => v.len().checked_mul(n),
+            _ => None,
+        };
+        if let Some(c) = fill_cost && c <= self.heap.limit() { self.charge_steps(c)?; }
         match self.heap.get(seq_val) {
             HeapObj::Str(s) => {
                 let bytes = s.len().checked_mul(n).ok_or(cold_overflow())?;

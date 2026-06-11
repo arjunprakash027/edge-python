@@ -539,6 +539,16 @@ impl HeapPool {
     /* Object-count budget, reused as a byte cap for single oversized allocations. */
     pub fn limit(&self) -> usize { self.limit }
 
+    /* Interned: handle identity equals content identity, so handle-based Hash/Eq dedups without a scan. */
+    pub fn is_interned(&self, v: Val) -> bool {
+        match self.try_get(v) {
+            Some(HeapObj::LongInt(_) | HeapObj::Type(_) | HeapObj::Ellipsis | HeapObj::NotImplemented) => true,
+            Some(HeapObj::Str(s)) => s.len() <= 128,
+            Some(HeapObj::Bytes(b)) => b.len() <= 128,
+            _ => false,
+        }
+    }
+
     #[inline(always)] pub fn get(&self, v: Val) -> &HeapObj {
         self.slots[v.as_heap() as usize].obj
             .as_ref()

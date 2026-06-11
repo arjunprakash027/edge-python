@@ -44,7 +44,7 @@ impl<'a> VM<'a> {
 
     fn alloc_set(&mut self, items: Vec<Val>) -> Result<Val, VmErr> {
         let mut set = HashSet::with_capacity_and_hasher(items.len(), Default::default());
-        for v in items { set.insert(v); }
+        for v in items { set_insert(&mut set, v, &self.heap); }
         self.heap.alloc(HeapObj::Set(Rc::new(RefCell::new(set))))
     }
 
@@ -63,7 +63,7 @@ impl<'a> VM<'a> {
     pub(crate) fn frozenset_from_items(&mut self, items: Vec<Val>) -> Result<Val, VmErr> {
         for v in &items { self.require_hashable(*v)?; }
         let mut set = HashSet::with_capacity_and_hasher(items.len(), Default::default());
-        for v in items { set.insert(v); }
+        for v in items { set_insert(&mut set, v, &self.heap); }
         self.heap.alloc(HeapObj::FrozenSet(Rc::new(set)))
     }
 
