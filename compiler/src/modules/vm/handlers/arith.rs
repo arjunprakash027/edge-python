@@ -117,8 +117,7 @@ impl<'a> VM<'a> {
         self.int_to_val(Some(r))
     }
 
-    /* printf-style `str % args`: translates each `%[flags][width][.prec]conv` into the
-       `{:spec}` mini-language and reuses `format_value`. A tuple spreads; else one value. */
+    /* printf-style `str % args`: translates each `%[flags][width][.prec]conv` into the `{:spec}` mini-language and reuses `format_value`. A tuple spreads; else one value. */
     fn str_percent_format(&mut self, fmt_val: Val, arg: Val) -> Result<Val, VmErr> {
         let fmt = match self.heap.get(fmt_val) { HeapObj::Str(s) => s.clone(), _ => return Err(cold_type("% requires a string")) };
         let args: alloc::vec::Vec<Val> = match self.heap.try_get(arg) {
