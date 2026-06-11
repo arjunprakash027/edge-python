@@ -39,12 +39,40 @@ fn format_bytes(buf: &[u8]) -> String {
     out
 }
 
+/* `repr` of a str: quote selection (' unless the text has ' but not ") and backslash escapes for control chars; printable text (incl. non-ASCII) is verbatim. */
+fn repr_str(s: &str) -> String {
+    use core::fmt::Write;
+    let quote = if s.contains('\'') && !s.contains('"') { '"' } else { '\'' };
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push(quote);
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c == quote => { out.push('\\'); out.push(c); }
+            c if c.is_control() => {
+                let n = c as u32;
+                if n <= 0xff { let _ = write!(out, "\\x{:02x}", n); }
+                else if n <= 0xffff { let _ = write!(out, "\\u{:04x}", n); }
+                else { let _ = write!(out, "\\U{:08x}", n); }
+            }
+            c => out.push(c),
+        }
+    }
+    out.push(quote);
+    out
+}
+
 /* Coerce a numeric pair to f64; returns None if neither operand is a float. */
-fn coerce_floats(a: Val, b: Val) -> Option<(f64, f64)> {
+fn coerce_floats(a: Val, b: Val, heap: &HeapPool) -> Option<(f64, f64)> {
     if !a.is_float() && !b.is_float() { return None; }
     let extract_f64 = |v: &Val| -> Option<f64> {
         if v.is_float() { Some(v.as_float()) }
         else if v.is_int() { Some(v.as_int() as f64) }
+        else if v.is_bool() { Some(v.as_bool() as i64 as f64) }
+        else if v.is_heap() { if let HeapObj::LongInt(i) = heap.get(*v) { Some(*i as f64) } else { None } }
         else { None }
     };
     Some((extract_f64(&a)?, extract_f64(&b)?))
@@ -193,18 +221,8 @@ impl<'a> VM<'a> {
         if seen.len() > RENDER_DEPTH_MAX { return "...".into(); }
         if v.is_int() { let mut b = itoa::Buffer::new(); return b.format(v.as_int()).into(); }
         if v.is_float() {
-            let f = v.as_float();
-            if f == 0.0 && f.is_sign_negative() {
-                return "-0.0".into();
-            }
-            const I64_UPPER: f64 = i64::MAX as f64;
-            if f.is_finite() && f >= (i64::MIN as f64) && f < I64_UPPER && f == (f as i64) as f64 {
-                let i = f as i64;
-                let mut b = itoa::Buffer::new();
-                if !(Val::INT_MIN..=Val::INT_MAX).contains(&i) { return b.format(i).into(); }
-                let mut s = String::new(); s.push_str(b.format(i)); s.push_str(".0"); return s;
-            }
-            return crate::util::fstr::format_f64(f);
+            // Single source of truth for float text (CPython repr rules, scientific + .0).
+            return crate::util::fstr::format_f64(v.as_float());
         }
         if v.is_true() { return "True".into(); }
         if v.is_false() { return "False".into(); }
@@ -276,7 +294,7 @@ impl<'a> VM<'a> {
     pub fn repr(&self, v: Val) -> String { self.repr_d(v, &mut Vec::new()) }
 
     fn repr_d(&self, v: Val, seen: &mut Vec<u32>) -> String {
-        if v.is_heap() && let HeapObj::Str(s) = self.heap.get(v) { return s!("'", str s, "'"); }
+        if v.is_heap() && let HeapObj::Str(s) = self.heap.get(v) { return repr_str(s); }
         self.display_d(v, seen)
     }
 
@@ -290,7 +308,7 @@ impl<'a> VM<'a> {
         let a = if a.is_bool() { Val::int(a.as_bool() as i64) } else { a };
         let b = if b.is_bool() { Val::int(b.as_bool() as i64) } else { b };
         if a.is_int() && b.is_int() { return Ok(a.as_int() < b.as_int()); }
-        if let Some((af, bf)) = coerce_floats(a, b) { return Ok(af < bf); }
+        if let Some((af, bf)) = coerce_floats(a, b, &self.heap) { return Ok(af < bf); }
         // Wide-int compare in i128; falls through when either side isn't int-like.
         if let (Some(ai), Some(bi)) = (as_i128(a, &self.heap), as_i128(b, &self.heap)) { return Ok(ai < bi); }
         if a.is_heap() && b.is_heap() {
@@ -353,7 +371,7 @@ impl<'a> VM<'a> {
             && (Val::INT_MIN..=Val::INT_MAX).contains(&r) {
             return Ok(Val::int(r));
         }
-        if let Some((af, bf)) = coerce_floats(a, b) { return Ok(Val::float(af + bf)); }
+        if let Some((af, bf)) = coerce_floats(a, b, &self.heap) { return Ok(Val::float(af + bf)); }
         // Wide-int slow path; int_to_val picks the narrowest storage class.
         if let (Some(ai), Some(bi)) = (as_i128(a, &self.heap), as_i128(b, &self.heap)) {
             return self.int_to_val(ai.checked_add(bi));
@@ -395,7 +413,7 @@ impl<'a> VM<'a> {
             && (Val::INT_MIN..=Val::INT_MAX).contains(&r) {
             return Ok(Val::int(r));
         }
-        if let Some((af, bf)) = coerce_floats(a, b) { return Ok(Val::float(af - bf)); }
+        if let Some((af, bf)) = coerce_floats(a, b, &self.heap) { return Ok(Val::float(af - bf)); }
         if let (Some(ai), Some(bi)) = (as_i128(a, &self.heap), as_i128(b, &self.heap)) {
             return self.int_to_val(ai.checked_sub(bi));
         }
@@ -421,7 +439,7 @@ impl<'a> VM<'a> {
             && (Val::INT_MIN..=Val::INT_MAX).contains(&r) {
             return Ok(Val::int(r));
         }
-        if let Some((af, bf)) = coerce_floats(a, b) { return Ok(Val::float(af * bf)); }
+        if let Some((af, bf)) = coerce_floats(a, b, &self.heap) { return Ok(Val::float(af * bf)); }
         // Numeric multiply wins over sequence repetition when both sides are int-like.
         if let (Some(ai), Some(bi)) = (as_i128(a, &self.heap), as_i128(b, &self.heap)) {
             return self.int_to_val(ai.checked_mul(bi));

@@ -128,37 +128,54 @@ done
 
 Subset supported: literal patterns, capture variables, `_` wildcard, OR (`|`), guards (`if`), sequence patterns with `*rest`.
 
-Sequence-pattern items must be literals (`int` / `float` / `str` / `True` / `False` / `None`), capture names, or `_`. Nested sequences (`case [[a, b], c]:`), mapping patterns (`{"key": x}`), class patterns (`Point(x=0)`), and `as` captures are unsupported. Use chained `if` / `elif` instead.
+Sequence-pattern items must be literals (`int` / `float` / `str` / `True` / `False` / `None`), capture names, or `_`. Nested sequences (`case [[a, b], c]:`), mapping patterns (`{"key": x}`), class patterns (`Point(x=0)`), and `as` captures are unsupported. Use chained `if` / `elif` instead. A `case [...]` pattern matches only a `list` or `tuple` subject; any other value (including `str` / `bytes`) just fails it and falls through, so scalar and sequence cases mix freely in one `match`.
+
+Scalars: literals, OR-patterns, capture-with-guard, wildcard.
 
 ```python
-def classify(p):
-  match p:
+def sign(n):
+  match n:
     case 0:
       return 'zero'
     case 1 | 2 | 3:
       return 'small'
-    case n if n < 0:
+    case x if x < 0:
       return 'negative'
-    case [x, y] if x == y:
-      return 'diagonal'
-    case [first, *middle, last]:
-      return f'span {first}..{last}'
     case _:
       return 'other'
 
-print(classify(0))
-print(classify(2))
-print(classify(-7))
-print(classify([3, 3]))
-print(classify([1, 2, 3, 4, 5]))
+print(sign(0), sign(2), sign(-7), sign(99))
 ```
 
 ```text Output
-zero
-small
-negative
-diagonal
-span 1..5
+zero small negative other
+```
+
+Sequences: fixed-length patterns, a guard, and a `*rest` capture.
+
+```python
+def shape(seq):
+  match seq:
+    case []:
+      return 'empty'
+    case [x]:
+      return f'single {x}'
+    case [x, y] if x == y:
+      return 'pair-equal'
+    case [first, *rest]:
+      return f'{first} then {len(rest)} more'
+
+print(shape([]))
+print(shape([5]))
+print(shape([3, 3]))
+print(shape([1, 2, 3, 4]))
+```
+
+```text Output
+empty
+single 5
+pair-equal
+1 then 3 more
 ```
 
 ```python
@@ -287,22 +304,38 @@ Pre-bound exception classes (with their parent links so `except <Parent>:` match
 On exit, `__exit__(exc_type, exc_value, traceback)` runs: `(None, None, None)` on normal completion, live exception info on raise. A truthy return suppresses the exception; a falsy one propagates it. See [`/language/dunders`](/language/dunders).
 
 ```python
-x = [1, 2]
-with x as items:
-  print(len(items))
+class Resource:
+  def __enter__(self):
+    print("acquire")
+    return "handle"
+  def __exit__(self, *exc):
+    print("release")
+    return False
+
+with Resource() as r:
+  print(r)
 print("after")
 ```
 
 ```text Output
-2
+acquire
+handle
+release
 after
 ```
 
 Multiple targets:
 
 ```python
-a, b = "first", "second"
-with a as x, b as y:
+class Tag:
+  def __init__(self, name):
+    self.name = name
+  def __enter__(self):
+    return self.name
+  def __exit__(self, *exc):
+    return False
+
+with Tag("first") as x, Tag("second") as y:
   print(x, y)
 ```
 

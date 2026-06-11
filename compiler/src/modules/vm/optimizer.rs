@@ -159,7 +159,12 @@ fn find_or_push_const(chunk: &mut SSAChunk, v: Val) -> Option<u16> {
     } else {
         return None;
     };
-    if let Some(pos) = chunk.constants.iter().position(|c| c == &target) {
+    let pos = chunk.constants.iter().position(|c| match (c, &target) {
+        // -0.0 and 0.0 compare `==` but must not share a slot, or the folded sign is lost.
+        (Value::Float(a), Value::Float(b)) => a.to_bits() == b.to_bits(),
+        _ => c == &target,
+    });
+    if let Some(pos) = pos {
         return u16::try_from(pos).ok();
     }
     let idx = chunk.constants.len();
@@ -283,8 +288,9 @@ fn fold_binop(op: OpCode, a: Val, b: Val) -> Option<Val> {
             OpCode::Add => ai.checked_add(bi)?,
             OpCode::Sub => ai.checked_sub(bi)?,
             OpCode::Mul => ai.checked_mul(bi)?,
-            OpCode::Mod => if bi == 0 { return None; } else { ai.rem_euclid(bi) },
-            OpCode::FloorDiv => if bi == 0 { return None; } else { ai.div_euclid(bi) },
+            // floored mod/div (sign follows divisor), not Euclidean; matches the runtime path.
+            OpCode::Mod => if bi == 0 { return None; } else { let r = ai % bi; if r != 0 && (r < 0) != (bi < 0) { r + bi } else { r } },
+            OpCode::FloorDiv => if bi == 0 { return None; } else { let q = ai / bi; let r = ai - q * bi; if r != 0 && (r < 0) != (bi < 0) { q - 1 } else { q } },
             OpCode::BitAnd => ai & bi,
             OpCode::BitOr => ai | bi,
             OpCode::BitXor => ai ^ bi,

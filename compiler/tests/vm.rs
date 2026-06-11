@@ -64,6 +64,7 @@ mod test {
     fn test_cases() {
         let cases: Vec<Case> = serde_json::from_str(include_str!("cases/vm.json")).expect("invalid JSON");
 
+        let mut failures: Vec<String> = Vec::new();
         for case in cases {
             let (tokens, lex_errs) = lex(&case.src);
             // Skip cases whose expected error is already raised by the lexer.
@@ -73,19 +74,32 @@ mod test {
             {
                 continue;
             }
-            let (chunk, _errors) = Parser::new(&case.src, tokens.into_iter()).parse();
+            let (mut chunk, _errors) = Parser::new(&case.src, tokens.into_iter()).parse();
+            // Run the same fold pass production does (exports.rs), so fold-path bugs surface here.
+            compiler::modules::vm::optimizer::constant_fold(&mut chunk);
             let mut vm = VM::with_limits(&chunk, Limits::sandbox());
             vm.input_buffer = case.input.clone();
             for evt in &case.events { vm.push_event(evt).expect("push_event"); }
             let result = drive(&mut vm, &case.interactive_events);
 
+            // Collect every mismatch (not panic-on-first) so one run lists all regressions.
             match result {
-                Ok(_obj) => { assert_eq!(normalize(&vm.output), normalize(&case.output), "output mismatch on: {:?}", case.src); }
+                Ok(_obj) => {
+                    if normalize(&vm.output) != normalize(&case.output) {
+                        failures.push(format!("OUTPUT {:?}\n   got {:?}\n   want {:?}", case.src, vm.output, case.output));
+                    }
+                }
                 Err(e) => match &case.error {
-                    Some(expected) => assert!(e.to_string().contains(expected.as_str()), "wrong error on {:?}: got '{}', expected '{}'", case.src, e, expected),
-                    None => panic!("VM error on {:?}: {}", case.src, e),
+                    Some(expected) => if !e.to_string().contains(expected.as_str()) {
+                        failures.push(format!("ERR {:?}\n   got '{}'\n   want '{}'", case.src, e, expected));
+                    },
+                    None => failures.push(format!("RAISED {:?}: {}", case.src, e)),
                 }
             }
+        }
+        if !failures.is_empty() {
+            let shown = failures.len().min(80);
+            panic!("{} case(s) failed:\n{}", failures.len(), failures[..shown].join("\n"));
         }
     }
 
@@ -110,7 +124,7 @@ mod test {
                 }
                 panic!("lex error on {:?}: {:?}", case.src, lex_errs.iter().map(|e| e.msg).collect::<Vec<_>>());
             }
-            let (chunk, errs) = Parser::new(&case.src, tokens.into_iter()).parse();
+            let (mut chunk, errs) = Parser::new(&case.src, tokens.into_iter()).parse();
             if !errs.is_empty() {
                 match &case.error {
                     Some(expected) => {
@@ -126,6 +140,8 @@ mod test {
                     None => panic!("parse error on {:?}: {:?}", case.src, errs.iter().map(|e| &e.msg).collect::<Vec<_>>()),
                 }
             }
+            // Match production: fold before running.
+            compiler::modules::vm::optimizer::constant_fold(&mut chunk);
 
             let mut vm = VM::with_limits(&chunk, Limits::sandbox());
             vm.strict_input = true;

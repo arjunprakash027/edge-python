@@ -31,7 +31,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             self.patch(jf);
             self.chunk.emit(OpCode::PopTop, 0);
             self.eat(TokenType::Else);
-            self.expr_bp(0);
+            // Recurse so a chained conditional in the else-branch parses (right-associative).
+            self.expr();
             self.patch(jmp);
         }
 
@@ -147,6 +148,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.advance();
                 self.expr_bp(21);
                 self.chunk.emit(OpCode::Minus, 0);
+            }
+            Some(TokenType::Plus) => {
+                // Unary plus is identity; parse operand, emit nothing.
+                self.advance();
+                self.expr_bp(21);
             }
             Some(TokenType::Tilde) => {
                 self.advance();
@@ -267,8 +273,20 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
     pub(super) fn parse_number(&mut self, raw: &str, kind: TokenType) {
         let s = raw.replace('_', "");
-        if kind == TokenType::Float { self.emit_const(Value::Float(s.parse().unwrap_or(0.0))); return; }
+        if kind == TokenType::Float {
+            // A malformed float (e.g. empty exponent `1e`) is a syntax error, not 0.0.
+            match s.parse() {
+                Ok(f) => self.emit_const(Value::Float(f)),
+                Err(_) => self.error("invalid float literal"),
+            }
+            return;
+        }
         let (digits, base) = Self::parse_int_prefix(&s);
+        // No leading zeros; all-zero runs still valid.
+        if base == 10 && digits.len() > 1 && digits.starts_with('0') && digits.bytes().any(|b| b != b'0') {
+            self.error("leading zeros in decimal integer literals are not permitted");
+            return;
+        }
         let parsed_i64 = if base == 10 {
             digits.parse::<i64>().ok()
         } else {

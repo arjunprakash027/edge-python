@@ -126,6 +126,8 @@ pub struct VM<'a> {
     pub(crate) yielded: bool,
     pub(crate) resume_ip: usize,
     pub output: Vec<String>,
+    /* True when the last `output` entry is an unterminated line (print(end="") left it open). */
+    pub(crate) output_open: bool,
     pub print_hook: Option<fn(&str)>,
     pub input_buffer: Vec<String>,
     pub event_queue: Vec<Val>,
@@ -178,6 +180,7 @@ impl<'a> VM<'a> {
             resume_ip: 0,
             strict_input: false,
             output: Vec::new(),
+            output_open: false,
             print_hook: None,
             input_buffer: Vec::new(),
             event_queue: Vec::new(),

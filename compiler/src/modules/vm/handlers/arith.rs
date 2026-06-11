@@ -97,6 +97,10 @@ impl<'a> VM<'a> {
     }
 
     fn exec_mod(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
+        // `str % args` is printf-style formatting, not modulo.
+        if a.is_heap() && matches!(self.heap.get(a), HeapObj::Str(_)) {
+            return self.str_percent_format(a, b);
+        }
         if a.is_float() || b.is_float() {
             let af = self.to_f64_coerce(a).map_err(|_| cold_type("% requires numeric operands"))?;
             let bf = self.to_f64_coerce(b).map_err(|_| cold_type("% requires numeric operands"))?;
@@ -111,6 +115,80 @@ impl<'a> VM<'a> {
         let r = ai.checked_rem(bi).ok_or(cold_overflow())?;
         let r = if (r != 0) && ((r < 0) != (bi < 0)) { r + bi } else { r };
         self.int_to_val(Some(r))
+    }
+
+    /* printf-style `str % args`: translates each `%[flags][width][.prec]conv` into the `{:spec}` mini-language and reuses `format_value`. A tuple spreads; else one value. */
+    fn str_percent_format(&mut self, fmt_val: Val, arg: Val) -> Result<Val, VmErr> {
+        let fmt = match self.heap.get(fmt_val) { HeapObj::Str(s) => s.clone(), _ => return Err(cold_type("% requires a string")) };
+        let args: alloc::vec::Vec<Val> = match self.heap.try_get(arg) {
+            Some(HeapObj::Tuple(t)) => t.clone(),
+            _ => alloc::vec![arg],
+        };
+        let chars: alloc::vec::Vec<char> = fmt.chars().collect();
+        let mut out = String::new();
+        let mut ai = 0usize;
+        let mut i = 0usize;
+        while i < chars.len() {
+            let c = chars[i];
+            if c != '%' { out.push(c); i += 1; continue; }
+            i += 1;
+            if i < chars.len() && chars[i] == '%' { out.push('%'); i += 1; continue; }
+            // flags
+            let (mut left, mut zero, mut plus, mut space, mut alt) = (false, false, false, false, false);
+            while i < chars.len() {
+                match chars[i] {
+                    '-' => left = true, '0' => zero = true, '+' => plus = true, ' ' => space = true, '#' => alt = true,
+                    _ => break,
+                }
+                i += 1;
+            }
+            // width / .precision (digits only; `*` not supported)
+            let mut width = String::new();
+            while i < chars.len() && chars[i].is_ascii_digit() { width.push(chars[i]); i += 1; }
+            let mut prec = String::new();
+            let mut has_prec = false;
+            if i < chars.len() && chars[i] == '.' {
+                has_prec = true; i += 1;
+                while i < chars.len() && chars[i].is_ascii_digit() { prec.push(chars[i]); i += 1; }
+            }
+            if i >= chars.len() { return Err(cold_value("incomplete format")); }
+            let conv = chars[i]; i += 1;
+            let val = *args.get(ai).ok_or(cold_type("not enough arguments for format string"))?;
+            ai += 1;
+            // Map printf conversion -> (format value, spec type char, is-numeric).
+            let (fval, ty, numeric): (Val, Option<char>, bool) = match conv {
+                's' => { let s = self.display(val); (self.heap.alloc(HeapObj::Str(s))?, None, false) }
+                'r' => { let s = self.repr(val); (self.heap.alloc(HeapObj::Str(s))?, None, false) }
+                'd' | 'i' | 'u' => (val, Some('d'), true),
+                'x' => (val, Some('x'), true),
+                'X' => (val, Some('X'), true),
+                'o' => (val, Some('o'), true),
+                'c' => (val, Some('c'), false),
+                'f' | 'F' => (val, Some('f'), true),
+                'e' => (val, Some('e'), true),
+                'E' => (val, Some('E'), true),
+                'g' => (val, Some('g'), true),
+                'G' => (val, Some('G'), true),
+                _ => return Err(cold_value("unsupported format character")),
+            };
+            // Build the equivalent `{:spec}` string. printf right-aligns by default (incl. strings).
+            let mut spec = String::new();
+            if left { spec.push('<'); }
+            else if !(zero && numeric) { spec.push('>'); }
+            if plus { spec.push('+'); } else if space { spec.push(' '); }
+            if alt { spec.push('#'); }
+            if zero && numeric && !left { spec.push('0'); }
+            spec.push_str(&width);
+            if has_prec { spec.push('.'); spec.push_str(if prec.is_empty() { "0" } else { &prec }); }
+            if let Some(t) = ty { spec.push(t); }
+            let rendered = super::format::format_value(fval, &spec, &self.heap).map_err(cold_value)?;
+            out.push_str(&rendered);
+        }
+        // Every supplied arg must be consumed, like CPython.
+        if ai != args.len() {
+            return Err(cold_type("not all arguments converted during string formatting"));
+        }
+        self.heap.alloc(HeapObj::Str(out))
     }
 
     fn exec_floordiv(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
@@ -150,6 +228,15 @@ impl<'a> VM<'a> {
             && matches!(self.heap.get(b), HeapObj::Set(_))
             && matches!(op, OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor) {
             return self.set_binop_and_push(a, b, op);
+        }
+        // `dict | dict` (and `|=`) merges, right operand winning.
+        if op == OpCode::BitOr && a.is_heap() && b.is_heap()
+            && matches!(self.heap.get(a), HeapObj::Dict(_))
+            && matches!(self.heap.get(b), HeapObj::Dict(_)) {
+            let mut merged = DictMap::with_capacity(0);
+            if let HeapObj::Dict(d) = self.heap.get(a) { for (k, v) in d.borrow().entries.iter() { merged.insert(*k, *v); } }
+            if let HeapObj::Dict(d) = self.heap.get(b) { for (k, v) in d.borrow().entries.iter() { merged.insert(*k, *v); } }
+            return self.alloc_and_push_dict(merged);
         }
         let result = match op {
             OpCode::BitAnd => self.bitwise_op(a, b, |x, y| x & y)?,

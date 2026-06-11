@@ -5,6 +5,12 @@ use alloc::{vec, vec::Vec};
 use super::super::VM;
 use super::super::types::*;
 
+/* A range element as a Val, promoting magnitudes beyond the 47-bit inline range to LongInt. */
+fn range_int(heap: &mut HeapPool, i: i64) -> Result<Val, VmErr> {
+    if (Val::INT_MIN..=Val::INT_MAX).contains(&i) { Ok(Val::int(i)) }
+    else { heap.alloc(HeapObj::LongInt(i as i128)) }
+}
+
 // Lazy walker for short-circuit builtins; Vec variant copies because list/set/dict can't stream without a mutable heap borrow.
 pub(crate) enum IterCursor {
     Range { cur: i64, end: i64, step: i64 },
@@ -22,7 +28,7 @@ impl IterCursor {
                 let live = if s > 0 { c < e } else if s < 0 { c > e } else { false };
                 if !live { return Ok(None); }
                 *cur = c + s;
-                Ok(Some(Val::int(c)))
+                Ok(Some(range_int(heap, c)?))
             }
             Self::Vec { items, idx } => {
                 if *idx >= items.len() { return Ok(None); }
@@ -281,12 +287,12 @@ impl<'a> VM<'a> {
                 let mut out = Vec::new();
                 if step > 0 {
                     while cur < end {
-                        out.push(Val::int(cur));
+                        out.push(range_int(&mut self.heap, cur)?);
                         match cur.checked_add(step) { Some(n) => cur = n, None => break }
                     }
                 } else {
                     while cur > end {
-                        out.push(Val::int(cur));
+                        out.push(range_int(&mut self.heap, cur)?);
                         match cur.checked_add(step) { Some(n) => cur = n, None => break }
                     }
                 }

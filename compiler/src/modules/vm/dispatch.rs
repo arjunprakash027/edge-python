@@ -48,7 +48,11 @@ impl<'a> VM<'a> {
             FastOp::FloorDivInt if a.is_int() && b.is_int() => {
                 let bv = b.as_int();
                 if bv == 0 { return Ok(FastOutcome::Overflow); }
-                Val::int(a.as_int().div_euclid(bv))
+                // floored division (toward -inf), not Euclidean; 47-bit operands can't overflow.
+                let av = a.as_int();
+                let q = av / bv;
+                let r = av - q * bv;
+                Val::int(if r != 0 && (r < 0) != (bv < 0) { q - 1 } else { q })
             }
 
             FastOp::LtInt if a.is_int() && b.is_int() => Val::bool(a.as_int() < b.as_int()),
@@ -295,10 +299,14 @@ impl<'a> VM<'a> {
             handlers::methods::AttrLookup::BuiltinMethod(id) => {
                 self.exec_bound_method(obj, id, &positional, &kw_flat)
             }
-            handlers::methods::AttrLookup::InstanceField(_) => {
-                // No Instance-field-as-callable path; reports as missing attribute.
-                let ty = self.type_name(obj);
-                Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")))
+            handlers::methods::AttrLookup::InstanceField(field) => {
+                // Instance-attribute callable: call directly, no `self` prepended (only class-level functions bind); exec_call reports non-callables as TypeError, matching `obj.attr(...)` and `g = obj.attr; g()`.
+                self.push(field);
+                for a in &positional { self.push(*a); }
+                for a in &kw_flat { self.push(*a); }
+                let argc = positional.len() as u16;
+                let encoded = ((kw_flat.len() as u16 / 2) << 8) | argc;
+                self.exec_call(encoded, chunk, slots)
             }
             handlers::methods::AttrLookup::ExcArgs(_) | handlers::methods::AttrLookup::Name(_) => {
                 // `e.args()` / `f.__name__()`: the value isn't callable, reports as missing attribute.
@@ -538,6 +546,12 @@ impl<'a> VM<'a> {
                 let v = *self.stack.last().ok_or(cold_runtime("stack underflow"))?;
                 self.push(v);
             }
+            OpCode::MatchSeq => {
+                // Sequence patterns match only list/tuple, not str/bytes.
+                let v = self.pop()?;
+                let is_seq = v.is_heap() && matches!(self.heap.get(v), HeapObj::List(_) | HeapObj::Tuple(_));
+                self.push(Val::bool(is_seq));
+            }
             OpCode::Dup2 => {
                 let b = self.pop()?; let a = self.pop()?;
                 self.push(a); self.push(b); self.push(a); self.push(b);
@@ -773,9 +787,17 @@ impl<'a> VM<'a> {
                     }
                 }
         }
-        let next_op = cache.fused_ref().get(ip).map(|i| i.operand).unwrap_or(0);
-        let name_str = chunk.names.get(next_op as usize).map(|n| ssa_strip(n)).unwrap_or("?").to_string();
-        let cls = self.heap.alloc(HeapObj::Class(name_str, bases, methods))?;
+        // Name comes from the StoreName target; skip any decorator `Call`s emitted between.
+        let fused = cache.fused_ref();
+        let mut j = ip;
+        while matches!(fused.get(j).map(|i| i.opcode), Some(OpCode::Call)) { j += 1; }
+        let name_str = fused.get(j)
+            .filter(|i| i.opcode == OpCode::StoreName)
+            .and_then(|i| chunk.names.get(i.operand as usize))
+            .map(|n| ssa_strip(n))
+            .unwrap_or("?")
+            .to_string();
+        let cls = self.heap.alloc(HeapObj::Class(name_str, bases, alloc::rc::Rc::new(core::cell::RefCell::new(methods))))?;
         self.push(cls);
         Ok(())
     }
@@ -803,6 +825,16 @@ impl<'a> VM<'a> {
                 self.pop()?;
                 return Ok(());
             }
+        }
+        // Class attribute: insert or replace in the mutable members store.
+        if let HeapObj::Class(_, _, members) = self.heap.get(obj) {
+            let bare = ssa_strip(&name).to_string();
+            let mut m = members.borrow_mut();
+            match m.iter_mut().find(|(n, _)| *n == bare) {
+                Some(slot) => slot.1 = value,
+                None => m.push((bare, value)),
+            }
+            return Ok(());
         }
         let key = self.heap.alloc(HeapObj::Str(name))?;
         match self.heap.get_mut(obj) {

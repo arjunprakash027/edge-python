@@ -24,7 +24,7 @@ impl<'a> VM<'a> {
             OpCode::CallLen => self.call_len(chunk, slots),
             OpCode::CallAbs => self.call_abs(),
             OpCode::CallStr => self.call_str(chunk, slots),
-            OpCode::CallInt => self.call_int(),
+            OpCode::CallInt => self.call_int(operand),
             OpCode::CallFloat => self.call_float(),
             OpCode::CallBool => self.call_bool(chunk, slots),
             OpCode::CallType => self.call_type(),
@@ -213,7 +213,7 @@ impl<'a> VM<'a> {
     }
 
     /* Decode `operand` (lo=positional, hi=kw pairs) + star-spread deltas, then pop into positional/kw buffers. kw is flat alternating name/value as the parser emits. */
-    fn parse_call_args(&mut self, operand: u16) -> Result<(Vec<Val>, Vec<Val>, usize, usize), VmErr> {
+    pub(crate) fn parse_call_args(&mut self, operand: u16) -> Result<(Vec<Val>, Vec<Val>, usize, usize), VmErr> {
         let raw = operand as usize;
 
         let base_pos = (raw & 0xFF) as i32;
@@ -381,6 +381,12 @@ impl<'a> VM<'a> {
     fn bind_function_args(&mut self, fi: usize, defaults: &[Val], captures: &[(usize, Val)], positional: &[Val], kw_flat: &[Val], fn_slots: &mut [Val]) -> Result<(), VmErr> {
         // Index by position to avoid an iterator borrow on `param_slots` across `heap.alloc`.
         let n_params = self.param_slots[fi].len();
+        // Without a `*args` sink, positionals past the normal params are an error.
+        let has_star = self.param_slots[fi].iter().any(|(k, _)| matches!(k, ParamKind::Star));
+        let normal_count = self.param_slots[fi].iter().filter(|(k, _)| matches!(k, ParamKind::Normal)).count();
+        if !has_star && positional.len() > normal_count {
+            return Err(cold_type("too many positional arguments"));
+        }
         let mut pos_idx = 0usize;
         for i in 0..n_params {
             let (kind, slot) = self.param_slots[fi][i];
@@ -693,7 +699,7 @@ impl<'a> VM<'a> {
             Len => self.call_len(chunk, slots),
             Abs => self.call_abs(),
             Str => self.call_str(chunk, slots),
-            Int => self.call_int(),
+            Int => self.call_int(argc),
             Float => self.call_float(),
             Bool => self.call_bool(chunk, slots),
             Type => self.call_type(),

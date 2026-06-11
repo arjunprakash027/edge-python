@@ -44,10 +44,15 @@ pub fn clear(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
     vm.push(Val::none()); Ok(())
 }
 
+// Materialize every argument iterable up front (each may run iteration code).
+fn collect_args(vm: &mut VM, pos: &[Val]) -> Result<Vec<Vec<Val>>, VmErr> {
+    pos.iter().map(|&a| iter_to_vec(vm, a)).collect()
+}
+
 pub fn update(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
-    let items = iter_to_vec(vm, pos[0])?;
+    let args = collect_args(vm, pos)?;
     set_mut(vm, recv, "update: receiver is not a set", |set| {
-        for v in items { set.insert(v); }
+        for items in args { for v in items { set.insert(v); } }
         Ok(())
     })?;
     vm.push(Val::none()); Ok(())
@@ -59,25 +64,27 @@ pub fn copy(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
 }
 
 pub fn union(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
+    let args = collect_args(vm, pos)?;
     let mut out = set_clone(vm, recv)?;
-    out.extend(iter_to_vec(vm, pos[0])?);
+    for items in args { out.extend(items); }
     vm.alloc_and_push_set(out)
 }
 
 pub fn intersection(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
-    let lhs = set_clone(vm, recv)?;
-    let rhs_items = iter_to_vec(vm, pos[0])?;
-    let rhs: crate::util::fx::FxHashSet<Val> = rhs_items.into_iter().collect();
-    let out: Vec<Val> = lhs.into_iter().filter(|v| rhs.contains(v)).collect();
-    vm.alloc_and_push_set(out)
+    let args = collect_args(vm, pos)?;
+    let mut out: crate::util::fx::FxHashSet<Val> = set_clone(vm, recv)?.into_iter().collect();
+    for items in args {
+        let rhs: crate::util::fx::FxHashSet<Val> = items.into_iter().collect();
+        out.retain(|v| rhs.contains(v));
+    }
+    vm.alloc_and_push_set(out.into_iter().collect())
 }
 
 pub fn difference(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
-    let lhs = set_clone(vm, recv)?;
-    let rhs_items = iter_to_vec(vm, pos[0])?;
-    let rhs: crate::util::fx::FxHashSet<Val> = rhs_items.into_iter().collect();
-    let out: Vec<Val> = lhs.into_iter().filter(|v| !rhs.contains(v)).collect();
-    vm.alloc_and_push_set(out)
+    let args = collect_args(vm, pos)?;
+    let mut out: crate::util::fx::FxHashSet<Val> = set_clone(vm, recv)?.into_iter().collect();
+    for items in args { for v in items { out.remove(&v); } }
+    vm.alloc_and_push_set(out.into_iter().collect())
 }
 
 pub fn symmetric_difference(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
@@ -85,6 +92,36 @@ pub fn symmetric_difference(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), V
     let rhs: crate::util::fx::FxHashSet<Val> = iter_to_vec(vm, pos[0])?.into_iter().collect();
     let out: Vec<Val> = lhs.symmetric_difference(&rhs).copied().collect();
     vm.alloc_and_push_set(out)
+}
+
+pub fn intersection_update(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
+    let args = collect_args(vm, pos)?;
+    set_mut(vm, recv, "intersection_update: receiver is not a set", |set| {
+        for items in args {
+            let rhs: crate::util::fx::FxHashSet<Val> = items.into_iter().collect();
+            set.retain(|v| rhs.contains(v));
+        }
+        Ok(())
+    })?;
+    vm.push(Val::none()); Ok(())
+}
+
+pub fn difference_update(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
+    let args = collect_args(vm, pos)?;
+    set_mut(vm, recv, "difference_update: receiver is not a set", |set| {
+        for items in args { for v in items { set.remove(&v); } }
+        Ok(())
+    })?;
+    vm.push(Val::none()); Ok(())
+}
+
+pub fn symmetric_difference_update(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
+    let other: crate::util::fx::FxHashSet<Val> = iter_to_vec(vm, pos[0])?.into_iter().collect();
+    set_mut(vm, recv, "symmetric_difference_update: receiver is not a set", |set| {
+        for v in other { if !set.remove(&v) { set.insert(v); } }
+        Ok(())
+    })?;
+    vm.push(Val::none()); Ok(())
 }
 
 pub fn issubset(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {

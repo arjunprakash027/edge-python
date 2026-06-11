@@ -1,33 +1,56 @@
-/* f64 -> string: nan/±inf/±0.0/whole->".0" suffix/else default. */
+/* f64 -> string: shortest round-trip digits, fixed for exponents in (-4, 16], else scientific with sign and ≥2 exp digits; always includes `.0` or exponent so floats never read as ints. */
 pub fn format_f64(f: f64) -> alloc::string::String {
-    // Lowercase tokens.
-    if f.is_nan() { return alloc::string::String::from("nan"); }
-    if f == f64::INFINITY { return alloc::string::String::from("inf"); }
-    if f == f64::NEG_INFINITY { return alloc::string::String::from("-inf"); }
-    if f == 0.0 {
-        return if f.is_sign_negative() { alloc::string::String::from("-0.0") } else { alloc::string::String::from("0.0") };
-    }
-
-    // Whole float: itoa + ".0" avoids Rust's bare "1" for 1.0.
-    const I64_UPPER: f64 = i64::MAX as f64;
-    if f.is_finite() && f >= (i64::MIN as f64) && f < I64_UPPER && f == (f as i64) as f64 {
-        let mut b = itoa::Buffer::new();
-        let s = b.format(f as i64);
-        let mut out = alloc::string::String::with_capacity(s.len() + 2);
-        out.push_str(s);
-        out.push_str(".0");
-        return out;
-    }
-
-    format_general(f)
-}
-
-/* Default f64 format; 32-byte preallocation fits the common case without regrowth. */
-fn format_general(f: f64) -> alloc::string::String {
+    use alloc::string::String;
     use core::fmt::Write;
-    let mut out = alloc::string::String::with_capacity(32);
-    /* core::fmt::Write::write_fmt is infallible for a String. */
-    let _ = write!(&mut out, "{}", f);
+    if f.is_nan() { return String::from("nan"); }
+    if f == f64::INFINITY { return String::from("inf"); }
+    if f == f64::NEG_INFINITY { return String::from("-inf"); }
+    if f == 0.0 {
+        return if f.is_sign_negative() { String::from("-0.0") } else { String::from("0.0") };
+    }
+
+    // Rust's `{:e}` yields the same unique shortest mantissa dtoa does: "d[.ddd]eN".
+    let neg = f < 0.0;
+    let mut sci = String::with_capacity(32);
+    let _ = write!(&mut sci, "{:e}", f.abs());
+    let (mant, exp_str) = sci.split_once('e').unwrap_or((sci.as_str(), "0"));
+    let exp: i32 = exp_str.parse().unwrap_or(0);
+    // Significant digits with the point removed; `decpt` = count of digits left of the point.
+    let mut digits = String::with_capacity(mant.len());
+    for c in mant.chars() { if c != '.' { digits.push(c); } }
+    let decpt = exp + 1;
+    let ndig = digits.len() as i32;
+
+    let mut out = String::with_capacity(digits.len() + 8);
+    if neg { out.push('-'); }
+    if decpt > -4 && decpt <= 16 {
+        if decpt <= 0 {
+            out.push_str("0.");
+            for _ in 0..(-decpt) { out.push('0'); }
+            out.push_str(&digits);
+        } else if decpt >= ndig {
+            out.push_str(&digits);
+            for _ in 0..(decpt - ndig) { out.push('0'); }
+            out.push_str(".0");
+        } else {
+            let (l, r) = digits.split_at(decpt as usize);
+            out.push_str(l);
+            out.push('.');
+            out.push_str(r);
+        }
+    } else {
+        let mut chars = digits.chars();
+        out.push(chars.next().unwrap_or('0'));
+        let rest: String = chars.collect();
+        if !rest.is_empty() { out.push('.'); out.push_str(&rest); }
+        out.push('e');
+        let e = decpt - 1;
+        out.push(if e < 0 { '-' } else { '+' });
+        let ea = e.unsigned_abs();
+        if ea < 10 { out.push('0'); }
+        let mut nb = itoa::Buffer::new();
+        out.push_str(nb.format(ea));
+    }
     out
 }
 

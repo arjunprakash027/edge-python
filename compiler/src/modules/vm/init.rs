@@ -214,7 +214,7 @@ impl<'a> VM<'a> {
                             let mval = self.heap.alloc(HeapObj::Extern(m.clone()))?;
                             methods.push((m.name.clone(), mval));
                         }
-                        let cls_val = self.heap.alloc(HeapObj::Class(c.name.clone(), Vec::new(), methods))?;
+                        let cls_val = self.heap.alloc(HeapObj::Class(c.name.clone(), Vec::new(), alloc::rc::Rc::new(core::cell::RefCell::new(methods))))?;
                         attrs.push((c.name.clone(), cls_val));
                     }
                     let val = self.heap.alloc(HeapObj::Module(entry.spec.clone(), attrs))?;

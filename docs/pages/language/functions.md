@@ -78,7 +78,7 @@ print(opts(host="api", port=443))
 
 ### Keyword-only parameters
 
-A bare `*` marks every following parameter as keyword-only. Positional args never reach them.
+A bare `*` marks the following parameters as keyword-only: they must be passed by name. A positional argument that would reach them is rejected (as is any positional beyond the declared parameters when there is no `*args`), raising `TypeError`.
 
 ```python
 def connect(host, *, port=80, secure=False):
@@ -88,7 +88,7 @@ print(connect("api"))
 print(connect("api", port=443, secure=True))
 
 try:
-  connect("api", 443) # positional past `*` is rejected
+  connect("api", 443) # positional can't fill a keyword-only param
 except TypeError:
   print("rejected")
 ```
@@ -145,12 +145,12 @@ Hi, world
 Functions are values: store, pass, return them.
 
 ```python
-ops = [abs, len, str]
+ops = [abs, hex, str]
 print([f(-3) for f in ops])
 ```
 
 ```text Output
-[3, 2, '-3']
+[3, '-0x3', '-3']
 ```
 
 ```python
@@ -425,7 +425,7 @@ print(add(3, 4))
 ```
 
 ```text Output
-calling with [3, 4]
+calling with (3, 4)
 7
 ```
 

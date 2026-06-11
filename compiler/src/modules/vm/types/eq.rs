@@ -14,6 +14,15 @@ pub fn eq_vals_with_heap(a: Val, b: Val, heap: &HeapPool) -> bool {
     eq_vals_depth(a, b, heap, 0)
 }
 
+/* f64 view of any numeric Val (int/bool/float/LongInt); None for non-numerics. */
+fn num_as_f64(v: Val, heap: &HeapPool) -> Option<f64> {
+    if v.is_float() { Some(v.as_float()) }
+    else if v.is_int() { Some(v.as_int() as f64) }
+    else if v.is_bool() { Some(v.as_bool() as i64 as f64) }
+    else if v.is_heap() { if let HeapObj::LongInt(i) = heap.get(v) { Some(*i as f64) } else { None } }
+    else { None }
+}
+
 fn eq_vals_depth(a: Val, b: Val, heap: &HeapPool, depth: usize) -> bool {
     // Past the cap fall back to identity; cyclic structures terminate.
     if depth > EQ_DEPTH_MAX { return a.0 == b.0; }
@@ -23,10 +32,12 @@ fn eq_vals_depth(a: Val, b: Val, heap: &HeapPool, depth: usize) -> bool {
         return ai == bi;
     }
 
+    // One side is a float here (all-integer handled above): compare numerically so float unifies with int/bool/LongInt, e.g. `1.0 == True`, `1e16 == 10**16`.
+    if let (Some(af), Some(bf)) = (num_as_f64(a, heap), num_as_f64(b, heap)) {
+        return af == bf;
+    }
+
     if !a.is_heap() || !b.is_heap() {
-        if a.is_float() && b.is_float() { return a.as_float() == b.as_float(); }
-        if a.is_int() && b.is_float() { return (a.as_int() as f64) == b.as_float(); }
-        if a.is_float() && b.is_int() { return a.as_float() == (b.as_int() as f64); }
         return a.0 == b.0;
     }
 

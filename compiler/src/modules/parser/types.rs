@@ -32,6 +32,8 @@ pub enum OpCode {
     LoadGlobal, StoreGlobal,
     /* Literal unpacking: pop a source value and merge it into the container left below it on the stack. `{**m}` / `{*s}` / `[*it]`. */
     DictUpdate, SetUpdate, ListExtend,
+    /* Pop a value, push whether it matches a sequence pattern (list/tuple; str/bytes excluded). */
+    MatchSeq,
 }
 
 // Python builtin name -> (specialised OpCode, `leaves_value_on_stack`).

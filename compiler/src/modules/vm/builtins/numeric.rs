@@ -27,6 +27,63 @@ fn i128_to_radix(n: i128, radix: u32, prefix: &str) -> String {
     s
 }
 
+/* One Neumaier (improved Kahan) compensated-summation step: returns (sum, comp). */
+fn neumaier(sum: f64, comp: f64, x: f64) -> (f64, f64) {
+    let t = sum + x;
+    let c = if libm::fabs(sum) >= libm::fabs(x) { (sum - t) + x } else { (x - t) + sum };
+    (t, comp + c)
+}
+
+/* `int(s, base)` parsing: optional sign, optional 0x/0o/0b prefix (matching the base, or inferred when base==0), `_` digit separators, radix 0 or 2..=36. */
+fn parse_int_radix(s: &str, base: i64) -> Result<i128, VmErr> {
+    if base != 0 && !(2..=36).contains(&base) {
+        return Err(cold_value("int() base must be >= 2 and <= 36, or 0"));
+    }
+    let t = s.trim();
+    let (neg, rest) = match t.as_bytes().first() {
+        Some(b'-') => (true, &t[1..]),
+        Some(b'+') => (false, &t[1..]),
+        _ => (false, t),
+    };
+    let prefix = if rest.len() >= 2 && rest.as_bytes()[0] == b'0' {
+        match rest.as_bytes()[1] | 0x20 {
+            b'x' => Some(16u32), b'o' => Some(8), b'b' => Some(2), _ => None,
+        }
+    } else { None };
+    let mut radix = base as u32;
+    let mut body = rest;
+    let mut had_prefix = false;
+    if base == 0 {
+        match prefix {
+            Some(p) => { radix = p; body = &rest[2..]; had_prefix = true; }
+            None => {
+                radix = 10;
+                // base 0 rejects superfluous leading zeros ("010"); "0"/"00" stay valid.
+                if rest.len() > 1 && rest.starts_with('0') && !rest.bytes().all(|b| b == b'0') {
+                    return Err(cold_value("int(): invalid literal with base 0"));
+                }
+            }
+        }
+    } else if prefix == Some(base as u32) {
+        // Explicit base may carry its matching prefix, e.g. int("0x1f", 16).
+        body = &rest[2..];
+        had_prefix = true;
+    }
+    // One underscore may follow the base prefix, e.g. "0x_1f".
+    if had_prefix && body.starts_with('_') { body = &body[1..]; }
+    let cleaned: alloc::string::String = if body.contains('_') {
+        if body.starts_with('_') || body.ends_with('_') || body.contains("__") {
+            return Err(cold_value("int(): invalid literal"));
+        }
+        body.chars().filter(|&c| c != '_').collect()
+    } else {
+        alloc::string::String::from(body)
+    };
+    if cleaned.is_empty() { return Err(cold_value("int(): invalid literal")); }
+    let mag = i128::from_str_radix(&cleaned, radix).map_err(|_| cold_value("int(): invalid literal"))?;
+    Ok(if neg { -mag } else { mag })
+}
+
 impl<'a> VM<'a> {
 
     pub fn call_abs(&mut self) -> Result<(), VmErr> {
@@ -42,18 +99,42 @@ impl<'a> VM<'a> {
         self.push(v); Ok(())
     }
 
-    pub fn call_int(&mut self) -> Result<(), VmErr> {
+    pub fn call_int(&mut self, argc: u16) -> Result<(), VmErr> {
+        // Two-arg form `int(string, base)`: parse the string in the given radix.
+        if argc == 2 {
+            let base_v = self.pop()?;
+            let o = self.pop()?;
+            if !base_v.is_int() { return Err(cold_type("int() base must be an integer")); }
+            let base = base_v.as_int();
+            let s = match self.heap.try_get(o) {
+                Some(HeapObj::Str(s)) => s.clone(),
+                _ => return Err(cold_type("int() can't convert non-string with explicit base")),
+            };
+            let i = parse_int_radix(&s, base)?;
+            let v = self.int_to_val(Some(i))?;
+            self.push(v); return Ok(());
+        }
+        if argc == 0 { self.push(Val::int(0)); return Ok(()); }
+        if argc > 2 { for _ in 0..argc { let _ = self.pop(); } return Err(cold_type("int() takes at most 2 arguments")); }
         let o = self.pop()?;
         // Already an int (inline or LongInt), pass through unchanged.
         if o.is_int() { self.push(o); return Ok(()); }
         if o.is_heap() && matches!(self.heap.get(o), HeapObj::LongInt(_)) {
             self.push(o); return Ok(());
         }
-        let i: i128 = if o.is_float() { o.as_float() as i128 }
+        let i: i128 = if o.is_float() {
+            let f = o.as_float();
+            if f.is_nan() { return Err(cold_value("cannot convert float NaN to integer")); }
+            if f.is_infinite() { return Err(VmErr::Raised(alloc::string::String::from("OverflowError: cannot convert float infinity to integer"))); }
+            let t = ftrunc(f);
+            // i128::MAX as f64 rounds up past the true max, so reject before the saturating cast.
+            if !(-1.7014118346046923e38..=1.7014118346046921e38).contains(&t) { return Err(cold_overflow()); }
+            t as i128
+        }
             else if o.is_bool() { o.as_bool() as i128 }
             else if o.is_heap() && let HeapObj::Str(s) = self.heap.get(o) {
-                // Parse directly into i128 so "9999999999999999999" (>i64) works.
-                s.trim().parse::<i128>().map_err(|_| cold_value("int(): invalid literal"))?
+                let s = s.clone();
+                parse_int_radix(&s, 10)?
             }
             else { return Err(cold_type("int() requires a number or string")); };
         let v = self.int_to_val(Some(i))?;
@@ -68,7 +149,13 @@ impl<'a> VM<'a> {
             else if o.is_int() { o.as_int() as f64 }
             else if o.is_heap() && let HeapObj::LongInt(i) = self.heap.get(o) { *i as f64 }
             else if o.is_heap() && let HeapObj::Str(s) = self.heap.get(o) {
-                s.trim().parse().map_err(|_| cold_value("float(): invalid literal"))?
+                let t = s.trim();
+                // Accept `_` digit separators; strip then parse.
+                let cleaned = if t.contains('_') {
+                    if t.starts_with('_') || t.ends_with('_') || t.contains("__") { return Err(cold_value("float(): invalid literal")); }
+                    t.chars().filter(|&c| c != '_').collect::<alloc::string::String>()
+                } else { alloc::string::String::from(t) };
+                cleaned.parse().map_err(|_| cold_value("float(): invalid literal"))?
             }
             else { return Err(cold_type("float() requires a number or string")); };
         self.push(Val::float(f)); Ok(())
@@ -97,14 +184,32 @@ impl<'a> VM<'a> {
 
     pub fn call_round(&mut self, op: u16) -> Result<(), VmErr> {
         let args = self.pop_n(op as usize)?;
-        let v = match (args.first(), args.get(1)) {
+        let v = match (args.first().copied(), args.get(1).copied()) {
             (Some(o), Some(n)) if o.is_float() && n.is_int() => {
-                let factor = fpowi(10.0, n.as_int() as i32);
-                Val::float(fround(o.as_float() * factor) / factor)
+                let x = o.as_float();
+                let nd = n.as_int();
+                if !x.is_finite() {
+                    Val::float(x)
+                } else if nd >= 0 {
+                    // Correctly-rounded decimal (round-half-even on the true value); avoids the double-rounding `x*10^n` would introduce (e.g. round(2.675, 2) -> 2.67).
+                    let s = alloc::format!("{:.*}", (nd as usize).min(323), x);
+                    Val::float(s.parse().unwrap_or(x))
+                } else {
+                    let factor = fpowi(10.0, (-nd) as i32);
+                    Val::float(fround(x / factor) * factor)
+                }
             }
-            (Some(o), None) if o.is_float() => Val::int(fround(o.as_float()) as i64),
-            (Some(o), _) if o.is_int() => *o,
-            (Some(o), _) if o.is_heap() && matches!(self.heap.get(*o), HeapObj::LongInt(_)) => *o,
+            (Some(o), None) if o.is_float() => {
+                // 1-arg round returns an int; promote via int_to_val so large results don't wrap.
+                let f = o.as_float();
+                if f.is_nan() { return Err(cold_value("cannot convert float NaN to integer")); }
+                if f.is_infinite() { return Err(VmErr::Raised(alloc::string::String::from("OverflowError: cannot convert float infinity to integer"))); }
+                let r = fround(f);
+                if !(-1.7014118346046923e38..=1.7014118346046921e38).contains(&r) { return Err(cold_overflow()); }
+                self.int_to_val(Some(r as i128))?
+            }
+            (Some(o), _) if o.is_int() => o,
+            (Some(o), _) if o.is_heap() && matches!(self.heap.get(o), HeapObj::LongInt(_)) => o,
             _ => return Err(cold_type("round() requires a number")),
         };
         self.push(v); Ok(())
@@ -114,11 +219,22 @@ impl<'a> VM<'a> {
     pub fn call_max(&mut self, op: u16) -> Result<(), VmErr> { self.call_minmax(op, false) }
 
     fn call_minmax(&mut self, op: u16, is_min: bool) -> Result<(), VmErr> {
-        let args = self.pop_n(op as usize)?;
+        let (positional, kw_flat, _np, _nk) = self.parse_call_args(op)?;
+        // Optional `default=` (returned when a single iterable is empty).
+        let mut default: Option<Val> = None;
+        for pair in kw_flat.chunks_exact(2) {
+            if matches!(self.heap.try_get(pair[0]), Some(HeapObj::Str(s)) if s == "default") {
+                default = Some(pair[1]);
+            } else {
+                return Err(cold_type("min()/max() got an unexpected keyword argument"));
+            }
+        }
         // One arg iterable; many args are values.
-        let items = if args.len() == 1 { self.iter_to_vec_general(args[0])? } else { args };
+        let items = if positional.len() == 1 { self.iter_to_vec_general(positional[0])? } else { positional };
         let label = if is_min { "min() arg is an empty sequence" } else { "max() arg is an empty sequence" };
-        if items.is_empty() { return Err(cold_value(label)); }
+        if items.is_empty() {
+            return match default { Some(d) => { self.push(d); Ok(()) }, None => Err(cold_value(label)) };
+        }
         let m = items[1..].iter().try_fold(items[0], |m, &x| {
             let (l, r) = if is_min { (x, m) } else { (m, x) };
             self.lt_vals(l, r).map(|lt| if lt { x } else { m })
@@ -132,21 +248,42 @@ impl<'a> VM<'a> {
         let start = if args.len() > 1 { args[1] } else { Val::int(0) };
         let mut cur = self.iter_cursor(args[0])?;
         let mut acc = start;
+        // Once a float enters, switch to Neumaier compensated summation (CPython 3.12+).
+        let mut fstate: Option<(f64, f64)> = if start.is_float() { Some((start.as_float(), 0.0)) } else { None };
         while let Some(item) = cur.next(&mut self.heap)? {
-            acc = self.add_vals(acc, item)?;
+            match fstate {
+                Some((s, c)) => match self.to_f64_coerce(item) {
+                    Ok(x) => fstate = Some(neumaier(s, c, x)),
+                    // Non-numeric after floats: let add_vals raise the proper TypeError.
+                    Err(_) => { acc = self.add_vals(Val::float(s + c), item)?; fstate = None; }
+                },
+                None if (item.is_float() || acc.is_float())
+                    && self.to_f64_coerce(acc).is_ok() && self.to_f64_coerce(item).is_ok() => {
+                    let base = self.to_f64_coerce(acc).unwrap();
+                    let x = self.to_f64_coerce(item).unwrap();
+                    fstate = Some(neumaier(base, 0.0, x));
+                }
+                None => { acc = self.add_vals(acc, item)?; }
+            }
         }
-        self.push(acc); Ok(())
+        let result = match fstate { Some((s, c)) => Val::float(s + c), None => acc };
+        self.push(result); Ok(())
     }
 
     pub fn call_range(&mut self, op: u16) -> Result<(), VmErr> {
         let args = self.pop_n(op as usize)?;
-        let gi = |v: Val| -> Result<i64, VmErr> {
-            if v.is_int() { Ok(v.as_int()) } else { Err(cold_type("range() arguments must be integers")) }
+        // Accept any integer (incl. LongInt/bool) that fits the i64 range bounds.
+        let gi = |i: Option<i128>| -> Result<i64, VmErr> {
+            match i {
+                Some(n) if (i64::MIN as i128..=i64::MAX as i128).contains(&n) => Ok(n as i64),
+                Some(_) => Err(cold_overflow()),
+                None => Err(cold_type("range() arguments must be integers")),
+            }
         };
         let (s, e, st) = match args.len() {
-            1 => (0, gi(args[0])?, 1),
-            2 => (gi(args[0])?, gi(args[1])?, 1),
-            3 => (gi(args[0])?, gi(args[1])?, gi(args[2])?),
+            1 => (0, gi(self.as_i128(args[0]))?, 1),
+            2 => (gi(self.as_i128(args[0]))?, gi(self.as_i128(args[1]))?, 1),
+            3 => (gi(self.as_i128(args[0]))?, gi(self.as_i128(args[1]))?, gi(self.as_i128(args[2]))?),
             _ => return Err(cold_type("range() takes 1 to 3 arguments")),
         };
         if st == 0 { return Err(cold_value("range() step cannot be zero")); }
@@ -177,7 +314,18 @@ impl<'a> VM<'a> {
     pub fn call_divmod(&mut self) -> Result<(), VmErr> {
         let b = self.pop()?;
         let a = self.pop()?;
-        let (Some(ai), Some(bi)) = (self.as_i128(a), self.as_i128(b)) else { return Err(cold_type("divmod() requires integer operands")); };
+        // Float operands: divmod(a, b) == (floor(a/b), a - floor(a/b)*b).
+        if a.is_float() || b.is_float() {
+            let af = self.to_f64_coerce(a).map_err(|_| cold_type("divmod() requires numeric operands"))?;
+            let bf = self.to_f64_coerce(b).map_err(|_| cold_type("divmod() requires numeric operands"))?;
+            if bf == 0.0 { return Err(VmErr::ZeroDiv); }
+            let q = ffloor(af / bf);
+            let r = af - q * bf;
+            let qv = Val::float(q);
+            let rv = Val::float(r);
+            return self.alloc_and_push_tuple(alloc::vec![qv, rv]);
+        }
+        let (Some(ai), Some(bi)) = (self.as_i128(a), self.as_i128(b)) else { return Err(cold_type("divmod() requires numeric operands")); };
         if bi == 0 { return Err(VmErr::ZeroDiv); }
         // checked_div guards i128::MIN / -1.
         let q = ai.checked_div(bi).ok_or(cold_overflow())?;

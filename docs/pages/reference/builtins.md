@@ -7,7 +7,7 @@ description: "Every built-in function in Edge Python with examples and outputs."
 
 ```python
 # All built-ins are real values
-fns = [abs, len, str]
+fns = [abs, hex, str]
 print([f(-3) for f in fns])
 
 p = print
@@ -15,7 +15,7 @@ p("aliased")
 ```
 
 ```text Output
-[3, 2, '-3']
+[3, '-0x3', '-3']
 aliased
 ```
 
@@ -25,18 +25,21 @@ Edge Python is multi-paradigm. Introspection helpers (`eval`, `exec`, `compile`,
 
 ### print
 
-`print(*args)`: space-separated values to stdout, trailing newline. No `sep` / `end` / `file` / `flush` kwargs; pre-join for custom separators.
+`print(*args, sep=' ', end='\n')`: values joined by `sep` to stdout, then `end`. `*` unpacking spreads an iterable into the arguments. `file` / `flush` are accepted and ignored (the sandbox has one output stream).
 
 ```python
 print(1, 2, 3)
-print("hello", "world")
-print()
+print("a", "b", "c", sep="-")
+print("no newline", end="")
+print("!")
+print(*[1, 2, 3], sep=", ")
 ```
 
 ```text Output
 1 2 3
-hello world
-
+a-b-c
+no newline!
+1, 2, 3
 ```
 
 ### input
@@ -79,18 +82,22 @@ print(round(1.55, 1))
 
 ### min, max
 
-Variadic or single iterable. Empty -> `ValueError`. No `key=` / `default=`. Ordering follows `<`: numbers, strings, bytes, and tuples/lists (lexicographic).
+Variadic or single iterable. Accept a `default=` returned when a single iterable is empty; without it an empty input raises `ValueError`. No `key=` (transform inline). Ordering follows `<`: numbers, strings, bytes, and tuples/lists (lexicographic).
 
 ```python
 print(min(3, 1, 4))
 print(max([3, 1, 4]))
 print(min("hello"))
+print(min([], default=-1))
+print(max([], default=0))
 ```
 
 ```text Output
 1
 4
 e
+-1
+0
 ```
 
 ### sum
@@ -127,16 +134,18 @@ print(pow(7, 13, 19))
 
 ### divmod
 
-`divmod(a, b)`: `(a // b, a % b)` as a tuple.
+`divmod(a, b)`: `(a // b, a % b)` as a tuple. Ints or floats (float operands give a float quotient and remainder).
 
 ```python
 print(divmod(7, 3))
 print(divmod(-7, 3))
+print(divmod(7.5, 2))
 ```
 
 ```text Output
 (2, 1)
 (-3, 2)
+(3.0, 1.5)
 ```
 
 ### bin, oct, hex
@@ -161,18 +170,24 @@ print(hex(-256))
 
 ### int
 
-`int(x)`: single-arg. Accepts `int`, `bool`, `float` (truncates toward zero), numeric string. Bad strings -> `ValueError`. Supports +/-2^127 (inline 47-bit + `LongInt` i128); wider -> `OverflowError`. No `int(x, base)` form, parse hex/oct/bin yourself or use `0x` / `0o` / `0b` literals.
+`int(x)`: accepts `int`, `bool`, `float` (truncates toward zero), or a numeric string (with optional `_` separators). `int(s, base)` parses a string in radix `2`-`36`, or `0` to auto-detect a `0x` / `0o` / `0b` prefix. Bad strings -> `ValueError`; `int(inf)` / `int(nan)` -> `OverflowError` / `ValueError`. Supports +/-2^127 (inline 47-bit + `LongInt` i128); wider -> `OverflowError`.
 
 ```python
 print(int(3.9))
 print(int("42"))
 print(int(True))
+print(int("ff", 16))
+print(int("0b101", 2))
+print(int("1_000"))
 ```
 
 ```text Output
 3
 42
 1
+255
+5
+1000
 ```
 
 ### float
@@ -309,6 +324,8 @@ print(sorted(["banana", "apple", "kiwi"], key=len))
 ```text Output
 [1, 1, 3, 4, 5]
 ['e', 'h', 'l', 'l', 'o']
+[5, 4, 3, 1, 1]
+['kiwi', 'apple', 'banana']
 ```
 
 ### reversed
@@ -477,7 +494,7 @@ See [Bytes](/language/data-types#bytes) for literal syntax (`b"..."`), indexing,
 
 ### bytes_fromhex, int_from_bytes, int_to_bytes
 
-Free functions, not int/bytes methods. Primitives have no bound methods (`(5).bit_length()`, `(255).to_bytes(...)` don't exist).
+Free-function forms. The equivalent [methods](/reference/methods#int-and-float-methods) (`bytes.fromhex`, `int.from_bytes`, `int.to_bytes`) also exist and behave identically; use whichever reads better.
 
 - `bytes_fromhex(s)`: hex string -> bytes. Inner whitespace ignored; non-hex -> `ValueError`.
 - `int_from_bytes(b, order)`: `order` is `"big"` or `"little"`. Unsigned (high bit never sign).
@@ -699,7 +716,7 @@ print(format("hi", ">10"))
 
 ## Attribute access
 
-`getattr` / `hasattr` consult the built-in method table for primitives (str/list/dict/set/bytes) and the instance `__dict__` for user-class instances. They don't walk user-class method definitions: `hasattr(MyClass(), 'my_method')` is `False`. Functional pattern: call functions with values, don't look up methods reflectively.
+`getattr` / `hasattr` consult the built-in method table for primitives (str/bytes/list/dict/set, plus the small int/float method set), the instance `__dict__` for user-class instances, and class attributes on a class object. They don't walk user-class method definitions on an instance: `hasattr(MyClass(), 'my_method')` is `False`. Functional pattern: call functions with values, don't look up methods reflectively.
 
 ### getattr
 
@@ -756,14 +773,14 @@ print(f())
 ```text Output
 300
 7
-{'a': 1, 'b': 2}
+{'b': 2, 'a': 1}
 ```
 
 Dicts are copies. Mutation doesn't change VM bindings.
 
 ### setattr, delattr
 
-`setattr(obj, name, value)` / `delattr(obj, name)` store/remove on user instances. Builtin types have no writable attribute table.
+`setattr(obj, name, value)` / `delattr(obj, name)` store/remove on user instances and on user classes (`cls.attr = ...` works too). Builtin types have no writable attribute table.
 
 ```python
 class Box:

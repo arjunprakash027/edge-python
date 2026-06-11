@@ -111,7 +111,7 @@ True
 
 ## Class decorators
 
-A class decorator wraps the class object the same way it wraps a function. The decorator is called with the class. Its return binds to the name.
+A class decorator is called with the class object; its return binds to the name. It can add or replace class attributes (`cls.kind = ...`) or return a replacement.
 
 ```python
 def tag(cls):

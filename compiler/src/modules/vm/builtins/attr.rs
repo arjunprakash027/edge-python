@@ -16,6 +16,12 @@ impl<'a> VM<'a> {
         let name = self.expect_str_arg("getattr() name must be a string")?;
         let obj = self.pop()?;
 
+        // Class target: resolve a class attribute (incl. ones added via setattr / a decorator).
+        if obj.is_heap() && matches!(self.heap.get(obj), HeapObj::Class(..))
+            && let Some((v, _)) = self.lookup_class_member(obj, &name) {
+            self.push(v);
+            return Ok(());
+        }
         let ty = self.type_name(obj);
         if let Some(method_id) = super::super::handlers::methods::lookup_method(ty, &name) {
             let bound = self.heap.alloc(HeapObj::BoundMethod(obj, method_id))?;
@@ -33,8 +39,11 @@ impl<'a> VM<'a> {
     pub fn call_hasattr(&mut self) -> Result<(), VmErr> {
         let name = self.expect_str_arg("hasattr() name must be a string")?;
         let obj = self.pop()?;
+        let is_class_attr = obj.is_heap()
+            && matches!(self.heap.get(obj), HeapObj::Class(..))
+            && self.lookup_class_member(obj, &name).is_some();
         let ty = self.type_name(obj);
-        let exists = super::super::handlers::methods::lookup_method(ty, &name).is_some();
+        let exists = is_class_attr || super::super::handlers::methods::lookup_method(ty, &name).is_some();
         self.push(Val::bool(exists));
         Ok(())
     }
@@ -44,8 +53,20 @@ impl<'a> VM<'a> {
         let value = self.pop()?;
         let name = self.expect_str_arg("setattr() name must be a string")?;
         let obj = self.pop()?;
+        // Class target: insert or replace in the mutable members store.
+        if obj.is_heap() && matches!(self.heap.get(obj), HeapObj::Class(..)) {
+            if let HeapObj::Class(_, _, members) = self.heap.get(obj) {
+                let mut m = members.borrow_mut();
+                match m.iter_mut().find(|(n, _)| *n == name) {
+                    Some(slot) => slot.1 = value,
+                    None => m.push((name, value)),
+                }
+            }
+            self.push(Val::none());
+            return Ok(());
+        }
         if !obj.is_heap() || !matches!(self.heap.get(obj), HeapObj::Instance(..)) {
-            return Err(cold_type("setattr() target must be an instance"));
+            return Err(cold_type("setattr() target must be an instance or class"));
         }
         let key = self.heap.alloc(HeapObj::Str(name))?;
         if let HeapObj::Instance(_, attrs) = self.heap.get_mut(obj) {
@@ -55,12 +76,19 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    /* `delattr(obj, name)`, remove an attribute from a user instance. */
+    /* `delattr(obj, name)`, remove an attribute from a user instance or class. */
     pub fn call_delattr(&mut self) -> Result<(), VmErr> {
         let name = self.expect_str_arg("delattr() name must be a string")?;
         let obj = self.pop()?;
+        if obj.is_heap() && matches!(self.heap.get(obj), HeapObj::Class(..)) {
+            if let HeapObj::Class(_, _, members) = self.heap.get(obj) {
+                members.borrow_mut().retain(|(n, _)| *n != name);
+            }
+            self.push(Val::none());
+            return Ok(());
+        }
         if !obj.is_heap() || !matches!(self.heap.get(obj), HeapObj::Instance(..)) {
-            return Err(cold_type("delattr() target must be an instance"));
+            return Err(cold_type("delattr() target must be an instance or class"));
         }
         // Strings <=128 bytes are interned, so re-alloc'ing yields the same Val key StoreAttr used.
         let key = self.heap.alloc(HeapObj::Str(name))?;

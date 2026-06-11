@@ -228,6 +228,13 @@ fn args_memoizable(args: &[Val], heap: &super::types::HeapPool) -> bool {
     })
 }
 
+/* Memoize only immediates (int/float/bool/None) and immutable heap objects; fresh mutable containers or tuples/sets wrapping them must stay per-call to avoid aliasing and falsifying `is`. */
+fn result_memoizable(result: Val, heap: &super::types::HeapPool) -> bool {
+    use super::types::HeapObj;
+    if !result.is_heap() { return true; }
+    matches!(heap.try_get(result), Some(HeapObj::Str(_) | HeapObj::Bytes(_) | HeapObj::LongInt(_)))
+}
+
 // Indexed by dense `fi`; Vec gives O(1) lookup with no HashMap monomorphization.
 pub struct Templates { slots: Vec<Vec<TplEntry>> }
 
@@ -242,7 +249,7 @@ impl Templates {
     }
 
     pub fn record(&mut self, fi: usize, args: &[Val], result: Val, heap: &super::types::HeapPool) {
-        if !args_memoizable(args, heap) { return; }
+        if !args_memoizable(args, heap) || !result_memoizable(result, heap) { return; }
         if self.slots.len() <= fi { self.slots.resize_with(fi + 1, Vec::new); }
         let h = hash_args(args);
         let v = &mut self.slots[fi];

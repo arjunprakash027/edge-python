@@ -88,16 +88,10 @@ where F: FnOnce(&mut crate::util::fx::FxHashSet<Val>) -> Result<R, VmErr>
     }
 }
 
-// `Vec<Val>` from any iterable (list/tuple/set), for set ops accepting non-set iterables.
+// `Vec<Val>` from any iterable (str/range/dict/bytes/frozenset/list/tuple/set), for set ops.
 #[inline]
-pub(super) fn iter_to_vec(vm: &VM, v: Val) -> Result<Vec<Val>, VmErr> {
-    if !v.is_heap() { return Err(cold_type("expected an iterable")); }
-    match vm.heap.get(v) {
-        HeapObj::List(rc) => Ok(rc.borrow().clone()),
-        HeapObj::Tuple(t) => Ok(t.clone()),
-        HeapObj::Set(rc) => Ok(rc.borrow().iter().copied().collect()),
-        _ => Err(cold_type("expected an iterable")),
-    }
+pub(super) fn iter_to_vec(vm: &mut VM, v: Val) -> Result<Vec<Val>, VmErr> {
+    vm.extract_iter(v, true)
 }
 
 #[inline]
@@ -111,11 +105,17 @@ pub(super) fn capitalize_first(s: &str) -> String {
 
 #[inline]
 pub(super) fn title_case(s: &str) -> String {
-    s.split_whitespace()
-        .map(|w| {
-            let mut cs = w.chars();
-            cs.next().map(|c| c.to_uppercase().to_string() + cs.as_str()).unwrap_or_default()
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+    // each maximal run of cased chars is a word; first char titlecased, rest lowercased; non-cased chars (spaces, digits, punctuation) are boundaries.
+    let mut out = String::with_capacity(s.len());
+    let mut prev_cased = false;
+    for c in s.chars() {
+        if c.is_alphabetic() {
+            if prev_cased { out.extend(c.to_lowercase()); } else { out.extend(c.to_uppercase()); }
+            prev_cased = true;
+        } else {
+            out.push(c);
+            prev_cased = false;
+        }
+    }
+    out
 }
