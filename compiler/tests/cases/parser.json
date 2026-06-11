@@ -687,12 +687,19 @@
     "annotations": {}
   },
   {
-    "src": "def f(x, y=1):\n    return x + y", 
-    "constants": ["1"], 
-    "names": ["f_1"], 
-    "instructions": [["LoadConst",0], ["MakeFunction",0], ["StoreName",0], ["ReturnValue",0]], 
-    "annotations": {}, 
+    "src": "def f(x, y=1):\n    return x + y",
+    "constants": ["1"],
+    "names": ["f_1"],
+    "instructions": [["LoadConst",0], ["MakeFunction",0], ["StoreName",0], ["ReturnValue",0]],
+    "annotations": {},
     "functions": 1
+  },
+  {
+    "src": "def f()\n    pass",
+    "constants": [],
+    "names": [],
+    "instructions": [["ReturnValue",0]],
+    "errors": ["expected ':', got indent"]
   },
   {
     "src": "def f(x, y=1, z=2):\n    pass", 

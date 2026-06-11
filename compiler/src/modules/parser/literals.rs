@@ -601,7 +601,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         if self.eat_if(TokenType::Rarrow) {
             while !matches!(self.peek(), Some(TokenType::Colon) | None) { self.advance(); }
         }
-        if matches!(self.peek(), Some(TokenType::Colon)) { self.advance(); }
+        self.eat(TokenType::Colon);
         (params, defaults)
     }
 

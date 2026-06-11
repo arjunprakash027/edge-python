@@ -1841,6 +1841,7 @@
   {"src": "print(format(5, '.20000001f'))", "output": [], "error": "format precision exceeds limit"},
   {"src": "def f():\n    sleep(0)\n    return f()\nprint(f())", "output": [], "error": "RecursionError"},
   {"src": "async def t():\n    run(t())\nrun(t())", "output": [], "error": "RecursionError"},
+  {"src": "for i in range(1):\n    try:\n        continue\nasync def t():\n    for i in range(1):\n        1/0\nrun(t())", "output": [], "error": "division by zero"},
   {"src": "while True:\n    pass", "output": [], "error": "budget exceeded"},
   {"src": "xs = []\nwhile True:\n    xs.append([])", "output": [], "error": "MemoryError"},
   {"src": "class C:\n    def __iter__(self):\n        return self\n    def __next__(self):\n        return [0]\nprint(list(C()))", "output": [], "error": "MemoryError"},

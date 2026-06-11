@@ -110,9 +110,9 @@ impl<'a> VM<'a> {
 
         if self.yielded {
             let resume_ip = if outer_ran { self.resume_ip } else { outer_ip };
-            // A coroutine that left the stack shorter must not panic split_off; clamp.
+            // A coroutine that left the stack shorter must not panic split_off / drain; clamp both.
             let remaining = self.stack.split_off(saved_stack_len.min(self.stack.len()));
-            let coro_iters: Vec<IterFrame> = self.iter_stack.drain(saved_iter_len..).collect();
+            let coro_iters: Vec<IterFrame> = self.iter_stack.drain(saved_iter_len.min(self.iter_stack.len())..).collect();
             // Normalize: depths captured at SetupExcept time were absolute against the live stacks; store them relative to the coro's saved stack so the next resume can denormalize against a different base.
             let coro_exc: Vec<ExceptionFrame> = self.exception_stack.drain(saved_exc_len..)
                 .map(|mut f| {
