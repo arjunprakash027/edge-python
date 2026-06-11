@@ -309,6 +309,7 @@ fn justify(vm: &mut VM, recv: Val, pos: &[Val], right: bool) -> Result<(), VmErr
         match (cs.next(), cs.next()) { (Some(c), None) => c, _ => return Err(cold_type("The fill character must be exactly one character long")) }
     } else { ' ' };
     let pad = width.saturating_sub(s.chars().count());
+    vm.charge_steps(pad)?; // Charge the actual O(pad) fill so a huge `width` hits the op budget, not a native spin.
     let fills: String = iter::repeat_n(fill, pad).collect();
     let out = if right { fills + &s } else { s + &fills };
     vm.alloc_and_push_str(out)
@@ -323,7 +324,14 @@ pub fn expandtabs(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let mut col = 0usize;
     for c in s.chars() {
         match c {
-            '\t' => { let n = if ts == 0 { 0 } else { ts - (col % ts) }; for _ in 0..n { out.push(' '); } col += n; }
+            // Guard each tab's expansion against the heap limit and op budget so a huge `ts` can't spin natively.
+            '\t' => {
+                let n = if ts == 0 { 0 } else { ts - (col % ts) };
+                if out.len().saturating_add(n) > vm.heap.limit() { return Err(cold_heap()); }
+                vm.charge_steps(n)?;
+                for _ in 0..n { out.push(' '); }
+                col += n;
+            }
             '\n' | '\r' => { out.push(c); col = 0; }
             _ => { out.push(c); col += 1; }
         }
@@ -434,6 +442,8 @@ pub fn center(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let width = pos[0].as_int().max(0) as usize;
     // User-controlled width drives the output size; cap it so a huge value errors instead of aborting in the allocator.
     if width > vm.heap.limit() { return Err(cold_heap()); }
+    // Charge the O(width) fill so a huge `width` hits the op budget, not a native spin.
+    vm.charge_steps(width)?;
     let fill = if pos.len() > 1 {
         let f = val_to_str(vm, pos[1])?;
         let mut cs = f.chars();
@@ -456,6 +466,7 @@ pub fn zfill(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let width = pos[0].as_int().max(0) as usize;
     // User-controlled width drives the output size; cap it so a huge value errors instead of aborting in the allocator.
     if width > vm.heap.limit() { return Err(cold_heap()); }
+    vm.charge_steps(width)?; // Charge the O(width) fill so a huge `width` hits the op budget, not a native spin.
     let nchars = s.chars().count();
     let out = if nchars >= width {
         s
