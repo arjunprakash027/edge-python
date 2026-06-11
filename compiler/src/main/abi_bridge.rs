@@ -6,13 +6,13 @@ use alloc::{rc::Rc, string::{String, ToString}, sync::Arc, vec::Vec};
 use core::cell::RefCell;
 use crate::s;
 
-use super::{get_val, host_call_native, put_val, safe_bytes, safe_handles, with_recv, with_runtime, with_vm};
+use super::{get_val, host_call_native, in_vm, put_val, release_handles, safe_bytes, safe_handles, safe_str_owned, with_recv, with_runtime, with_vm};
 use super::errors::{error_from_kind, stash_error};
 
 // Universal dispatch. Returns 0 + handle in `*out_handle`, or 1 + stashed error.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn host_edge_op(op: u32, recv: u32, name_ptr: *const u8, name_len: u32,argv_ptr: *const u32, argc: u32, out_handle: *mut u32) -> i32 {
-    let name = core::str::from_utf8(unsafe { safe_bytes(name_ptr, name_len) }).unwrap_or("").to_string();
+    let name = unsafe { safe_str_owned(name_ptr, name_len) };
     let args: Vec<Val> = unsafe { safe_handles(argv_ptr, argc) }.iter().filter_map(|&h| get_val(h)).collect();
 
     let result: Result<Val, VmErr> = match Op::from_u32(op) {
@@ -212,28 +212,23 @@ fn dispatch_iter_next(recv_h: u32) -> Result<Val, VmErr> {
 }
 
 fn dispatch_new_dict() -> Result<Val, VmErr> {
-    with_vm(|vm| vm.heap.alloc(HeapObj::Dict(Rc::new(RefCell::new(DictMap::new())))))
-        .ok_or(VmErr::Runtime("edge_op new_dict called outside run()"))?
+    in_vm("edge_op new_dict called outside run()", |vm| vm.heap.alloc(HeapObj::Dict(Rc::new(RefCell::new(DictMap::new())))))
 }
 
 fn dispatch_new_list() -> Result<Val, VmErr> {
-    with_vm(|vm| vm.heap.alloc(HeapObj::List(Rc::new(RefCell::new(Vec::new())))))
-        .ok_or(VmErr::Runtime("edge_op new_list called outside run()"))?
+    in_vm("edge_op new_list called outside run()", |vm| vm.heap.alloc(HeapObj::List(Rc::new(RefCell::new(Vec::new())))))
 }
 
 fn dispatch_new_tuple(args: &[Val]) -> Result<Val, VmErr> {
-    with_vm(|vm| vm.tuple_from_items(args.to_vec()))
-        .ok_or(VmErr::Runtime("edge_op new_tuple called outside run()"))?
+    in_vm("edge_op new_tuple called outside run()", |vm| vm.tuple_from_items(args.to_vec()))
 }
 
 fn dispatch_new_set(args: &[Val]) -> Result<Val, VmErr> {
-    with_vm(|vm| vm.set_from_items(args.to_vec()))
-        .ok_or(VmErr::Runtime("edge_op new_set called outside run()"))?
+    in_vm("edge_op new_set called outside run()", |vm| vm.set_from_items(args.to_vec()))
 }
 
 fn dispatch_new_frozenset(args: &[Val]) -> Result<Val, VmErr> {
-    with_vm(|vm| vm.frozenset_from_items(args.to_vec()))
-        .ok_or(VmErr::Runtime("edge_op new_frozenset called outside run()"))?
+    in_vm("edge_op new_frozenset called outside run()", |vm| vm.frozenset_from_items(args.to_vec()))
 }
 
 fn dispatch_type_of(recv_h: u32) -> Result<Val, VmErr> {
@@ -246,32 +241,19 @@ fn dispatch_type_of(recv_h: u32) -> Result<Val, VmErr> {
 // Bootstrap encoder: classifies (tag, bytes) into a Val handle; returns 0 on Invalid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn host_edge_encode(tag: u32, ptr: *const u8, len: u32) -> u32 {
+    // Alloc in the live VM; 0 when outside run() or OOM.
+    fn alloc_and_put(obj: HeapObj) -> u32 {
+        match with_vm(|vm| vm.heap.alloc(obj).ok()).flatten() {
+            Some(val) => put_val(val),
+            None => 0,
+        }
+    }
     let bytes = unsafe { safe_bytes(ptr, len) };
     match classify_encode(tag, bytes) {
         EncodeRequest::Direct(bits) => put_val(Val(bits)),
-        EncodeRequest::AllocStr(s) => {
-            let owned = s.to_string();
-            let v = with_vm(|vm| vm.heap.alloc(HeapObj::Str(owned)).ok()).flatten();
-            match v {
-                Some(val) => put_val(val),
-                None => 0,
-            }
-        }
-        EncodeRequest::AllocBytes(b) => {
-            let owned = b.to_vec();
-            let v = with_vm(|vm| vm.heap.alloc(HeapObj::Bytes(owned)).ok()).flatten();
-            match v {
-                Some(val) => put_val(val),
-                None => 0,
-            }
-        }
-        EncodeRequest::AllocLongInt(i) => {
-            let v = with_vm(|vm| vm.heap.alloc(HeapObj::LongInt(i)).ok()).flatten();
-            match v {
-                Some(val) => put_val(val),
-                None => 0,
-            }
-        }
+        EncodeRequest::AllocStr(s) => alloc_and_put(HeapObj::Str(s.to_string())),
+        EncodeRequest::AllocBytes(b) => alloc_and_put(HeapObj::Bytes(b.to_vec())),
+        EncodeRequest::AllocLongInt(i) => alloc_and_put(HeapObj::LongInt(i)),
         EncodeRequest::Invalid => 0,
     }
 }
@@ -331,7 +313,7 @@ pub unsafe extern "C" fn host_edge_release(h: u32) {
 // Stash a guest error for the host. Overwrites any pending error.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn host_edge_throw(kind: u32, msg_ptr: *const u8, msg_len: u32) {
-    let msg = core::str::from_utf8(unsafe { safe_bytes(msg_ptr, msg_len) }).unwrap_or("").to_string();
+    let msg = unsafe { safe_str_owned(msg_ptr, msg_len) };
     with_runtime(|rt| rt.error_stash.set(kind, msg));
 }
 
@@ -377,20 +359,18 @@ pub(super) fn make_native_binding(name: String, id: u32) -> NativeBinding {
         /* 3. Read result BEFORE releasing argv: a returned input would point into slots we're about to free. */
         // Status 2 = DEFERRED: handler has captured what it needs; release argv and park the VM.
         if status == 2 {
-            with_runtime(|rt| { for h in &argv { rt.handles.release(*h); } });
+            release_handles(&argv);
             return Err(VmErr::HostCallDeferred);
         }
         if status != 0 {
-            with_runtime(|rt| { for h in &argv { rt.handles.release(*h); } });
+            release_handles(&argv);
             let (kind, msg) = with_runtime(|rt| rt.error_stash.take())
                 .unwrap_or((ErrorKind::Runtime as u32, String::from("native call failed")));
             return Err(error_from_kind(kind, msg));
         }
         let result = get_val(out_handle).ok_or(VmErr::Runtime("native returned invalid handle"))?;
-        with_runtime(|rt| {
-            for h in &argv { rt.handles.release(*h); }
-            rt.handles.release(out_handle);
-        });
+        argv.push(out_handle);
+        release_handles(&argv);
         Ok(result)
     };
     NativeBinding { name, func: Arc::new(closure), pure: false }

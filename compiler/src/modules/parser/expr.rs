@@ -308,55 +308,53 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
+    /* Subscript after `[`: plain index or `a:b:c` slice with None defaults. Eats the closing `]`; emits BuildSlice for slices. Returns true when a slice was built. */
+    pub(super) fn parse_subscript(&mut self) -> bool {
+        if matches!(self.peek(), Some(TokenType::Colon)) {
+            self.chunk.emit(OpCode::LoadNone, 0);
+        } else {
+            self.expr();
+        }
+        if self.eat_if(TokenType::Colon) {
+            let mut parts = 2u16;
+            if matches!(self.peek(), Some(TokenType::Colon | TokenType::Rsqb)) {
+                self.chunk.emit(OpCode::LoadNone, 0);
+            } else {
+                self.expr();
+            }
+            if self.eat_if(TokenType::Colon) {
+                parts = 3;
+                if matches!(self.peek(), Some(TokenType::Rsqb)) {
+                    self.chunk.emit(OpCode::LoadNone, 0);
+                } else {
+                    self.expr();
+                }
+            }
+            self.eat(TokenType::Rsqb);
+            self.chunk.emit(OpCode::BuildSlice, parts);
+            true
+        } else {
+            self.eat(TokenType::Rsqb);
+            false
+        }
+    }
+
     /* Postfix trailers: `.attr`, [i], [s:e], (args), chained. A trailer must start on the same line, so a statement boundary ends the chain (else `x = []` ⏎ `[i]` parses as `[][i]`). */
     pub(super) fn postfix_tail(&mut self) {
         loop {
             match self.peek_same_line() {
                 Some(TokenType::Lsqb) => {
                     self.advance();
-                    let is_slice = matches!(self.peek(), Some(TokenType::Colon));
-                    if is_slice {
-                        self.chunk.emit(OpCode::LoadNone, 0);
-                    } else {
+                    self.parse_subscript();
+                    // Subscript assignment: StoreItem; for slices runtime replaces the range.
+                    if matches!(self.peek(), Some(TokenType::Equal)) {
+                        self.advance();
                         self.expr();
+                        self.chunk.emit(OpCode::StoreItem, 0);
+                        self.chunk.emit(OpCode::LoadNone, 0);
+                        return;
                     }
-                    if self.eat_if(TokenType::Colon) {
-                        let mut parts = 2u16;
-                        if matches!(self.peek(), Some(TokenType::Colon | TokenType::Rsqb)) {
-                            self.chunk.emit(OpCode::LoadNone, 0);
-                        } else {
-                            self.expr();
-                        }
-                        if self.eat_if(TokenType::Colon) {
-                            parts = 3;
-                            if matches!(self.peek(), Some(TokenType::Rsqb)) {
-                                self.chunk.emit(OpCode::LoadNone, 0);
-                            } else {
-                                self.expr();
-                            }
-                        }
-                        self.eat(TokenType::Rsqb);
-                        self.chunk.emit(OpCode::BuildSlice, parts);
-                        // Slice assignment: StoreItem with Slice index; runtime replaces the range.
-                        if matches!(self.peek(), Some(TokenType::Equal)) {
-                            self.advance();
-                            self.expr();
-                            self.chunk.emit(OpCode::StoreItem, 0);
-                            self.chunk.emit(OpCode::LoadNone, 0);
-                            return;
-                        }
-                        self.chunk.emit(OpCode::GetItem, 0);
-                    } else {
-                        self.eat(TokenType::Rsqb);
-                        if !is_slice && matches!(self.peek(), Some(TokenType::Equal)) {
-                            self.advance();
-                            self.expr();
-                            self.chunk.emit(OpCode::StoreItem, 0);
-                            self.chunk.emit(OpCode::LoadNone, 0);
-                            return;
-                        }
-                        self.chunk.emit(OpCode::GetItem, 0);
-                    }
+                    self.chunk.emit(OpCode::GetItem, 0);
                 }
                 Some(TokenType::Dot) => {
                     self.advance();
@@ -411,7 +409,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             s.chunk.emit(OpCode::ReturnValue, 0);
         });
 
-        let param_slots: crate::util::fx::FxHashSet<String> = params.iter().map(|p| s!(str p.trim_start_matches('*'), "_0")).collect();
+        let param_slots: crate::util::fx::FxHashSet<String> = params.iter().map(|p| s!(str super::types::param_base_name(p), "_0")).collect();
         for name in &body.names {
             if !param_slots.contains(name.as_str()) {
                 self.chunk.push_name(name);

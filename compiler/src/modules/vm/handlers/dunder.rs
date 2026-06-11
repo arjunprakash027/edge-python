@@ -6,6 +6,33 @@ use super::*;
 use super::methods::AttrLookup;
 use crate::alloc::string::ToString;
 
+/* Single source of truth for opcode -> (forward, reflected) arithmetic dunder names. */
+pub(crate) fn binary_dunder_names(op: OpCode) -> Option<(&'static str, &'static str)> {
+    Some(match op {
+        OpCode::Add => ("__add__", "__radd__"),
+        OpCode::Sub => ("__sub__", "__rsub__"),
+        OpCode::Mul => ("__mul__", "__rmul__"),
+        OpCode::Div => ("__truediv__", "__rtruediv__"),
+        OpCode::FloorDiv => ("__floordiv__", "__rfloordiv__"),
+        OpCode::Mod => ("__mod__", "__rmod__"),
+        OpCode::Pow => ("__pow__", "__rpow__"),
+        _ => return None,
+    })
+}
+
+/* Same for comparisons: (forward, reflected, negate). `__eq__` reflects to itself; `__ne__` is negated `__eq__`; `<` reflects to `>` and vice-versa. */
+pub(crate) fn compare_dunder_names(op: OpCode) -> Option<(&'static str, &'static str, bool)> {
+    Some(match op {
+        OpCode::Eq => ("__eq__", "__eq__", false),
+        OpCode::NotEq => ("__eq__", "__eq__", true),
+        OpCode::Lt => ("__lt__", "__gt__", false),
+        OpCode::LtEq => ("__le__", "__ge__", false),
+        OpCode::Gt => ("__gt__", "__lt__", false),
+        OpCode::GtEq => ("__ge__", "__le__", false),
+        _ => return None,
+    })
+}
+
 impl<'a> VM<'a> {
     /* `recv.<name>(*args)`: `Some(v)` on return, `None` on miss / `NotImplemented`, `Err` only on a raised dunder. */
     pub(crate) fn try_call_dunder(&mut self, recv: Val, name: &str, args: &[Val], chunk: &SSAChunk, slots: &mut [Val]) -> Result<Option<Val>, VmErr> {
@@ -42,16 +69,7 @@ impl<'a> VM<'a> {
         let b_cls = self.instance_class(b);
         if a_cls.is_none() && b_cls.is_none() { return Ok(None); }
 
-        let (lname, rname) = match op {
-            OpCode::Add => ("__add__", "__radd__"),
-            OpCode::Sub => ("__sub__", "__rsub__"),
-            OpCode::Mul => ("__mul__", "__rmul__"),
-            OpCode::Div => ("__truediv__", "__rtruediv__"),
-            OpCode::FloorDiv => ("__floordiv__", "__rfloordiv__"),
-            OpCode::Mod => ("__mod__", "__rmod__"),
-            OpCode::Pow => ("__pow__", "__rpow__"),
-            _ => return Ok(None),
-        };
+        let Some((lname, rname)) = binary_dunder_names(op) else { return Ok(None); };
 
         let b_overrides = match (a_cls, b_cls) {
             (Some(ac), Some(bc)) => ac.0 != bc.0 && self.heap.is_subclass(bc, ac),
@@ -74,15 +92,7 @@ impl<'a> VM<'a> {
         let b_cls = self.instance_class(b);
         if a_cls.is_none() && b_cls.is_none() { return Ok(None); }
 
-        let (lname, rname, negate) = match op {
-            OpCode::Eq => ("__eq__", "__eq__", false),
-            OpCode::NotEq => ("__eq__", "__eq__", true),
-            OpCode::Lt => ("__lt__", "__gt__", false),
-            OpCode::LtEq => ("__le__", "__ge__", false),
-            OpCode::Gt => ("__gt__", "__lt__", false),
-            OpCode::GtEq => ("__ge__", "__le__", false),
-            _ => return Ok(None),
-        };
+        let Some((lname, rname, negate)) = compare_dunder_names(op) else { return Ok(None); };
 
         let b_overrides = match (a_cls, b_cls) {
             (Some(ac), Some(bc)) => ac.0 != bc.0 && self.heap.is_subclass(bc, ac),

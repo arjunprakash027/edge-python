@@ -198,12 +198,7 @@ pub fn split(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
 
 pub fn join(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let sep = recv_str(vm, recv)?;
-    // `try_get` is panic-free: an inline int arg would make `heap.get` index a bogus slot and abort.
-    let items = match vm.heap.try_get(pos[0]) {
-        Some(HeapObj::List(rc)) => rc.borrow().clone(),
-        Some(HeapObj::Tuple(v)) => v.clone(),
-        _ => return Err(cold_type("join() argument must be iterable")),
-    };
+    let items = extract_sequence(vm, pos[0], "join() argument must be iterable")?;
     let mut parts: Vec<String> = Vec::with_capacity(items.len());
     for v in items { parts.push(val_to_str(vm, v)?); }
     vm.alloc_and_push_str(parts.join(sep.as_str()))

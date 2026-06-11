@@ -155,9 +155,6 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     fn parse_sequence_pattern(&mut self, subj: u16, fail_jumps: &mut Vec<usize>) {
         self.advance(); // consume `[`
 
-        // Two-pass: scan counts items/star; second pass emits bytecode.
-        let _ = Vec::<bool>::new(); // remove `item_positions` entirely, it's dead
-
         // Pass 1: buffer tokens to count items and locate the star.
         let mut buffered: Vec<crate::modules::lexer::Token> = Vec::new();
         let mut depth: i32 = 0;

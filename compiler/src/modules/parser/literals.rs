@@ -526,7 +526,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
         // Propagate free names to parent chunk so nested defs capture grandparent vars.
         let param_slots: crate::util::fx::FxHashSet<String> = params.iter()
-            .map(|p| s!(str p.trim_start_matches(['*', '~']), "_0")).collect();
+            .map(|p| s!(str super::types::param_base_name(p), "_0")).collect();
         for name in &body.names {
             if !param_slots.contains(name.as_str()) {
                 self.chunk.push_name(name);
@@ -633,7 +633,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let mut body = self.with_fresh_chunk(|s| {
             for p in params {
                 s.ssa_versions.insert(p.clone(), 0);
-                let _ = s.push_ssa_name(p.trim_start_matches(['*', '~']), 0);
+                let _ = s.push_ssa_name(super::types::param_base_name(p), 0);
             }
             s.compile_block_body();
         });
@@ -669,7 +669,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             }
         }
         let mut locals: crate::util::fx::FxHashSet<&str> =
-            params.iter().map(|p| p.trim_start_matches(['*', '~'])).collect();
+            params.iter().map(|p| super::types::param_base_name(p)).collect();
         for ins in &body.instructions {
             if ins.opcode == OpCode::StoreName
                 && let Some(n) = body.names.get(ins.operand as usize) {

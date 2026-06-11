@@ -8,7 +8,7 @@ use crate::abi::{ErrorStash, HandleTable};
 use crate::modules::vm::VM;
 use crate::modules::vm::types::{Val, VmErr};
 use crate::modules::packages::Manifest;
-use alloc::{boxed::Box, string::String, vec::Vec};
+use alloc::{boxed::Box, string::{String, ToString}, vec::Vec};
 use core::ptr::NonNull;
 
 mod abi_bridge;
@@ -145,6 +145,21 @@ pub(super) unsafe fn safe_bytes<'a>(ptr: *const u8, len: u32) -> &'a [u8] {
 pub(super) unsafe fn safe_handles<'a>(ptr: *const u32, len: u32) -> &'a [u32] {
     if ptr.is_null() || len == 0 { return &[]; }
     unsafe { core::slice::from_raw_parts(ptr, len as usize) }
+}
+
+/* Owned UTF-8 string from an FFI `(ptr, len)`; empty on null or invalid UTF-8. */
+pub(super) unsafe fn safe_str_owned(ptr: *const u8, len: u32) -> String {
+    core::str::from_utf8(unsafe { safe_bytes(ptr, len) }).unwrap_or("").to_string()
+}
+
+// Release a batch of handles in one runtime borrow.
+pub(super) fn release_handles(handles: &[u32]) {
+    with_runtime(|rt| for &h in handles { rt.handles.release(h); });
+}
+
+/* `with_vm` that errors when called outside run(). */
+pub(super) fn in_vm(err: &'static str, f: impl FnOnce(&mut VM<'static>) -> Result<Val, VmErr>) -> Result<Val, VmErr> {
+    with_vm(f).ok_or(VmErr::Runtime(err))?
 }
 
 pub(super) unsafe fn write_out(s: &str) -> usize {

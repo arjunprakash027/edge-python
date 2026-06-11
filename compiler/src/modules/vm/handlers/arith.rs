@@ -3,30 +3,14 @@ use super::*;
 use cache::OpcodeCache;
 use ops::cached_binop;
 
-/* IC: maps an arithmetic opcode to the dunder name it dispatches to. Only the cacheable forward dunder, reflected ops are handled by the slow path's `NotImplemented` deopt. */
+/* IC: forward dunder name only; reflected ops are handled by the slow path's `NotImplemented` deopt. */
 fn binary_dunder_name(op: OpCode) -> Option<&'static str> {
-    match op {
-        OpCode::Add => Some("__add__"),
-        OpCode::Sub => Some("__sub__"),
-        OpCode::Mul => Some("__mul__"),
-        OpCode::Div => Some("__truediv__"),
-        OpCode::FloorDiv => Some("__floordiv__"),
-        OpCode::Mod => Some("__mod__"),
-        OpCode::Pow => Some("__pow__"),
-        _ => None,
-    }
+    super::dunder::binary_dunder_names(op).map(|(l, _)| l)
 }
 
-/* IC: same mapping for comparison opcodes. `Eq`/`NotEq` share `__eq__`; reflected pairs (`Lt`/`Gt`, `LtEq`/`GtEq`) collapse to the forward name. */
+/* IC: same for comparison opcodes; reflected pairs collapse to the forward name. */
 fn compare_dunder_name(op: OpCode) -> Option<&'static str> {
-    match op {
-        OpCode::Eq | OpCode::NotEq => Some("__eq__"),
-        OpCode::Lt => Some("__lt__"),
-        OpCode::LtEq => Some("__le__"),
-        OpCode::Gt => Some("__gt__"),
-        OpCode::GtEq => Some("__ge__"),
-        _ => None,
-    }
+    super::dunder::compare_dunder_names(op).map(|(l, _, _)| l)
 }
 
 impl<'a> VM<'a> {
