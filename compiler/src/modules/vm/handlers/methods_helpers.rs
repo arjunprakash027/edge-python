@@ -66,8 +66,7 @@ where F: FnOnce(&mut DictMap, &HeapPool) -> Result<R, VmErr>
         Some(HeapObj::Dict(rc)) => rc.clone(),
         _ => return Err(cold_type(err)),
     };
-    let r = f(&mut rc.borrow_mut(), &vm.heap);
-    r
+    f(&mut rc.borrow_mut(), &vm.heap)
 }
 
 // Snapshot a set as Vec so the heap stays free for subsequent allocations.
@@ -88,8 +87,7 @@ where F: FnOnce(&mut ValSet, &HeapPool) -> Result<R, VmErr>
         Some(HeapObj::Set(rc)) => rc.clone(),
         _ => return Err(cold_type(err)),
     };
-    let r = f(&mut rc.borrow_mut(), &vm.heap);
-    r
+    f(&mut rc.borrow_mut(), &vm.heap)
 }
 
 /* List or tuple items as Vec. `try_get` is panic-free: an inline int arg would make `heap.get` index a bogus slot and abort. */
