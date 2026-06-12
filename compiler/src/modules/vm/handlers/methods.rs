@@ -28,10 +28,51 @@ pub(crate) enum AttrLookup {
 }
 
 impl<'a> VM<'a> {
-    // Direct-then-DFS member lookup; first hit wins. Cycles are impossible: bases are validated at `MakeClass` time and a class's `bases` are immutable (only its members can change), so the class graph is a static DAG. Returns `(value, defining_class)` so callers building `BoundUserMethod` / `InstanceMethod` can record where the method came from for `super()`.
+    // The cached C3 linearization of `cls`, or `[cls]` when uncached (native classes, or an inconsistent hierarchy that `c3_merge` declined to cache).
+    fn mro_of(&self, c: Val) -> alloc::vec::Vec<Val> {
+        match self.mro_cache.get(&c.0) {
+            Some(r) => (**r).clone(),
+            None => alloc::vec![c],
+        }
+    }
+
+    /* C3 merge of the bases' linearizations plus the bases list itself, the tail of `L[cls] = cls :: merge(...)`. `cls` is prepended by the caller (it isn't allocated yet at validation time). Errs on an inconsistent hierarchy, matching CPython's `TypeError` at class creation. */
+    pub(crate) fn c3_merge(&self, bases: &[Val]) -> Result<alloc::vec::Vec<Val>, VmErr> {
+        let mut seqs: alloc::vec::Vec<alloc::vec::Vec<Val>> = bases.iter().map(|&b| self.mro_of(b)).collect();
+        if !bases.is_empty() { seqs.push(bases.to_vec()); }
+        let mut out = alloc::vec::Vec::new();
+        loop {
+            seqs.retain(|s| !s.is_empty());
+            if seqs.is_empty() { break; }
+            // A valid head appears in no sequence's tail; take the first such across sequences (C3 order).
+            let mut head = None;
+            for s in &seqs {
+                let h = s[0];
+                let in_tail = seqs.iter().any(|t| t.len() > 1 && t[1..].iter().any(|&x| x.0 == h.0));
+                if !in_tail { head = Some(h); break; }
+            }
+            let Some(h) = head else {
+                return Err(cold_type("Cannot create a consistent method resolution order (MRO) for bases"));
+            };
+            out.push(h);
+            for s in &mut seqs { s.retain(|&x| x.0 != h.0); }
+        }
+        Ok(out)
+    }
+
+    // Member lookup along the C3 MRO; first hit wins. Falls back to a direct-then-DFS walk for uncached classes (native classes have no bases, so DFS = own members). Returns `(value, defining_class)` so callers building `BoundUserMethod` / `InstanceMethod` record where the method came from for `super()`.
     pub(crate) fn lookup_class_member(&self, cls: Val, name: &str) -> Option<(Val, Val)> {
         if !cls.is_heap() { return None; }
         let HeapObj::Class(_, bases, members) = self.heap.get(cls) else { return None; };
+        if let Some(mro) = self.mro_cache.get(&cls.0) {
+            for &c in mro.iter() {
+                if let HeapObj::Class(_, _, m) = self.heap.get(c)
+                    && let Some(&(_, v)) = m.borrow().iter().find(|(n, _)| n == name) {
+                        return Some((v, c));
+                    }
+            }
+            return None;
+        }
         if let Some(&(_, v)) = members.borrow().iter().find(|(n, _)| n == name) { return Some((v, cls)); }
         for &b in bases {
             if let Some(found) = self.lookup_class_member(b, name) { return Some(found); }
@@ -39,10 +80,23 @@ impl<'a> VM<'a> {
         None
     }
 
-    // Same lookup but skipping `cls` itself; powers `super()` which must search strictly above the current class.
-    pub(crate) fn lookup_class_member_after(&self, cls: Val, name: &str) -> Option<(Val, Val)> {
-        if !cls.is_heap() { return None; }
-        let HeapObj::Class(_, bases, _) = self.heap.get(cls) else { return None; };
+    /* `super()` lookup: walk `derived`'s C3 MRO strictly past `after`, so a diamond resolves to the next class in the instance's linearization (not just `after`'s own bases). Falls back to a DFS over `after`'s bases when `derived` has no cached MRO. */
+    pub(crate) fn lookup_class_member_after(&self, derived: Val, after: Val, name: &str) -> Option<(Val, Val)> {
+        if let Some(mro) = self.mro_cache.get(&derived.0) {
+            let mut past = false;
+            for &c in mro.iter() {
+                if past
+                    && let HeapObj::Class(_, _, m) = self.heap.get(c)
+                    && let Some(&(_, v)) = m.borrow().iter().find(|(n, _)| n == name) {
+                        return Some((v, c));
+                    }
+                if c.0 == after.0 { past = true; }
+            }
+            return None;
+        }
+        // Fallback: search strictly above `after` via its own bases.
+        if !after.is_heap() { return None; }
+        let HeapObj::Class(_, bases, _) = self.heap.get(after) else { return None; };
         for &b in bases {
             if let Some(found) = self.lookup_class_member(b, name) { return Some(found); }
         }
@@ -119,7 +173,12 @@ impl<'a> VM<'a> {
         if obj.is_heap()
             && let HeapObj::Super(cls_val, recv) = self.heap.get(obj) {
                 let (cls_val, recv) = (*cls_val, *recv);
-                if let Some((mv, defining)) = self.lookup_class_member_after(cls_val, name) {
+                // C3 super: walk the *instance type*'s MRO past the defining class, not just the defining class's bases.
+                let derived = match self.heap.get(recv) {
+                    HeapObj::Instance(c, _) => *c,
+                    _ => cls_val,
+                };
+                if let Some((mv, defining)) = self.lookup_class_member_after(derived, cls_val, name) {
                     return Ok(AttrLookup::InstanceMethod { recv, func: mv, class: defining });
                 }
                 return Err(VmErr::Attribute(s!("'super' object has no attribute '", str name, "'")));

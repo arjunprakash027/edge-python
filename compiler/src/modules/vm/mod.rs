@@ -86,6 +86,8 @@ pub struct VM<'a> {
     pub(crate) depth: usize,
     pub(crate) max_calls: usize,
     pub(crate) observed_impure: Vec<bool>,
+    // C3 method-resolution order per class, keyed by the class Val's heap bits. Computed once at MakeClass (the class graph is a static DAG); a reused slot is overwritten by its new class, so stale entries are never read (lookup checks HeapObj::Class first). Not a GC root: MRO members stay reachable via the class's own `bases`.
+    pub(crate) mro_cache: HashMap<u64, alloc::rc::Rc<Vec<Val>>>,
     pub(crate) exception_stack: Vec<ExceptionFrame>,
     pub(crate) functions: Vec<&'a (Vec<String>, SSAChunk, u16, u16)>,
     // (chunk_ptr, global fn ids); linear scan over a tiny list avoids HashMap monomorphization.
@@ -185,6 +187,7 @@ impl<'a> VM<'a> {
             input_buffer: Vec::new(),
             event_queue: Vec::new(),
             observed_impure: Vec::new(),
+            mro_cache: HashMap::default(),
             exception_stack: Vec::new(),
             error_byte_pos: None,
             module_table: HashMap::default(),

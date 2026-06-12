@@ -797,7 +797,13 @@ impl<'a> VM<'a> {
             .map(|n| ssa_strip(n))
             .unwrap_or("?")
             .to_string();
+        // C3 linearize before allocating: an inconsistent hierarchy raises here (CPython parity), so no half-built class escapes.
+        let mro_tail = self.c3_merge(&bases)?;
         let cls = self.heap.alloc(HeapObj::Class(name_str, bases, alloc::rc::Rc::new(core::cell::RefCell::new(methods))))?;
+        let mut mro = Vec::with_capacity(mro_tail.len() + 1);
+        mro.push(cls);
+        mro.extend(mro_tail);
+        self.mro_cache.insert(cls.0, alloc::rc::Rc::new(mro));
         self.push(cls);
         Ok(())
     }

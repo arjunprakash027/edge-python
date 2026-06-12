@@ -2295,5 +2295,10 @@
   {"src": "it = iter([1])\nprint(next(it))\nprint(next(it, \"done\"))", "output": ["1", "done"]},
   {"src": "print(next(iter([]), -1))", "output": ["-1"]},
   {"src": "it = iter([5, 6])\nprint(next(it, 0), next(it, 0), next(it, 0))", "output": ["5 6 0"]},
-  {"src": "def make():\n    n = [0]\n    def f():\n        n[0] += 1\n        return n[0]\n    return f\ng = make()\nprint(list(iter(g, 4)))", "output": ["[1, 2, 3]"]}
+  {"src": "def make():\n    n = [0]\n    def f():\n        n[0] += 1\n        return n[0]\n    return f\ng = make()\nprint(list(iter(g, 4)))", "output": ["[1, 2, 3]"]},
+  {"src": "class A:\n    def who(self):\n        return \"A\"\nclass B(A):\n    pass\nclass C(A):\n    def who(self):\n        return \"C\"\nclass D(B, C):\n    pass\nprint(D().who())", "output": ["C"]},
+  {"src": "class A:\n    def m(self):\n        return \"A\"\nclass B(A):\n    def m(self):\n        return \"B\" + super().m()\nclass C(A):\n    def m(self):\n        return \"C\" + super().m()\nclass D(B, C):\n    def m(self):\n        return \"D\" + super().m()\nprint(D().m())", "output": ["DBCA"]},
+  {"src": "class A:\n    def m(self):\n        return 1\nclass B(A):\n    def m(self):\n        return super().m() + 1\nclass C(B):\n    def m(self):\n        return super().m() + 1\nprint(C().m())", "output": ["3"]},
+  {"src": "class A:\n    def a(self):\n        return \"a\"\nclass B:\n    def b(self):\n        return \"b\"\nclass C(A, B):\n    pass\nc = C()\nprint(c.a(), c.b())", "output": ["a b"]},
+  {"src": "class A:\n    pass\nclass B(A):\n    pass\nclass X(A, B):\n    pass", "output": [], "error": "method resolution order"}
 ]
