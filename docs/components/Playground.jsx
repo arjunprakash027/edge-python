@@ -105,7 +105,7 @@ export function Playground({ code, output }) {
     return (
         <div className="ep-pg my-5">
             {/* Input: CodeJar editor, framed like a Nextra code block. */}
-            <div className="ep-editor overflow-hidden rounded-md border border-gray-300 bg-white text-[.9em] dark:border-neutral-700 dark:bg-black">
+            <div className="ep-editor overflow-hidden rounded-md border border-gray-300 bg-white text-sm dark:border-neutral-700 dark:bg-black">
                 {/* Seed the plain code into the HTML so it's visible on first paint (before editor.js/shiki load). `whitespace-pre` keeps line breaks pre-mount; CodeJar takes over on mount. Stable `seedHtml` ref -> React won't re-apply innerHTML and clobber CodeJar's DOM on later re-renders. */}
                 <div ref={edRef} className="ep-ed py-2 font-mono whitespace-pre" aria-label="Python source editor" suppressHydrationWarning dangerouslySetInnerHTML={seedHtml}/>
             </div>
