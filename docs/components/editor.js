@@ -2,13 +2,13 @@
 Pure-text editor on CodeJar. We own keys, auto-pair, selection-wrap, paste/drop, copy/cut fencing; CodeJar renders + history. 
 */
 
-import { CodeJar } from 'https://esm.sh/codejar@4';
-import { Highlighter } from './highlighter.js';
+import { CodeJar } from 'codejar';
 
 const MAX_LINES = 999;
 const TAB_SIZE = 4;
 
-export function createEditor({ ed, ln, defaultCode, onRun }) {
+// `highlight(text) -> html` is injected (Shiki in the docs); CodeJar calls it on every render.
+export function createEditor({ ed, ln, defaultCode, onRun, highlight }) {
 
     // constants
 
@@ -223,9 +223,13 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
     // CodeJar wiring
 
     const jar = CodeJar(ed,
-        (node) => { node.innerHTML = Highlighter.highlight(node.textContent); },
+        (node) => { node.innerHTML = highlight(node.textContent); },
         { spellcheck: false, addClosing: false, catchTab: false, preserveIdent: false }
     );
+
+    // CodeJar forces `white-space: pre-wrap` (wraps long lines); override so long lines scroll horizontally.
+    ed.style.whiteSpace = 'pre';
+    ed.style.overflowWrap = 'normal';
 
     // Write `text` and place the caret at [start, end]; clear auto-pair marker.
     const writeAndRestore = (text, start, end = start) => {
@@ -241,8 +245,9 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
         return true;
     };
 
-    // Format side lines counter (e.g., 01 `print("Hello, World!")`).
+    // Format side lines counter (e.g., 01 `print("Hello, World!")`). `ln` is optional.
     const syncLines = () => {
+        if (!ln) return;
         const lines = jar.toString().replace(/\n$/, '').split('\n');
         const n = Math.max(1, Math.min(lines.length, MAX_LINES));
         ln.textContent = Array.from({ length: n }, (_, i) => String(i + 1).padStart(2, '0')).join('\n');
@@ -313,7 +318,7 @@ export function createEditor({ ed, ln, defaultCode, onRun }) {
         if (apply(result)) { e.preventDefault(); e.stopImmediatePropagation(); }
     }, true);
 
-    ed.addEventListener('scroll', () => { ln.scrollTop = ed.scrollTop; });
+    ed.addEventListener('scroll', () => { if (ln) ln.scrollTop = ed.scrollTop; });
 
     // Text mutation outside `apply()` invalidates the auto-pair marker so manually-typed pairs don't collapse on backspace.
     ed.addEventListener('input', () => { autoPairCaret = -1; });

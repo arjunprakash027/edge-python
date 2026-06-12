@@ -7,8 +7,6 @@ description: "Run your first Edge Python program in under a minute."
 
 Edge Python ships as a sub-200 KB WASM module. The fastest way to try it is the playground. No install. Everything runs client-side.
 
-[Open the playground ->](https://demo.edgepython.com)
-
 ## Embed it
 
 To put Edge Python in your own page, drop in the `<edge-python>` element below. Building the `.wasm` from source or embedding in Rust/WASI: see [Where it runs](/getting-started/what-it-is#where-it-runs).
@@ -48,7 +46,7 @@ See [Official packages](/reference/packages) for the full catalog. See the [runt
 
 ## Your first program
 
-Open the [playground](https://demo.edgepython.com) and try the Rosenblatt perceptron example, or paste your own Python snippet:
+Try to run or modify this script:
 
 ```python
 greet = lambda name: f"Hello, {name}!"

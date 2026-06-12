@@ -1,8 +1,11 @@
 import nextra from 'nextra'
+import remarkPlayground from './lib/remark-playground.mjs'
 
 const withNextra = nextra({
     theme: 'nextra-theme-docs',
     themeConfig: './theme.config.jsx',
+    // Wrap python blocks (+ their `Output` block) into runnable <Playground> snippets.
+    mdxOptions: { remarkPlugins: [remarkPlayground] },
 })
 
 export default withNextra({

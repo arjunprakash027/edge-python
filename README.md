@@ -17,8 +17,7 @@ Single-pass SSA bytecode compiler and threaded-code stack VM for a sandboxed Pyt
 
 ## More about it
 
-- Demo: [demo.edgepython.com](https://demo.edgepython.com/)
-- Docs: [edgepython.com](https://edgepython.com/)
+- Docs (try Edge Python directly in your browser): [edgepython.com](https://edgepython.com/)
 
 ## Repository layout
 
@@ -27,7 +26,6 @@ Cargo workspace; commands work from any directory.
 ```text
 ├── cli
 ├── compiler
-├── demo
 ├── docs
 ├── host
 ├── runtime
@@ -93,7 +91,7 @@ Full language reference, scope, and what intentionally isn't supported: [What Ed
 
 One workflow [`.github/workflows/main.yml`](.github/workflows/main.yml) that runs the complete CI/CD, where each package is a steps in a composite action under [`.github/actions/`](.github/actions).
 
-On pushes to `main` it deploys three Cloudflare Pages projects: `edge-python-cdn` (the bundled package artifacts), `edge-python-demo`, and `edge-python-docs` (served at `edgepython.com`). 
+On pushes to `main` it deploys three Cloudflare Pages projects: `edge-python-cdn` (the bundled package artifacts), and `edge-python-docs` (served at `edgepython.com`). 
 
 ## License
 

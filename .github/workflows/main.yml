@@ -142,18 +142,6 @@ jobs:
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-  demo:
-    name: Demo
-    needs: [cdn]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/demo
-        with:
-          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-
   # Builds on every run (PR gate) and uploads the static export for docs-deploy.
   docs-build:
     name: Docs / Build
@@ -165,10 +153,10 @@ jobs:
         with:
           mode: build
 
-  # Tail of the cdn -> demo -> docs deploy chain; main pushes only.
+  # Tail of the docs build -> deploy chain; main pushes only.
   docs-deploy:
     name: Docs / Deploy
-    needs: [demo, docs-build]
+    needs: [docs-build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:

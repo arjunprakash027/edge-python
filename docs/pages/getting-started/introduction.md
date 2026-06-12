@@ -18,7 +18,25 @@ Welcome to the Edge Python docs! 👋 Edge is a sandboxed subset of Python, comp
 
 ### Browser:
 
-Run live in your browser at [demo.edgepython.com](https://demo.edgepython.com/).
+Try to edit or execute this script:
+
+```python
+import time
+
+text = "the quick brown fox"
+words = {w: len(w) for w in text.split()}
+
+for w, n in words.items():
+    print(f"{w:>6} -> {n}")
+    time.sleep(0.2)
+```
+
+```text Output
+   the -> 3
+ quick -> 5
+ brown -> 5
+   fox -> 3
+```
 
 ### Command Line Interface:
 

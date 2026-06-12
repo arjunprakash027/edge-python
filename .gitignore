@@ -16,7 +16,7 @@ Desktop.ini
 .idea/
 *.swp
 
-# Node (for the demo)
+# Node (for the docs)
 node_modules/
 **/node_modules/
 dist/

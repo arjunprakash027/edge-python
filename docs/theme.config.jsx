@@ -1,4 +1,5 @@
 import { useConfig } from 'nextra-theme-docs'
+import { Playground } from './components/Playground'
 
 const DEFAULT_DESCRIPTION = 'Edge Python — a sandboxed Python scripting language compiled to WebAssembly for the edge.'
 
@@ -16,6 +17,7 @@ function Head() {
 
 export default {
     head: Head,
+    components: { Playground },
     logo: <span style={{ fontWeight: 600 }}>Edge Python</span>,
     project: {
         link: 'https://github.com/dylan-sutton-chavez/edge-python',
