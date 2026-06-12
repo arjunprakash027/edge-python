@@ -18,7 +18,7 @@ const HTML_ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;' }
 const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => HTML_ESC[c])
 
 const PlayIcon = () => (
-    <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" fill="none" height="11.5" aria-hidden="true" focusable="false">
+    <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" fill="none" height="11.5" aria-hidden="true" focusable="false">
         <path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" />
     </svg>
 )
@@ -100,7 +100,8 @@ export function Playground({ code, output }) {
             <div className="ep-output mt-3" aria-live="polite">
                 <div className="flex items-center justify-between gap-2 rounded-t-md border border-b-0 border-gray-300 bg-gray-100 pl-3 pr-1 py-1 dark:border-neutral-700 dark:bg-neutral-900">
                     <span className="font-mono text-xs text-gray-700 dark:text-gray-200">{header}</span>
-                    <Button variant="outline" onClick={onRunClick} className="text-xs flex items-center gap-1.5" disabled={running} title="Run code" aria-label="Run code"><PlayIcon/>Run</Button>
+                    {/* Hover accent: tint the 1px border blue + an inset 1px blue shadow so it reads as a 2px border WITHOUT changing the box (zero reflow — border-width/padding never change, so the icon and the output below stay put). The CSS var adapts light/dark on its own. */}
+                    <Button variant="outline" onClick={onRunClick} className="text-xs flex items-center px-2.5 py-1.5 gap-1.5 transition hover:border-[hsl(var(--nextra-primary-hue)_var(--nextra-primary-saturation)_var(--nextra-primary-lightness))] dark:hover:border-[hsl(var(--nextra-primary-hue)_var(--nextra-primary-saturation)_var(--nextra-primary-lightness))] hover:shadow-[inset_0_0_0_1px_hsl(var(--nextra-primary-hue)_var(--nextra-primary-saturation)_var(--nextra-primary-lightness))]" disabled={running} title="Run code" aria-label="Run code"><PlayIcon/>Run</Button>
                 </div>
                 <Pre>
                     <Code>{termBody}</Code>
