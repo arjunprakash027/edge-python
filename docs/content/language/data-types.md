@@ -235,6 +235,19 @@ print(xs)
 [1, 99, 20, 4, 5]
 ```
 
+`+=` on a list extends in place, so aliases see it:
+
+```python
+xs = [1, 2, 3]
+ys = xs
+xs += [4]
+print(ys)
+```
+
+```text Output
+[1, 2, 3, 4]
+```
+
 ## Tuple
 
 Immutable sequence. It is the fastest container for fixed-size data. It is also the usual hashable container for compound dict keys (frozensets also work).

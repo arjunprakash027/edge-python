@@ -23,6 +23,25 @@ impl<'a> VM<'a> {
 
         let (a, b) = self.pop2()?;
 
+        // `name += rhs`: list+list extends the left list in place so aliases see it (CPython __iadd__); any other type behaves exactly as Add.
+        let op = if op == OpCode::InPlaceAdd {
+            // Guard is_heap: `i += 1` operands are inline ints, and heap.get on a non-heap Val indexes garbage.
+            let lists = if a.is_heap() && b.is_heap() {
+                match (self.heap.get(a), self.heap.get(b)) {
+                    (HeapObj::List(la), HeapObj::List(lb)) => Some((la.clone(), lb.clone())),
+                    _ => None,
+                }
+            } else { None };
+            if let Some((la, lb)) = lists {
+                // Clone rhs contents first so `xs += xs` doubles correctly and the borrows never alias.
+                let rhs: Vec<Val> = lb.borrow().clone();
+                la.borrow_mut().extend_from_slice(&rhs);
+                self.push(a);
+                return Ok(());
+            }
+            OpCode::Add
+        } else { op };
+
         // Root operands: the dunder runs user code that can GC, and we read a/b after it (record + fallback).
         let roots = self.temp_roots.len();
         self.temp_roots.push(a);

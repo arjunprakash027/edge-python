@@ -133,10 +133,10 @@
     "annotations": {}
   },
   {
-    "src": "x = 1\nx += 2", 
-    "constants": ["1", "2"], 
-    "names": ["x_1", "x_2"], 
-    "instructions": [["LoadConst",0], ["StoreName",0], ["LoadName",0], ["LoadConst",1], ["Add",0], ["StoreName",0], ["ReturnValue",0]], 
+    "src": "x = 1\nx += 2",
+    "constants": ["1", "2"],
+    "names": ["x_1", "x_2"],
+    "instructions": [["LoadConst",0], ["StoreName",0], ["LoadName",0], ["LoadConst",1], ["InPlaceAdd",0], ["StoreName",0], ["ReturnValue",0]],
     "annotations": {}
   },
   {
@@ -386,10 +386,10 @@
     "annotations": {}
   },
   {
-    "src": "s = 0\nfor i in range(10):\ns += i", 
-    "constants": ["0", "10"], 
-    "names": ["s_1", "i_1", "s_2", "i_0", "i_2", "s_3"], 
-    "instructions": [["LoadConst",0], ["StoreName",0], ["LoadConst",1], ["CallRange",1], ["GetIter",0], ["ForIter",12], ["StoreName",3], ["LoadName",0], ["LoadName",3], ["Add",0], ["StoreName",0], ["Jump",5], ["Phi",3], ["Phi",0], ["ReturnValue",0]], 
+    "src": "s = 0\nfor i in range(10):\ns += i",
+    "constants": ["0", "10"],
+    "names": ["s_1", "i_1", "s_2", "i_0", "i_2", "s_3"],
+    "instructions": [["LoadConst",0], ["StoreName",0], ["LoadConst",1], ["CallRange",1], ["GetIter",0], ["ForIter",12], ["StoreName",3], ["LoadName",0], ["LoadName",3], ["InPlaceAdd",0], ["StoreName",0], ["Jump",5], ["Phi",3], ["Phi",0], ["ReturnValue",0]],
     "annotations": {}
   },
   {
@@ -414,10 +414,10 @@
     "annotations": {}
   },
   {
-    "src": "x = 10\nx += 1\nx -= 2\nx *= 3\nx /= 4", 
-    "constants": ["10", "1", "2", "3", "4"], 
-    "names": ["x_1", "x_2", "x_3", "x_4", "x_5"], 
-    "instructions": [["LoadConst",0], ["StoreName",0], ["LoadName",0], ["LoadConst",1], ["Add",0], ["StoreName",0], ["LoadName",0], ["LoadConst",2], ["Sub",0], ["StoreName",0], ["LoadName",0], ["LoadConst",3], ["Mul",0], ["StoreName",0], ["LoadName",0], ["LoadConst",4], ["Div",0], ["StoreName",0], ["ReturnValue",0]], 
+    "src": "x = 10\nx += 1\nx -= 2\nx *= 3\nx /= 4",
+    "constants": ["10", "1", "2", "3", "4"],
+    "names": ["x_1", "x_2", "x_3", "x_4", "x_5"],
+    "instructions": [["LoadConst",0], ["StoreName",0], ["LoadName",0], ["LoadConst",1], ["InPlaceAdd",0], ["StoreName",0], ["LoadName",0], ["LoadConst",2], ["Sub",0], ["StoreName",0], ["LoadName",0], ["LoadConst",3], ["Mul",0], ["StoreName",0], ["LoadName",0], ["LoadConst",4], ["Div",0], ["StoreName",0], ["ReturnValue",0]],
     "annotations": {}
   },
   {

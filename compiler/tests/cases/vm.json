@@ -2271,5 +2271,17 @@
   {"src": "print(sorted({1, 2, 3} - {2}))", "output": ["[1, 3]"]},
   {"src": "print(sorted({1, 2} ^ {2, 3}))", "output": ["[1, 3]"]},
   {"src": "print({1, 2, 3}.isdisjoint({4, 5}))", "output": ["True"]},
-  {"src": "print(len({1, 2, 3, 1, 2}))", "output": ["3"]}
+  {"src": "print(len({1, 2, 3, 1, 2}))", "output": ["3"]},
+
+  {"src": "def apply(f, x):\n    return f(x)\napply(print, 7)\napply(print, 7)\napply(print, 7)", "output": ["7", "7", "7"]},
+  {"src": "def apply(f, x):\n    return f(x)\ndef shout(x):\n    print(x)\n    return x\napply(shout, 1)\napply(shout, 1)\napply(shout, 1)", "output": ["1", "1", "1"]},
+  {"src": "def apply(f):\n    return f()\nprint(apply(input))\nprint(apply(input))\nprint(apply(input))", "input": ["a", "b", "c"], "output": ["a", "b", "c"]},
+  {"src": "def apply(f, x):\n    return f(x)\ndef dbl(x):\n    return x * 2\nprint(apply(dbl, 5))\nprint(apply(dbl, 5))\nprint(apply(dbl, 5))", "output": ["10", "10", "10"]},
+
+  {"src": "xs = [1, 2, 3]\nys = xs\nxs += [4]\nprint(ys)", "output": ["[1, 2, 3, 4]"]},
+  {"src": "xs = [1, 2]\nxs += xs\nprint(xs)", "output": ["[1, 2, 1, 2]"]},
+  {"src": "def add(xs):\n    xs += [9]\nys = [1]\nadd(ys)\nprint(ys)", "output": ["[1, 9]"]},
+  {"src": "i = 5\ni += 3\nprint(i)", "output": ["8"]},
+  {"src": "s = \"a\"\nt = s\ns += \"b\"\nprint(s, t)", "output": ["ab a"]},
+  {"src": "acc = []\nfor i in range(3):\n    acc += [i]\nprint(acc)", "output": ["[0, 1, 2]"]}
 ]

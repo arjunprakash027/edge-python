@@ -219,7 +219,7 @@ Free variables (non-parameters with no local binding) are looked up in the outer
 
 Parameter slots: `Normal`, `Star` (`*args`), `DoubleStar` (`**kwargs`). Lone `*` separator marks following params as keyword-only. Defaults live in `HeapObj::Func.defaults` and apply to the last-N positional slots. Annotations (`x: T`, `-> T`) parse and drain to `chunk.annotations` (tooling-only).
 
-`compile_body` checks impurity opcodes (`StoreItem`, `StoreAttr`, `CallPrint`, `CallInput`, `Global`, `Nonlocal`, `Import`, `Raise`, `Yield`, `LoadAttr`) to set `body.is_pure`, the flag that gates template memoisation ([Design](/implementation/design#concepts)).
+`compile_body` checks impurity opcodes (`StoreItem`, `StoreAttr`, `CallPrint`, `CallInput`, `Global`, `Nonlocal`, `Import`, `Raise`, `Yield`, `LoadAttr`) to set `body.is_pure`, the flag that gates template memoisation ([Design](/implementation/design#concepts)). This static gate is complemented at runtime by an observed-impurity check that propagates through calls, so a side-effecting builtin reached as a first-class value (e.g. `print` passed to a wrapper) disqualifies the caller too.
 
 ## Type annotations
 

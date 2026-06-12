@@ -15,6 +15,20 @@ fn constructor_native(name: &str) -> Option<super::super::types::NativeFnId> {
     })
 }
 
+// Effects/mutation/scheduling/import/reflection/nondeterminism. Over-marking only forgoes memoisation; under-marking drops effects.
+fn native_is_impure(id: super::super::types::NativeFnId) -> bool {
+    use super::super::types::NativeFnId::*;
+    matches!(id,
+        Print | Input | Receive | Sleep // I/O + scheduler
+        | SetAttr | DelAttr // mutation
+        | GetAttr | HasAttr // attr access can run getters
+        | Run | ImportModule // arbitrary execution / import
+        | Cancel | WithTimeout | Gather // async effects
+        | Globals | Locals | Vars | Frame | Super // reflection of mutable state
+        | Id // heap-slot nondeterminism
+    )
+}
+
 impl<'a> VM<'a> {
     /* Dispatch every function-shaped opcode (Call, MakeFunction, builtins). */
     pub(crate) fn handle_function(&mut self, op: OpCode, operand: u16, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
@@ -266,6 +280,8 @@ impl<'a> VM<'a> {
 
         if let HeapObj::NativeFn(id) = self.heap.get(callee) {
             let id = *id;
+            // First-class builtins (e.g. `apply(print, x)`) bypass the CallPrint/CallInput opcodes; mark here so a pure wrapper around them isn't memoised.
+            if native_is_impure(id) { self.mark_impure(); }
             self.dispatch_native(id, positional, kw_flat, chunk, slots)?;
             return Ok(true);
         }

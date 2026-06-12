@@ -3,7 +3,7 @@ WASM bridge: wires parser/VM to host via the handle ABI.
 Wire contract lives in `crate::abi`; extend there, never here.
 */
 
-use lol_alloc::{AssumeSingleThreaded, LeakingAllocator};
+use lol_alloc::{AssumeSingleThreaded, FreeListAllocator};
 use crate::abi::{ErrorStash, HandleTable};
 use crate::modules::vm::VM;
 use crate::modules::vm::types::{Val, VmErr};
@@ -39,9 +39,9 @@ pub(super) fn now_ns_host() -> u64 {
     unsafe { host_now_ns() }
 }
 
-/* Bump-pointer allocator. Default `LeakingPageAllocator` calls memory.grow(1) per alloc, around 0.2 ms on HVCI/VBS hosts (e.g., Snapdragon X on V8); 3,000-alloc perceptron run hit 600 ms, bumping cuts it to around 50 grows. */
+/* Free-list (not leaking): reclaims Rust allocs so long-lived embeds don't grow monotonically. VM GC only recycles its own Python heap. */
 #[global_allocator]
-static A: AssumeSingleThreaded<LeakingAllocator> = unsafe { AssumeSingleThreaded::new(LeakingAllocator::new()) };
+static A: AssumeSingleThreaded<FreeListAllocator> = unsafe { AssumeSingleThreaded::new(FreeListAllocator::new()) };
 
 /* Best-effort panic-to-stash so the host gets a typed message instead of an opaque trap. Re-entry during the format alloc falls through to unreachable(), same trap as before. */
 #[panic_handler]

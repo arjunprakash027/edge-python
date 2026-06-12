@@ -253,7 +253,7 @@ Parsed for compatibility but never invoked on user classes:
 
 - `__init_subclass__`, `__set_name__`, descriptors (`__get__` / `__set__` / `__delete__`)
 - `__new__`, VM constructs the instance; `__init__` runs user logic
-- Augmented-assignment dunders (`__iadd__`, ...), `a += b` desugars to `a = a + b`, so `__add__` covers it
+- Augmented-assignment dunders (`__iadd__`, ...), `a += b` desugars to `a = a + b`, so `__add__` covers it. Exception: when `a` is a name bound to a `list`, `+=` extends it in place (alias-visible), matching CPython's `list.__iadd__`
 - Async dunders (`__aenter__` / `__aexit__` / `__aiter__` / `__anext__`), `async with` / `async for` use the sync paths
 
 For class basics (constructors, inheritance, properties), see [Classes](/language/classes).

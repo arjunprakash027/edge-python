@@ -333,7 +333,7 @@ True False
 ```
 
 <Note>
-Pure functions are memoized after two calls with the same arguments. The VM detects purity: no I/O, no mutation, no raise, no yield. It caches results in a per-function template table. Naive recursion runs at memoized cost with no source changes.
+Pure functions are memoized after two calls with the same arguments. The VM detects purity statically (no I/O, no mutation, no raise, no yield) and confirms it at runtime: any call that performs a side effect — including a builtin like `print` passed as a first-class value — marks the call impure and skips the cache, so memoization never drops an effect. Results live in a per-function template table. Naive recursion runs at memoized cost with no source changes.
 </Note>
 
 ## Generators

@@ -352,7 +352,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.advance();
                 self.emit_load_ssa(name.clone());
                 self.expr();
-                self.chunk.emit(op, 0);
+                // `+=` on a name uses the in-place variant so list targets mutate the shared object instead of rebinding (alias-visible, like CPython).
+                self.chunk.emit(if op == OpCode::Add { OpCode::InPlaceAdd } else { op }, 0);
                 self.store_name(name);
                 false
             }

@@ -412,7 +412,7 @@ impl<'a> VM<'a> {
             | OpCode::Mod | OpCode::FloorDiv
             | OpCode::Eq | OpCode::Lt | OpCode::NotEq
             | OpCode::Gt | OpCode::LtEq | OpCode::GtEq
-            | OpCode::Div | OpCode::Pow | OpCode::Minus => {
+            | OpCode::Div | OpCode::Pow | OpCode::Minus | OpCode::InPlaceAdd => {
                 self.exec_arith_or_compare(ins.opcode, rip, cache, chunk, slots)?;
             }
 
