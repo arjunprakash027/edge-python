@@ -73,17 +73,20 @@ async function runPackage(pkg) {
             const ready = new Promise((res) => el.addEventListener("ready", res, { once: true }));
             document.head.appendChild(el);
             await ready;
-            globalThis.lines = [];
-            el.onOutput((line) => globalThis.lines.push(line));
+            // Byte-stream stdout: accumulate raw chunks; lines are reconstructed at compare time.
+            globalThis.out = "";
+            el.onOutput((chunk) => { globalThis.out += chunk; });
             globalThis.el = el;
         }, MANIFEST);
 
         for (const [i, c] of cases.entries()) {
             const src = `from ${pkg} import *\n${c.src}`;
             const result = await page.evaluate(async (s) => {
-                globalThis.lines.length = 0;
+                globalThis.out = "";
                 const { out } = await globalThis.el.run(s);
-                return { output: [...globalThis.lines], error: out || null };
+                // Split the raw stream into terminal lines: drop the single trailing newline, then split.
+                const output = globalThis.out === "" ? [] : globalThis.out.replace(/\n$/, "").split("\n");
+                return { output, error: out || null };
             }, src);
 
             if (c.error) {

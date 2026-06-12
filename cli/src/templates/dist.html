@@ -16,8 +16,15 @@
       hostModules: pkgs.host || {},
       defaults: false,
     });
-    worker.onOutput((line) => console.log(line));
+    // Byte-stream stdout: buffer raw chunks and console.log only whole lines (console.log adds its own newline).
+    let buf = "";
+    worker.onOutput((chunk) => {
+      buf += chunk;
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) { console.log(buf.slice(0, nl)); buf = buf.slice(nl + 1); }
+    });
     await worker.run(src, { baseUrl: location.href });
+    if (buf) console.log(buf); // flush a trailing line printed without a newline (e.g. print(end=""))
   </script>
 </body>
 </html>

@@ -90,8 +90,9 @@ async function runCapability(cap) {
             const ready = new Promise((res) => el.addEventListener("ready", res, { once: true }));
             document.head.appendChild(el);
             await ready;
-            globalThis.lines = [];
-            el.onOutput((line) => globalThis.lines.push(line));
+            // Byte-stream stdout: accumulate raw chunks; lines are reconstructed at compare time.
+            globalThis.out = "";
+            el.onOutput((chunk) => { globalThis.out += chunk; });
             // DBs present once the runtime is up (its integrity cache); resetState must leave these alone.
             globalThis.baseline = indexedDB.databases ? (await indexedDB.databases()).map((d) => d.name) : [];
             globalThis.el = el;
@@ -111,9 +112,11 @@ async function runCapability(cap) {
                         req.onsuccess = req.onerror = req.onblocked = () => res();
                     })));
                 }
-                globalThis.lines.length = 0;
+                globalThis.out = "";
                 const { out } = await globalThis.el.run(s);
-                return { output: [...globalThis.lines], error: out || null };
+                // Split the raw stream into terminal lines: drop the single trailing newline, then split.
+                const output = globalThis.out === "" ? [] : globalThis.out.replace(/\n$/, "").split("\n");
+                return { output, error: out || null };
             }, { s: src, html: c.html });
             await uninstallMocks();
 

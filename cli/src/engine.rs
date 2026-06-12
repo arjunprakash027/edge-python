@@ -100,10 +100,18 @@ impl Session {
     }
 }
 
-/// One-shot: open a session, eval `src`, print lines to stdout, tear down. Returns the process exit code (0 clean, 1 on error, or the script's `SystemExit` code).
+/// Write a raw stdout chunk (byte-stream: it already carries its own `end`) and flush so streaming output appears at once.
+pub fn emit_chunk(chunk: &str) {
+    use std::io::Write;
+    let mut out = std::io::stdout();
+    let _ = out.write_all(chunk.as_bytes());
+    let _ = out.flush();
+}
+
+/// One-shot: open a session, eval `src`, stream stdout, tear down. Returns the process exit code (0 clean, 1 on error, or the script's `SystemExit` code).
 pub fn run(src: &str, manifest: &Manifest) -> Result<i32> {
     let mut session = Session::open(manifest)?;
-    let outcome = session.eval(src, |line| println!("{line}"))?;
+    let outcome = session.eval(src, emit_chunk)?;
     if let Some(err) = outcome.err {
         crate::ui::traceback(&err);
         return Ok(1);
@@ -167,7 +175,7 @@ fn wait_ready(tab: &headless_chrome::Tab) -> Result<()> {
     }
 }
 
-/// Poll the page, stream new output lines, and resolve when the current eval finishes.
+/// Poll the page, stream each new raw stdout chunk, and resolve when the current eval finishes.
 fn drain<F: FnMut(&str)>(tab: &headless_chrome::Tab, on_line: &mut F) -> Result<Outcome> {
     let mut printed = 0usize;
     let deadline = Instant::now() + EVAL_TIMEOUT;

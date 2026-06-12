@@ -31,7 +31,8 @@ const worker = await createWorker({
     loaders: [], // opt-in module loaders, optional
 });
 
-worker.onOutput((line) => console.log(line));
+let stdout = "";
+worker.onOutput((chunk) => { stdout += chunk; }); // raw byte stream; concatenate, don't add newlines
 
 const { out, ms } = await worker.run(`
     from dom import query, set_text
@@ -64,7 +65,7 @@ The element keeps its worker on `el.worker`, so you can drive the same VM from J
 ```js
 const el = document.querySelector("edge-python");
 await new Promise((r) => el.addEventListener("ready", r, { once: true }));
-el.onOutput((line) => console.log(line));
+el.onOutput((chunk) => process.stdout.write(chunk)); // raw chunks, no added newline
 await el.run("print(1 + 1)"); // 2
 ```
 
