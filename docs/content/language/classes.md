@@ -14,7 +14,7 @@ Supported:
 - `@property` / `@x.setter`.
 - A curated dunder protocol: operators, indexing, iteration, hashing, context managers, attribute fallback (see [Dunder methods](/language/dunders)).
 
-Out of scope: multi-base C3 MRO, descriptors, metaclasses, `__slots__`.
+Out of scope: descriptors, metaclasses, `__slots__`.
 
 ## State-machine pattern
 
@@ -70,7 +70,7 @@ print(Math.cube(3))
 
 ## Inheritance and super()
 
-Single base via `class Sub(Base):`. Methods not on the subclass are looked up linearly on the base (no C3 MRO). `isinstance(x, Base)` walks the same chain, so `Sub` instances are also instances of every ancestor.
+Single or multiple bases (`class Sub(Base):`, `class C(A, B):`). Methods not on the subclass resolve along the C3 linearization (the MRO), the same order CPython uses; an inconsistent hierarchy raises `TypeError` at class creation. `isinstance(x, Base)` walks the ancestor chain, so `Sub` instances are also instances of every ancestor.
 
 `super()` (zero-arg) delegates to the next class up the chain, bound to current `self`. Most common in `__init__` to extend a base constructor.
 
@@ -181,7 +181,6 @@ See [Dunder methods](/language/dunders) for the full matrix.
 
 ## What is not supported
 
-* Multi-base inheritance with proper C3 MRO. `class C(A, B):` parses and both bases are stored, but resolution is a linear depth-first walk, not C3. Prefer single inheritance.
 * Metaclasses, descriptors (`__get__` / `__set__`), `__slots__`, ABCs, `__init_subclass__`.
 * `@staticmethod` / `@classmethod`: use the namespace pattern or free functions.
 * Async dunders; see [Dunders, What's not dispatched](/language/dunders#whats-not-dispatched).

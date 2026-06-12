@@ -12,7 +12,7 @@ It reads like Python: it parses Python syntax. It runs differently. What it exec
 ## What it supports
 
 - **First-class functions**: pass them, return them, store them in lists and dicts. Decorators apply to both `def` and `class`.
-- **Lambdas with closures**: full lexical capture by value-snapshot at `MakeFunction`, currying, partial application.
+- **Lambdas with closures**: full lexical capture via shared cells, so sibling closures and `nonlocal` writes see each other; currying, partial application.
 - **Generators and coroutines**: `yield`, `yield from`, `async def`, `await`. Generator expressions are eagerly materialised to lists; use a `def` with `yield` for true laziness.
 - **Comprehensions**: list, dict, and set, with multiple `for` clauses and `if` guards.
 - **Pattern matching**: `match` / `case` with literals, captures, OR-patterns, guards, and sequence patterns (one star permitted).
