@@ -125,7 +125,7 @@ The returned object exposes:
 | `integrityActive` | `boolean` | `true` iff IDB cache opened successfully. Inspect after `createWorker` to detect silent fallback. |
 | `loadMs` | `number` | Wall time to load + compile `compiler.wasm`. |
 | `run(src, opts?)` | `(string, {entryDir?, baseUrl?}) => Promise<{out, ms}>` | Execute a Python source string. The runtime does not auto-invoke `main`, scripts that define `async def main()` must drive it themselves with a trailing `run(main())`. Top-level scripts (no `main`) execute under the implicit module-body coroutine, so `receive()`, `sleep()`, etc. still work without wrapping. `entryDir` is a prefix joined to relative import specs; `baseUrl` overrides the base for URL resolution (defaults to the worker's `location.href`). Resolves with stdout (concatenated `print()` lines if no `onOutput`) and wall time. |
-| `onOutput(handler)` | `(line: string) => void` | Streaming output callback fired once per `print()` line. |
+| `onOutput(handler)` | `(chunk: string) => void` | Streaming output callback fired once per `print()`, with the raw bytes (body + its `end`, no newline added). Concatenate chunks; don't join with `\n`. |
 | `reset()` | `() => Promise<void>` | Clear registered modules without rebooting the worker. |
 | `clearCache()` | `() => Promise<void>` | Wipe IDB CAS + lockfile (or memory cache). Next run re-fetches everything. |
 | `pushEvent(message)` | `(string) => void` | Wake a paused `receive()` in the running script with `message`. Fire-and-forget. Browser bridges fire `CustomEvent("edge-python-event")` on `window`, which `createWorker` routes through `pushEvent` automatically. |
@@ -195,7 +195,7 @@ Per-call overhead: one `postMessage` round-trip (around 0.1 to 0.4 ms in modern 
 
 ## Worker bootstrap
 
-When the runtime is cross-origin (page on `demo.edgepython.com`, runtime served from `cdn.edgepython.com/runtime/`), Chromium rejects `new Worker(crossOriginUrl)` even with `type: 'module'`. `createWorker` spawns from a same-origin **Blob URL** that dynamically `import()`s the cross-origin module. Same-origin imports use the direct path; `createWorker` auto-selects from `import.meta.url`. The Blob bootstrap buffers any `postMessage` arriving before `worker.js` installs its handler.
+When the runtime is cross-origin (runtime served from `cdn.edgepython.com/runtime/`), Chromium rejects `new Worker(crossOriginUrl)` even with `type: 'module'`. `createWorker` spawns from a same-origin **Blob URL** that dynamically `import()`s the cross-origin module. Same-origin imports use the direct path; `createWorker` auto-selects from `import.meta.url`. The Blob bootstrap buffers any `postMessage` arriving before `worker.js` installs its handler.
 
 ## Module fetch lifecycle
 
