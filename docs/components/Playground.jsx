@@ -2,7 +2,7 @@
 
 // CodeJar editor (Shiki + auto-pair/Tab/Ctrl+Enter) → Nextra Pre/Code (plain). `code`/`output`: snippet source & default terminal text (base64, remark plugin).
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Pre, Code, Button } from 'nextra/components'
 import { run } from './runtime'
 
@@ -30,6 +30,8 @@ export function Playground({ code, output }) {
     const editorRef = useRef(null)
     const defaultText = fromB64(output).replace(/\n$/, '')
     const defaultCode = fromB64(code).replace(/\n$/, '')
+    // Stable ref: React 19 compares dangerouslySetInnerHTML by object identity, so a fresh `{__html}` each render re-applies innerHTML and wipes CodeJar/Shiki's spans (e.g. while running).
+    const seedHtml = useMemo(() => ({ __html: escapeHtml(defaultCode) }), [defaultCode])
     const [result, setResult] = useState(null) // null = showing default; else { text, error, ms }
     const [running, setRunning] = useState(false)
     const [phase, setPhase] = useState(null) // cold-start/exec phase: 'runtime' | 'worker' | 'running'
@@ -94,8 +96,8 @@ export function Playground({ code, output }) {
         <div className="ep-pg my-5">
             {/* Input: CodeJar editor, framed like a Nextra code block. */}
             <div className="ep-editor overflow-hidden rounded-md border border-gray-300 bg-white text-[.9em] dark:border-neutral-700 dark:bg-black">
-                {/* Seed the plain code into the HTML so it's visible on first paint (before editor.js/shiki load). `whitespace-pre` keeps line breaks pre-mount; CodeJar takes over on mount. dangerouslySetInnerHTML with a stable string -> React won't clobber CodeJar's DOM on later re-renders. */}
-                <div ref={edRef} className="ep-ed py-2 font-mono whitespace-pre" aria-label="Python source editor" suppressHydrationWarning dangerouslySetInnerHTML={{ __html: escapeHtml(defaultCode) }}/>
+                {/* Seed the plain code into the HTML so it's visible on first paint (before editor.js/shiki load). `whitespace-pre` keeps line breaks pre-mount; CodeJar takes over on mount. Stable `seedHtml` ref -> React won't re-apply innerHTML and clobber CodeJar's DOM on later re-renders. */}
+                <div ref={edRef} className="ep-ed py-2 font-mono whitespace-pre" aria-label="Python source editor" suppressHydrationWarning dangerouslySetInnerHTML={seedHtml}/>
             </div>
 
             {/* Output: thin header (status + Run) over Nextra's Pre/Code body (plain text, no highlight). */}
