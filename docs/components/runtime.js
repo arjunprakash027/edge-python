@@ -44,8 +44,10 @@ export async function run(src, onChunk, onPhase) {
 		let timer
 		try {
 			// Race against a hard timeout; terminate() kills the worker even mid-infinite-loop.
+			const runP = worker.run(src, { baseUrl: location.href })
+			runP.catch(() => {}) // loser of the race; killWorker rejects it with nobody listening
 			const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`Run exceeded ${RUN_TIMEOUT_MS / 1000}s — worker terminated`)), RUN_TIMEOUT_MS) })
-			const { out, ms } = await Promise.race([worker.run(src, { baseUrl: location.href }), timeout])
+			const { out, ms } = await Promise.race([runP, timeout])
 			return { error: out || '', ms }
 		} catch (e) {
 			// Timeout or worker death: respawn so the queue isn't wedged forever.
