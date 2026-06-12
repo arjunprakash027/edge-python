@@ -26,6 +26,7 @@ export function Playground({ code, output }) {
     const defaultCode = fromB64(code).replace(/\n$/, '')
     const [result, setResult] = useState(null) // null = showing default; else { text, error, ms }
     const [running, setRunning] = useState(false)
+    const [phase, setPhase] = useState(null) // cold-start/exec phase: 'runtime' | 'worker' | 'running'
 
     const runCode = useCallback(async (src) => {
         if (running) return
@@ -37,12 +38,13 @@ export function Playground({ code, output }) {
             const res = await run(src, (chunk) => {
                 buf += chunk
                 setResult({ text: buf, error: '', ms: 0 })
-            })
+            }, setPhase)
             setResult({ text: buf, error: res.error, ms: res.ms })
         } catch (e) {
             setResult({ text: buf, error: String(e?.message ?? e), ms: 0 })
         } finally {
             setRunning(false)
+            setPhase(null)
         }
     }, [running])
 
@@ -71,8 +73,9 @@ export function Playground({ code, output }) {
     const liveText = result ? result.text.replace(/\n$/, '') : ''
     const differs = result && !result.error && liveText !== defaultText
     const termBody = result ? [liveText, result.error].filter(Boolean).join('\n') : defaultText
+    const phaseLabel = { runtime: 'loading runtime…', worker: 'initializing worker…', running: 'running…' }
     const header = running
-        ? 'Output · running…'
+        ? `Output · ${phaseLabel[phase] ?? 'running…'}`
         : !result
             ? 'Output · expected'
             : result.error
