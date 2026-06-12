@@ -41,5 +41,5 @@ Hello from Python
 The site is a **static export** (`output: 'export'` in `next.config.js`), so `npm run build` emits a fully pre-rendered `out/` directory — no Node server in production.
 
 ```sh
-npm run build      # → out/  (also runs scripts/sitemap.mjs via postbuild)
+npm run build
 ```
