@@ -13,6 +13,10 @@ function fromB64(b64) {
     }
 }
 
+// Mirrors shiki.js's not-ready output so the seeded plain text matches CodeJar's first paint byte-for-byte (no flash).
+const HTML_ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;' }
+const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => HTML_ESC[c])
+
 const PlayIcon = () => (
     <svg viewBox="0 0 24 24" fill="currentColor" height="11.5" aria-hidden="true" focusable="false">
         <path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" />
@@ -88,7 +92,8 @@ export function Playground({ code, output }) {
         <div className="ep-pg my-5">
             {/* Input: CodeJar editor, framed like a Nextra code block. */}
             <div className="ep-editor overflow-hidden rounded-md border border-gray-300 bg-white text-[.9em] dark:border-neutral-700 dark:bg-black">
-                <div ref={edRef} className="ep-ed py-2 font-mono" aria-label="Python source editor"/>
+                {/* Seed the plain code into the HTML so it's visible on first paint (before editor.js/shiki load). `whitespace-pre` keeps line breaks pre-mount; CodeJar takes over on mount. dangerouslySetInnerHTML with a stable string -> React won't clobber CodeJar's DOM on later re-renders. */}
+                <div ref={edRef} className="ep-ed py-2 font-mono whitespace-pre" aria-label="Python source editor" suppressHydrationWarning dangerouslySetInnerHTML={{ __html: escapeHtml(defaultCode) }}/>
             </div>
 
             {/* Output: thin header (status + Run) over Nextra's Pre/Code body (plain text, no highlight). */}
