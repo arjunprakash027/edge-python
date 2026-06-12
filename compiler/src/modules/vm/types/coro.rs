@@ -80,6 +80,8 @@ pub struct CallFrame {
     // Class where the running method was found and its implicit `self`; consumed by `super()` to walk one level up. `None` for plain function calls.
     pub current_class: Option<Val>,
     pub current_self: Option<Val>,
+    // Closure cells created by MakeFunction in this frame, keyed by canonical slot. Lets sibling closures over the same enclosing variable share one cell (CPython cell semantics).
+    pub cells: alloc::vec::Vec<(usize, Val)>,
 }
 
 /* ForIter state, consumed one item per `next_item`. */

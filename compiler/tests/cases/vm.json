@@ -2300,5 +2300,9 @@
   {"src": "class A:\n    def m(self):\n        return \"A\"\nclass B(A):\n    def m(self):\n        return \"B\" + super().m()\nclass C(A):\n    def m(self):\n        return \"C\" + super().m()\nclass D(B, C):\n    def m(self):\n        return \"D\" + super().m()\nprint(D().m())", "output": ["DBCA"]},
   {"src": "class A:\n    def m(self):\n        return 1\nclass B(A):\n    def m(self):\n        return super().m() + 1\nclass C(B):\n    def m(self):\n        return super().m() + 1\nprint(C().m())", "output": ["3"]},
   {"src": "class A:\n    def a(self):\n        return \"a\"\nclass B:\n    def b(self):\n        return \"b\"\nclass C(A, B):\n    pass\nc = C()\nprint(c.a(), c.b())", "output": ["a b"]},
-  {"src": "class A:\n    pass\nclass B(A):\n    pass\nclass X(A, B):\n    pass", "output": [], "error": "method resolution order"}
+  {"src": "class A:\n    pass\nclass B(A):\n    pass\nclass X(A, B):\n    pass", "output": [], "error": "method resolution order"},
+  {"src": "def make():\n    n = 0\n    def inc():\n        nonlocal n\n        n += 1\n    def get():\n        return n\n    return inc, get\ninc, get = make()\ninc()\ninc()\nprint(get())", "output": ["2"]},
+  {"src": "def make():\n    n = 0\n    def inc():\n        nonlocal n\n        n += 1\n    def get():\n        return n\n    return inc, get\ninc, get = make()\nprint(get())\ninc()\nprint(get())\ninc()\nprint(get())", "output": ["0", "1", "2"]},
+  {"src": "def make():\n    n = 0\n    def inc():\n        nonlocal n\n        n += 1\n    def get():\n        return n\n    return inc, get\ni1, g1 = make()\ni2, g2 = make()\ni1()\ni1()\ni2()\nprint(g1(), g2())", "output": ["2 1"]},
+  {"src": "def make():\n    n = 0\n    def add(k):\n        nonlocal n\n        n += k\n    def get():\n        return n\n    return add, get\nadd, get = make()\nadd(5)\nadd(3)\nprint(get())", "output": ["8"]}
 ]

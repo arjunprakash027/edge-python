@@ -100,6 +100,8 @@ impl<'a> VM<'a> {
         let mut captures: Vec<(usize, Val)> = Vec::new();
         // Capture once per canonical slot, skipping formal params. Linear scan over `chunk.names` beats a HashMap at typical body sizes (<30) and avoids a per-call monomorphisation.
         let mut seen_canonical: crate::util::fx::FxHashSet<usize> = crate::util::fx::FxHashSet::default();
+        // Root the in-progress cells: each is reachable only via this local Vec until the Func is allocated, so a GC during the loop's own allocs could otherwise sweep them.
+        let roots_base = self.temp_roots.len();
         for (bi, bname) in body.names.iter().enumerate() {
             if param_names.contains(bname.as_str()) { continue; }
             let canon = body.alias_groups.get(bi)
@@ -109,11 +111,15 @@ impl<'a> VM<'a> {
             if let Some((si, _)) = chunk.names.iter().enumerate().find(|(_, n)| n.as_str() == bname.as_str())
                 && let Some(&v) = slots.get(si)
                 && !v.is_undef() {
-                    captures.push((canon, v));
+                    // Capture a shared cell, not the raw value, so sibling closures over the same variable see each other's nonlocal writes. Key the registry by the parent slot `si` (stable across siblings), not the callee's `canon` (which differs per closure body).
+                    let cell = self.frame_cell_for(si, v)?;
+                    self.temp_roots.push(cell);
+                    captures.push((canon, cell));
                 }
         }
 
         let val = self.heap.alloc(HeapObj::Func(global, defaults, captures))?;
+        self.temp_roots.truncate(roots_base);
 
         // Entry-chunk top-level defs go into `globals` so forward refs resolve at call time. Module-level defs stay in the module's bindings (via `fn_module[fi]`) to keep cross-module helpers with the same name isolated.
         if core::ptr::eq(chunk, self.chunk) {
@@ -126,6 +132,29 @@ impl<'a> VM<'a> {
 
         self.push(val);
         Ok(())
+    }
+
+    // Closure cell: a 1-element heap list used as a shared mutable box. Sibling closures over the same enclosing variable capture the same cell, so a `nonlocal` write through one is visible in the others.
+    fn make_cell(&mut self, v: Val) -> Result<Val, VmErr> {
+        self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(vec![v]))))
+    }
+    fn cell_get(&self, cell: Val) -> Val {
+        if cell.is_heap()
+            && let HeapObj::List(rc) = self.heap.get(cell)
+            && let Some(&v) = rc.borrow().first() {
+                return v;
+            }
+        cell
+    }
+    // Reuse the current frame's cell for parent slot `si` (so sibling closures share) or create one seeded with `v`.
+    fn frame_cell_for(&mut self, si: usize, v: Val) -> Result<Val, VmErr> {
+        if let Some(frame) = self.call_stack.last()
+            && let Some(&(_, cell)) = frame.cells.iter().find(|(s, _)| *s == si) {
+                return Ok(cell);
+            }
+        let cell = self.make_cell(v)?;
+        if let Some(frame) = self.call_stack.last_mut() { frame.cells.push((si, cell)); }
+        Ok(cell)
     }
 
     /* `Call` orchestrator. Only user `Func` callees build a fresh `fn_slots` and run the body inline; every other callee kind short-circuits in `try_dispatch_non_func_callable`. */
@@ -463,10 +492,10 @@ impl<'a> VM<'a> {
             }
         }
 
-        // Closure captures: same rule as defaults, only fill if undef.
-        for &(bi, val) in captures {
+        // Closure captures: same rule as defaults, only fill if undef. Each capture is a shared cell; read its current value into the slot.
+        for &(bi, cell) in captures {
             if bi < fn_slots.len() && fn_slots[bi].is_undef() {
-                fn_slots[bi] = val;
+                fn_slots[bi] = self.cell_get(cell);
             }
         }
 
@@ -567,6 +596,7 @@ impl<'a> VM<'a> {
             caller_path: chunk.path.clone(),
             current_class,
             current_self,
+            cells: Vec::new(),
         });
 
         self.observed_impure.push(false);
@@ -595,13 +625,20 @@ impl<'a> VM<'a> {
                             if si < slots.len() { slots[si] = val; }
                         }
                     }
-                    // Sync closure-capture entries with the new value.
-                    if let HeapObj::Func(_, _, caps) = self.heap.get_mut(callee) {
-                        if let Some(cap) = caps.iter_mut().find(|(ci, _)| *ci == canon_body) {
-                            cap.1 = val;
-                        } else {
-                            caps.push((canon_body, val));
-                        }
+                    // Write into the shared cell so sibling closures over this variable observe the nonlocal write. Access `self.heap` directly (not via &mut self helpers) so it stays disjoint from the `name_index` borrow above.
+                    let cell = if let HeapObj::Func(_, _, caps) = self.heap.get(callee) {
+                        caps.iter().find(|(ci, _)| *ci == canon_body).map(|(_, c)| *c)
+                    } else { None };
+                    match cell {
+                        Some(c) => if let HeapObj::List(rc) = self.heap.get(c) {
+                            let mut b = rc.borrow_mut();
+                            if b.is_empty() { b.push(val); } else { b[0] = val; }
+                        },
+                        // Nonlocal target not captured at MakeFunction (rare): attach a fresh cell so the next call sees it.
+                        None => if let Ok(c) = self.heap.alloc(HeapObj::List(Rc::new(RefCell::new(vec![val]))))
+                            && let HeapObj::Func(_, _, caps) = self.heap.get_mut(callee) {
+                                caps.push((canon_body, c));
+                            },
                     }
                 }
             }
