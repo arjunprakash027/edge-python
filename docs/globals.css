@@ -72,3 +72,11 @@
 .ep-pg .ep-ed .shiki {
     background: transparent !important;
 }
+
+/* Run button accent: 2px-look border via inset shadow (no reflow); active/focus-visible cover touch (no :hover). */
+.ep-pg .ep-run:hover,
+.ep-pg .ep-run:active,
+.ep-pg .ep-run:focus-visible {
+    border-color: hsl(var(--nextra-primary-hue) var(--nextra-primary-saturation) var(--nextra-primary-lightness) / 0.5);
+    box-shadow: inset 0 0 0 1px hsl(var(--nextra-primary-hue) var(--nextra-primary-saturation) var(--nextra-primary-lightness) / 0.5);
+}
