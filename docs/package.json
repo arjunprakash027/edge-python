@@ -5,7 +5,7 @@
     "scripts": {
         "dev": "next dev",
         "build": "next build",
-        "postbuild": "node scripts/sitemap.mjs",
+        "postbuild": "pagefind --site out --output-subdir _pagefind && node scripts/sitemap.mjs",
         "start": "next start"
     },
     "dependencies": {
@@ -19,6 +19,7 @@
     },
     "devDependencies": {
         "@tailwindcss/postcss": "^4.3.0",
+        "pagefind": "^1.5.2",
         "postcss": "^8.5.15",
         "tailwindcss": "^4.3.0"
     },
