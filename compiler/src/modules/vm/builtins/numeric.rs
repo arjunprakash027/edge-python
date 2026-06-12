@@ -1,4 +1,5 @@
 use alloc::string::String;
+use alloc::vec::Vec;
 
 use super::super::VM;
 use super::super::types::*;
