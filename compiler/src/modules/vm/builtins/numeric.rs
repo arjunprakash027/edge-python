@@ -215,18 +215,19 @@ impl<'a> VM<'a> {
         self.push(v); Ok(())
     }
 
-    pub fn call_min(&mut self, op: u16) -> Result<(), VmErr> { self.call_minmax(op, true) }
-    pub fn call_max(&mut self, op: u16) -> Result<(), VmErr> { self.call_minmax(op, false) }
+    pub fn call_min(&mut self, op: u16, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> { self.call_minmax(op, true, chunk, slots) }
+    pub fn call_max(&mut self, op: u16, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> { self.call_minmax(op, false, chunk, slots) }
 
-    fn call_minmax(&mut self, op: u16, is_min: bool) -> Result<(), VmErr> {
+    fn call_minmax(&mut self, op: u16, is_min: bool, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let (positional, kw_flat, _np, _nk) = self.parse_call_args(op)?;
-        // Optional `default=` (returned when a single iterable is empty).
+        // Optional `default=` (returned when a single iterable is empty) and `key=` (compare by key(x)).
         let mut default: Option<Val> = None;
+        let mut key: Option<Val> = None;
         for pair in kw_flat.chunks_exact(2) {
-            if matches!(self.heap.try_get(pair[0]), Some(HeapObj::Str(s)) if s == "default") {
-                default = Some(pair[1]);
-            } else {
-                return Err(cold_type("min()/max() got an unexpected keyword argument"));
+            match self.heap.try_get(pair[0]) {
+                Some(HeapObj::Str(s)) if s == "default" => default = Some(pair[1]),
+                Some(HeapObj::Str(s)) if s == "key" => { if !pair[1].is_none() { key = Some(pair[1]); } }
+                _ => return Err(cold_type("min()/max() got an unexpected keyword argument")),
             }
         }
         // One arg iterable; many args are values.
@@ -235,11 +236,21 @@ impl<'a> VM<'a> {
         if items.is_empty() {
             return match default { Some(d) => { self.push(d); Ok(()) }, None => Err(cold_value(label)) };
         }
-        let m = items[1..].iter().try_fold(items[0], |m, &x| {
-            let (l, r) = if is_min { (x, m) } else { (m, x) };
-            self.lt_vals(l, r).map(|lt| if lt { x } else { m })
-        })?;
-        self.push(m); Ok(())
+        // Without a key, compare elements directly; with one, compare key(x) but return the winning element.
+        let keys: Vec<Val> = match key {
+            None => items.clone(),
+            Some(k) => {
+                let mut ks = Vec::with_capacity(items.len());
+                for &x in &items { self.push(k); self.push(x); self.exec_call(1, chunk, slots)?; ks.push(self.pop()?); }
+                ks
+            }
+        };
+        let mut best = 0;
+        for i in 1..items.len() {
+            let (l, r) = if is_min { (keys[i], keys[best]) } else { (keys[best], keys[i]) };
+            if self.lt_vals(l, r)? { best = i; }
+        }
+        self.push(items[best]); Ok(())
     }
 
     pub fn call_sum(&mut self, op: u16) -> Result<(), VmErr> {

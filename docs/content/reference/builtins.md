@@ -82,7 +82,7 @@ print(round(1.55, 1))
 
 ### min, max
 
-Variadic or single iterable. Accept a `default=` returned when a single iterable is empty; without it an empty input raises `ValueError`. No `key=` (transform inline). Ordering follows `<`: numbers, strings, bytes, and tuples/lists (lexicographic).
+Variadic or single iterable. Accept a `default=` returned when a single iterable is empty; without it an empty input raises `ValueError`. A `key=` function selects the comparison value (the original element is returned). Ordering follows `<`: numbers, strings, bytes, and tuples/lists (lexicographic).
 
 ```python
 print(min(3, 1, 4))
@@ -346,7 +346,7 @@ print(reversed("abc"))
 
 ### enumerate
 
-Pairs each element with its index -> list of `(i, value)` tuples. No `start=`, add the offset yourself.
+Pairs each element with its index -> list of `(i, value)` tuples. A second argument (positional or `start=`) sets the first index.
 
 ```python
 for i, v in enumerate(["a", "b", "c"]):
@@ -379,7 +379,7 @@ print(list(zip([1, 2], [3, 4], [5, 6])))
 
 ### next
 
-`next(iterator)` -> next item. Exhausted -> `StopIteration`. Two-arg `next(it, default)` not supported.
+`next(iterator)` -> next item. Exhausted -> `StopIteration`. Two-arg `next(it, default)` returns `default` instead of raising on exhaustion.
 
 ```python
 it = iter([10, 20, 30])
@@ -396,7 +396,7 @@ print(next(it))
 
 ### iter
 
-`iter(x)` returns a fresh iterator over any iterable (list, tuple, set, dict, range, str, bytes, frozenset). Materialises a snapshot, original never mutated. Two-arg `iter(callable, sentinel)` not supported.
+`iter(x)` returns a fresh iterator over any iterable (list, tuple, set, dict, range, str, bytes, frozenset). Materialises a snapshot, original never mutated. Two-arg `iter(callable, sentinel)` calls `callable()` until it returns `sentinel`, eagerly.
 
 ```python
 it = iter([1, 2, 3])

@@ -8,6 +8,7 @@ pub(crate) const MAX_EXPR_DEPTH: usize = 200;
 pub(crate) const MAX_INSTRUCTIONS: usize = 65_535;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(u8)] // <256 variants; guarantees a 1-byte tag for stable bytecode / transmute / jump-table dispatch
 pub enum OpCode {
     LoadConst, LoadName, StoreName, Call, PopTop, ReturnValue, BuildString, CallPrint, CallLen, 
     FormatValue, CallAbs, Minus, CallStr, CallInt, CallRange, Phi, CallChr, CallType, MakeFunction, 

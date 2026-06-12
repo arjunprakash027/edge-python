@@ -221,12 +221,28 @@ impl<'a> VM<'a> {
         self.alloc_and_push_list(items)
     }
 
-    pub fn call_enumerate(&mut self) -> Result<(), VmErr> {
-        let o = self.pop()?;
-        let src = self.extract_iter(o, false)?;
+    pub fn call_enumerate(&mut self, op: u16) -> Result<(), VmErr> {
+        let (positional, kw_flat, _np, _nk) = self.parse_call_args(op)?;
+        if positional.is_empty() || positional.len() > 2 {
+            return Err(cold_type("enumerate() takes 1 or 2 positional arguments"));
+        }
+        // `start` is positional (`enumerate(xs, 5)`) or keyword (`enumerate(xs, start=5)`); default 0.
+        let mut start = if positional.len() == 2 { positional[1] } else { Val::int(0) };
+        for pair in kw_flat.chunks_exact(2) {
+            match self.heap.try_get(pair[0]) {
+                Some(HeapObj::Str(s)) if s == "start" => start = pair[1],
+                _ => return Err(cold_type("enumerate() got an unexpected keyword argument")),
+            }
+        }
+        let start = match self.as_i128(start) {
+            Some(n) => n,
+            None => return Err(cold_type("enumerate() start must be an integer")),
+        };
+        let src = self.extract_iter(positional[0], false)?;
         let mut pairs: Vec<Val> = Vec::with_capacity(src.len());
         for (i, x) in src.into_iter().enumerate() {
-            let t = self.heap.alloc(HeapObj::Tuple(vec![Val::int(i as i64), x]))?;
+            let idx = self.int_to_val(start.checked_add(i as i128))?;
+            let t = self.heap.alloc(HeapObj::Tuple(vec![idx, x]))?;
             pairs.push(t);
         }
         self.alloc_and_push_list(pairs)
@@ -335,21 +351,43 @@ impl<'a> VM<'a> {
         self.extract_iter(o, true)
     }
 
-    /* `iter(x)`, eager flatten into a fresh List drained front-to-back by `next()`. Original isn't touched. Mirrors the universal ABI's `Op::Iter`. */
-    pub fn call_iter(&mut self) -> Result<(), VmErr> {
+    /* `iter(x)`, eager flatten into a fresh List drained front-to-back by `next()`. Original isn't touched. Mirrors the universal ABI's `Op::Iter`. The 2-arg form `iter(callable, sentinel)` calls `callable()` until it returns `sentinel`, eagerly. */
+    pub fn call_iter(&mut self, argc: u16, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+        if argc == 2 {
+            let sentinel = self.pop()?;
+            let callable = self.pop()?;
+            let mut items: Vec<Val> = Vec::new();
+            loop {
+                self.charge_step()?; // bound the call loop against the op budget
+                self.push(callable);
+                self.exec_call(0, chunk, slots)?;
+                let v = self.pop()?;
+                if eq_vals_with_heap(v, sentinel, &self.heap) { break; }
+                if items.len() >= self.heap.limit() { return Err(cold_heap()); }
+                items.push(v);
+            }
+            return self.alloc_and_push_list(items);
+        }
+        if argc != 1 { return Err(cold_type("iter() takes 1 or 2 arguments")); }
         let o = self.pop()?;
         let items = self.iter_to_vec_general(o)?;
         self.alloc_and_push_list(items)
     }
 
-    pub fn call_next(&mut self) -> Result<(), VmErr> {
+    pub fn call_next(&mut self, argc: u16) -> Result<(), VmErr> {
+        if argc == 0 || argc > 2 { return Err(cold_type("next() takes 1 or 2 arguments")); }
+        // `next(it, default)`: the 2nd arg is returned instead of raising StopIteration on exhaustion.
+        let default = if argc == 2 { Some(self.pop()?) } else { None };
         let o = self.pop()?;
         if !o.is_heap() { return Err(cold_type("next() requires an iterator")); }
         // List path mirrors the ABI's IterNext op so script `next()` and host `Op::IterNext` match.
         if let HeapObj::List(rc) = self.heap.get(o) {
             let rc = rc.clone();
             let mut v = rc.borrow_mut();
-            if v.is_empty() { return Err(VmErr::Raised(s!("StopIteration"))); }
+            if v.is_empty() {
+                drop(v);
+                return match default { Some(d) => { self.push(d); Ok(()) }, None => Err(VmErr::Raised(s!("StopIteration"))) };
+            }
             let item = v.remove(0);
             drop(v);
             self.push(item);
@@ -365,7 +403,7 @@ impl<'a> VM<'a> {
             self.push(result);
             Ok(())
         } else {
-            Err(VmErr::Runtime("StopIteration"))
+            match default { Some(d) => { self.push(d); Ok(()) }, None => Err(VmErr::Runtime("StopIteration")) }
         }
     }
 

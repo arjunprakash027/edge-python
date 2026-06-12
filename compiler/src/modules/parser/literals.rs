@@ -379,9 +379,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             return true;
         }
 
-        // min()/max() take a `default=` keyword, so keep positional and keyword counts distinct.
-        if name == "min" || name == "max" {
-            let op = if name == "min" { OpCode::CallMin } else { OpCode::CallMax };
+        // min()/max() (`default=`/`key=`) and enumerate() (`start=`) take keywords, so keep positional and keyword counts distinct.
+        if name == "min" || name == "max" || name == "enumerate" {
+            let op = match name.as_str() { "min" => OpCode::CallMin, "max" => OpCode::CallMax, _ => OpCode::CallEnumerate };
             let (pos, kw) = self.parse_args();
             self.chunk.emit(op, ((kw & 0xFF) << 8) | (pos & 0xFF));
             self.chunk.record_call_pos(call_pos);
