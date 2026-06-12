@@ -2,9 +2,7 @@ import nextra from 'nextra'
 import remarkPlayground from './lib/remark-playground.mjs'
 
 const withNextra = nextra({
-    theme: 'nextra-theme-docs',
-    themeConfig: './theme.config.jsx',
-    // Wrap python blocks (+ their `Output` block) into runnable <Playground> snippets.
+    // Nextra 4 (App Router) moved theme/themeConfig to app/layout.jsx; remark wraps python blocks into runnable <Playground>.
     mdxOptions: { remarkPlugins: [remarkPlayground] },
 })
 

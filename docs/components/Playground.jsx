@@ -1,3 +1,5 @@
+'use client'
+
 // CodeJar editor (Shiki + auto-pair/Tab/Ctrl+Enter) → Nextra Pre/Code (plain). `code`/`output`: snippet source & default terminal text (base64, remark plugin).
 
 import { useCallback, useEffect, useRef, useState } from 'react'
