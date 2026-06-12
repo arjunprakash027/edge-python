@@ -2,7 +2,6 @@
 
 A compact single-pass SSA bytecode compiler and stack VM for a sandboxed Python subset. Hand-written lexer, Pratt parser that emits bytecode directly (no AST), and a threaded-code interpreter with dual inline caching (scalar + instance-dunder), super-instruction fusion, and pure-function template memoization. Deterministic execution; around 170 KB WASM release.
 
-* **Demo:** [demo.edgepython.com](https://demo.edgepython.com/)
 * **Docs:** [edgepython.com](https://edgepython.com/)
 
 ## Architecture

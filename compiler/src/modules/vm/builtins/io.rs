@@ -5,7 +5,7 @@ use super::super::types::*;
 
 impl<'a> VM<'a> {
 
-    /* `print(*args, sep=' ', end='\n')`: joins args with `sep`, appends `end`; streams via `print_hook` or buffers line-by-line. */
+    /* `print(*args, sep=' ', end='\n')`: joins args with `sep`, appends `end`; streams exact bytes via `print_hook` or buffers. */
     pub fn call_print(&mut self, op: u16, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let (positional, kw_flat, _np, _nk) = self.parse_call_args(op)?;
         let mut sep = String::from(" ");
@@ -30,17 +30,11 @@ impl<'a> VM<'a> {
             let s = self.display_op(*v, chunk, slots)?;
             body.push_str(&s);
         }
+        body.push_str(&end);
+        // Byte-stream contract: hand over the exact bytes; no newline is added or removed.
         match self.print_hook {
-            Some(hook) => {
-                // Host appends the line break, so hand it the text minus one trailing '\n'.
-                body.push_str(&end);
-                if body.ends_with('\n') { body.pop(); }
-                hook(&body);
-            }
-            None => {
-                body.push_str(&end);
-                self.emit_buffered_output(&body);
-            }
+            Some(hook) => hook(&body),
+            None => self.emit_buffered_output(&body),
         }
         Ok(())
     }

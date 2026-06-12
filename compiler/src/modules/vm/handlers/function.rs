@@ -275,8 +275,12 @@ impl<'a> VM<'a> {
             let pure = extern_fn.pure;
             if !pure { self.mark_impure(); }
             let kwargs = Self::pack_kw_dict(&mut self.heap, kw_flat)?;
-            let result = func(&mut self.heap, positional, kwargs)?;
-            self.push(result);
+            // Park on host-deferral like `call_extern` (e.g. `time.sleep` via module attr).
+            match func(&mut self.heap, positional, kwargs) {
+                Ok(result) => self.push(result),
+                Err(VmErr::HostCallDeferred) => self.park_host_call(),
+                Err(e) => return Err(e),
+            }
             return Ok(true);
         }
 
@@ -603,18 +607,18 @@ impl<'a> VM<'a> {
         if !pure { self.mark_impure(); }
         match func(&mut self.heap, &positional, kwargs) {
             Ok(result) => { self.push(result); Ok(()) }
-            // Native deferred; assign a correlation id and park with a `None` placeholder that
-            // `set_host_result_by_id` overwrites before resume.
-            Err(VmErr::HostCallDeferred) => {
-                self.push(Val::none());
-                self.pending.host_call_id = self.next_host_call_id;
-                self.next_host_call_id += 1;
-                self.pending.host_call_request = true;
-                self.yielded = true;
-                Ok(())
-            }
+            Err(VmErr::HostCallDeferred) => { self.park_host_call(); Ok(()) }
             Err(e) => Err(e),
         }
+    }
+
+    /* Park a native that deferred to the host: `None` placeholder (overwritten by `set_host_result_by_id`), correlation id, yield. */
+    fn park_host_call(&mut self) {
+        self.push(Val::none());
+        self.pending.host_call_id = self.next_host_call_id;
+        self.next_host_call_id += 1;
+        self.pending.host_call_request = true;
+        self.yielded = true;
     }
 
     pub(crate) fn dispatch_native(&mut self, id: super::super::types::NativeFnId, positional: &[Val], kw: &[Val], chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {

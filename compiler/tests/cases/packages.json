@@ -518,6 +518,24 @@
     "output": ["got:dark"]
   },
   {
+    "src": "import m\nv = m.host_defer()\nprint(f'got:{v}')",
+    "modules": { "m": { "native": ["host_defer"] } },
+    "host_results": ["dark"],
+    "output": ["got:dark"]
+  },
+  {
+    "src": "import m\nprint(f'got:{m.host_defer()}')",
+    "modules": { "m": { "native": ["host_defer"] } },
+    "host_results": ["dark"],
+    "output": ["got:dark"]
+  },
+  {
+    "src": "from m import *\nv = host_defer()\nprint(f'got:{v}')",
+    "modules": { "m": { "native": ["host_defer"] } },
+    "host_results": ["dark"],
+    "output": ["got:dark"]
+  },
+  {
     "src": "from m import host_defer\nasync def a():\n    print('a:' + host_defer())\nasync def b():\n    print('b:' + host_defer())\ngather(a(), b())",
     "modules": { "m": { "native": ["host_defer"] } },
     "host_deliveries": [{"id": 1, "value": "B"}, {"id": 0, "value": "A"}],
