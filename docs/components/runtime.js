@@ -2,10 +2,21 @@
 const WASM_URL = 'https://cdn.edgepython.com/compiler.wasm'
 const RUNTIME_URL = 'https://cdn.edgepython.com/runtime/src/index.js'
 
+const RUN_TIMEOUT_MS = 10000 // hard per-run wall-clock cap so a hung snippet can't wedge the page queue
+
 let workerPromise = null
 let workerReady = false // flips true once the worker+wasm are loaded; gates the cold-start phases
 let activeSink = null // raw-stdout-chunk handler of the block currently running
 let runChain = Promise.resolve() // serializes runs: one shared worker + one global activeSink can't host two blocks at once
+
+// Terminate the shared worker and reset state so the next run respawns cold.
+async function killWorker() {
+	const wp = workerPromise
+	workerPromise = null
+	workerReady = false
+	activeSink = null
+	try { (await wp)?.dispose() } catch {}
+}
 
 // `onPhase` only matters for the first (cold) call: 'runtime' (downloading the ESM) then 'worker' (spawn + wasm fetch/instantiate).
 function getWorker(onPhase) {
@@ -30,10 +41,18 @@ export async function run(src, onChunk, onPhase) {
 		const worker = await getWorker(workerReady ? undefined : onPhase)
 		onPhase?.('running')
 		activeSink = onChunk
+		let timer
 		try {
-			const { out, ms } = await worker.run(src, { baseUrl: location.href })
+			// Race against a hard timeout; terminate() kills the worker even mid-infinite-loop.
+			const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`Run exceeded ${RUN_TIMEOUT_MS / 1000}s — worker terminated`)), RUN_TIMEOUT_MS) })
+			const { out, ms } = await Promise.race([worker.run(src, { baseUrl: location.href }), timeout])
 			return { error: out || '', ms }
+		} catch (e) {
+			// Timeout or worker death: respawn so the queue isn't wedged forever.
+			await killWorker()
+			throw e
 		} finally {
+			clearTimeout(timer)
 			activeSink = null
 		}
 	}

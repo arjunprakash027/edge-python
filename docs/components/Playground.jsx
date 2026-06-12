@@ -81,6 +81,7 @@ export function Playground({ code, output }) {
             disposed = true
             editor?.destroy()
             highlight?.dispose()
+            editorRef.current = null
         }
     }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

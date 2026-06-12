@@ -262,10 +262,13 @@ export function createEditor({ ed, defaultCode, onRun, highlight }) {
     };
 
     // listeners
+    // One AbortController so destroy() detaches every listener below (jar.destroy sheds only CodeJar's).
+    const ac = new AbortController();
+    const signal = ac.signal;
 
     /* Mirrors `event.isComposing`. Tracked explicitly so the post-`compositionend` `keydown` no-ops on Linux/Wayland where it re-fires. */
-    ed.addEventListener('compositionstart', () => { composing = true; });
-    ed.addEventListener('compositionend', () => { composing = false; });
+    ed.addEventListener('compositionstart', () => { composing = true; }, { signal });
+    ed.addEventListener('compositionend', () => { composing = false; }, { signal });
 
     ed.addEventListener('keydown', (e) => {
         // IME, dead-key, or AltGr printable: never intercept, each path corrupts accents/CJK input otherwise.
@@ -307,10 +310,10 @@ export function createEditor({ ed, defaultCode, onRun, highlight }) {
 
         // stopImmediatePropagation blocks CodeJars bubble keydown on the same element; otherwise it re-runs indent and drifts the caret.
         if (apply(result)) { e.preventDefault(); e.stopImmediatePropagation(); }
-    }, true);
+    }, { capture: true, signal });
 
     // Text mutation outside `apply()` invalidates the auto-pair marker so manually-typed pairs don't collapse on backspace.
-    ed.addEventListener('input', () => { autoPairCaret = -1; });
+    ed.addEventListener('input', () => { autoPairCaret = -1; }, { signal });
 
     // Capture phase: preventDefault before CodeJar's bubble paste, which skips when defaultPrevented; otherwise both insert and the paste doubles.
     ed.addEventListener('paste', (e) => {
@@ -318,7 +321,7 @@ export function createEditor({ ed, defaultCode, onRun, highlight }) {
         if (raw == null) return;
         e.preventDefault();
         insertNormalized(raw);
-    }, true);
+    }, { capture: true, signal });
 
     // Drag-and-drop of text or .py files. Fires `drop`, not `paste`.
     const hasTextOrFiles = (dt) => {
@@ -326,7 +329,7 @@ export function createEditor({ ed, defaultCode, onRun, highlight }) {
         const types = Array.from(dt.types || []);
         return types.includes('text/plain') || types.includes('Files');
     };
-    ed.addEventListener('dragover', (e) => { if (hasTextOrFiles(e.dataTransfer)) e.preventDefault(); });
+    ed.addEventListener('dragover', (e) => { if (hasTextOrFiles(e.dataTransfer)) e.preventDefault(); }, { signal });
     ed.addEventListener('drop', async (e) => {
         const dt = e.dataTransfer; if (!hasTextOrFiles(dt)) return;
         e.preventDefault();
@@ -340,7 +343,7 @@ export function createEditor({ ed, defaultCode, onRun, highlight }) {
             raw = dt.getData('text/plain') ?? '';
         }
         if (raw) insertNormalized(raw);
-    });
+    }, { signal });
 
     /* Clipboard payload for copy/cut: collapsed selection falls back to current line; returns plain + html. */
     const copyPayload = () => {
@@ -369,7 +372,7 @@ export function createEditor({ ed, defaultCode, onRun, highlight }) {
 
     ed.addEventListener('copy', (e) => {
         const p = copyPayload(); if (p) writeClipboard(e, p);
-    });
+    }, { signal });
 
     // Capture + stop: CodeJar's bubble cut ignores defaultPrevented, so beat it here or the selection deletes twice.
     ed.addEventListener('cut', (e) => {
@@ -390,10 +393,10 @@ export function createEditor({ ed, defaultCode, onRun, highlight }) {
             caret = pos.start;
         }
         writeAndRestore(next, caret);
-    }, true);
+    }, { capture: true, signal });
 
     jar.updateCode(defaultCode);
 
-    // destroy() removes CodeJar's listeners; the caller pairs it with the highlighter's dispose() to release the editor on unmount.
-    return { getCode: () => jar.toString(), setCode: (code) => jar.updateCode(code), destroy: () => jar.destroy() };
+    // destroy(): shed CodeJar's listeners and ours; caller also calls the highlighter's dispose().
+    return { getCode: () => jar.toString(), setCode: (code) => jar.updateCode(code), destroy: () => { jar.destroy(); ac.abort(); } };
 }

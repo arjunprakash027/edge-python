@@ -7,14 +7,16 @@ let hlPromise = null
 function getHighlighter() {
     if (!hlPromise) {
         // Core + JS RegExp engine instead of the `shiki` bundle: skips the multi-MB Oniguruma WASM engine and every other grammar/theme, shipping only python + the two themes we render. This is the dominant payload of the first Run.
+        // Import via shiki's public re-exports, not @shikijs/* transitive deps that break under strict installs.
         hlPromise = Promise.all([
             import('shiki/core'),
             import('shiki/engine/javascript'),
         ]).then(([{ createHighlighterCore }, { createJavaScriptRegexEngine }]) =>
             createHighlighterCore({
-                themes: [import('@shikijs/themes/github-light'), import('@shikijs/themes/github-dark')],
-                langs: [import('@shikijs/langs/python')],
-                engine: createJavaScriptRegexEngine(),
+                themes: [import('shiki/themes/github-light.mjs'), import('shiki/themes/github-dark.mjs')],
+                langs: [import('shiki/langs/python.mjs')],
+                // forgiving: skip untranslatable grammar patterns instead of throwing and killing the highlighter.
+                engine: createJavaScriptRegexEngine({ forgiving: true }),
             }),
         )
     }
