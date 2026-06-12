@@ -73,19 +73,19 @@ async function runPackage(pkg) {
             const ready = new Promise((res) => el.addEventListener("ready", res, { once: true }));
             document.head.appendChild(el);
             await ready;
-            // Byte-stream stdout: accumulate raw chunks; lines are reconstructed at compare time.
-            globalThis.out = "";
-            el.onOutput((chunk) => { globalThis.out += chunk; });
+            // Byte-stream stdout: one chunk per print() call (body + its `end`); collect verbatim.
+            globalThis.chunks = [];
+            el.onOutput((chunk) => { globalThis.chunks.push(chunk); });
             globalThis.el = el;
         }, MANIFEST);
 
         for (const [i, c] of cases.entries()) {
             const src = `from ${pkg} import *\n${c.src}`;
             const result = await page.evaluate(async (s) => {
-                globalThis.out = "";
+                globalThis.chunks = [];
                 const { out } = await globalThis.el.run(s);
-                // Split the raw stream into terminal lines: drop the single trailing newline, then split.
-                const output = globalThis.out === "" ? [] : globalThis.out.replace(/\n$/, "").split("\n");
+                // One entry per print() call; drop its single trailing newline (the `end`).
+                const output = globalThis.chunks.map((c) => c.replace(/\n$/, ""));
                 return { output, error: out || null };
             }, src);
 
