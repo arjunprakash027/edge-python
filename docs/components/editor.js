@@ -8,7 +8,7 @@ const MAX_LINES = 999;
 const TAB_SIZE = 4;
 
 // `highlight(text) -> html` is injected (Shiki in the docs); CodeJar calls it on every render.
-export function createEditor({ ed, ln, defaultCode, onRun, highlight }) {
+export function createEditor({ ed, defaultCode, onRun, highlight }) {
 
     // constants
 
@@ -245,15 +245,6 @@ export function createEditor({ ed, ln, defaultCode, onRun, highlight }) {
         return true;
     };
 
-    // Format side lines counter (e.g., 01 `print("Hello, World!")`). `ln` is optional.
-    const syncLines = () => {
-        if (!ln) return;
-        const lines = jar.toString().replace(/\n$/, '').split('\n');
-        const n = Math.max(1, Math.min(lines.length, MAX_LINES));
-        ln.textContent = Array.from({ length: n }, (_, i) => String(i + 1).padStart(2, '0')).join('\n');
-        ln.scrollTop = ed.scrollTop;
-    };
-
     // Insert plain text at caret, replacing any selection; used by paste/drop after normalisation. Enforces `MAX_LINES`.
     const insertAtCaret = (str) => {
         const pos = jar.save();
@@ -317,8 +308,6 @@ export function createEditor({ ed, ln, defaultCode, onRun, highlight }) {
         // stopImmediatePropagation blocks CodeJars bubble keydown on the same element; otherwise it re-runs indent and drifts the caret.
         if (apply(result)) { e.preventDefault(); e.stopImmediatePropagation(); }
     }, true);
-
-    ed.addEventListener('scroll', () => { if (ln) ln.scrollTop = ed.scrollTop; });
 
     // Text mutation outside `apply()` invalidates the auto-pair marker so manually-typed pairs don't collapse on backspace.
     ed.addEventListener('input', () => { autoPairCaret = -1; });
@@ -403,8 +392,8 @@ export function createEditor({ ed, ln, defaultCode, onRun, highlight }) {
         writeAndRestore(next, caret);
     }, true);
 
-    jar.onUpdate(syncLines);
     jar.updateCode(defaultCode);
 
-    return { getCode: () => jar.toString(), setCode: (code) => jar.updateCode(code) };
+    // destroy() removes CodeJar's listeners; the caller pairs it with the highlighter's dispose() to release the editor on unmount.
+    return { getCode: () => jar.toString(), setCode: (code) => jar.updateCode(code), destroy: () => jar.destroy() };
 }

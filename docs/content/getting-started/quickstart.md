@@ -3,6 +3,8 @@ title: "Quickstart"
 description: "Run your first Edge Python program in under a minute."
 ---
 
+# Quickstart
+
 ## Run it
 
 Edge Python ships as a sub-200 KB WASM module. The fastest way to try it is the playground. No install. Everything runs client-side.

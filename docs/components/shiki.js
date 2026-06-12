@@ -6,8 +6,16 @@ const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => HTML_ESC[c])
 let hlPromise = null
 function getHighlighter() {
     if (!hlPromise) {
-        hlPromise = import('shiki').then(({ createHighlighter }) =>
-            createHighlighter({ themes: ['github-light', 'github-dark'], langs: ['python'] }),
+        // Core + JS RegExp engine instead of the `shiki` bundle: skips the multi-MB Oniguruma WASM engine and every other grammar/theme, shipping only python + the two themes we render. This is the dominant payload of the first Run.
+        hlPromise = Promise.all([
+            import('shiki/core'),
+            import('shiki/engine/javascript'),
+        ]).then(([{ createHighlighterCore }, { createJavaScriptRegexEngine }]) =>
+            createHighlighterCore({
+                themes: [import('@shikijs/themes/github-light'), import('@shikijs/themes/github-dark')],
+                langs: [import('@shikijs/langs/python')],
+                engine: createJavaScriptRegexEngine(),
+            }),
         )
     }
     return hlPromise
@@ -18,20 +26,21 @@ const isDark = () =>
 
 export function createHighlight(rerender) {
     let hl = null
+    let disposed = false
     getHighlighter().then((h) => {
+        if (disposed) return
         hl = h
         rerender?.()
     })
 
     // Re-highlight when the docs theme toggles (next-themes flips `class` on <html>).
+    let observer = null
     if (typeof MutationObserver !== 'undefined') {
-        new MutationObserver(() => rerender?.()).observe(document.documentElement, {
-            attributes: true,
-            attributeFilter: ['class'],
-        })
+        observer = new MutationObserver(() => rerender?.())
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
     }
 
-    return (code) => {
+    const highlight = (code) => {
         if (!hl) return escapeHtml(code) // plain text until Shiki finishes loading
         const html = hl.codeToHtml(code, { lang: 'python', theme: isDark() ? 'github-dark' : 'github-light' })
         // CodeJar sets the return value as the editor's innerHTML, so drop Shiki's <pre><code> wrapper.
@@ -40,4 +49,7 @@ export function createHighlight(rerender) {
         if (code.endsWith('\n')) inner = inner.replace(/<span class="line"><\/span>$/, '')
         return inner
     }
+    // Disconnect the <html> observer and ignore a late getHighlighter() resolve, so the editor closure can be GC'd on unmount.
+    highlight.dispose = () => { disposed = true; observer?.disconnect() }
+    return highlight
 }

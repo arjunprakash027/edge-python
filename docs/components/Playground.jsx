@@ -36,8 +36,11 @@ export function Playground({ code, output }) {
     const [running, setRunning] = useState(false)
     const [phase, setPhase] = useState(null) // cold-start/exec phase: 'runtime' | 'worker' | 'running'
 
+    // Live guard: the mount effect captures runCode once, so a `running` state read here would be the first render's `false` forever — Ctrl+Enter could then fire concurrent runs. A ref reads the current value through that stale closure.
+    const runningRef = useRef(false)
     const runCode = useCallback(async (src) => {
-        if (running) return
+        if (runningRef.current) return
+        runningRef.current = true
         setRunning(true)
         // Byte-stream contract: each chunk is raw stdout (print already includes its own `end`); concatenate, don't join.
         let buf = ''
@@ -51,28 +54,34 @@ export function Playground({ code, output }) {
         } catch (e) {
             setResult({ text: buf, error: String(e?.message ?? e), ms: 0 })
         } finally {
+            runningRef.current = false
             setRunning(false)
             setPhase(null)
         }
-    }, [running])
+    }, [])
 
     // Mount the CodeJar editor + Shiki highlighter client-side (lazy: keeps codejar/shiki out of SSR).
     useEffect(() => {
         let editor
+        let highlight
         let disposed = false
         Promise.all([import('./editor.js'), import('./shiki.js')]).then(([{ createEditor }, { createHighlight }]) => {
             if (disposed || !edRef.current) return
-            const highlight = createHighlight(() => editor && editor.setCode(editor.getCode()))
+            highlight = createHighlight(() => editor && editor.setCode(editor.getCode()))
             editor = createEditor({
                 ed: edRef.current,
-                ln: null,
                 defaultCode,
                 onRun: (src) => runCode(src),
                 highlight,
             })
             editorRef.current = editor
         })
-        return () => { disposed = true }
+        // Tear down CodeJar and (critically) the Shiki MutationObserver on <html>; that observer holds a closure over the editor, so without dispose() each unmounted Playground stays pinned in memory.
+        return () => {
+            disposed = true
+            editor?.destroy()
+            highlight?.dispose()
+        }
     }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
     const onRunClick = () => runCode(editorRef.current?.getCode() ?? defaultCode)
