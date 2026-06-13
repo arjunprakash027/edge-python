@@ -10,16 +10,8 @@ use alloc::{string::ToString, vec::Vec, string::String};
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
-    /* Entry: recursion guard, Pratt parse, then optional ternary. */
+    /* Entry: Pratt parse, then optional ternary. Recursion is bounded inside `expr_bp`. */
     pub(super) fn expr(&mut self) {
-        self.expr_depth += 1;
-
-        if self.expr_depth > MAX_EXPR_DEPTH {
-            self.expr_depth -= 1;
-            self.error("expression too deeply nested");
-            return;
-        }
-
         self.saw_newline = false;
         self.expr_bp(0);
 
@@ -35,8 +27,6 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             self.expr();
             self.patch(jmp);
         }
-
-        self.expr_depth -= 1;
     }
 
     pub(super) fn expr_tails(&mut self) {
@@ -44,8 +34,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.infix_bp(0);
     }
 
-    /* Pratt parser: unary prefix then infix loop via `binding_power` table. */
+    /* Pratt parser: unary prefix then infix loop via `binding_power` table. Bounds every recursive descent (prefix `-`/`+`/`~`/`await`/`not`, right-associative `**`, infix right operands) so deep chains raise instead of overflowing the native/WASM stack. */
     pub(super) fn expr_bp(&mut self, min_bp: u8) {
+        self.expr_depth += 1;
+        if self.expr_depth > MAX_EXPR_DEPTH {
+            self.expr_depth -= 1;
+            self.error("expression too deeply nested");
+            return;
+        }
         match self.peek() {
             Some(TokenType::Not) => {
                 self.advance();
@@ -55,6 +51,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             _ => self.parse_unary(),
         }
         self.infix_bp(min_bp);
+        self.expr_depth -= 1;
     }
 
     pub(super) fn infix_bp(&mut self, min_bp: u8) {

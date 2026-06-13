@@ -2304,5 +2304,27 @@
   {"src": "def make():\n    n = 0\n    def inc():\n        nonlocal n\n        n += 1\n    def get():\n        return n\n    return inc, get\ninc, get = make()\ninc()\ninc()\nprint(get())", "output": ["2"]},
   {"src": "def make():\n    n = 0\n    def inc():\n        nonlocal n\n        n += 1\n    def get():\n        return n\n    return inc, get\ninc, get = make()\nprint(get())\ninc()\nprint(get())\ninc()\nprint(get())", "output": ["0", "1", "2"]},
   {"src": "def make():\n    n = 0\n    def inc():\n        nonlocal n\n        n += 1\n    def get():\n        return n\n    return inc, get\ni1, g1 = make()\ni2, g2 = make()\ni1()\ni1()\ni2()\nprint(g1(), g2())", "output": ["2 1"]},
-  {"src": "def make():\n    n = 0\n    def add(k):\n        nonlocal n\n        n += k\n    def get():\n        return n\n    return add, get\nadd, get = make()\nadd(5)\nadd(3)\nprint(get())", "output": ["8"]}
+  {"src": "def make():\n    n = 0\n    def add(k):\n        nonlocal n\n        n += k\n    def get():\n        return n\n    return add, get\nadd, get = make()\nadd(5)\nadd(3)\nprint(get())", "output": ["8"]},
+
+  {"src": "print(- -5)", "output": ["5"]},
+  {"src": "print(---5)", "output": ["-5"]},
+  {"src": "print(+5)", "output": ["5"]},
+  {"src": "print(+ +5)", "output": ["5"]},
+  {"src": "print(+-5)", "output": ["-5"]},
+  {"src": "print(~~5)", "output": ["5"]},
+  {"src": "print(~~~5)", "output": ["-6"]},
+  {"src": "print(-~5)", "output": ["6"]},
+  {"src": "print(~-5)", "output": ["4"]},
+  {"src": "print(not not True)", "output": ["True"]},
+  {"src": "print(not not not False)", "output": ["True"]},
+  {"src": "print(not -5)", "output": ["False"]},
+  {"src": "print(2**3**2)", "output": ["512"]},
+  {"src": "print(2**2**3)", "output": ["256"]},
+  {"src": "print(2**2**2**2)", "output": ["65536"]},
+  {"src": "print(-2**2)", "output": ["-4"]},
+  {"src": "print((-2)**2)", "output": ["4"]},
+  {"src": "print(~2**2)", "output": ["-5"]},
+  {"src": "print(not 1 == 2)", "output": ["True"]},
+  {"src": "print(not 1 < 2)", "output": ["False"]},
+  {"src": "print(----------------------------------------1)", "output": ["1"]}
 ]

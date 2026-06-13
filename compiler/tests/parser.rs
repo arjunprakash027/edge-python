@@ -96,4 +96,25 @@ mod test {
             diagnostics.iter().map(|d| &d.msg).collect::<Vec<_>>()
         );
     }
+
+    // Deep prefix / right-associative operator chains must hit the expr-depth guard and error, not overflow the parser's native/WASM stack.
+    #[test]
+    fn deep_operator_chains_error_not_overflow() {
+        let check = |src: String, label: &str| {
+            let (tokens, _) = lex(&src);
+            let (_chunk, diagnostics) = Parser::new(&src, tokens.into_iter()).parse();
+            assert!(
+                diagnostics.iter().any(|d| d.msg.contains("too deeply nested")),
+                "{}: expected 'too deeply nested', got {:?}",
+                label,
+                diagnostics.iter().map(|d| &d.msg).collect::<Vec<_>>()
+            );
+        };
+        check(format!("x = {}1", "-".repeat(200_000)), "unary minus");
+        check(format!("x = {}1", "+".repeat(200_000)), "unary plus");
+        check(format!("x = {}1", "~".repeat(200_000)), "bitwise not");
+        check(format!("x = {}True", "not ".repeat(100_000)), "logical not");
+        check(format!("x = 2{}", "**2".repeat(100_000)), "right-assoc pow");
+        check(format!("async def f():\n    return {}g()", "await ".repeat(100_000)), "await");
+    }
 }
