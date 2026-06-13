@@ -24,7 +24,7 @@ pub(crate) fn binary_dunder_names(op: OpCode) -> Option<(&'static str, &'static 
 pub(crate) fn compare_dunder_names(op: OpCode) -> Option<(&'static str, &'static str, bool)> {
     Some(match op {
         OpCode::Eq => ("__eq__", "__eq__", false),
-        OpCode::NotEq => ("__eq__", "__eq__", true),
+        OpCode::NotEq => ("__ne__", "__ne__", false),
         OpCode::Lt => ("__lt__", "__gt__", false),
         OpCode::LtEq => ("__le__", "__ge__", false),
         OpCode::Gt => ("__gt__", "__lt__", false),
@@ -111,7 +111,14 @@ impl<'a> VM<'a> {
             }
         };
 
-        let Some(r) = raw else { return Ok(None); };
+        let Some(r) = raw else {
+            // `!=` falls back to negated `__eq__` when `__ne__` is absent.
+            if matches!(op, OpCode::NotEq)
+                && let Some(eq) = self.try_compare_dunder(OpCode::Eq, a, b, chunk, slots)? {
+                return Ok(Some(Val::bool(!self.truthy(eq))));
+            }
+            return Ok(None);
+        };
         // `!=` negates `__eq__`; other comparisons return the raw dunder result.
         Ok(Some(if negate { Val::bool(!self.truthy(r)) } else { r }))
     }

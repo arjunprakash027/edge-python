@@ -86,10 +86,12 @@ impl<'a> VM<'a> {
             // Default fallback: pointer identity, mirroring Python's `object.__hash__`.
         }
 
+        // CPython guarantees hash(n)==n for ints in range (hash(-1) is -2); bool hashes as 0/1.
+        if o.is_int() { let n = o.as_int(); self.push(Val::int(if n == -1 { -2 } else { n })); return Ok(()); }
+        if o.is_bool() { self.push(Val::int(o.as_bool() as i64)); return Ok(()); }
+
         let mut h = crate::util::fx::FxHasher::default();
-        if o.is_int() { o.as_int().hash(&mut h); }
-        else if o.is_float() { o.as_float().to_bits().hash(&mut h); }
-        else if o.is_bool() { o.as_bool().hash(&mut h); }
+        if o.is_float() { o.as_float().to_bits().hash(&mut h); }
         else if o.is_none() { 0u64.hash(&mut h); }
         else if o.is_heap() {
             match self.heap.get(o) {
@@ -160,8 +162,11 @@ impl<'a> VM<'a> {
         let result = match self.heap.get(arg2) {
             HeapObj::Type(_) | HeapObj::NativeFn(_) | HeapObj::Class(..) => check_one(arg2, &self.heap)?,
             HeapObj::Tuple(items) => {
+                // Propagate TypeError from a non-class member instead of silently ignoring it.
                 let items: Vec<Val> = items.clone();
-                items.iter().any(|&t| check_one(t, &self.heap).unwrap_or(false))
+                let mut found = false;
+                for t in items { if check_one(t, &self.heap)? { found = true; break; } }
+                found
             }
             _ => return Err(VmErr::Type("isinstance() arg 2 must be a type or tuple of types")),
         };
@@ -201,8 +206,11 @@ impl<'a> VM<'a> {
         let result = match self.heap.get(arg2) {
             HeapObj::Type(_) | HeapObj::Class(..) => check_one(arg2, &self.heap)?,
             HeapObj::Tuple(items) => {
+                // Propagate TypeError from a non-class member instead of silently ignoring it.
                 let items: Vec<Val> = items.clone();
-                items.iter().any(|&t| check_one(t, &self.heap).unwrap_or(false))
+                let mut found = false;
+                for t in items { if check_one(t, &self.heap)? { found = true; break; } }
+                found
             }
             _ => return Err(VmErr::Type("issubclass() arg 2 must be a class or tuple of classes")),
         };

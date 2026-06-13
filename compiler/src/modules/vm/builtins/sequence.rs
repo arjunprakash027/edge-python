@@ -374,12 +374,23 @@ impl<'a> VM<'a> {
         self.alloc_and_push_list(items)
     }
 
-    pub fn call_next(&mut self, argc: u16) -> Result<(), VmErr> {
+    pub fn call_next(&mut self, argc: u16, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         if argc == 0 || argc > 2 { return Err(cold_type("next() takes 1 or 2 arguments")); }
         // `next(it, default)`: the 2nd arg is returned instead of raising StopIteration on exhaustion.
         let default = if argc == 2 { Some(self.pop()?) } else { None };
         let o = self.pop()?;
         if !o.is_heap() { return Err(cold_type("next() requires an iterator")); }
+        // User iterator: dispatch __next__, mapping StopIteration to the optional default.
+        if matches!(self.heap.get(o), HeapObj::Instance(..)) {
+            return match self.try_call_dunder(o, "__next__", &[], chunk, slots) {
+                Ok(Some(v)) => { self.push(v); Ok(()) }
+                Ok(None) => Err(cold_type("next() requires an iterator")),
+                Err(VmErr::Raised(m)) if default.is_some() && (m == "StopIteration" || m.starts_with("StopIteration")) => {
+                    self.push(default.unwrap()); Ok(())
+                }
+                Err(e) => Err(e),
+            };
+        }
         // List path mirrors the ABI's IterNext op so script `next()` and host `Op::IterNext` match.
         if let HeapObj::List(rc) = self.heap.get(o) {
             let rc = rc.clone();

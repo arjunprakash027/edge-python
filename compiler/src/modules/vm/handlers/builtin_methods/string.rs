@@ -89,14 +89,19 @@ fn affixes(vm: &VM, v: Val) -> Result<Vec<String>, VmErr> {
 pub fn startswith(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let s = recv_str(vm, recv)?;
     let prefixes = affixes(vm, pos[0])?;
-    vm.push(Val::bool(prefixes.iter().any(|p| s.starts_with(p.as_str()))));
+    // Optional start/stop window restricts where the prefix must begin.
+    let (chars, start, stop) = slice_window(&s, pos, 1);
+    let hay: String = chars[start..stop].iter().collect();
+    vm.push(Val::bool(prefixes.iter().any(|p| hay.starts_with(p.as_str()))));
     Ok(())
 }
 
 pub fn endswith(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let s = recv_str(vm, recv)?;
     let suffixes = affixes(vm, pos[0])?;
-    vm.push(Val::bool(suffixes.iter().any(|p| s.ends_with(p.as_str()))));
+    let (chars, start, stop) = slice_window(&s, pos, 1);
+    let hay: String = chars[start..stop].iter().collect();
+    vm.push(Val::bool(suffixes.iter().any(|p| hay.ends_with(p.as_str()))));
     Ok(())
 }
 
@@ -281,7 +286,12 @@ pub fn format(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
                 Some("s") => { let d = vm.display(val); vm.heap.alloc(HeapObj::Str(d))? }
                 Some(_) => return Err(cold_value("unknown conversion specifier")),
             };
-            let rendered = crate::modules::vm::handlers::format::format_value(target, &spec, &vm.heap).map_err(crate::modules::vm::handlers::format::fmt_err)?;
+            // Empty spec means str(x); use full display so containers render, not just scalars.
+            let rendered = if spec.is_empty() {
+                vm.display(target)
+            } else {
+                crate::modules::vm::handlers::format::format_value(target, &spec, &vm.heap).map_err(crate::modules::vm::handlers::format::fmt_err)?
+            };
             out.push_str(&rendered);
         } else if c == '}' {
             if chars.get(ci + 1) == Some(&'}') { out.push('}'); ci += 2; continue; }

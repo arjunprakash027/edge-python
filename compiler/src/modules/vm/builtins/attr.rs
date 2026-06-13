@@ -16,6 +16,24 @@ impl<'a> VM<'a> {
         let name = self.expect_str_arg("getattr() name must be a string")?;
         let obj = self.pop()?;
 
+        // Instance attribute: instance dict first, then the user class chain (mirrors obj.name).
+        let mut bind: Option<(Val, Val)> = None;
+        if obj.is_heap() && let HeapObj::Instance(cls_val, attrs) = self.heap.get(obj) {
+            let cls_val = *cls_val;
+            let found = attrs.borrow().entries.iter()
+                .find(|(k, _)| k.is_heap() && matches!(self.heap.get(*k), HeapObj::Str(s) if s.as_str() == name))
+                .map(|(_, v)| *v);
+            if let Some(v) = found { self.push(v); return Ok(()); }
+            if let Some((mv, defining)) = self.lookup_class_member(cls_val, &name) {
+                if mv.is_heap() && matches!(self.heap.get(mv), HeapObj::Func(..)) { bind = Some((mv, defining)); }
+                else { self.push(mv); return Ok(()); }
+            }
+        }
+        if let Some((func, defining)) = bind {
+            let b = self.heap.alloc(HeapObj::BoundUserMethod(obj, func, defining))?;
+            self.push(b); return Ok(());
+        }
+
         // Class target: resolve a class attribute (incl. ones added via setattr / a decorator).
         if obj.is_heap() && matches!(self.heap.get(obj), HeapObj::Class(..))
             && let Some((v, _)) = self.lookup_class_member(obj, &name) {
@@ -39,6 +57,15 @@ impl<'a> VM<'a> {
     pub fn call_hasattr(&mut self) -> Result<(), VmErr> {
         let name = self.expect_str_arg("hasattr() name must be a string")?;
         let obj = self.pop()?;
+        // Instance attribute: instance dict or the user class chain.
+        if obj.is_heap() && let HeapObj::Instance(cls_val, attrs) = self.heap.get(obj) {
+            let cls_val = *cls_val;
+            let in_dict = attrs.borrow().entries.iter()
+                .any(|(k, _)| k.is_heap() && matches!(self.heap.get(*k), HeapObj::Str(s) if s.as_str() == name));
+            if in_dict || self.lookup_class_member(cls_val, &name).is_some() {
+                self.push(Val::bool(true)); return Ok(());
+            }
+        }
         let is_class_attr = obj.is_heap()
             && matches!(self.heap.get(obj), HeapObj::Class(..))
             && self.lookup_class_member(obj, &name).is_some();
@@ -91,9 +118,17 @@ impl<'a> VM<'a> {
             return Err(cold_type("delattr() target must be an instance or class"));
         }
         // Strings <=128 bytes are interned, so re-alloc'ing yields the same Val key StoreAttr used.
-        let key = self.heap.alloc(HeapObj::Str(name))?;
-        if let HeapObj::Instance(_, attrs) = self.heap.get(obj) {
-            attrs.borrow_mut().remove(&key, &self.heap);
+        let key = self.heap.alloc(HeapObj::Str(name.clone()))?;
+        let existed = if let HeapObj::Instance(_, attrs) = self.heap.get(obj) {
+            let had = attrs.borrow().entries.iter()
+                .any(|(k, _)| k.is_heap() && matches!(self.heap.get(*k), HeapObj::Str(s) if s.as_str() == name));
+            if had { attrs.borrow_mut().remove(&key, &self.heap); }
+            had
+        } else { false };
+        // Deleting a missing attribute raises AttributeError, matching CPython.
+        if !existed {
+            let ty = self.type_name(obj);
+            return Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")));
         }
         self.push(Val::none());
         Ok(())

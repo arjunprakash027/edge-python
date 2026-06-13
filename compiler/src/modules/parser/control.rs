@@ -5,7 +5,7 @@ use super::types::OpCode;
 
 use crate::modules::lexer::{Token, TokenType};
 
-use alloc::{vec, vec::Vec, string::ToString};
+use alloc::{vec, vec::Vec, string::{String, ToString}};
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
@@ -456,6 +456,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 break;
             }
 
+            let mut as_name: Option<String> = None;
             if matches!(self.peek(), Some(TokenType::Colon)) {
                 had_bare = true;
                 self.chunk.emit(OpCode::PopTop, 0);
@@ -469,12 +470,19 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
                 if self.eat_if(TokenType::As) {
                     let n = self.advance_text();
-                    self.store_name(n);
+                    self.store_name(n.clone());
+                    as_name = Some(n);
                 } else { self.chunk.emit(OpCode::PopTop, 0); }
             }
             self.eat(TokenType::Colon);
             self.compile_block();
+            // Python implicitly unbinds the `except ... as e` name after the block.
+            if let Some(n) = as_name {
+                let idx = self.push_ssa_name(&n, self.current_version(&n));
+                self.chunk.emit(OpCode::Del, idx);
+            }
 
+            // Handled arms jump past the `else` block; a bare last arm just falls through.
             let more = matches!(
                 self.peek(),
                 Some(TokenType::Except | TokenType::Else | TokenType::Finally)
@@ -489,14 +497,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             self.chunk.emit(OpCode::Raise, 0);
         }
 
+        // Success path falls into `else`; handled-exception arms skip it.
         self.patch(success_jump);
-        for j in end_jumps {
-            self.patch(j);
-        }
-
         if self.eat_if(TokenType::Else) {
             self.eat(TokenType::Colon);
             self.compile_block();
+        }
+        for j in end_jumps {
+            self.patch(j);
         }
 
         if self.eat_if(TokenType::Finally) {

@@ -417,6 +417,12 @@ pub(super) fn parse_string(s: &str) -> String {
     } else {
         s.get(1..s.len().saturating_sub(1)).unwrap_or("")
     };
+    // Python normalizes source CR and CRLF to LF before building the literal.
+    let owned;
+    let inner: &str = if inner.contains('\r') {
+        owned = inner.replace("\r\n", "\n").replace('\r', "\n");
+        &owned
+    } else { inner };
     if is_raw { inner.to_string() } else { unescape(inner) }
 }
 

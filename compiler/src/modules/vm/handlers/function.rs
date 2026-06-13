@@ -37,10 +37,10 @@ impl<'a> VM<'a> {
             OpCode::MakeFunction | OpCode::MakeCoroutine => self.exec_make_function(op, operand, chunk, slots),
             OpCode::CallLen => self.call_len(chunk, slots),
             OpCode::CallAbs => self.call_abs(),
-            OpCode::CallStr => self.call_str(chunk, slots),
-            OpCode::CallInt => self.call_int(operand),
+            OpCode::CallStr => self.call_str(operand, chunk, slots),
+            OpCode::CallInt => self.call_int(operand, chunk, slots),
             OpCode::CallFloat => self.call_float(),
-            OpCode::CallBool => self.call_bool(chunk, slots),
+            OpCode::CallBool => self.call_bool(operand, chunk, slots),
             OpCode::CallType => self.call_type(),
             OpCode::CallChr => self.call_chr(),
             OpCode::CallOrd => self.call_ord(),
@@ -376,6 +376,8 @@ impl<'a> VM<'a> {
             self.push(func);
             self.push(recv);
             for a in positional { self.push(*a); }
+            // Re-push keyword pairs too, else the re-dispatch underflows the stack.
+            for k in kw_flat { self.push(*k); }
             let argc = (positional.len() + 1) as u16;
             let encoded = ((num_kw as u16) << 8) | argc;
             self.exec_call(encoded, chunk, slots)?;
@@ -763,10 +765,10 @@ impl<'a> VM<'a> {
             Input => self.call_input(),
             Len => self.call_len(chunk, slots),
             Abs => self.call_abs(),
-            Str => self.call_str(chunk, slots),
-            Int => self.call_int(argc),
+            Str => self.call_str(argc, chunk, slots),
+            Int => self.call_int(argc, chunk, slots),
             Float => self.call_float(),
-            Bool => self.call_bool(chunk, slots),
+            Bool => self.call_bool(argc, chunk, slots),
             Type => self.call_type(),
             Chr => self.call_chr(),
             Ord => self.call_ord(),
@@ -786,7 +788,7 @@ impl<'a> VM<'a> {
             IsInstance => self.call_isinstance(),
             IsSubclass => self.call_issubclass(),
             HasAttr => self.call_hasattr(),
-            Next => self.call_next(argc),
+            Next => self.call_next(argc, chunk, slots),
             Run => self.call_run(argc),
             Sleep => self.call_sleep(),
             Frame => self.call_frame(),

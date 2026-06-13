@@ -4,13 +4,15 @@ use crate::alloc::string::ToString;
 
 impl<'a> VM<'a> {
 
-    pub fn call_str(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+    pub fn call_str(&mut self, argc: u16, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+        if argc == 0 { return self.alloc_and_push_str(alloc::string::String::new()); }
         let o = self.pop()?;
         let s = self.display_op(o, chunk, slots)?;
         self.alloc_and_push_str(s)
     }
 
-    pub fn call_bool(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+    pub fn call_bool(&mut self, argc: u16, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+        if argc == 0 { self.push(Val::bool(false)); return Ok(()); }
         let o = self.pop()?;
         let t = self.truthy_op(o, chunk, slots)?;
         self.push(Val::bool(t));

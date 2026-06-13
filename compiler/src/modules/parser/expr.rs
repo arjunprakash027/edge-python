@@ -248,10 +248,17 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             Some(TokenType::ColonEqual) => {
                 self.advance();
                 self.expr();
-                let ver = self.increment_version(&name);
-                let i = self.push_ssa_name(&name, ver);
-                self.chunk.emit(OpCode::StoreName, i);
-                self.chunk.emit(OpCode::LoadName, i);
+                if self.globals_decl.contains(&name) {
+                    // Walrus must honor an enclosing `global` declaration.
+                    let i = self.chunk.push_name(&name);
+                    self.chunk.emit(OpCode::StoreGlobal, i);
+                    self.chunk.emit(OpCode::LoadGlobal, i);
+                } else {
+                    let ver = self.increment_version(&name);
+                    let i = self.push_ssa_name(&name, ver);
+                    self.chunk.emit(OpCode::StoreName, i);
+                    self.chunk.emit(OpCode::LoadName, i);
+                }
             }
             Some(TokenType::Lpar) => {
                 let _ = self.call(name);

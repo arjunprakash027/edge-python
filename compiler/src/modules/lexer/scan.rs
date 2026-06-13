@@ -46,7 +46,17 @@ impl<'a> Scanner<'a> {
     }
 
     pub fn skip_whitespace(&mut self) {
-        self.scan_while(|b| BYTE_CLASS[b as usize] & SPACE != 0);
+        loop {
+            self.scan_while(|b| BYTE_CLASS[b as usize] & SPACE != 0);
+            // Backslash-newline line continuation: consume the escape and the newline.
+            if self.pos + 1 < self.src.len() && self.src[self.pos] == b'\\'
+                && matches!(self.src[self.pos + 1], b'\n' | b'\r') {
+                self.pos += 1;
+                if self.src[self.pos] == b'\r' { self.pos += 1; }
+                if self.pos < self.src.len() && self.src[self.pos] == b'\n' { self.pos += 1; }
+                self.line += 1;
+            } else { break; }
+        }
     }
     fn scan_id_rest(&mut self) {
         self.scan_while(|b| BYTE_CLASS[b as usize] & ID_CONT != 0);

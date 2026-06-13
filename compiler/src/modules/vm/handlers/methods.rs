@@ -179,7 +179,15 @@ impl<'a> VM<'a> {
                     _ => cls_val,
                 };
                 if let Some((mv, defining)) = self.lookup_class_member_after(derived, cls_val, name) {
-                    return Ok(AttrLookup::InstanceMethod { recv, func: mv, class: defining });
+                    // Bind callables; non-callable data attributes return as-is, like the instance path.
+                    if mv.is_heap() {
+                        match self.heap.get(mv) {
+                            HeapObj::Property(getter, _) => return Ok(AttrLookup::PropertyGet { recv, getter: *getter }),
+                            HeapObj::Func(..) => return Ok(AttrLookup::InstanceMethod { recv, func: mv, class: defining }),
+                            _ => {}
+                        }
+                    }
+                    return Ok(AttrLookup::ClassMember(mv));
                 }
                 return Err(VmErr::Attribute(s!("'super' object has no attribute '", str name, "'")));
             }

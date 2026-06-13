@@ -55,7 +55,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     self.chunk.emit(OpCode::Jump, loop_start);
                     self.patch(fi);
                     self.chunk.emit(OpCode::LoadNone, 0);
-                } else if matches!(self.peek(), Some(TokenType::Newline) | None) {
+                } else if matches!(self.peek(), Some(TokenType::Newline | TokenType::Endmarker | TokenType::Dedent) | None) {
                     self.chunk.emit(OpCode::LoadNone, 0);
                     self.chunk.emit(OpCode::Yield, 0);
                 } else {

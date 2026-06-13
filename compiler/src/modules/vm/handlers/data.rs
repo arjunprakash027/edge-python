@@ -187,7 +187,18 @@ impl<'a> VM<'a> {
             }
             OpCode::Del => {
                 let slot = operand as usize;
-                if slot < slots.len() { slots[slot] = Val::undef(); }
+                // Deleting an already-unbound name raises NameError, matching CPython.
+                match slots.get_mut(slot) {
+                    Some(s) if !s.is_undef() => *s = Val::undef(),
+                    _ => {
+                        let name = chunk.names.get(slot).map(|n| ssa_strip(n)).unwrap_or_default();
+                        return Err(VmErr::Name(name.into()));
+                    }
+                }
+                // At module scope, drop it from module_state too so later reads see the deletion.
+                if core::ptr::eq(chunk, self.chunk) && let Some(n) = chunk.names.get(slot) {
+                    self.module_state.remove(ssa_strip(n));
+                }
             }
             OpCode::Global | OpCode::Nonlocal => self.mark_impure(),
             OpCode::Raise | OpCode::RaiseFrom => {

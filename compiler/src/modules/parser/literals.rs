@@ -409,7 +409,9 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.advance();
         let mut argc = 0u16;
         self.comma_list(|t| t == TokenType::Rpar, |s| {
-            s.expr();
+            // Allow `range(*args)`; UnpackArgs spreads the iterable at runtime.
+            if s.eat_if(TokenType::Star) { s.expr(); s.chunk.emit(OpCode::UnpackArgs, 1); }
+            else { s.expr(); }
             argc = argc.saturating_add(1);
         });
         self.eat(TokenType::Rpar);

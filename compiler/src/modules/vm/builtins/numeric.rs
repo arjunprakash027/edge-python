@@ -36,6 +36,16 @@ fn neumaier(sum: f64, comp: f64, x: f64) -> (f64, f64) {
 }
 
 /* `int(s, base)` parsing: optional sign, optional 0x/0o/0b prefix (matching the base, or inferred when base==0), `_` digit separators, radix 0 or 2..=36. */
+// Rounds an integer to -k decimal digits using banker's rounding, matching CPython.
+fn round_int_banker(n: i128, k: u32) -> i128 {
+    let factor = 10i128.checked_pow(k.min(38)).unwrap_or(i128::MAX);
+    let q = n.div_euclid(factor);
+    let r = n.rem_euclid(factor);
+    let half = factor / 2;
+    let up = r > half || (r == half && q % 2 != 0);
+    if up { q + 1 } else { q }.saturating_mul(factor)
+}
+
 fn parse_int_radix(s: &str, base: i64) -> Result<i128, VmErr> {
     if base != 0 && !(2..=36).contains(&base) {
         return Err(cold_value("int() base must be >= 2 and <= 36, or 0"));
@@ -100,7 +110,7 @@ impl<'a> VM<'a> {
         self.push(v); Ok(())
     }
 
-    pub fn call_int(&mut self, argc: u16) -> Result<(), VmErr> {
+    pub fn call_int(&mut self, argc: u16, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         // Two-arg form `int(string, base)`: parse the string in the given radix.
         if argc == 2 {
             let base_v = self.pop()?;
@@ -109,6 +119,7 @@ impl<'a> VM<'a> {
             let base = base_v.as_int();
             let s = match self.heap.try_get(o) {
                 Some(HeapObj::Str(s)) => s.clone(),
+                Some(HeapObj::Bytes(b)) => core::str::from_utf8(b).map_err(|_| cold_value("int() bytes not valid utf-8"))?.into(),
                 _ => return Err(cold_type("int() can't convert non-string with explicit base")),
             };
             let i = parse_int_radix(&s, base)?;
@@ -136,6 +147,17 @@ impl<'a> VM<'a> {
             else if o.is_heap() && let HeapObj::Str(s) = self.heap.get(o) {
                 let s = s.clone();
                 parse_int_radix(&s, 10)?
+            }
+            else if o.is_heap() && let HeapObj::Bytes(b) = self.heap.get(o) {
+                parse_int_radix(core::str::from_utf8(b).map_err(|_| cold_value("int() bytes not valid utf-8"))?, 10)?
+            }
+            else if o.is_heap() && matches!(self.heap.get(o), HeapObj::Instance(..)) {
+                // Honor a user `__int__` method.
+                match self.try_call_dunder(o, "__int__", &[], chunk, slots)? {
+                    Some(r) if r.is_int() || r.is_bool() => self.as_i128(r).unwrap_or(r.as_bool() as i128),
+                    Some(_) => return Err(cold_type("__int__ returned non-int")),
+                    None => return Err(cold_type("int() requires a number or string")),
+                }
             }
             else { return Err(cold_type("int() requires a number or string")); };
         let v = self.int_to_val(Some(i))?;
@@ -180,6 +202,11 @@ impl<'a> VM<'a> {
                     self.push(Val::int(c as i64)); return Ok(());
                 }
         }
+        // ord() of a one-byte bytes returns the byte value.
+        if o.is_heap() && let HeapObj::Bytes(b) = self.heap.get(o) && b.len() == 1 {
+            let v = b[0] as i64;
+            self.push(Val::int(v)); return Ok(());
+        }
         Err(cold_type("ord() requires string of length 1"))
     }
 
@@ -209,8 +236,13 @@ impl<'a> VM<'a> {
                 if !(-1.7014118346046923e38..=1.7014118346046921e38).contains(&r) { return Err(cold_overflow()); }
                 self.int_to_val(Some(r as i128))?
             }
-            (Some(o), _) if o.is_int() => o,
-            (Some(o), _) if o.is_heap() && matches!(self.heap.get(o), HeapObj::LongInt(_)) => o,
+            // Ints/bools round to themselves; negative ndigits round to tens/hundreds.
+            (Some(o), n) if o.is_bool() || o.is_int() || (o.is_heap() && matches!(self.heap.get(o), HeapObj::LongInt(_))) => {
+                let i = if o.is_bool() { o.as_bool() as i128 } else { self.as_i128(o).ok_or(cold_type("round() requires a number"))? };
+                let nd = match n { Some(n) if n.is_int() => n.as_int(), _ => 0 };
+                let r = if nd < 0 { round_int_banker(i, (-nd) as u32) } else { i };
+                self.int_to_val(Some(r))?
+            }
             _ => return Err(cold_type("round() requires a number")),
         };
         self.push(v); Ok(())
@@ -283,7 +315,10 @@ impl<'a> VM<'a> {
     }
 
     pub fn call_range(&mut self, op: u16) -> Result<(), VmErr> {
-        let args = self.pop_n(op as usize)?;
+        // Fold in UnpackArgs spread so `range(*args)` sees the real argument count.
+        let n = (op as i32 + self.pending.pos_delta).max(0) as usize;
+        self.pending.pos_delta = 0;
+        let args = self.pop_n(n)?;
         // Accept any integer (incl. LongInt/bool) that fits the i64 range bounds.
         let gi = |i: Option<i128>| -> Result<i64, VmErr> {
             match i {
@@ -369,7 +404,8 @@ impl<'a> VM<'a> {
                 // Cap |m| < 2^63 so m*m fits in i128; larger moduli would overflow silently.
                 if m > (1u128 << 63) { return Err(cold_value("pow() modulus too large; must be < 2^63 (no arbitrary precision)")); }
                 let m = m as i128;
-                let mut result = 1i128;
+                // Seed with 1 % m so pow(x, 0, 1) yields 0, not 1.
+                let mut result = 1i128.rem_euclid(m);
                 let mut b = base.rem_euclid(m);
                 let mut e = exp;
                 while e > 0 {

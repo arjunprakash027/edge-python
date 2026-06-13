@@ -990,7 +990,7 @@
     "src": "try:\n    x = 1\nexcept:\n    x = 2\nelse:\n    x = 3", 
     "constants": ["1", "2", "3"], 
     "names": ["x_1", "x_2", "x_3", "x_4"],
-    "instructions": [["SetupExcept",5], ["LoadConst",0], ["StoreName",0], ["PopExcept",0], ["Jump",9], ["PopTop",0], ["LoadConst",1], ["StoreName",0], ["Jump",9], ["LoadConst",2], ["StoreName",0], ["Phi",0], ["ReturnValue",0]], 
+    "instructions": [["SetupExcept",5], ["LoadConst",0], ["StoreName",0], ["PopExcept",0], ["Jump",9], ["PopTop",0], ["LoadConst",1], ["StoreName",0], ["Jump",11], ["LoadConst",2], ["StoreName",0], ["Phi",0], ["ReturnValue",0]],
     "annotations": {}
   },
   {

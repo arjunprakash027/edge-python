@@ -2,7 +2,8 @@
   "_meta": {
     "source": "MicroPython tests/basics differential vs CPython 3.13",
     "verified": "each repro re-run through VM + python3",
-    "count": 106
+    "count": 61,
+    "fixed": "47 bugs fixed and migrated to vm.json (10 samples each)"
   },
   "bugs": [
     {
@@ -14,84 +15,12 @@
       "actual": "19"
     },
     {
-      "id": "dict_pop",
-      "category": "control-flow",
-      "summary": "try/except/else runs the else block even when an exception was raised and caught by the except handler.",
-      "repro": "try:\n    raise KeyError\nexcept KeyError:\n    print(\"KE\")\nelse:\n    print(\"else\")",
-      "expected": "KE",
-      "actual": "KE\nelse"
-    },
-    {
       "id": "for_else",
       "category": "control-flow",
       "summary": "`continue` inside a for-else clause that targets the enclosing outer loop sends the VM into an infinite loop (budget exceeded) instead of continuing the outer loop.",
       "repro": "for i in range(2):\n    print(i)\n    for j in range(1):\n        pass\n    else:\n        continue\n    break",
       "expected": "0\n1",
       "actual": "0"
-    },
-    {
-      "id": "list_pop",
-      "category": "control-flow",
-      "summary": "try/except/else executes the else clause even after the except handler ran; the file's else raises AssertionError because of this.",
-      "repro": "a = []\ntry:\n    a.pop()\nexcept IndexError:\n    print(\"except\")\nelse:\n    print(\"else\")",
-      "expected": "except",
-      "actual": "except\nelse"
-    },
-    {
-      "id": "list_remove",
-      "category": "control-flow",
-      "summary": "Same try/except/else defect: else clause runs after an exception is caught, triggering the test's AssertionError.",
-      "repro": "a = [1, 3]\ntry:\n    a.remove(2)\nexcept ValueError:\n    print(\"except\")\nelse:\n    print(\"else\")",
-      "expected": "except",
-      "actual": "except\nelse"
-    },
-    {
-      "id": "set_pop",
-      "category": "control-flow",
-      "summary": "try/except/else runs the else clause after the except handler caught the KeyError from popping an empty set, printing the failure message.",
-      "repro": "s = set()\ntry:\n    s.pop()\nexcept KeyError:\n    print(\"except\")\nelse:\n    print(\"else\")",
-      "expected": "except",
-      "actual": "except\nelse"
-    },
-    {
-      "id": "set_remove",
-      "category": "control-flow",
-      "summary": "try/except/else runs the else block even when an exception was caught by the except handler.",
-      "repro": "try:\n    raise ValueError\nexcept ValueError:\n    print('caught')\nelse:\n    print('else ran')\nprint('after')",
-      "expected": "caught\nafter",
-      "actual": "caught\nelse ran\nafter"
-    },
-    {
-      "id": "string_index",
-      "category": "control-flow",
-      "summary": "try/except 'else' clause runs even when an exception was caught by 'except', so the index ValueError cases print both 'Raised ValueError' and 'Did not raise ValueError'.",
-      "repro": "try:\n    raise ValueError(\"x\")\nexcept ValueError:\n    print(\"EXCEPT\")\nelse:\n    print(\"ELSE\")\nprint(\"after\")",
-      "expected": "EXCEPT\nafter",
-      "actual": "EXCEPT\nELSE\nafter"
-    },
-    {
-      "id": "try_else",
-      "category": "control-flow",
-      "summary": "The try-else clause executes even when the try body raised an exception that was caught; else must be skipped on exception.",
-      "repro": "try:\n    raise Exception\nexcept:\n    print(2)\nelse:\n    print(3)",
-      "expected": "2",
-      "actual": "2\n3"
-    },
-    {
-      "id": "try_else_finally",
-      "category": "control-flow",
-      "summary": "Same try-else defect as try_else.py: the else clause runs after a caught exception instead of being skipped (finally still runs).",
-      "repro": "try:\n    raise Exception\nexcept:\n    print(2)\nelse:\n    print(3)\nfinally:\n    print(4)",
-      "expected": "2\n4",
-      "actual": "2\n3\n4"
-    },
-    {
-      "id": "try_error",
-      "category": "control-flow",
-      "summary": "When an except tuple holds a non-exception value (1,), CPython raises TypeError during matching (caught by outer handler); the VM instead lets the original NameError escape uncaught.",
-      "repro": "try:\n    try:\n        a\n    except (1,):\n        pass\nexcept TypeError:\n    print(\"TypeError\")",
-      "expected": "TypeError",
-      "actual": "__VMERR__ NameError: name 'a' is not defined"
     },
     {
       "id": "try_finally1",
@@ -190,14 +119,6 @@
       "actual": "enter\n4"
     },
     {
-      "id": "exceptpoly2",
-      "category": "exception-hierarchy",
-      "summary": "OSError and OverflowError are not registered as subclasses of Exception/ArithmeticError, so `except Exception` fails to catch them and the raise escapes as an uncatchable internal __VMERR__.",
-      "repro": "try:\n    raise OSError\nexcept Exception:\n    print(\"caught via Exception\")",
-      "expected": "caught via Exception",
-      "actual": "__VMERR__ OSError"
-    },
-    {
       "id": "string_format_sep",
       "category": "format",
       "summary": "The '_' grouping separator in a str.format spec ('{:0_x}') is rejected with 'trailing characters in format spec', even though the ',' separator works; valid format spec wrongly errors.",
@@ -211,14 +132,6 @@
       "summary": "Parser rejects a chained attribute assignment target like a.b.c = 1 (exit 4), which is valid Python using only attribute assignment.",
       "repro": "class A:\n    pass\na = A()\na.b = A()\na.b.c = 1\nprint(a.b.c)",
       "expected": "1",
-      "actual": ""
-    },
-    {
-      "id": "builtin_hash_gen",
-      "category": "parser",
-      "summary": "Parser rejects a bare yield (yield with no value) even though generators are supported; yield 1 is accepted.",
-      "repro": "def gen():\n    yield\nprint(next(gen()))",
-      "expected": "None",
       "actual": ""
     },
     {
@@ -270,14 +183,6 @@
       "actual": ""
     },
     {
-      "id": "for_range",
-      "category": "parser",
-      "summary": "The optimized range() call path rejects star-args (`range(*tuple)`), even though *args unpacking is supported for ordinary calls; parser returns exit 4.",
-      "repro": "print(list(range(*(1, 3))))",
-      "expected": "[1, 2]",
-      "actual": ""
-    },
-    {
       "id": "frozenset_copy",
       "category": "parser",
       "summary": "The file fails at parse time (exit 4) on `for i in s, t:` — a parenthesis-less tuple as the for-loop iterable is rejected, though `for i in (s, t):` works.",
@@ -318,14 +223,6 @@
       "actual": ""
     },
     {
-      "id": "generator_name",
-      "category": "parser",
-      "summary": "Bare 'yield' (with no value) is rejected at parse time, though it is valid Python yielding None.",
-      "repro": "def f():\n    yield\nprint(list(f()))",
-      "expected": "[None]",
-      "actual": ""
-    },
-    {
       "id": "seq_unpack",
       "category": "parser",
       "summary": "A list as an assignment target ([a, b] = ...) is rejected at parse time though it is valid Python using only supported features.",
@@ -339,14 +236,6 @@
       "summary": "Same defect: 'for i in s, t:' with a bare tuple iterable is rejected at parse time; the set .copy() itself works.",
       "repro": "s = {1, 2}\nt = {3, 4}\nfor i in s, t:\n    print(sorted(i))",
       "expected": "[1, 2]\n[3, 4]",
-      "actual": ""
-    },
-    {
-      "id": "stopiteration",
-      "category": "parser",
-      "summary": "Parser rejects a bare 'yield' statement (no value), which is valid Python in a generator and should yield None.",
-      "repro": "def g():\n    yield\ngen = g()\nprint(next(gen))",
-      "expected": "None",
       "actual": ""
     },
     {
@@ -366,14 +255,6 @@
       "actual": ""
     },
     {
-      "id": "string_join",
-      "category": "parser",
-      "summary": "Parser rejects backslash line-continuation, valid core Python syntax used in the test.",
-      "repro": "x = 1 \\\n    + 2\nprint(x)",
-      "expected": "3",
-      "actual": ""
-    },
-    {
       "id": "try_reraise",
       "category": "parser",
       "summary": "A bare 'raise' to reraise the current exception is rejected at parse time; valid in-scope Python.",
@@ -390,30 +271,6 @@
       "actual": ""
     },
     {
-      "id": "assign_expr_scope",
-      "category": "scoping",
-      "summary": "A walrus assignment inside a comprehension does not honor an enclosing global declaration, raising NameError instead of binding the global.",
-      "repro": "def f():\n    global v\n    [v := i for i in range(2)]\nf()\nprint(v)",
-      "expected": "1",
-      "actual": "__VMERR__ NameError: name 'v' is not defined"
-    },
-    {
-      "id": "builtin_property",
-      "category": "scoping",
-      "summary": "Reading a module-level global from inside a class body raises NameError although the name is validly bound.",
-      "repro": "g = 7\nclass B:\n    y = g\nprint(B.y)",
-      "expected": "7",
-      "actual": "__VMERR__ NameError: name 'g' is not defined"
-    },
-    {
-      "id": "class_bind_self",
-      "category": "scoping",
-      "summary": "A class body cannot reference a module-level name on the RHS of an assignment, raising NameError.",
-      "repro": "def g():\n    return 1\nclass C:\n    f = g\nprint(C.f())",
-      "expected": "1",
-      "actual": "__VMERR__ NameError: name 'g' is not defined"
-    },
-    {
       "id": "del_deref",
       "category": "scoping",
       "summary": "del of a closed-over (nonlocal) variable does not unbind it; subsequent read returns the old value instead of raising NameError.",
@@ -422,35 +279,11 @@
       "actual": "1"
     },
     {
-      "id": "del_local",
-      "category": "scoping",
-      "summary": "Deleting an already-deleted local variable silently succeeds instead of raising NameError; del does not truly unbind the local.",
-      "repro": "def f():\n    x = 1\n    del x\n    try:\n        del x\n    except NameError:\n        print(\"NameError\")\nf()",
-      "expected": "NameError",
-      "actual": ""
-    },
-    {
-      "id": "del_name",
-      "category": "scoping",
-      "summary": "Deleting an already-deleted global name silently succeeds instead of raising; del leaves the binding present.",
-      "repro": "x = 1\ndel x\ntry:\n    del x\nexcept:\n    print(\"NameError\")",
-      "expected": "NameError",
-      "actual": ""
-    },
-    {
       "id": "gen_yield_from_executing",
       "category": "scoping",
       "summary": "A generator that yields from itself via a module-global name raises NameError on that validly-bound name instead of the expected ValueError; the global binding is lost on generator re-entry.",
       "repro": "def f():\n    yield 1\n    yield from g\ng = f()\nprint(next(g))\ntry:\n    next(g)\nexcept ValueError:\n    print('ValueError')",
       "expected": "1\nValueError",
-      "actual": "1"
-    },
-    {
-      "id": "scope",
-      "category": "scoping",
-      "summary": "An assignment to a global declared via 'global' inside a function does not persist to the module-level binding read after the call.",
-      "repro": "a = 1\ndef f():\n    global a\n    a = 2\nf()\nprint(a)",
-      "expected": "2",
       "actual": "1"
     },
     {
@@ -462,51 +295,11 @@
       "actual": "__VMERR__ NameError: name 'x' is not defined"
     },
     {
-      "id": "try_as_var",
-      "category": "scoping",
-      "summary": "The 'except ... as e' variable is not deleted after the except block, so a later reference to it does not raise NameError as it must in Python 3.",
-      "repro": "try:\n    raise ValueError(534)\nexcept ValueError as e:\n    pass\nprint(e)",
-      "expected": "",
-      "actual": "534"
-    },
-    {
-      "id": "fun_calldblstar",
-      "category": "stack-underflow",
-      "summary": "Calling a bound method with a **dict argument corrupts the operand stack and raises an internal stack underflow.",
-      "repro": "class A:\n    def f(self, a, b):\n        print(a, b)\nA().f(1, **{'b':2})",
-      "expected": "1 2",
-      "actual": "__VMERR__ RuntimeError: stack underflow"
-    },
-    {
-      "id": "fun_calldblstar4",
-      "category": "stack-underflow",
-      "summary": "Calling a bound method with one or more **dict arguments corrupts the operand stack and raises an internal stack underflow.",
-      "repro": "class A:\n    def f(self, a, b=None, c=None):\n        print(a, b, c)\nA().f(**{\"a\": 1}, **{\"b\": 2})",
-      "expected": "1 2 None",
-      "actual": "__VMERR__ RuntimeError: stack underflow"
-    },
-    {
       "id": "generator_closure",
       "category": "stack-underflow",
       "summary": "A generator expression nested inside another generator expression triggers an internal stack underflow on valid supported syntax.",
       "repro": "gg = ((x for x in range(2)) for y in range(2))\nfor i in gg:\n    for j in i:\n        print(j)",
       "expected": "0\n1\n0\n1",
-      "actual": "__VMERR__ RuntimeError: stack underflow"
-    },
-    {
-      "id": "string1",
-      "category": "stack-underflow",
-      "summary": "Calling str() with no arguments triggers an internal stack underflow RuntimeError instead of returning empty string.",
-      "repro": "print(repr(str()))",
-      "expected": "''",
-      "actual": "__VMERR__ RuntimeError: stack underflow"
-    },
-    {
-      "id": "types1",
-      "category": "stack-underflow",
-      "summary": "Calling bool with zero arguments triggers an internal stack underflow on valid supported syntax.",
-      "repro": "print(bool())",
-      "expected": "False",
       "actual": "__VMERR__ RuntimeError: stack underflow"
     },
     {
@@ -518,14 +311,6 @@
       "actual": "__VMERR__ TypeError: wrong number of arguments to builtin"
     },
     {
-      "id": "exceptpoly",
-      "category": "unsupported-feature",
-      "summary": "Intermediate exception base classes are not in the hierarchy: 'except Exception' fails to catch ArithmeticError and 'except LookupError' fails to catch IndexError/KeyError, so the exception propagates uncaught.",
-      "repro": "try:\n    raise IndexError\nexcept LookupError:\n    print(\"caught\")",
-      "expected": "caught",
-      "actual": "__VMERR__ IndexError"
-    },
-    {
       "id": "string_format_modulo_int",
       "category": "unsupported-feature",
       "summary": "The '*' dynamic-width specifier in %-formatting (e.g. '%*d') is rejected as an unsupported format character on valid supported input.",
@@ -534,92 +319,12 @@
       "actual": "__VMERR__ ValueError: unsupported format character"
     },
     {
-      "id": "string_startswith",
-      "category": "unsupported-feature",
-      "summary": "str.startswith rejects the standard optional start (and end) positional arguments, raising TypeError on valid supported usage.",
-      "repro": "print(\"1foobar\".startswith(\"foo\", 1))",
-      "expected": "True",
-      "actual": "__VMERR__ TypeError: startswith() takes 1 arg(s), got 2"
-    },
-    {
       "id": "bool1",
       "category": "wrong-value",
       "summary": "Unary plus on a bool returns the bool instead of converting to int 1.",
       "repro": "print(+True)",
       "expected": "1",
       "actual": "True"
-    },
-    {
-      "id": "builtin_delattr",
-      "category": "wrong-value",
-      "summary": "delattr on a missing attribute silently succeeds instead of raising AttributeError.",
-      "repro": "class A: pass\na = A()\ntry:\n    delattr(a, 'x')\n    print('no error')\nexcept AttributeError:\n    print('AttributeError')",
-      "expected": "AttributeError",
-      "actual": "no error"
-    },
-    {
-      "id": "builtin_getattr",
-      "category": "wrong-value",
-      "summary": "getattr() builtin fails to look up a valid instance attribute that direct a.var2 access resolves correctly, raising AttributeError.",
-      "repro": "class A:\n    def __init__(self):\n        self.var2 = 34\na = A()\nprint(getattr(a, \"var2\"))",
-      "expected": "34",
-      "actual": "__VMERR__ AttributeError: 'object' object has no attribute 'var2'"
-    },
-    {
-      "id": "builtin_hasattr",
-      "category": "wrong-value",
-      "summary": "hasattr() returns False for attributes that exist and are directly accessible (both class and instance attributes).",
-      "repro": "class A:\n    def __init__(self):\n        self.var2 = 34\na = A()\nprint(hasattr(a, \"var2\"))",
-      "expected": "True",
-      "actual": "False"
-    },
-    {
-      "id": "builtin_hash",
-      "category": "wrong-value",
-      "summary": "hash() of a small int returns a scrambled value instead of the integer itself; CPython guarantees hash(n)==n in range.",
-      "repro": "print(hash(1))",
-      "expected": "1",
-      "actual": "72254891362965"
-    },
-    {
-      "id": "builtin_next_arg2",
-      "category": "wrong-value",
-      "summary": "next() does not invoke __next__ on a user object that defines it, raising TypeError; the same object iterates fine in a for-loop.",
-      "repro": "class Gen:\n    def __init__(self):\n        self.n = 0\n    def __next__(self):\n        self.n += 1\n        return self.n\ng = Gen()\nprint(next(g))",
-      "expected": "1",
-      "actual": "__VMERR__ TypeError: next() requires an iterator"
-    },
-    {
-      "id": "builtin_ord",
-      "category": "wrong-value",
-      "summary": "ord() rejects a bytes argument of length 1 with TypeError; CPython returns the byte value.",
-      "repro": "print(ord(b'a'))",
-      "expected": "97",
-      "actual": "__VMERR__ TypeError: ord() requires string of length 1"
-    },
-    {
-      "id": "builtin_pow3",
-      "category": "wrong-value",
-      "summary": "3-arg pow gives wrong result when modulus is 1 (or exponent 0): pow(1,0,1) returns 1 instead of 0 because the modulus is not applied to the x**0 case.",
-      "repro": "print(pow(1, 0, 1))",
-      "expected": "0",
-      "actual": "1"
-    },
-    {
-      "id": "builtin_round",
-      "category": "wrong-value",
-      "summary": "round() rejects bool with TypeError even though bool is a number (True+1 and abs(True) work, round(int) works), so round(True) wrongly fails instead of returning 1.",
-      "repro": "print(round(True))",
-      "expected": "1",
-      "actual": "__VMERR__ TypeError: round() requires a number"
-    },
-    {
-      "id": "builtin_round_int",
-      "category": "wrong-value",
-      "summary": "round(int, ndigits) with negative ndigits ignores the second argument and returns the unrounded value.",
-      "repro": "print(round(12345, -1))",
-      "expected": "12340",
-      "actual": "12345"
     },
     {
       "id": "builtin_slice",
@@ -636,14 +341,6 @@
       "repro": "print(str(b\"123\", \"utf-8\"))",
       "expected": "123",
       "actual": "utf-8"
-    },
-    {
-      "id": "bytes_strip",
-      "category": "wrong-value",
-      "summary": "bytes.strip() default whitespace set omits vertical tab (0x0b), so b'\\v'.strip() leaves the byte instead of stripping it.",
-      "repro": "print(b\"\\v\".strip())",
-      "expected": "b''",
-      "actual": "b'\\x0b'"
     },
     {
       "id": "class2",
@@ -668,14 +365,6 @@
       "repro": "class B:\n    def __ror__(self, o):\n        return 'ror'\nprint('a' | B())",
       "expected": "ror",
       "actual": "__VMERR__ TypeError: bitwise op requires integer operands"
-    },
-    {
-      "id": "class_super",
-      "category": "wrong-value",
-      "summary": "super().attr where attr is a non-callable class attribute returns '<bound method>' instead of the attribute value.",
-      "repro": "class A:\n    bar = 123\nclass B(A):\n    def foo(self):\n        print(super().bar)\nB().foo()",
-      "expected": "123",
-      "actual": "<bound method>"
     },
     {
       "id": "del_subscr",
@@ -726,14 +415,6 @@
       "actual": "__VMERR__ RuntimeError: StopIteration"
     },
     {
-      "id": "int1",
-      "category": "wrong-value",
-      "summary": "int() of a bytes object (a supported type) raises TypeError instead of parsing the digits, producing a plainly wrong result.",
-      "repro": "print(int(b\"12\", 10))\nprint(int(b\"12\"))",
-      "expected": "12\n12",
-      "actual": "__VMERR__ TypeError: int() can't convert non-string with explicit base"
-    },
-    {
       "id": "iter0",
       "category": "wrong-value",
       "summary": "Iterators support next(it) but lack the explicit __next__ dunder method, raising AttributeError on supported core iterator-protocol usage.",
@@ -748,14 +429,6 @@
       "repro": "l = [1, 2]\nl += range(6, 10)\nprint(l)",
       "expected": "[1, 2, 6, 7, 8, 9]",
       "actual": "__VMERR__ TypeError: unsupported operand type(s) for +: 'list' and 'range'"
-    },
-    {
-      "id": "list_index",
-      "category": "wrong-value",
-      "summary": "list.index() does not treat a bool start argument as an integer index (True should mean start=1).",
-      "repro": "print([1, 2, 3].index(1, True))",
-      "expected": "",
-      "actual": "0"
     },
     {
       "id": "list_slice_3arg",
@@ -774,60 +447,12 @@
       "actual": "__VMERR__ TypeError: '<' not supported between instances of 'object' and 'object'"
     },
     {
-      "id": "scope_class",
-      "category": "wrong-value",
-      "summary": "hasattr() on an instance does not find methods/attributes inherited from the class, even though direct attribute access works.",
-      "repro": "class A:\n    def method(self):\n        return 5\nprint(hasattr(A(), \"method\"))",
-      "expected": "True",
-      "actual": "False"
-    },
-    {
       "id": "set_binop",
       "category": "wrong-value",
       "summary": "Augmented set assignment (|= etc.) rebinds to a new set instead of mutating in place, so an aliasing identity check is False instead of True.",
       "repro": "s1 = s2 = set('abc')\ns1 |= set('ad')\nprint(s1 is s2, len(s1))",
       "expected": "True 4",
       "actual": "False 4"
-    },
-    {
-      "id": "special_comparisons2",
-      "category": "wrong-value",
-      "summary": "The != operator does not dispatch to a user-defined __ne__ method; it falls back to identity inequality.",
-      "repro": "class F:\n    def __ne__(self, other):\n        return -456\nprint(F() != 5)",
-      "expected": "-456",
-      "actual": "True"
-    },
-    {
-      "id": "special_methods",
-      "category": "wrong-value",
-      "summary": "The int() builtin does not honor a user-defined __int__ method, raising TypeError instead of calling it.",
-      "repro": "class C:\n    def __int__(self):\n        return 42\nprint(int(C()))",
-      "expected": "42",
-      "actual": "__VMERR__ TypeError: int() requires a number or string"
-    },
-    {
-      "id": "string_cr_conversion",
-      "category": "wrong-value",
-      "summary": "Lexer does not normalize lone CR line endings to LF inside triple-quoted strings, producing a wrong string value.",
-      "repro": "x=\"\"\"a\rb\"\"\"\nprint(repr(x))",
-      "expected": "'a\\nb'",
-      "actual": "'a\\rb'"
-    },
-    {
-      "id": "string_crlf_conversion",
-      "category": "wrong-value",
-      "summary": "Lexer does not normalize CRLF line endings to LF inside triple-quoted strings, producing a wrong string value.",
-      "repro": "x=\"\"\"a\r\nb\"\"\"\nprint(repr(x))",
-      "expected": "'a\\nb'",
-      "actual": "'a\\r\\nb'"
-    },
-    {
-      "id": "string_format",
-      "category": "wrong-value",
-      "summary": "Formatting a container (list/tuple/dict) with plain {} produces an empty string instead of its str() representation.",
-      "repro": "print(\"{}\".format([4, 5]))",
-      "expected": "[4, 5]",
-      "actual": ""
     },
     {
       "id": "string_format2",
@@ -852,6 +477,22 @@
       "repro": "class A:\n    def __int__(self):\n        return 123\nprint(\"%d\" % A())",
       "expected": "123",
       "actual": "__VMERR__ ValueError: format spec requires an integer"
+    },
+    {
+      "id": "foriter_yields_none",
+      "category": "control-flow",
+      "summary": "for-loop and genexpr over a generator that yields None stop immediately; ForIter treats yielded None as the exhaustion sentinel.",
+      "repro": "def g():\n yield\nfor x in g():\n print(x)",
+      "expected": "None",
+      "actual": "(no output)"
+    },
+    {
+      "id": "consecutive_bare_yield",
+      "category": "parser",
+      "summary": "Two consecutive bare 'yield' statements parse-reject; a bare yield followed by another yield is rejected.",
+      "repro": "def g():\n yield\n yield\nprint(list(g()))",
+      "expected": "[None, None]",
+      "actual": "(parse error, exit 4)"
     }
   ]
 }

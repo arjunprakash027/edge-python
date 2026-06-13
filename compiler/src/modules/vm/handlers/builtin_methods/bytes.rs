@@ -185,7 +185,8 @@ pub fn upper(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
 fn bstrip(vm: &mut VM, recv: Val, pos: &[Val], left: bool, right: bool) -> Result<(), VmErr> {
     let buf = recv_bytes(vm, recv)?;
     let chars = match pos.first() { Some(&a) => Some(recv_bytes(vm, a)?), None => None };
-    let strip = |b: u8| -> bool { match &chars { Some(set) => set.contains(&b), None => b.is_ascii_whitespace() } };
+    // Python's bytes whitespace set includes the vertical tab (0x0b), which Rust omits.
+    let strip = |b: u8| -> bool { match &chars { Some(set) => set.contains(&b), None => b.is_ascii_whitespace() || b == 0x0b } };
     let mut s = 0usize;
     let mut e = buf.len();
     if left { while s < e && strip(buf[s]) { s += 1; } }

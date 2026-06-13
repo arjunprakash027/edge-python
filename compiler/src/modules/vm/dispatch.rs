@@ -363,13 +363,22 @@ impl<'a> VM<'a> {
 
             // Hot opcodes.
             OpCode::LoadName => {
-                // Malformed bytecode can carry an out-of-range slot; treat it as unbound.
-                let v = slots.get(op as usize).copied().unwrap_or(Val::undef());
-                if v.is_undef() {
-                    let name = chunk.names.get(op as usize).map(|n| ssa_strip(n)).unwrap_or_default();
-                    return Err(VmErr::Name(name.into()));
+                // At module scope, module_state holds the live value so function `global` writes are visible.
+                if core::ptr::eq(chunk, self.chunk)
+                    && let Some(n) = chunk.names.get(op as usize)
+                    && let Some(&gv) = self.module_state.get(ssa_strip(n))
+                    && !gv.is_undef()
+                {
+                    self.push(gv);
+                } else {
+                    // Malformed bytecode can carry an out-of-range slot; treat it as unbound.
+                    let v = slots.get(op as usize).copied().unwrap_or(Val::undef());
+                    if v.is_undef() {
+                        let name = chunk.names.get(op as usize).map(|n| ssa_strip(n)).unwrap_or_default();
+                        return Err(VmErr::Name(name.into()));
+                    }
+                    self.push(v);
                 }
-                self.push(v);
             }
             OpCode::StoreName => {
                 self.handle_store(op, slots)?;
@@ -765,6 +774,17 @@ impl<'a> VM<'a> {
             return Err(cold_runtime("class index out of range"));
         };
         let mut class_slots = self.fill_builtins(&body.names);
+        // Class bodies can read enclosing module-level names, not only builtins.
+        let mut injected: Vec<(usize, Val)> = Vec::new();
+        for (i, name) in body.names.iter().enumerate() {
+            let bare = ssa_strip(name);
+            if class_slots.get(i).is_some_and(|v| v.is_undef())
+                && let Some(gv) = self.module_state.get(bare).or_else(|| self.globals.get(bare)).copied()
+            {
+                class_slots[i] = gv;
+                injected.push((i, gv));
+            }
+        }
         // Pin caller slots as GC roots so a nested class/function body can't sweep them.
         let snap = self.live_slots.len();
         self.live_slots.extend_from_slice(caller_slots);
@@ -775,6 +795,8 @@ impl<'a> VM<'a> {
         for (i, name) in body.names.iter().enumerate() {
             if let Some(&v) = class_slots.get(i)
                 && !v.is_undef() {
+                    // Skip injected module globals, unless the body reassigned the slot.
+                    if injected.iter().any(|&(j, gv)| j == i && v.0 == gv.0) { continue; }
                     let base = ssa_strip(name);
                     let is_builtin_shadow = v.is_heap()
                         && matches!(self.heap.get(v), HeapObj::NativeFn(_))
