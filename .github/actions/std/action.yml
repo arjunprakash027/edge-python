@@ -16,9 +16,11 @@ runs:
         targets: wasm32-unknown-unknown
         components: clippy
 
+    # Pinned nightly date: avoids the rolling-channel checksum race and keeps build-std reproducible.
     - name: Toolchain (nightly)
-      uses: dtolnay/rust-toolchain@nightly
+      uses: dtolnay/rust-toolchain@master
       with:
+        toolchain: nightly-2026-03-31
         targets: wasm32-unknown-unknown
         components: rust-src
 
