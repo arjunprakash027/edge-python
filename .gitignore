@@ -44,3 +44,6 @@ pkg/
 **/out/
 **/target/
 **/edge.dict
+
+# MicroPython differential corpus (scratch, not part of this repo)
+_micropython/
