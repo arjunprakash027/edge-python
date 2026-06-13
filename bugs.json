@@ -2,8 +2,8 @@
   "_meta": {
     "source": "MicroPython tests/basics differential vs CPython 3.13",
     "verified": "each repro re-run through VM + python3",
-    "count": 61,
-    "fixed": "47 bugs fixed and migrated to vm.json (10 samples each)"
+    "count": 53,
+    "fixed": "55 bugs fixed and migrated to vm.json (10 samples each)"
   },
   "bugs": [
     {
@@ -167,30 +167,6 @@
       "actual": ""
     },
     {
-      "id": "dict_get",
-      "category": "parser",
-      "summary": "Parser rejects an unparenthesized tuple as the for-loop iterable (for d in {}, {42:2}:); parenthesizing it works. dict.get itself works fine.",
-      "repro": "for x in 1, 2:\n    print(x)",
-      "expected": "1\n2",
-      "actual": ""
-    },
-    {
-      "id": "dict_views",
-      "category": "parser",
-      "summary": "Same parser defect as dict_get: unparenthesized tuple as for-loop iterable (for m in d.items, d.values, d.keys:) is rejected; parenthesized form works.",
-      "repro": "d = {1:2}\nfor m in d.items, d.keys:\n    print(list(m()))",
-      "expected": "[(1, 2)]\n[1]",
-      "actual": ""
-    },
-    {
-      "id": "frozenset_copy",
-      "category": "parser",
-      "summary": "The file fails at parse time (exit 4) on `for i in s, t:` — a parenthesis-less tuple as the for-loop iterable is rejected, though `for i in (s, t):` works.",
-      "repro": "for i in 1, 2:\n    print(i)",
-      "expected": "1\n2",
-      "actual": ""
-    },
-    {
       "id": "gen_yield_from",
       "category": "parser",
       "summary": "'yield from' used as an expression whose value is consumed (print((yield from gen()))) is rejected at parse time, though yield from as a statement works and uses only supported features.",
@@ -228,30 +204,6 @@
       "summary": "A list as an assignment target ([a, b] = ...) is rejected at parse time though it is valid Python using only supported features.",
       "repro": "[a, b] = 100, 200\nprint(a, b)",
       "expected": "100 200",
-      "actual": ""
-    },
-    {
-      "id": "set_copy",
-      "category": "parser",
-      "summary": "Same defect: 'for i in s, t:' with a bare tuple iterable is rejected at parse time; the set .copy() itself works.",
-      "repro": "s = {1, 2}\nt = {3, 4}\nfor i in s, t:\n    print(sorted(i))",
-      "expected": "[1, 2]\n[3, 4]",
-      "actual": ""
-    },
-    {
-      "id": "string_fstring",
-      "category": "parser",
-      "summary": "Parser rejects a tuple literal inside an f-string replacement field (a valid, supported f-string feature).",
-      "repro": "print(f\"a {1,} b\")",
-      "expected": "a (1,) b",
-      "actual": ""
-    },
-    {
-      "id": "string_fstring_debug",
-      "category": "parser",
-      "summary": "The debug f-string '{x=}' itself works, but the parser rejects a tuple inside an f-string field ('{1,=}'), a valid f-string construct, failing the whole file.",
-      "repro": "print(f\"a {1,=} b\")",
-      "expected": "a 1,=(1,) b",
       "actual": ""
     },
     {
@@ -383,28 +335,12 @@
       "actual": "('0',) <class 'str'>"
     },
     {
-      "id": "fun_kwonlydef",
-      "category": "wrong-value",
-      "summary": "A keyword-only arg with a default that is followed by a required keyword-only arg does not get its default applied when omitted; VM raises NameError instead of using the default.",
-      "repro": "def f2(*, a=1, b):\n    print(a, b)\nf2(b=2)",
-      "expected": "1 2",
-      "actual": "__VMERR__ NameError: name 'a' is not defined"
-    },
-    {
       "id": "fun_kwvarargs",
       "category": "wrong-value",
       "summary": "A call mixing a starred argument that is itself a function call with a keyword argument whose value is also a function call corrupts argument evaluation and raises TypeError: object is not callable.",
       "repro": "def f(*a, **k):\n    print(a, k)\ndef g(x):\n    return x\nf(*g([1, 2]), z=g(3))",
       "expected": "(1, 2) {'z': 3}",
       "actual": "__VMERR__ TypeError: object is not callable"
-    },
-    {
-      "id": "fun_varargs",
-      "category": "wrong-value",
-      "summary": "A default-valued parameter before *args is left unbound when its default is used, raising NameError instead of using the default.",
-      "repro": "def f4(a=0, *args):\n    print(a, args)\nf4()",
-      "expected": "0 ()",
-      "actual": "__VMERR__ NameError: name 'a' is not defined"
     },
     {
       "id": "generator_return",

@@ -269,6 +269,16 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     let saved_in_fstring = self.in_fstring_expr;
                     self.in_fstring_expr = true;
                     self.expr();
+                    // Bare tuple in a replacement field: `f"{1,}"` builds (1,).
+                    if matches!(self.peek(), Some(TokenType::Comma)) {
+                        let mut n = 1u16;
+                        while self.eat_if(TokenType::Comma) {
+                            if matches!(self.peek(), Some(TokenType::Rbrace | TokenType::Colon | TokenType::Exclamation | TokenType::Equal) | None) { break; }
+                            self.expr();
+                            n += 1;
+                        }
+                        self.chunk.emit(OpCode::BuildTuple, n);
+                    }
                     self.in_fstring_expr = saved_in_fstring;
                     let expr_end_byte = self.last_end;
                     /* FormatValue operand: bit0=has-spec, bits1-2=conversion (0=none,1=!r,2=!s,3=!a). */
@@ -596,6 +606,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             if self.eat_if(TokenType::Equal) {
                 self.expr();
                 defaults += 1;
+                // Trailing `=` marks this param as carrying a default value.
+                if let Some(last) = params.last_mut() { last.push('='); }
             }
             self.eat_if(TokenType::Comma);
         }
@@ -634,7 +646,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     pub(super) fn compile_body(&mut self, params: &[String]) -> SSAChunk {
         let mut body = self.with_fresh_chunk(|s| {
             for p in params {
-                s.ssa_versions.insert(p.clone(), 0);
+                // Base name shadows the enclosing scope; prefix/`=` marker must be stripped.
+                s.ssa_versions.insert(super::types::param_base_name(p).to_string(), 0);
                 let _ = s.push_ssa_name(super::types::param_base_name(p), 0);
             }
             s.compile_block_body();

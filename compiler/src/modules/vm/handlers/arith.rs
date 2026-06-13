@@ -226,9 +226,7 @@ impl<'a> VM<'a> {
         }
 
         let (a, b) = self.pop2()?;
-        if a.is_heap() && b.is_heap()
-            && matches!(self.heap.get(a), HeapObj::Set(_))
-            && matches!(self.heap.get(b), HeapObj::Set(_))
+        if self.is_set_like(a) && self.is_set_like(b)
             && matches!(op, OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor) {
             return self.set_binop_and_push(a, b, op);
         }
@@ -294,9 +292,7 @@ impl<'a> VM<'a> {
         }
 
         // Set/Set uses subset/superset, NOT total order, the numeric `LtEq = !lt_vals(b, a)` identity is wrong here ({1,2} <= {2,3} would come back True), so we bypass `lt_vals`.
-        if a.is_heap() && b.is_heap()
-            && matches!(self.heap.get(a), HeapObj::Set(_))
-            && matches!(self.heap.get(b), HeapObj::Set(_)) {
+        if self.is_set_like(a) && self.is_set_like(b) {
             return self.set_compare_and_push(a, b, op);
         }
 

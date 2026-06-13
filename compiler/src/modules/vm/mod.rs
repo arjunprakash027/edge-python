@@ -226,15 +226,17 @@ impl<'a> VM<'a> {
             let bm = &vm.body_maps[fi];
             params.iter().map(|p| {
                 // `~` prefix marks kw-only parameters (after a lone `*`).
-                let (kind, bare) = if let Some(stripped) = p.strip_prefix("**") {
-                    (ParamKind::DoubleStar, stripped)
-                } else if let Some(stripped) = p.strip_prefix('*') {
-                    (ParamKind::Star, stripped)
-                } else if let Some(stripped) = p.strip_prefix('~') {
-                    (ParamKind::KwOnly, stripped)
+                let kind = if p.starts_with("**") {
+                    ParamKind::DoubleStar
+                } else if p.starts_with('*') {
+                    ParamKind::Star
+                } else if p.starts_with('~') {
+                    ParamKind::KwOnly
                 } else {
-                    (ParamKind::Normal, p.as_str())
+                    ParamKind::Normal
                 };
+                // Strips both prefix and the `=` default marker for slot lookup.
+                let bare = crate::modules::parser::types::param_base_name(p);
                 let slot = bm.get(&s!(str bare, "_0")).copied().unwrap_or(usize::MAX);
                 (kind, slot)
             }).collect()
@@ -301,12 +303,12 @@ impl<'a> VM<'a> {
         // Default-slot table: (slot, placeholder) entries the call path overwrites.
         vm.default_slots = (0..vm.functions.len()).map(|fi| {
             let (params, _, n_defaults, _) = vm.functions[fi];
-            let n_defaults = *n_defaults as usize;
-            if n_defaults == 0 { return Vec::new(); }
-            let pslots = &vm.param_slots[fi];
-            let n_params = params.len();
-            let offset = n_params.saturating_sub(n_defaults);
-            (0..n_defaults).filter_map(|di| { pslots.get(offset + di).map(|&(_, slot)| (slot, Val::none())) }).collect()
+            if *n_defaults == 0 { return Vec::new(); }
+            // Defaults map to `=`-marked params in source order, not the trailing N.
+            params.iter().zip(vm.param_slots[fi].iter())
+                .filter(|(p, _)| p.ends_with('='))
+                .map(|(_, &(_, slot))| (slot, Val::none()))
+                .collect()
         }).collect();
         for &name in BUILTIN_TYPES {
             if let Ok(type_obj) = vm.heap.alloc(HeapObj::Type(name.to_string())) {

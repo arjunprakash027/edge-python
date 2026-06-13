@@ -137,6 +137,10 @@ impl<'a> VM<'a> {
                 let items: Vec<Val> = s.borrow().iter().cloned().collect();
                 IterFrame::Seq { items, idx: 0 }
             },
+            HeapObj::FrozenSet(s) => {
+                let items: Vec<Val> = s.iter().cloned().collect();
+                IterFrame::Seq { items, idx: 0 }
+            },
             HeapObj::Str(s) => {
                 let s = s.clone();
                 let items = self.str_to_char_vals(&s)?;
@@ -158,6 +162,8 @@ impl<'a> VM<'a> {
         let items: Vec<Val> = match self.heap.get(obj) {
             HeapObj::List(v) => v.borrow().clone(),
             HeapObj::Tuple(v) => v.clone(),
+            HeapObj::Set(v) => v.borrow().iter().cloned().collect(),
+            HeapObj::FrozenSet(v) => v.iter().cloned().collect(),
             HeapObj::Str(s) => {
                 let s = s.clone();
                 let out = self.str_to_char_vals(&s)?;

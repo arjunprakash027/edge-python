@@ -280,7 +280,7 @@ pub const SSA_TMP_MATCH_ITEM: &str = "#match_item";
 
 // Param name without `*`/`**`/`~` marker prefixes.
 pub fn param_base_name(p: &str) -> &str {
-    p.trim_start_matches(['*', '~'])
+    p.trim_start_matches(['*', '~']).trim_end_matches('=')
 }
 
 /* Parsed view of a `<bare>_<digits>` SSA-suffixed name, avoids re-inlining the rfind('_') + ascii-digit + parse dance at every call site. */

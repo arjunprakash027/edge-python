@@ -396,6 +396,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 if prefix.is_empty() && self.eat_if(TokenType::Equal) {
                     self.expr();
                     defaults += 1;
+                    // Trailing `=` marks this param as carrying a default value.
+                    if let Some(last) = params.last_mut() { last.push('='); }
                 }
                 if !self.eat_if(TokenType::Comma) {
                     break;
@@ -408,7 +410,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
         let body = self.with_fresh_chunk(|s| {
             s.ssa_versions = outer_versions;
-            for p in &params { s.ssa_versions.insert(p.clone(), 0); }
+            // Base name shadows the enclosing scope; prefix/`=` marker must be stripped.
+            for p in &params { s.ssa_versions.insert(super::types::param_base_name(p).to_string(), 0); }
             s.expr();
             s.chunk.emit(OpCode::ReturnValue, 0);
         });

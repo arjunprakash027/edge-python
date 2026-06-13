@@ -410,6 +410,8 @@ print(d)
 
 ## Set methods
 
+These are `set`-only. `frozenset` exposes no methods; it uses the algebra operators (`|` `&` `-` `^`) and comparisons instead. See [Frozenset](/language/data-types#frozenset).
+
 ### Mutation
 
 `remove` raises `KeyError` if absent. `discard` is silent. `pop` removes an arbitrary element; empty -> `KeyError`. `update` accepts any iterable (variadic).
@@ -439,7 +441,7 @@ set()
 
 ### Algebra
 
-`union`, `intersection`, `difference` return fresh sets and accept any number of iterable arguments; `symmetric_difference` takes exactly one. The in-place `intersection_update`, `difference_update`, `symmetric_difference_update` mutate the receiver. Operator forms (`|`, `&`, `-`, `^`) and augmented assignment (`|=`, `&=`, `-=`, `^=`) require both sides to be sets; the named methods accept any iterable.
+`union`, `intersection`, `difference` return fresh sets and accept any number of iterable arguments; `symmetric_difference` takes exactly one. The in-place `intersection_update`, `difference_update`, `symmetric_difference_update` mutate the receiver. Operator forms (`|`, `&`, `-`, `^`) and augmented assignment (`|=`, `&=`, `-=`, `^=`) require both sides to be a set or frozenset; the named methods accept any iterable.
 
 ```python
 a = {1, 2, 3}

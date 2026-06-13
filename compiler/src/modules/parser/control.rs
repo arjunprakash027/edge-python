@@ -383,6 +383,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
         self.eat(TokenType::In);
         self.expr();
+        // Unparenthesized tuple iterable: `for x in 1, 2:` iterates the tuple.
+        let mut n = 1u16;
+        while self.eat_if(TokenType::Comma) {
+            if matches!(self.peek(), Some(TokenType::Colon) | None) { break; }
+            self.expr();
+            n += 1;
+        }
+        if n > 1 { self.chunk.emit(OpCode::BuildTuple, n); }
         self.chunk.emit(OpCode::GetIter, is_async as u16);
 
         self.enter_block();

@@ -74,6 +74,7 @@ impl<'a> VM<'a> {
             HeapObj::Tuple(v) => v.len() as i64,
             HeapObj::Dict(v) => v.borrow().len() as i64,
             HeapObj::Set(v) => v.borrow().len() as i64,
+            HeapObj::FrozenSet(v) => v.len() as i64,
             HeapObj::Range(s,e,st) => {
                 let (s, e, st) = (*s as i128, *e as i128, *st as i128);
                 if st == 0 { return Err(cold_value("range() step cannot be zero")); }

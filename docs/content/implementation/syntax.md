@@ -209,7 +209,7 @@ Lambdas and `def` both compile their body into a *fresh* SSAChunk:
 ```rust
 self.with_fresh_chunk(|s| {
   s.ssa_versions = outer_versions.clone();
-  for p in &params { s.ssa_versions.insert(p.clone(), 0); }
+  for p in &params { s.ssa_versions.insert(param_base_name(p).to_string(), 0); }
   s.expr(); // or compile_block_body for def
   s.chunk.emit(OpCode::ReturnValue, 0);
 });
@@ -217,7 +217,7 @@ self.with_fresh_chunk(|s| {
 
 Free variables (non-parameters with no local binding) are looked up in the outer chunk. `MakeFunction` captures matching slots from the enclosing scope into `captures` as shared cells (1-element heap lists, registered per call frame by the enclosing slot), so sibling closures over the same variable observe each other's `nonlocal` writes. Nested `def`/`lambda` push their free names back into the parent's name table. Capture propagates through any depth (`A -> B -> C` where `C` references a var in `A`).
 
-Parameter slots: `Normal`, `Star` (`*args`), `DoubleStar` (`**kwargs`). Lone `*` separator marks following params as keyword-only. Defaults live in `HeapObj::Func.defaults` and apply to the last-N positional slots. Annotations (`x: T`, `-> T`) parse and drain to `chunk.annotations` (tooling-only).
+Parameter slots: `Normal`, `Star` (`*args`), `DoubleStar` (`**kwargs`). Lone `*` separator marks following params as keyword-only. Defaults live in `HeapObj::Func.defaults` and bind to the `=`-marked params in source order, so a default before `*args` and keyword-only defaults both apply correctly. Annotations (`x: T`, `-> T`) parse and drain to `chunk.annotations` (tooling-only).
 
 `compile_body` checks impurity opcodes (`StoreItem`, `StoreAttr`, `CallPrint`, `CallInput`, `Global`, `Nonlocal`, `Import`, `Raise`, `Yield`, `LoadAttr`) to set `body.is_pure`, the flag that gates template memoisation ([Design](/implementation/design#concepts)). This static gate is complemented at runtime by an observed-impurity check that propagates through calls, so a side-effecting builtin reached as a first-class value (e.g. `print` passed to a wrapper) disqualifies the caller too.
 

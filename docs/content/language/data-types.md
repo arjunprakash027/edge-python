@@ -330,6 +330,38 @@ set()
 True
 ```
 
+## Frozenset
+
+Immutable, hashable set. Build with `frozenset(iterable)`. Supports `len`, iteration, membership (`in`), tuple-unpacking (`a, b = fs`), the algebra operators `|` `&` `-` `^`, the subset/superset comparisons `<` `<=` `>` `>=` `==` `!=`, and use as a dict key or set element. In mixed `set` / `frozenset` algebra the result takes the **left** operand's type (`frozenset | set` is a `frozenset`, `set | frozenset` is a `set`).
+
+It has **no methods**: the named set operations (`union`, `intersection`, `difference`, `symmetric_difference`, `issubset`, `issuperset`, `isdisjoint`) and `copy` raise `AttributeError`. Use the operators, or convert with `set(fs)` for the named-method / mutating API.
+
+```python
+fs = frozenset({1, 2, 3})
+print(len(fs))
+print(2 in fs)
+
+a, b, c = fs # tuple-unpacking
+print(sorted([a, b, c]))
+
+# Operators yield a set; the result type follows the left operand (see above).
+print(sorted(fs | frozenset({4})))
+print(sorted(fs - frozenset({1})))
+print(fs <= frozenset({1, 2, 3, 4})) # subset
+
+print({fs: "ok"}[frozenset({3, 2, 1})]) # hashable: usable as a key
+```
+
+```text Output
+3
+True
+[1, 2, 3]
+[1, 2, 3, 4]
+[2, 3]
+True
+ok
+```
+
 ## Unpacking in literals
 
 `*` spreads an iterable into a list/set literal. `**` spreads a mapping into a dict literal. Mix freely with regular elements. For dicts, later keys win.
