@@ -7,9 +7,9 @@ description: "Compiler architecture, dispatch model, and runtime layout."
 
 The release build is around 200 KB on `wasm32-unknown-unknown` (`panic=abort`, `opt-level=z`, `lto=true`, `codegen-units=1`). The pipeline: LUT-driven lexer -> single-pass Pratt parser emitting SSA-versioned bytecode directly -> peephole constant-folding optimiser -> token-threaded interpreter with two layers of adaptive specialisation.
 
-No AST, no IR. Bytecode is the only intermediate representation. Around 13,000 lines of Rust. Production deps are `hashbrown` and `itoa` (SHA-256 in-tree). The WASM build adds `lol_alloc` for a single-threaded leaking bump allocator.
+No AST, no IR. Bytecode is the only intermediate representation. Around 17,000 lines of Rust. Production deps are `hashbrown` and `itoa` (SHA-256 in-tree). The WASM build adds `lol_alloc` for a single-threaded free-list allocator.
 
-Classes support single-level inheritance, `super()`, full dunder dispatch, `@property` / `@x.setter`. Multi-paradigm: composition preferred, monomorphic dispatch optimised via instance-dunder IC.
+Classes support single and multiple inheritance (C3 MRO), `super()`, full dunder dispatch, `@property` / `@x.setter`. Multi-paradigm: composition preferred, monomorphic dispatch optimised via instance-dunder IC.
 
 ## Concepts
 

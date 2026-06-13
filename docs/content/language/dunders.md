@@ -23,7 +23,7 @@ print(V(3) == V(3))
 True
 ```
 
-Dunders are looked up on the class chain. The instance dict is skipped. Subclasses inherit and may override. Operator overloading composes with [single-level inheritance](/language/classes#inheritance-and-super). Monomorphic sites (same class for both operands) promote through the IC after 4 hits, then bypass lookup entirely.
+Dunders are looked up on the class chain. The instance dict is skipped. Subclasses inherit and may override. Operator overloading composes with [inheritance](/language/classes#inheritance-and-super). Monomorphic sites (same class for both operands) promote through the IC after 4 hits, then bypass lookup entirely.
 
 ## Arithmetic
 

@@ -10,7 +10,7 @@ Classes are state containers and namespaces, not the primary abstraction. This i
 
 Supported:
 
-- Single-level inheritance with `super()`.
+- Single and multiple inheritance (C3 MRO) with `super()`.
 - `@property` / `@x.setter`.
 - A curated dunder protocol: operators, indexing, iteration, hashing, context managers, attribute fallback (see [Dunder methods](/language/dunders)).
 

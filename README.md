@@ -8,12 +8,12 @@
 
 <br/>
 
-Single-pass SSA bytecode compiler and threaded-code stack VM for a sandboxed Python subset: NaN-boxed values, inline caching, super-instruction fusion, pure-function memoization, mark-sweep GC. Coverage-guided fuzzing; around 200 KB WebAssembly module runs in the browser.
+Single-pass SSA bytecode compiler and threaded-code stack VM for a sandboxed Python subset: NaN-boxed values, inline caching, super-instruction fusion, pure-function memoization, mark-sweep GC. Coverage-guided fuzzing; runs in the browser as a WebAssembly module.
 
 - Secure by default. No file, network, or environment access, unless explicitly enabled by the [host](https://edgepython.com/reference/packages#host-libraries).
 - Around 200 KB footprint. The full compiler and runtime ship as a single WASM binary.
-- Compile-time imports. Every module resolves at parse time no dynamic loading, no runtime surprises.
-- No AST, source compiles directly to bytecode in a single pass: o(n)
+- Compile-time imports. Every module resolves at parse time, no dynamic loading, no runtime surprises.
+- No AST. Source compiles directly to bytecode in a single pass: O(n).
 
 ## More about it
 
@@ -91,7 +91,7 @@ Full language reference, scope, and what intentionally isn't supported: [What Ed
 
 One workflow [`.github/workflows/main.yml`](.github/workflows/main.yml) that runs the complete CI/CD, where each package is a steps in a composite action under [`.github/actions/`](.github/actions).
 
-On pushes to `main` it deploys three Cloudflare Pages projects: `edge-python-cdn` (the bundled package artifacts), and `edge-python-docs` (served at `edgepython.com`). 
+On pushes to `main` it deploys two Cloudflare Pages projects: `edge-python-cdn` (the bundled package artifacts) and `edge-python-docs` (served at `edgepython.com`).
 
 ## License
 
