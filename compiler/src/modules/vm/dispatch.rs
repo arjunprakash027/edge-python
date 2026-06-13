@@ -176,7 +176,7 @@ impl<'a> VM<'a> {
                 }
 
                 let rip = ip;
-                match self.dispatch(chunk, slots, &mut cache, insns, consts, &mut ip) {
+                match self.dispatch(chunk, slots, &mut cache, insns, consts, &mut ip, exc_base) {
                     Ok(None) => {
                         if self.yielded {
                             // Event yields keep the None placeholder (overwritten by `run_push_event` before resume). Sync sub-call yields pushed nothing, the helper's return lands on the stack when its frame completes, so don't pop and don't skip the next PopTop. Child-wait yields keep the placeholder (wake-loop overwrites it with the target's result). Host-call yields keep the placeholder (overwritten by `set_host_result`).
@@ -223,8 +223,20 @@ impl<'a> VM<'a> {
                                 let msg_val = self.heap.alloc(HeapObj::Str(e.message()))?;
                                 self.heap.alloc(HeapObj::ExcInstance(msg, alloc::vec![msg_val]))?
                             };
-                            self.push(exc);
-                            ip = frame.handler_ip;
+                            match frame.kind {
+                                BlockKind::Except => {
+                                    // Catching supersedes any unwind a finally left in flight.
+                                    self.pending.unwind = None;
+                                    self.push(exc);
+                                    ip = frame.handler_ip;
+                                }
+                                // finally/with must run their cleanup, then re-raise via EndFinally.
+                                BlockKind::Finally => {
+                                    self.pending.exc_val = Some(exc);
+                                    self.pending.unwind = Some(Unwind::Reraise(e));
+                                    ip = frame.handler_ip;
+                                }
+                            }
                         } else {
                             return Err(e);
                         }
@@ -341,7 +353,8 @@ impl<'a> VM<'a> {
 
     /* Hot dispatch; slices passed in so the loop never re-unwraps the cache views. */
     #[inline]
-    fn dispatch(&mut self, chunk: &SSAChunk, slots: &mut [Val], cache: &mut OpcodeCache, insns: &[Instruction], consts: &[Val], ip: &mut usize) -> Result<Option<Val>, VmErr> {
+    #[allow(clippy::too_many_arguments)] // hot dispatcher; slices passed in to avoid re-unwrapping the cache
+    fn dispatch(&mut self, chunk: &SSAChunk, slots: &mut [Val], cache: &mut OpcodeCache, insns: &[Instruction], consts: &[Val], ip: &mut usize, exc_base: usize) -> Result<Option<Val>, VmErr> {
         let n = insns.len();
         let ins = insns[*ip];
         let rip = *ip;
@@ -442,6 +455,15 @@ impl<'a> VM<'a> {
             OpCode::PopTop => { self.pop()?; }
             OpCode::ReturnValue => {
                 let result = if self.stack.is_empty() { Val::none() } else { self.pop()? };
+                // A fresh return overrides any unwind in progress (e.g. return inside a finally).
+                self.pending.unwind = None;
+                if self.exception_stack.len() > exc_base
+                    && let Some(h) = self.next_cleanup_handler(exc_base)
+                {
+                    self.pending.unwind = Some(Unwind::Return(result));
+                    *ip = h;
+                    return Ok(None);
+                }
                 return Ok(Some(result));
             }
 
@@ -525,12 +547,12 @@ impl<'a> VM<'a> {
 
             OpCode::BuildModule => self.exec_build_module(op)?,
 
-            other => self.dispatch_generic(other, op, chunk, slots)?,
+            other => return self.dispatch_generic(other, op, chunk, slots, ip, exc_base),
         }
         Ok(None)
     }
 
-    fn dispatch_generic(&mut self, opcode: OpCode, operand: u16, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+    fn dispatch_generic(&mut self, opcode: OpCode, operand: u16, chunk: &SSAChunk, slots: &mut [Val], ip: &mut usize, exc_base: usize) -> Result<Option<Val>, VmErr> {
         match opcode {
             OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor
             | OpCode::BitNot | OpCode::Shl | OpCode::Shr => self.handle_bitwise(opcode)?,
@@ -571,6 +593,17 @@ impl<'a> VM<'a> {
             }
             OpCode::SetupExcept => {
                 self.exception_stack.push(ExceptionFrame {
+                    kind: BlockKind::Except,
+                    handler_ip: operand as usize,
+                    stack_depth: self.stack.len(),
+                    iter_depth: self.iter_stack.len(),
+                    with_depth: self.with_stack.len(),
+                });
+            }
+            // Cleanup frame run on every exit path; handler is the finally body or WithExit.
+            OpCode::SetupFinally => {
+                self.exception_stack.push(ExceptionFrame {
+                    kind: BlockKind::Finally,
                     handler_ip: operand as usize,
                     stack_depth: self.stack.len(),
                     iter_depth: self.iter_stack.len(),
@@ -587,48 +620,61 @@ impl<'a> VM<'a> {
                 self.with_stack.push(cm);
                 self.push(bound);
             }
-            OpCode::ExitWith => {
+            // Context-manager cleanup; the pending unwind selects exception vs normal `__exit__` args.
+            OpCode::WithExit => {
                 let _ = operand;
-                let cm = self.with_stack.pop().ok_or(cold_runtime("ExitWith without matching SetupWith"))?;
-                if let Some(&top) = self.stack.last() && top.0 == cm.0 { self.pop()?; }
-                // normal-flow cleanup passes `(None, None, None)` to signal "no exception".
-                if cm.is_heap() && matches!(self.heap.get(cm), HeapObj::Instance(..)) {
+                let cm = self.with_stack.pop().ok_or(cold_runtime("WithExit without matching SetupWith"))?;
+                let is_instance = cm.is_heap() && matches!(self.heap.get(cm), HeapObj::Instance(..));
+                if matches!(self.pending.unwind, Some(Unwind::Reraise(_))) {
+                    // with body raised: __exit__(type, exc, None); truthy return suppresses the re-raise.
+                    let exc = self.pending.exc_val.unwrap_or(Val::none());
+                    let exc_name = self.exc_type_name(exc);
+                    if is_instance {
+                        let exc_type = self.heap.alloc(HeapObj::Type(exc_name))?;
+                        let n = Val::none();
+                        if let Some(r) = self.try_call_dunder(cm, "__exit__", &[exc_type, exc, n], chunk, slots)?
+                            && self.truthy(r)
+                        {
+                            self.pending.unwind = None;
+                            self.pending.exc_val = None;
+                        }
+                    }
+                } else if is_instance {
+                    // Normal / return / break / continue exit signals "no exception".
                     let n = Val::none();
                     let _ = self.try_call_dunder(cm, "__exit__", &[n, n, n], chunk, slots)?;
                 }
             }
-            OpCode::WithCleanup => {
-                let _ = operand;
-                // Reached when a `with` body raised: the SetupExcept unwind has pushed the synthesised exception. We consume it + the matching CM and dispatch `__exit__(type, exc, None)`; truthy return suppresses, falsy or absent re-raises with identity preserved via `pending.exc_val`.
-                let exc = self.pop()?;
-                let cm = self.with_stack.pop().ok_or(cold_runtime("WithCleanup without matching SetupWith"))?;
-                let exc_name: String = if exc.is_heap() {
-                    match self.heap.get(exc) {
-                        HeapObj::ExcInstance(n, _) => n.clone(),
-                        HeapObj::Instance(cls, _) => {
-                            if cls.is_heap() && let HeapObj::Class(name, _, _) = self.heap.get(*cls) { name.clone() } else { "Exception".into() }
-                        }
-                        _ => "Exception".into(),
-                    }
-                } else { "Exception".into() };
-                if cm.is_heap() && matches!(self.heap.get(cm), HeapObj::Instance(..)) {
-                    let exc_type = self.heap.alloc(HeapObj::Type(exc_name.clone()))?;
-                    let n = Val::none();
-                    match self.try_call_dunder(cm, "__exit__", &[exc_type, exc, n], chunk, slots)? {
-                        Some(r) if self.truthy(r) => {
-                            // Suppressed: drop the pending exc identity so a later `raise` doesn't reuse it.
-                            self.pending.exc_val = None;
-                        }
-                        _ => {
-                            // Re-raise: preserve identity via `pending.exc_val` so an outer handler sees the same instance.
-                            self.pending.exc_val = Some(exc);
-                            return Err(VmErr::Raised(exc_name));
+            // End of a finally body / WithExit: resume whatever exit routed us here.
+            OpCode::EndFinally => {
+                match self.pending.unwind.take() {
+                    None => {}
+                    Some(Unwind::Return(v)) => {
+                        if let Some(h) = self.next_cleanup_handler(exc_base) {
+                            self.pending.unwind = Some(Unwind::Return(v));
+                            *ip = h;
+                        } else {
+                            return Ok(Some(v));
                         }
                     }
-                } else {
-                    // No `__exit__` (or non-instance CM): re-raise unconditionally.
-                    self.pending.exc_val = Some(exc);
-                    return Err(VmErr::Raised(exc_name));
+                    Some(Unwind::Goto { target, remaining }) => {
+                        if remaining > 0 && let Some(h) = self.next_cleanup_handler(exc_base) {
+                            self.pending.unwind = Some(Unwind::Goto { target, remaining: remaining - 1 });
+                            *ip = h;
+                        } else {
+                            *ip = target;
+                        }
+                    }
+                    Some(Unwind::Reraise(e)) => return Err(e),
+                }
+            }
+            // break/continue across N finally/with blocks; the following Jump completes the transfer.
+            OpCode::UnwindFinally => {
+                self.pending.unwind = None;
+                let target = *ip;
+                if operand > 0 && let Some(h) = self.next_cleanup_handler(exc_base) {
+                    self.pending.unwind = Some(Unwind::Goto { target, remaining: operand - 1 });
+                    *ip = h;
                 }
             }
             OpCode::UnpackArgs => {
@@ -655,7 +701,33 @@ impl<'a> VM<'a> {
             OpCode::PopIter => { self.iter_stack.pop(); }
             _ => return Err(cold_runtime("unexpected opcode in generic dispatch")),
         }
-        Ok(())
+        Ok(None)
+    }
+
+    /* Pops Except frames and the next Finally frame; returns its handler IP, or None at base. */
+    fn next_cleanup_handler(&mut self, exc_base: usize) -> Option<usize> {
+        while self.exception_stack.len() > exc_base {
+            let frame = self.exception_stack.pop().unwrap();
+            self.stack.truncate(frame.stack_depth);
+            self.iter_stack.truncate(frame.iter_depth);
+            self.with_stack.truncate(frame.with_depth);
+            if frame.kind == BlockKind::Finally {
+                return Some(frame.handler_ip);
+            }
+        }
+        None
+    }
+
+    /* Exception class name for a raised value; defaults to "Exception" for non-instances. */
+    fn exc_type_name(&self, exc: Val) -> String {
+        if !exc.is_heap() { return "Exception".into(); }
+        match self.heap.get(exc) {
+            HeapObj::ExcInstance(n, _) => n.clone(),
+            HeapObj::Instance(cls, _) => {
+                if cls.is_heap() && let HeapObj::Class(name, _, _) = self.heap.get(*cls) { name.clone() } else { "Exception".into() }
+            }
+            _ => "Exception".into(),
+        }
     }
 
     /* Heavy arms extracted out of `dispatch` so wasm-opt can dedup prologues and the dispatcher itself stays compact. */
@@ -788,7 +860,10 @@ impl<'a> VM<'a> {
         // Pin caller slots as GC roots so a nested class/function body can't sweep them.
         let snap = self.live_slots.len();
         self.live_slots.extend_from_slice(caller_slots);
+        // Isolate any in-flight unwind so the class body's implicit return can't clear it.
+        let saved_unwind = self.pending.unwind.take();
         let exec_result = self.exec(body, &mut class_slots);
+        self.pending.unwind = saved_unwind;
         self.live_slots.truncate(snap);
         exec_result?;
         let mut methods: Vec<(String, Val)> = Vec::new();

@@ -197,6 +197,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 if self.loop_breaks.is_empty() {
                     self.error("'break' outside loop");
                 } else {
+                    self.emit_loop_unwind();
                     // For-loop: PopIter before break so `iter_stack` stays clean.
                     if let Some(true) = self.loop_kinds.last() {
                         self.chunk.emit(OpCode::PopIter, 0);
@@ -211,6 +212,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             Some(TokenType::Continue) => {
                 self.advance();
                 if let Some(&start) = self.loop_starts.last() {
+                    self.emit_loop_unwind();
                     self.chunk.emit(OpCode::Jump, start);
                 } else {
                     self.error("'continue' outside loop");
@@ -283,6 +285,16 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 }
                 true
             }
+        }
+    }
+
+    /* Runs the finally/with blocks a break/continue crosses, or clears a superseded unwind. */
+    fn emit_loop_unwind(&mut self) {
+        let base = self.loop_cleanup_base.last().copied().unwrap_or(0);
+        let count = self.cleanup_count - base;
+        let crosses = self.finally_loop_depth.last().is_some_and(|&d| self.loop_starts.len() <= d);
+        if count > 0 || crosses {
+            self.chunk.emit(OpCode::UnwindFinally, count as u16);
         }
     }
 

@@ -90,6 +90,7 @@ fn is_jump_op(op: OpCode) -> bool {
         | OpCode::JumpIfTrueOrPop
         | OpCode::ForIter
         | OpCode::SetupExcept
+        | OpCode::SetupFinally
     )
 }
 

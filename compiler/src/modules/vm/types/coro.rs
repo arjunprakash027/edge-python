@@ -54,9 +54,23 @@ pub struct SyncFrame {
     pub exception_delta: Vec<ExceptionFrame>,
 }
 
+/* Block-stack frame role: Except catches exceptions; Finally runs on every exit path. */
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum BlockKind { Except, Finally }
+
+/* Pending non-local exit, threaded through finally/with cleanup before it completes. */
+#[derive(Clone, Debug)]
+pub enum Unwind {
+    Return(Val),
+    // break/continue: run `remaining` more cleanups, then resume at `target`.
+    Goto { target: usize, remaining: u16 },
+    Reraise(VmErr),
+}
+
 /* Saved stack/iter/with depths for unwinding to a try arm's handler. Stored on the active Coroutine so `try`/`except` survives yields. */
 #[derive(Clone, Debug)]
 pub struct ExceptionFrame {
+    pub kind: BlockKind,
     pub handler_ip: usize,
     pub stack_depth: usize,
     pub iter_depth: usize,

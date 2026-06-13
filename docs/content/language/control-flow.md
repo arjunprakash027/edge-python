@@ -343,6 +343,43 @@ with Tag("first") as x, Tag("second") as y:
 first second
 ```
 
+### Cleanup on early exit
+
+`finally` and `__exit__` run on *every* way out of the block — not only normal completion and exceptions, but also `return`, `break`, and `continue`. A `return` in a `try` runs the `finally` before the value leaves; a `break` out of a `with` still calls `__exit__`. A `return` or `break` in the `finally` itself replaces the original exit.
+
+```python
+class Lock:
+  def __enter__(self):
+    return self
+  def __exit__(self, *exc):
+    print("released")
+
+def take(n):
+  with Lock():
+    if n < 0:
+      return "negative"
+    return n * 2
+
+print(take(5))
+print(take(-1))
+
+for i in range(3):
+  try:
+    if i == 1:
+      break
+  finally:
+    print("tick", i)
+```
+
+```text Output
+released
+10
+released
+negative
+tick 0
+tick 1
+```
+
 ## assert
 
 ```python

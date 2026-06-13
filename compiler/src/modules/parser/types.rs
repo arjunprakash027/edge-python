@@ -17,7 +17,11 @@ pub enum OpCode {
     CallOrd, BuildDict, BuildList, NotEq, Lt, Gt, LtEq, GtEq, And, Or, Not, JumpIfFalse, Jump, 
     GetIter, ForIter, GetItem, Mod, Pow, FloorDiv, LoadTrue, LoadFalse, LoadNone, LoadAttr, StoreAttr, 
     BuildSlice, MakeClass, SetupExcept, PopExcept, Raise, BitAnd, BitOr, BitXor,
-    BitNot, Shl, Shr, In, NotIn, Is, IsNot, UnpackSequence, BuildTuple, SetupWith, ExitWith, WithCleanup, Yield,
+    BitNot, Shl, Shr, In, NotIn, Is, IsNot, UnpackSequence, BuildTuple, SetupWith, WithExit, Yield,
+    /* Finally/with block stack: setup pushes a cleanup frame, EndFinally resumes the pending exit. */
+    SetupFinally, EndFinally,
+    /* break/continue across N finally/with blocks before its jump; operand is N. */
+    UnwindFinally,
     Del, Assert, Global, Nonlocal, UnpackArgs, ListAppend, SetAdd, MapAdd, BuildSet, RaiseFrom,
     UnpackEx, LoadEllipsis, Await, MakeCoroutine, StoreItem, Dup2,
     JumpIfFalseOrPop, JumpIfTrueOrPop, Dup, CallMethod, CallMethodArgs, CallAll, CallAny, CallBin,

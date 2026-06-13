@@ -2,8 +2,8 @@
   "_meta": {
     "source": "MicroPython tests/basics differential vs CPython 3.13",
     "verified": "each repro re-run through VM + python3",
-    "count": 53,
-    "fixed": "55 bugs fixed and migrated to vm.json (10 samples each)"
+    "count": 42,
+    "fixed": "67 bugs fixed and migrated to vm.json (try/finally + with unwinding cluster resolved)"
   },
   "bugs": [
     {
@@ -21,102 +21,6 @@
       "repro": "for i in range(2):\n    print(i)\n    for j in range(1):\n        pass\n    else:\n        continue\n    break",
       "expected": "0\n1",
       "actual": "0"
-    },
-    {
-      "id": "try_finally1",
-      "category": "control-flow",
-      "summary": "An exception raised in a try passes through an inner finally but then fails to propagate to the outer except handler; the VM swallows it.",
-      "repro": "try:\n    try:\n        foo()\n    finally:\n        print(\"finally2\")\nexcept:\n    print(\"catch-all except\")",
-      "expected": "finally2\ncatch-all except",
-      "actual": "finally2"
-    },
-    {
-      "id": "try_finally_break2",
-      "category": "control-flow",
-      "summary": "A break in an inner try does not execute the enclosing finally body (statements before its own break are skipped).",
-      "repro": "def foo():\n    for i in range(2):\n        try:\n            print(1)\n        finally:\n            try:\n                print(2)\n                break\n            finally:\n                print(4)\n                break\nprint(foo())",
-      "expected": "1\n2\n4\nNone",
-      "actual": "1\n2\nNone"
-    },
-    {
-      "id": "try_finally_continue",
-      "category": "control-flow",
-      "summary": "A continue in a finally does not run, and a return in a nested try skips the enclosing finally entirely; the VM returns 42 instead of looping with continue.",
-      "repro": "def foo(x):\n    for i in range(x):\n        try:\n            return 42\n        finally:\n            print('continue')\n            continue\nprint(foo(2))",
-      "expected": "continue\ncontinue\nNone",
-      "actual": "42"
-    },
-    {
-      "id": "try_finally_loops",
-      "category": "control-flow",
-      "summary": "A break inside a try does not execute the enclosing finally block before exiting the loop.",
-      "repro": "while True:\n    try:\n        break\n    finally:\n        print('finally 1')",
-      "expected": "finally 1",
-      "actual": ""
-    },
-    {
-      "id": "try_finally_return",
-      "category": "control-flow",
-      "summary": "A return inside a try does not execute the enclosing finally block at all; the finally is skipped.",
-      "repro": "def f():\n    try:\n        return \"it worked\"\n    finally:\n        print(\"finally 1\")\nprint(f())",
-      "expected": "finally 1\nit worked",
-      "actual": "it worked"
-    },
-    {
-      "id": "try_finally_return3",
-      "category": "control-flow",
-      "summary": "With nested finally blocks, an enclosing finally is not executed during an unwinding return (the outer finally's print is skipped).",
-      "repro": "def f():\n    try:\n        try:\n            pass\n        finally:\n            print(2)\n            return 42\n    finally:\n        print(1)\nprint(f())",
-      "expected": "2\n1\n42",
-      "actual": "2\n42"
-    },
-    {
-      "id": "try_finally_return4",
-      "category": "control-flow",
-      "summary": "An enclosing finally is not run while an unwinding return passes through it, so the finally body output is missing.",
-      "repro": "def f():\n    try:\n        return 42\n    finally:\n        print(5)\nprint(f())",
-      "expected": "5\n42",
-      "actual": "42"
-    },
-    {
-      "id": "try_finally_return5",
-      "category": "control-flow",
-      "summary": "A return in an inner finally is not overridden by an enclosing finally's return, and the enclosing finally body does not run.",
-      "repro": "def foo():\n    try:\n        try:\n            return 42\n        finally:\n            print('return')\n            return 43\n    finally:\n        pass\nprint(foo())",
-      "expected": "return\n43",
-      "actual": "42"
-    },
-    {
-      "id": "with1",
-      "category": "control-flow",
-      "summary": "When an exception propagates through a try/finally nested inside a with block, the VM passes None to __exit__ instead of the exception, losing exception info and breaking suppression semantics.",
-      "repro": "class C:\n    def __enter__(self):\n        return self\n    def __exit__(self, a, b, c):\n        print(\"exit\", repr(a))\n        return True\nwith C():\n    try:\n        raise ValueError\n    finally:\n        print(\"finally\")",
-      "expected": "finally\nexit <class 'ValueError'>",
-      "actual": "finally\nexit None"
-    },
-    {
-      "id": "with_break",
-      "category": "control-flow",
-      "summary": "__exit__ is not called when a break statement exits a with block, so the context manager is not cleaned up.",
-      "repro": "class C:\n    def __enter__(self):\n        print(\"enter\")\n        return self\n    def __exit__(self, a, b, c):\n        print(\"exit\")\nfor i in range(2):\n    with C():\n        break",
-      "expected": "enter\nexit",
-      "actual": "enter"
-    },
-    {
-      "id": "with_continue",
-      "category": "control-flow",
-      "summary": "__exit__ is not called when a continue statement exits a with block, so the context manager is not cleaned up on that iteration.",
-      "repro": "class C:\n    def __enter__(self):\n        print(\"enter\")\n        return self\n    def __exit__(self, a, b, c):\n        print(\"exit\")\nfor i in range(2):\n    with C():\n        if i == 0:\n            continue",
-      "expected": "enter\nexit\nenter\nexit",
-      "actual": "enter\nenter\nexit"
-    },
-    {
-      "id": "with_return",
-      "category": "control-flow",
-      "summary": "__exit__ is not called when a return statement exits a with block, so the context manager is not cleaned up.",
-      "repro": "class C:\n    def __enter__(self):\n        print(\"enter\")\n        return self\n    def __exit__(self, a, b, c):\n        print(\"exit\")\ndef f():\n    with C():\n        return 4\nprint(f())",
-      "expected": "enter\nexit\n4",
-      "actual": "enter\n4"
     },
     {
       "id": "string_format_sep",
@@ -429,6 +333,14 @@
       "repro": "def g():\n yield\n yield\nprint(list(g()))",
       "expected": "[None, None]",
       "actual": "(parse error, exit 4)"
+    },
+    {
+      "id": "try_finally_local_break_unwind",
+      "category": "control-flow",
+      "summary": "A local break whose own finally runs, while an enclosing finally is mid-unwind from a return, discards the pending return value (yields None instead of it).",
+      "repro": "def f():\n    try:\n        return 1\n    finally:\n        for i in range(2):\n            try:\n                if i == 0:\n                    break\n            finally:\n                print(\"inner\", i)\n        print(\"after loop\")\nprint(f())",
+      "expected": "inner 0\nafter loop\n1",
+      "actual": "inner 0\nafter loop\nNone"
     }
   ]
 }

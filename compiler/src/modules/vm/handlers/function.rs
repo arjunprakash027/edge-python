@@ -609,9 +609,12 @@ impl<'a> VM<'a> {
             cells: Vec::new(),
         });
 
+        // Isolate the caller's in-flight unwind so the callee's return can't clear it.
+        let saved_unwind = self.pending.unwind.take();
         self.observed_impure.push(false);
         let exec_result = self.exec(body, fn_slots);
         let callee_impure = self.observed_impure.pop().unwrap_or(true);
+        self.pending.unwind = saved_unwind;
         self.live_slots.truncate(snap);
         if exec_result.is_ok() {
             self.call_stack.pop();

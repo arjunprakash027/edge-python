@@ -48,6 +48,8 @@ pub(crate) struct Pending {
     pub exc_val: Option<Val>,
     /* `(class, self)` for the next user-function call when it's invoked as a method; populated by method-dispatch paths and consumed by `run_body_with_frame`. */
     pub method_binding: Option<(Val, Val)>,
+    /* In-progress non-local exit being routed through finally/with cleanup blocks. */
+    pub unwind: Option<types::Unwind>,
 }
 
 impl Pending {
@@ -64,6 +66,7 @@ impl Pending {
             waiting_for_children: None,
             exc_val: None,
             method_binding: None,
+            unwind: None,
         }
     }
 }
