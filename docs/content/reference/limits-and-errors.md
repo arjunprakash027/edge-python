@@ -137,7 +137,7 @@ Raised as `VmErr`. Most are catchable with `try` / `except`.
 
 #### Exception hierarchy
 
-Flat tree rooted at `BaseException -> Exception`. `except` walks parent links. `except Exception` catches `RuntimeError`, `ValueError`, `KeyError`, `AssertionError`, etc. `except RuntimeError` catches `RecursionError`, `NotImplementedError`. `SystemExit` sits directly under `BaseException`, so `except Exception` does not catch it (use `except SystemExit` or a bare `except`).
+Curated tree rooted at `BaseException -> Exception`. `except` walks parent links. `except Exception` catches `RuntimeError`, `ValueError`, `KeyError`, `AssertionError`, etc. `except RuntimeError` catches `RecursionError`, `NotImplementedError`. Intermediate groups match too: `except LookupError` catches `IndexError` / `KeyError`, and `except ArithmeticError` catches `OverflowError` / `ZeroDivisionError`; `OSError` also lives under `Exception`. `SystemExit` sits directly under `BaseException`, so `except Exception` does not catch it (use `except SystemExit` or a bare `except`).
 
 ```python
 try:

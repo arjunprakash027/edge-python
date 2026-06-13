@@ -122,7 +122,7 @@ Edge Python uses an INDENT/DEDENT model. The scanner tracks a stack of column co
 
 The `nesting` counter is bumped by `(`, `[`, `{` and decremented by `)`, `]`, `}`. While `nesting > 0`, line breaks emit `Nl` and the indent stack is frozen, allowing multi-line expressions inside brackets without spurious INDENT/DEDENT.
 
-At EOF the lexer drains remaining levels off `indent_stack` for clean block closure, then emits `Endmarker`. Backslash line continuation (`\` + `\n`) outside brackets is unsupported. Wrap in parens. ASCII bytes with no operator slot (`$`, `?`, `` ` ``, stray `\`) raise `unexpected character` and are skipped.
+At EOF the lexer drains remaining levels off `indent_stack` for clean block closure, then emits `Endmarker`. Backslash line continuation (`\` + newline) is consumed by the whitespace scanner, joining the two physical lines. ASCII bytes with no operator slot (`$`, `?`, `` ` ``) raise `unexpected character` and are skipped.
 
 ## Soft-keyword disambiguation
 
