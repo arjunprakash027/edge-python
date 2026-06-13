@@ -145,6 +145,20 @@ impl<'a> VM<'a> {
         self.scheduler.iter().filter(|h| !matches!(h.state, CoroState::Done(_) | CoroState::Errored(_) | CoroState::Cancelled)).count()
     }
 
+    /* `await coro` and calling a coroutine `c()`: park the current coro on `target` (single-driver, like `run(target)`) and yield. The driving top loop resolves `target` and the wake-loop overwrites the placeholder with its value (or raises its error). Non-coroutine awaitables pass through unchanged at the call site. */
+    pub(crate) fn await_coroutine(&mut self, target: Val) -> Result<(), VmErr> {
+        if self.scheduler_active() >= self.max_calls {
+            return Err(cold_depth());
+        }
+        if !self.scheduler.iter().any(|h| h.coro == target) {
+            self.scheduler.push(CoroutineHandle { coro: target, state: CoroState::Ready });
+        }
+        self.push(Val::none()); // placeholder; wake-loop overwrites with target's result
+        self.pending.waiting_for_children = Some((alloc::vec![target], WaitKind::Run(target)));
+        self.yielded = true;
+        Ok(())
+    }
+
     /* `run(*coros)`, single-driver model: pushes the targets into the global scheduler, parks the outer in `WaitingForChildren` with `WaitKind::Run(target)`, and yields. The top loop drains the children and wakes the outer when all are terminal. */
     pub fn call_run(&mut self, argc: u16) -> Result<(), VmErr> {
         // Cap live concurrency like call depth: unbounded task spawning is recursion-shaped.

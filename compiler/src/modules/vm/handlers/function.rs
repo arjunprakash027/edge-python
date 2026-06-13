@@ -415,8 +415,16 @@ impl<'a> VM<'a> {
             return Ok(true);
         }
 
-        // Resume a suspended coroutine; the inner yield must NOT propagate to the caller.
         if let HeapObj::Coroutine(..) = self.heap.get(callee) {
+            // Plain `async def` (no `yield`): drive to completion via the scheduler (await semantics). Async *generators* fall through to step-wise resume like sync generators.
+            let drive_async = matches!(self.heap.get(callee),
+                HeapObj::Coroutine(_, _, _, super::super::types::BodyRef::Fn(fi), ..)
+                    if self.is_async.get(*fi).copied().unwrap_or(false) && !self.functions[*fi].1.is_generator);
+            if drive_async {
+                self.await_coroutine(callee)?;
+                return Ok(true);
+            }
+            // Generator stepping (ForIter calls here per `next`): resume one step; the inner yield must NOT propagate to the caller.
             let result = self.resume_coroutine(callee)?;
             if self.yielded { self.yielded = false; }
             self.push(result);

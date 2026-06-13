@@ -59,6 +59,26 @@ print(run(square(5)))
 
 `run(c1, c2, ...)` accepts multiple coroutines. They run concurrently. The call returns the first argument's result.
 
+## await
+
+Inside an `async def`, `await coro` runs the coroutine to completion and resolves to its value (or re-raises its error). It works across suspension: the awaiting coroutine parks while the awaited one sleeps or makes a host call, then resumes with the result. Multiple awaits compose in one expression.
+
+```python
+async def fetch(n):
+  sleep(0) # suspends, then resumes
+  return n * 10
+
+async def main():
+  a = await fetch(1)
+  return a + await fetch(2)
+
+print(run(main()))
+```
+
+```text Output
+30
+```
+
 ## Sleeping
 
 `sleep(seconds)` suspends until `seconds` of wall time pass. Without a host time hook, a virtual clock advances logically. Coroutines interleave deterministically with no real wait (useful for tests).

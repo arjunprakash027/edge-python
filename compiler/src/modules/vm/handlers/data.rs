@@ -227,12 +227,10 @@ impl<'a> VM<'a> {
                 return Err(VmErr::Raised(msg));
             }
             OpCode::Await => {
-                // Coroutine: resume it (yield propagates via `self.yielded`); sync values pass through.
+                // Coroutine: park on it (single-driver) so the top loop runs it to completion, even across suspension; sync values pass through.
                 let val = self.pop()?;
                 if val.is_heap() && matches!(self.heap.get(val), HeapObj::Coroutine(..)) {
-                    self.push(val);
-                    let result = self.resume_coroutine(val)?;
-                    self.push(result);
+                    self.await_coroutine(val)?;
                 } else {
                     self.push(val);
                 }
