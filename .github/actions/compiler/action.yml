@@ -49,12 +49,11 @@ runs:
       shell: bash
       run: cargo clippy --lib --target wasm32-unknown-unknown -p edge-python -p slugify-mod -- -D warnings
 
-    # build-std needs nightly plus rust-src. Pinned to a known-good date: avoids the rolling-channel checksum race and keeps build-std reproducible.
+    # build-std needs nightly plus rust-src.
     - name: Toolchain (nightly)
       if: inputs.mode == 'build'
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@nightly
       with:
-        toolchain: nightly-2026-03-31
         components: rust-src
 
     - name: Install wasm target (build)
