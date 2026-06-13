@@ -8,7 +8,6 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use compiler::util::fx::FxHashMap;
 use compiler::modules::packages::{
     NativeBinding, Resolved, Resolver, partition_bindings,
     Manifest, walk_up_dirs, dir_of, join_relative,
@@ -79,16 +78,15 @@ impl TestResolver {
     pub fn with_alias(self, name: &str, target: &str) -> Self {
         {
             let mut s = self.state.borrow_mut();
-            let m = s.manifests.entry(String::new()).or_insert_with(|| Manifest {imports: FxHashMap::default(), extends: None});
-            m.imports.insert(name.to_string(), target.to_string());
+            let m = s.manifests.entry(String::new()).or_insert_with(|| Manifest {imports: Vec::new(), extends: None});
+            m.imports.push((name.to_string(), target.to_string()));
         }
         self
     }
 
     /* Register a manifest at `dir`; nearer manifests win for bare-name resolution. */
     pub fn with_manifest(self, dir: &str, imports: &[(&str, &str)], extends: Option<&str>) -> Self {
-        let mut imp = FxHashMap::default();
-        for (k, v) in imports { imp.insert(k.to_string(), v.to_string()); }
+        let imp = imports.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
         let m = Manifest { imports: imp, extends: extends.map(|s| s.to_string()) };
         self.state.borrow_mut().manifests.insert(dir.to_string(), m);
         self
@@ -146,7 +144,7 @@ impl TestResolver {
             for dir in walk_up_dirs(&search_dir) {
                 let s = self.state.borrow();
                 if let Some(m) = s.manifests.get(&dir) {
-                    let target = m.imports.get(name).cloned();
+                    let target = m.imports.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
                     let ext = m.extends.clone();
                     drop(s);
                     hit = Some((dir, target, ext));

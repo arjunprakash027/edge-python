@@ -8,10 +8,10 @@
 
 <br/>
 
-Single-pass SSA bytecode compiler and threaded-code stack VM for a sandboxed Python subset: NaN-boxed values, inline caching, super-instruction fusion, pure-function memoization, mark-sweep GC. Coverage-guided fuzzing; sub-200 KB WebAssembly module runs in the browser.
+Single-pass SSA bytecode compiler and threaded-code stack VM for a sandboxed Python subset: NaN-boxed values, inline caching, super-instruction fusion, pure-function memoization, mark-sweep GC. Coverage-guided fuzzing; around 200 KB WebAssembly module runs in the browser.
 
 - Secure by default. No file, network, or environment access, unless explicitly enabled by the [host](https://edgepython.com/reference/packages#host-libraries).
-- Less than 200 KB footprint. The full compiler and runtime ship as a single WASM binary.
+- Around 200 KB footprint. The full compiler and runtime ship as a single WASM binary.
 - Compile-time imports. Every module resolves at parse time no dynamic loading, no runtime surprises.
 - No AST, source compiles directly to bytecode in a single pass: o(n)
 

@@ -98,7 +98,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     fn parse_or_get_cached(&mut self, spec: &str, src: &str, span: (usize, usize)) -> Option<alloc::rc::Rc<SSAChunk>> {
         let cache_safe = spec.contains('/') || spec.contains("://");
         if cache_safe
-            && let Some(cached) = self.module_cache.borrow().get(spec).cloned()
+            && let Some(cached) = self.module_cache.borrow().iter().find(|(k, _)| k == spec).map(|(_, c)| c.clone())
         {
             return Some(cached);
         }
@@ -124,7 +124,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
         let rc = alloc::rc::Rc::new(sub);
         if cache_safe {
-            self.module_cache.borrow_mut().insert(spec.to_string(), rc.clone());
+            self.module_cache.borrow_mut().push((spec.to_string(), rc.clone()));
         }
         Some(rc)
     }

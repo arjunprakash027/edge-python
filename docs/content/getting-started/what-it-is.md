@@ -54,7 +54,7 @@ Inherits WASM-host guarantees: no syscalls, no FS, no network, isolated linear m
 
 ## Where it runs
 
-One `.wasm` artifact (`compiler.wasm`, a sub-200 KB release) runs anywhere WebAssembly does:
+One `.wasm` artifact (`compiler.wasm`, a ~200 KB release) runs anywhere WebAssembly does:
 
 - **Browser**: served alongside the [`runtime/`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime) JS package, which bridges `print()` and module imports across the `WASM <-> JS` boundary. The host runtime owns I/O, fetching, and module loading.
 - **Embedded Rust apps**: load `compiler.wasm` via your runtime of choice or use the `compiler` rlib when cargo-linked.

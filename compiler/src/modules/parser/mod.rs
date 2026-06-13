@@ -45,6 +45,9 @@ pub(super) const fn match_close_str(open: TokenType) -> &'static str {
     }
 }
 
+// Shared spec -> compiled-chunk cache; a Vec (linear scan) avoids a hashbrown monomorphization.
+pub(crate) type ModuleCache = alloc::rc::Rc<core::cell::RefCell<Vec<(String, alloc::rc::Rc<SSAChunk>)>>>;
+
 pub struct Parser<'src, I: Iterator<Item = Token>> {
     pub(super) source: &'src str,
     pub(super) tokens: Peekable<I>,
@@ -69,8 +72,8 @@ pub struct Parser<'src, I: Iterator<Item = Token>> {
     pub errors: Vec<Diagnostic>,
     /* Host resolver; defaults to NoopResolver so import-free call sites work unchanged. */
     pub(super) resolver: Box<dyn Resolver>,
-    /* Shared module cache; sub-parsers inherit same Rc so each spec parses exactly once. */
-    pub(super) module_cache: alloc::rc::Rc<core::cell::RefCell<HashMap<String, alloc::rc::Rc<SSAChunk>>>>,
+    // Shared module cache; sub-parsers inherit the Rc so each spec parses once.
+    pub(super) module_cache: ModuleCache,
 }
 
 // SSA versioning helpers: version tracking and suffixed name emission.
@@ -453,7 +456,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     /* Parser with explicit resolver; required for `from X import` support. */
     pub fn with_resolver(source: &'src str, iter: I, resolver: Box<dyn Resolver>) -> Self {
         Self::with_shared_cache(source, iter, resolver,
-            alloc::rc::Rc::new(core::cell::RefCell::new(HashMap::default())))
+            alloc::rc::Rc::new(core::cell::RefCell::new(Vec::new())))
     }
 
     /* Like with_resolver but sets chunk path for traceback display. */
@@ -464,7 +467,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     }
 
     /* Shared-cache constructor; sub-parsers inherit it so each spec parses once. */
-    pub(crate) fn with_shared_cache(source: &'src str,iter: I,resolver: Box<dyn Resolver>, module_cache: alloc::rc::Rc<core::cell::RefCell<HashMap<String, alloc::rc::Rc<SSAChunk>>>>) -> Self {
+    pub(crate) fn with_shared_cache(source: &'src str,iter: I,resolver: Box<dyn Resolver>, module_cache: ModuleCache) -> Self {
         let chunk = SSAChunk {
             source: alloc::sync::Arc::new(source.into()),
             ..Default::default()

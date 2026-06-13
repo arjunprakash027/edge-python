@@ -5,7 +5,7 @@ description: "What Edge Python is and where to go next."
 
 # Introduction
 
-Welcome to the Edge Python docs! 👋 Edge is a sandboxed subset of Python, compiled to a less than 200 KB WebAssembly binary and built in Rust to run in the browser. Embed your full business logic, run LLMs client-side, and build frontend apps.
+Welcome to the Edge Python docs! 👋 Edge is a sandboxed subset of Python, compiled to a ~200 KB WebAssembly binary and built in Rust to run in the browser. Embed your full business logic, run LLMs client-side, and build frontend apps.
 
 ## Ecosystem
 

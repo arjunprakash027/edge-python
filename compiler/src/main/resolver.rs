@@ -96,7 +96,7 @@ impl WasmHostResolver {
         if let Some(hit) = with_runtime(|rt| {
             rt.manifests.iter()
                 .find(|(s, _)| s == m_spec)
-                .map(|(_, m)| (m.imports.get(name).cloned(), m.extends.clone()))
+                .map(|(_, m)| (m.imports.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone()), m.extends.clone()))
         }) {
             return Ok(Some(hit));
         }
@@ -106,7 +106,7 @@ impl WasmHostResolver {
             Err(_) => return Ok(None),
         };
         let parsed = parse_manifest(&bytes).map_err(|e| s!("packages.json at '", str m_spec, "': ", str &e))?;
-        let target = parsed.imports.get(name).cloned();
+        let target = parsed.imports.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
         let ext = parsed.extends.clone();
         with_runtime(|rt| rt.manifests.push((m_spec.to_string(), parsed)));
         Ok(Some((target, ext)))

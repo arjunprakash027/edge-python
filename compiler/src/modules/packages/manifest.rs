@@ -1,12 +1,13 @@
 use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 use crate::s;
-use crate::util::fx::FxHashMap;
 
 /* Parsed `packages.json`. `imports` maps bare names to specs; `extends` inherits another manifest's imports when a name isn't local. */
+// Vec not a map: parsed once, looked up linearly; avoids a hashbrown monomorphization.
 #[derive(Clone)]
 pub struct Manifest {
-    pub imports: FxHashMap<String, String>,
+    pub imports: Vec<(String, String)>,
     pub extends: Option<String>,
 }
 
@@ -14,7 +15,7 @@ pub struct Manifest {
 pub fn parse_manifest(bytes: &[u8]) -> Result<Manifest, String> {
     let src = core::str::from_utf8(bytes).map_err(|_| s!("packages.json is not valid UTF-8"))?;
     let mut p = Reader { src: src.as_bytes(), pos: 0 };
-    let mut m = Manifest { imports: FxHashMap::default(), extends: None };
+    let mut m = Manifest { imports: Vec::new(), extends: None };
 
     p.skip_ws();
     p.expect(b'{', "packages.json must be a JSON object")?;
@@ -140,7 +141,7 @@ impl<'a> Reader<'a> {
         }
     }
 
-    fn read_imports_into(&mut self, out: &mut FxHashMap<String, String>) -> Result<(), String> {
+    fn read_imports_into(&mut self, out: &mut Vec<(String, String)>) -> Result<(), String> {
         self.expect(b'{', "'imports' must be an object")?;
         self.skip_ws();
         if self.peek() == Some(b'}') { self.pos += 1; return Ok(()); }
@@ -151,7 +152,7 @@ impl<'a> Reader<'a> {
             self.expect(b':', "expected ':' after import name")?;
             self.skip_ws();
             let v = self.read_string()?;
-            out.insert(k, v);
+            out.push((k, v));
             self.skip_ws();
             match self.peek() {
                 Some(b',') => { self.pos += 1; continue; }
