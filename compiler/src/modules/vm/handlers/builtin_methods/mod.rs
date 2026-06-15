@@ -118,6 +118,7 @@ pub static ALL_METHODS: &[MethodDesc] = methods! {
         "remove" => list::remove, rw, 1..1;
         "pop" => list::pop, rw, 0..1;
         "sort" => list::sort, rw, 0..0;
+        "__next__" => list::next_method, rw, 0..0;
     }
     "dict" {
         "keys" => dict::keys, ro, 0..0;

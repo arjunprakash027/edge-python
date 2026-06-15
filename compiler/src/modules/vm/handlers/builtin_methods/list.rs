@@ -4,6 +4,18 @@ Built-in methods for `list` receivers. Arity is checked by the dispatcher; `muta
 
 use super::prelude::*;
 
+/* `list.__next__()`: consume the front item; StopIteration when empty (iter() yields a list). */
+pub fn next_method(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
+    let HeapObj::List(rc) = vm.heap.get(recv) else { return Err(cold_type("__next__: receiver is not a list")); };
+    let rc = rc.clone();
+    let mut v = rc.borrow_mut();
+    if v.is_empty() { return Err(VmErr::Raised(crate::s!("StopIteration"))); }
+    let item = v.remove(0);
+    drop(v);
+    vm.push(item);
+    Ok(())
+}
+
 pub fn index(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let items = list_clone(vm, recv)?;
     let len = items.len() as i64;

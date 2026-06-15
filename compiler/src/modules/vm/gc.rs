@@ -10,6 +10,10 @@ impl<'a> VM<'a> {
         for &v in &self.temp_roots { self.heap.mark(v); }
         for &v in &self.yields { self.heap.mark(v); }
         for &v in &self.event_queue { self.heap.mark(v); }
+        // The handled exception and any pending finally return value outlive their stack slots.
+        if let Some(v) = self.pending.exc_val { self.heap.mark(v); }
+        if let Some(v) = self.handling_exc { self.heap.mark(v); }
+        for u in &self.unwind_stack { if let Unwind::Return(v) = u { self.heap.mark(*v); } }
         // Scheduler holds parked coroutines (and their `WaitingForChildren` task lists) across `top_loop` resumes; mark them so the saved state isn't swept under us.
         for handle in &self.scheduler {
             self.heap.mark(handle.coro);

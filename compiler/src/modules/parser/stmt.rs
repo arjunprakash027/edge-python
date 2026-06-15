@@ -169,6 +169,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                             // del `x[k]` or `x[a:b]`: BuildSlice so DelItem sees HeapObj::Slice.
                             self.emit_load_ssa(name);
                             self.parse_subscript();
+                            // Chained subscripts (`d[0][0]`): all but the last index in place.
+                            while self.eat_if(TokenType::Lsqb) {
+                                self.chunk.emit(OpCode::GetItem, 0);
+                                self.parse_subscript();
+                            }
                             self.chunk.emit(OpCode::DelItem, 0);
                         } else {
                             let idx = self.push_ssa_name(&name, self.current_version(&name));
@@ -186,7 +191,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             }
             Some(TokenType::Raise) => {
                 self.advance();
-                if !matches!(self.peek(), Some(TokenType::Newline) | None) {
+                // `peek_same_line` keeps the line boundary so a bare `raise` is detected, not parsed as an expr.
+                if self.peek_same_line().is_some() {
                     self.expr();
                     if self.eat_if(TokenType::From) {
                         self.expr();
@@ -195,7 +201,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                         self.chunk.emit(OpCode::Raise, 0);
                     }
                 } else {
-                    self.chunk.emit(OpCode::Raise, 0);
+                    // Bare `raise`: operand 1 tells the VM to re-raise the active exception.
+                    self.chunk.emit(OpCode::Raise, 1);
                 }
                 false
             }

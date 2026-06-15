@@ -91,6 +91,8 @@ pub struct VM<'a> {
     pub(crate) exception_stack: Vec<ExceptionFrame>,
     /* Active finally/with cleanup reasons (innermost last); EndFinally pops one per body. */
     pub(crate) unwind_stack: Vec<types::Unwind>,
+    /* Exception currently being handled in an except block; a bare `raise` re-raises it. */
+    pub(crate) handling_exc: Option<Val>,
     pub(crate) functions: Vec<&'a (Vec<String>, SSAChunk, u16, u16)>,
     // (chunk_ptr, global fn ids); linear scan over a tiny list avoids HashMap monomorphization.
     pub(crate) fn_index: Vec<(*const SSAChunk, Vec<u32>)>,
@@ -192,6 +194,7 @@ impl<'a> VM<'a> {
             mro_cache: HashMap::default(),
             exception_stack: Vec::new(),
             unwind_stack: Vec::new(),
+            handling_exc: None,
             error_byte_pos: None,
             module_table: HashMap::default(),
             fn_module: Vec::new(),

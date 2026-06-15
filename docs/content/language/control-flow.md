@@ -263,6 +263,27 @@ except ValueError:
 rejected
 ```
 
+A bare `raise` inside an `except` re-raises the exception currently being handled.
+
+```python
+def attempt():
+  try:
+    raise ValueError("bad")
+  except ValueError:
+    print("logging")
+    raise
+
+try:
+  attempt()
+except ValueError as e:
+  print("outer", e.args[0])
+```
+
+```text Output
+logging
+outer bad
+```
+
 `raise X from Y` raises `X`. The `from` clause parses and the cause evaluates, but `__cause__` / `__context__` aren't preserved. Only `X` reaches the handler.
 
 ```python

@@ -2,7 +2,7 @@
   "_meta": {
     "source": "MicroPython tests/basics differential vs CPython 3.13",
     "verified": "each repro re-run through VM + python3",
-    "count": 34,
+    "count": 29,
     "fixed": "67 bugs fixed and migrated to vm.json (try/finally + with unwinding cluster resolved)"
   },
   "bugs": [
@@ -95,14 +95,6 @@
       "actual": ""
     },
     {
-      "id": "try_reraise",
-      "category": "parser",
-      "summary": "A bare 'raise' to reraise the current exception is rejected at parse time; valid in-scope Python.",
-      "repro": "def f():\n    try:\n        raise ValueError(\"val\", 3)\n    except:\n        raise\ntry:\n    f()\nexcept ValueError as e:\n    print(repr(e))",
-      "expected": "ValueError('val', 3)",
-      "actual": ""
-    },
-    {
       "id": "unpack1",
       "category": "parser",
       "summary": "A single-element bare tuple via trailing comma (x = 1,) is rejected as a parse error; multi-element bare tuples and explicit (1,) work, so only the one-element trailing-comma form is broken.",
@@ -159,14 +151,6 @@
       "actual": "False"
     },
     {
-      "id": "class2",
-      "category": "wrong-value",
-      "summary": "type(instance) does not compare equal or identical to its own class.",
-      "repro": "class C1:\n    def __init__(self):\n        self.x = 1\nc1 = C1()\nprint(type(c1) == C1)",
-      "expected": "True",
-      "actual": "False"
-    },
-    {
       "id": "class_getattr",
       "category": "wrong-value",
       "summary": "An instance attribute named __add__ blocks operator dispatch so c + 1 fails instead of using the class __add__ method (special methods should be looked up on the type).",
@@ -183,14 +167,6 @@
       "actual": "__VMERR__ TypeError: bitwise op requires integer operands"
     },
     {
-      "id": "del_subscr",
-      "category": "wrong-value",
-      "summary": "Nested del target del d[0][0] deletes the outer key instead of the inner key.",
-      "repro": "d = {0:{0:0}}\ndel d[0][0]\nprint(d)",
-      "expected": "{0: {}}",
-      "actual": "{}"
-    },
-    {
       "id": "fun_kwvarargs",
       "category": "wrong-value",
       "summary": "A call mixing a starred argument that is itself a function call with a keyword argument whose value is also a function call corrupts argument evaluation and raises TypeError: object is not callable.",
@@ -205,22 +181,6 @@
       "repro": "def gen():\n    yield 1\ng = gen()\nnext(g)\ntry:\n    next(g)\nexcept StopIteration:\n    print(\"ok\")",
       "expected": "ok",
       "actual": "__VMERR__ RuntimeError: StopIteration"
-    },
-    {
-      "id": "iter0",
-      "category": "wrong-value",
-      "summary": "Iterators support next(it) but lack the explicit __next__ dunder method, raising AttributeError on supported core iterator-protocol usage.",
-      "repro": "print(iter(range(4)).__next__())",
-      "expected": "0",
-      "actual": "__VMERR__ AttributeError: 'list' object has no attribute '__next__'"
-    },
-    {
-      "id": "list_extend",
-      "category": "wrong-value",
-      "summary": "list += range (a supported iterable) raises TypeError even though list.extend(range(...)) works; += should accept any iterable like CPython.",
-      "repro": "l = [1, 2]\nl += range(6, 10)\nprint(l)",
-      "expected": "[1, 2, 6, 7, 8, 9]",
-      "actual": "__VMERR__ TypeError: unsupported operand type(s) for +: 'list' and 'range'"
     },
     {
       "id": "list_sort",
@@ -263,20 +223,20 @@
       "actual": "__VMERR__ ValueError: format spec requires an integer"
     },
     {
-      "id": "foriter_yields_none",
-      "category": "control-flow",
-      "summary": "for-loop and genexpr over a generator that yields None stop immediately; ForIter treats yielded None as the exhaustion sentinel.",
-      "repro": "def g():\n yield\nfor x in g():\n print(x)",
-      "expected": "None",
-      "actual": "(no output)"
-    },
-    {
       "id": "consecutive_bare_yield",
       "category": "parser",
       "summary": "Two consecutive bare 'yield' statements parse-reject; a bare yield followed by another yield is rejected.",
       "repro": "def g():\n yield\n yield\nprint(list(g()))",
       "expected": "[None, None]",
       "actual": "(parse error, exit 4)"
+    },
+    {
+      "id": "class_repr_module",
+      "category": "wrong-value",
+      "summary": "repr of a user class (and type(instance)) omits the __main__ module qualifier, showing <class 'C'> instead of CPython's <class '__main__.C'>.",
+      "repro": "class C:\n    pass\nprint(repr(type(C())))",
+      "expected": "<class '__main__.C'>",
+      "actual": "<class 'C'>"
     }
   ]
 }

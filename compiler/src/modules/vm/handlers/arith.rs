@@ -26,19 +26,14 @@ impl<'a> VM<'a> {
 
         let (a, b) = self.pop2()?;
 
-        // `name += rhs`: list+list extends the left list in place so aliases see it (CPython __iadd__); any other type behaves exactly as Add.
+        // `name += rhs`: a left list extends in place with any iterable (CPython __iadd__); other types behave as Add.
         let op = if op == OpCode::InPlaceAdd {
             // Guard is_heap: `i += 1` operands are inline ints, and heap.get on a non-heap Val indexes garbage.
-            let lists = if a.is_heap() && b.is_heap() {
-                match (self.heap.get(a), self.heap.get(b)) {
-                    (HeapObj::List(la), HeapObj::List(lb)) => Some((la.clone(), lb.clone())),
-                    _ => None,
-                }
-            } else { None };
-            if let Some((la, lb)) = lists {
-                // Clone rhs contents first so `xs += xs` doubles correctly and the borrows never alias.
-                let rhs: Vec<Val> = lb.borrow().clone();
-                la.borrow_mut().extend_from_slice(&rhs);
+            let a_is_list = a.is_heap() && matches!(self.heap.get(a), HeapObj::List(_));
+            if a_is_list {
+                // Snapshot rhs first so `xs += xs` doubles correctly; TypeError if rhs isn't iterable.
+                let rhs = self.iter_to_vec_general(b)?;
+                if let HeapObj::List(la) = self.heap.get(a) { la.borrow_mut().extend_from_slice(&rhs); }
                 self.push(a);
                 return Ok(());
             }

@@ -1384,7 +1384,7 @@
     "src": "raise", 
     "constants": [], 
     "names": [], 
-    "instructions": [["Raise",0],["ReturnValue",0]], 
+    "instructions": [["Raise",1],["ReturnValue",0]], 
     "annotations": {}
   },
   {

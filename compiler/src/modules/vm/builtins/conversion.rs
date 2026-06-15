@@ -29,6 +29,12 @@ impl<'a> VM<'a> {
 
     pub fn call_type(&mut self) -> Result<(), VmErr> {
         let o = self.pop()?;
+        // A user instance's type is its own class object, so `type(x) is Cls` holds.
+        if o.is_heap() && let HeapObj::Instance(cls, _) = self.heap.get(o) {
+            let cls = *cls;
+            self.push(cls);
+            return Ok(());
+        }
         let name = self.type_repr_name(o);
         let t = self.heap.alloc(HeapObj::Type(name))?;
         self.push(t);

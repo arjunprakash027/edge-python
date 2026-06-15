@@ -231,6 +231,8 @@ impl<'a> VM<'a> {
                             self.unwind_stack.truncate(frame.unwind_depth);
                             match frame.kind {
                                 BlockKind::Except => {
+                                    // Record the handled exc so a bare `raise` in the handler can re-raise it.
+                                    self.handling_exc = Some(exc);
                                     self.push(exc);
                                     ip = frame.handler_ip;
                                 }
@@ -728,7 +730,7 @@ impl<'a> VM<'a> {
     }
 
     /* Exception class name for a raised value; defaults to "Exception" for non-instances. */
-    fn exc_type_name(&self, exc: Val) -> String {
+    pub(crate) fn exc_type_name(&self, exc: Val) -> String {
         if !exc.is_heap() { return "Exception".into(); }
         match self.heap.get(exc) {
             HeapObj::ExcInstance(n, _) => n.clone(),
@@ -798,14 +800,14 @@ impl<'a> VM<'a> {
         // Coroutine iteration: resume via call instead of next_item().
         if let Some(IterFrame::Coroutine(coro_val)) = self.iter_stack.last() {
             let cv = *coro_val;
-            self.push(cv);
-            self.exec_call(0, chunk, slots)?;
-            let result = self.pop().unwrap_or(Val::none());
-            if result.is_none() {
+            // Resume directly so `yielded` distinguishes a yielded value (even None) from exhaustion.
+            let result = self.resume_coroutine(cv)?;
+            if self.yielded {
+                self.yielded = false;
+                self.push(result);
+            } else {
                 self.iter_stack.pop();
                 *ip = op as usize;
-            } else {
-                self.push(result);
             }
             return Ok(());
         }

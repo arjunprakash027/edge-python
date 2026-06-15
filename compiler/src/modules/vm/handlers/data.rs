@@ -203,6 +203,15 @@ impl<'a> VM<'a> {
             OpCode::Global | OpCode::Nonlocal => self.mark_impure(),
             OpCode::Raise | OpCode::RaiseFrom => {
                 self.mark_impure();
+                // Bare `raise` (operand 1): re-raise the exception currently being handled.
+                if op == OpCode::Raise && operand == 1 {
+                    let Some(exc) = self.handling_exc else {
+                        return Err(VmErr::Runtime("No active exception to re-raise"));
+                    };
+                    let name = self.exc_type_name(exc);
+                    self.pending.exc_val = Some(exc);
+                    return Err(VmErr::Raised(name));
+                }
                 // RaiseFrom emits both `expr` then `from expr`, the topmost value is the cause, but the exception to raise is the LHS.
                 if op == OpCode::RaiseFrom { let _cause = self.pop()?; }
                 let exc = self.pop()?;

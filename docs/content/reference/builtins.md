@@ -545,7 +545,7 @@ False
 
 ### type
 
-`type(x)` returns the type object for `x`, shown as `<class 'name'>`. Built-in type names (`int`, `set`, `list`, ...) are these same objects. So `type(x) is int` and `type(x) == int` hold, and calling one constructs it (`type([1])([2, 3])` gives `[2, 3]`). No metaclass or `dir`.
+`type(x)` returns the type object for `x`, shown as `<class 'name'>`. Built-in type names (`int`, `set`, `list`, ...) are these same objects. So `type(x) is int` and `type(x) == int` hold, and calling one constructs it (`type([1])([2, 3])` gives `[2, 3]`). For a user instance, `type(x)` is its own class, so `type(x) is C` holds. No metaclass or `dir`.
 
 ```python
 print(type(42))
@@ -554,6 +554,10 @@ print(type([1, 2]))
 print(type(print))
 print(type(42) is int)
 print(type([1, 2, 3])([4, 5]))
+
+class C:
+  pass
+print(type(C()) is C)
 ```
 
 ```text Output
@@ -563,6 +567,7 @@ print(type([1, 2, 3])([4, 5]))
 <class 'builtin_function_or_method'>
 True
 [4, 5]
+True
 ```
 
 Functions, type objects, and user classes expose `__name__` (the bare declared name). `type(e)` on an exception instance reports its concrete class, so `type(e).__name__` yields the exception's name.
