@@ -44,7 +44,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             }
             Some(TokenType::Yield) => {
                 self.advance();
-                if self.eat_if(TokenType::From) {
+                // Check the line boundary first: `peek`/`eat_if` would consume the Newline.
+                if self.peek_same_line().is_none() {
+                    // Bare `yield` (no value): a line boundary ends the statement.
+                    self.chunk.emit(OpCode::LoadNone, 0);
+                    self.chunk.emit(OpCode::Yield, 0);
+                } else if self.eat_if(TokenType::From) {
                     // `yield from`: GetIter+ForIter+Yield loop; LoadNone at end (return value not tracked).
                     self.expr();
                     self.chunk.emit(OpCode::GetIter, 0);
@@ -55,9 +60,6 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     self.chunk.emit(OpCode::Jump, loop_start);
                     self.patch(fi);
                     self.chunk.emit(OpCode::LoadNone, 0);
-                } else if matches!(self.peek(), Some(TokenType::Newline | TokenType::Endmarker | TokenType::Dedent) | None) {
-                    self.chunk.emit(OpCode::LoadNone, 0);
-                    self.chunk.emit(OpCode::Yield, 0);
                 } else {
                     self.expr();
                     self.chunk.emit(OpCode::Yield, 0);
@@ -163,28 +165,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             Some(TokenType::Del) => {
                 self.advance();
                 loop {
-                    if matches!(self.peek(), Some(TokenType::Name)) {
-                        let name = self.advance_text();
-                        if self.eat_if(TokenType::Lsqb) {
-                            // del `x[k]` or `x[a:b]`: BuildSlice so DelItem sees HeapObj::Slice.
-                            self.emit_load_ssa(name);
-                            self.parse_subscript();
-                            // Chained subscripts (`d[0][0]`): all but the last index in place.
-                            while self.eat_if(TokenType::Lsqb) {
-                                self.chunk.emit(OpCode::GetItem, 0);
-                                self.parse_subscript();
-                            }
-                            self.chunk.emit(OpCode::DelItem, 0);
-                        } else {
-                            let idx = self.push_ssa_name(&name, self.current_version(&name));
-                            self.chunk.emit(OpCode::Del, idx);
-                        }
-                    } else {
-                        // Non-name target (e.g. literal subscript): rewrite the trailing GetItem to DelItem.
-                        self.expr();
-                        if let Some(last) = self.chunk.instructions.last_mut()
-                            && last.opcode == OpCode::GetItem { last.opcode = OpCode::DelItem; }
-                    }
+                    self.parse_del_target();
                     if !self.eat_if(TokenType::Comma) { break; }
                 }
                 false
@@ -412,32 +393,41 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 }
             }
             Some(TokenType::Dot) => {
+                // Collect the whole `a.b.c` attribute chain; the last attr is the target.
                 self.advance();
-                let t = self.advance();
-                let (attr_start, attr_end) = (t.start, t.end);
+                let mut attrs = vec![self.advance_text()];
+                while matches!(self.peek(), Some(TokenType::Dot)) {
+                    self.advance();
+                    attrs.push(self.advance_text());
+                }
                 if self.eat_if(TokenType::Colon) && !self.skip_annotation() {
                     return false;
                 }
+                let last = attrs.pop().unwrap();
+                // Receiver = base object plus every intermediate attribute load.
+                self.emit_load_ssa(name.clone());
+                for a in &attrs {
+                    let idx = self.chunk.push_name(a);
+                    self.chunk.emit(OpCode::LoadAttr, idx);
+                }
                 if matches!(self.peek(), Some(TokenType::Equal)) {
-                    self.emit_load_ssa(name);
                     self.advance();
                     self.expr();
-                    let idx = self.chunk.push_name(&self.source[attr_start..attr_end]);
+                    let idx = self.chunk.push_name(&last);
                     self.chunk.emit(OpCode::StoreAttr, idx);
                     false
                 } else if let Some(op) = self.peek().and_then(|t| Self::augmented_op(&t)) {
                     self.advance();
-                    self.emit_load_ssa(name.clone());
-                    self.emit_load_ssa(name);
-                    let idx = self.chunk.push_name(&self.source[attr_start..attr_end]);
+                    let idx = self.chunk.push_name(&last);
+                    // Need the receiver twice: reload a plain name, else Dup the computed object.
+                    if attrs.is_empty() { self.emit_load_ssa(name); } else { self.chunk.emit(OpCode::Dup, 0); }
                     self.chunk.emit(OpCode::LoadAttr, idx);
                     self.expr();
                     self.chunk.emit(op, 0);
                     self.chunk.emit(OpCode::StoreAttr, idx);
                     false
                 } else {
-                    self.emit_load_ssa(name);
-                    let idx = self.chunk.push_name(&self.source[attr_start..attr_end]);
+                    let idx = self.chunk.push_name(&last);
                     self.chunk.emit(OpCode::LoadAttr, idx);
                     if matches!(self.peek(), Some(TokenType::Lpar)) {
                         let call_pos = self.last_end as u32;
@@ -565,9 +555,76 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
+    /* Parses one `del` target: name, subscript, attribute, or a parenthesized group. */
+    fn parse_del_target(&mut self) {
+        if matches!(self.peek(), Some(TokenType::Name)) {
+            let name = self.advance_text();
+            if self.eat_if(TokenType::Lsqb) {
+                // del `x[k]` or `x[a:b]`: BuildSlice so DelItem sees HeapObj::Slice.
+                self.emit_load_ssa(name);
+                self.parse_subscript();
+                // Chained subscripts (`d[0][0]`): all but the last index in place.
+                while self.eat_if(TokenType::Lsqb) {
+                    self.chunk.emit(OpCode::GetItem, 0);
+                    self.parse_subscript();
+                }
+                self.chunk.emit(OpCode::DelItem, 0);
+            } else if matches!(self.peek(), Some(TokenType::Dot)) {
+                // del `obj.attr` (chained): load object, LoadAttr intermediates, DelAttr last.
+                self.emit_load_ssa(name);
+                self.eat(TokenType::Dot);
+                let mut attr = self.advance_text();
+                while matches!(self.peek(), Some(TokenType::Dot)) {
+                    let idx = self.chunk.push_name(&attr);
+                    self.chunk.emit(OpCode::LoadAttr, idx);
+                    self.eat(TokenType::Dot);
+                    attr = self.advance_text();
+                }
+                let idx = self.chunk.push_name(&attr);
+                self.chunk.emit(OpCode::DelAttr, idx);
+            } else {
+                let idx = self.push_ssa_name(&name, self.current_version(&name));
+                self.chunk.emit(OpCode::Del, idx);
+            }
+        } else {
+            // Parse as an expression, then rewrite the trailing access into its delete form.
+            self.expr();
+            match self.chunk.instructions.last().map(|i| i.opcode) {
+                Some(OpCode::GetItem) => self.chunk.instructions.last_mut().unwrap().opcode = OpCode::DelItem,
+                Some(OpCode::LoadAttr) => self.chunk.instructions.last_mut().unwrap().opcode = OpCode::DelAttr,
+                Some(OpCode::LoadName) => self.chunk.instructions.last_mut().unwrap().opcode = OpCode::Del,
+                // `del (a, b)` / `del [a, b]`: a target group unbinds each plain name.
+                Some(OpCode::BuildTuple | OpCode::BuildList) => self.del_group_targets(),
+                _ => {}
+            }
+        }
+    }
+
+    /* Rewrites a just-built tuple/list of name loads into individual unbinds. */
+    fn del_group_targets(&mut self) {
+        let last = self.chunk.instructions.len() - 1;
+        let n = self.chunk.instructions[last].operand as usize;
+        if n >= 1 && last >= n
+            && self.chunk.instructions[last - n..last].iter().all(|i| i.opcode == OpCode::LoadName) {
+            self.chunk.instructions.truncate(last);
+            for ins in &mut self.chunk.instructions[last - n..] { ins.opcode = OpCode::Del; }
+        }
+    }
+
     pub(super) fn assign(&mut self, name: String) {
         self.advance();
         self.expr();
+        // `x = 1,` / `x = 1, 2`: a trailing comma builds a tuple right-hand side.
+        if matches!(self.peek_same_line(), Some(TokenType::Comma)) {
+            let mut count = 1u16;
+            while self.eat_if(TokenType::Comma) {
+                // A line boundary ends the tuple; `peek_same_line` won't cross the Newline.
+                if self.peek_same_line().is_none() { break; }
+                self.expr();
+                count += 1;
+            }
+            self.chunk.emit(OpCode::BuildTuple, count);
+        }
         self.store_name(name);
     }
 }

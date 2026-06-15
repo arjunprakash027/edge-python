@@ -171,7 +171,7 @@ answer is 43
 {literal braces}
 ```
 
-Full format mini-language: `[[fill]align][sign][#][0][width][,][.precision][type]`, with `!r` / `!s` / `!a` conversions before the spec. Type chars: `b o c d e E f F g G n s x X %`.
+Full format mini-language: `[[fill]align][sign][#][0][width][,|_][.precision][type]`, with `!r` / `!s` / `!a` conversions before the spec. Type chars: `b o c d e E f F g G n s x X %`. The `,` and `_` group digits (every three for decimals/floats; `_` groups `b`/`o`/`x`/`X` every four).
 
 ## Booleans and None
 

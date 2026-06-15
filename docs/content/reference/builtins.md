@@ -545,7 +545,7 @@ False
 
 ### type
 
-`type(x)` returns the type object for `x`, shown as `<class 'name'>`. Built-in type names (`int`, `set`, `list`, ...) are these same objects. So `type(x) is int` and `type(x) == int` hold, and calling one constructs it (`type([1])([2, 3])` gives `[2, 3]`). For a user instance, `type(x)` is its own class, so `type(x) is C` holds. No metaclass or `dir`.
+`type(x)` returns the type object for `x`, shown as `<class 'name'>`. Built-in type names (`int`, `set`, `list`, ...) are these same objects. So `type(x) is int` and `type(x) == int` hold, and calling one constructs it (`type([1])([2, 3])` gives `[2, 3]`). For a user instance, `type(x)` is its own class, so `type(x) is C` holds and its repr is qualified with the module (`<class '__main__.C'>`). No metaclass or `dir`.
 
 ```python
 print(type(42))

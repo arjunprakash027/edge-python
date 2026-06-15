@@ -67,7 +67,7 @@ impl<'a> VM<'a> {
             OpCode::Sub => self.sub_vals(a, b)?,
             OpCode::Mul => self.mul_vals(a, b)?,
             OpCode::Div => self.div_vals(a, b)?,
-            OpCode::Mod => self.exec_mod(a, b)?,
+            OpCode::Mod => self.exec_mod(a, b, chunk, slots)?,
             OpCode::Pow => self.exec_pow(a, b)?,
             OpCode::FloorDiv => self.exec_floordiv(a, b)?,
             _ => return Err(cold_runtime("non-arith opcode in handle_arith")),
@@ -117,10 +117,10 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    fn exec_mod(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
+    fn exec_mod(&mut self, a: Val, b: Val, chunk: &SSAChunk, slots: &mut [Val]) -> Result<Val, VmErr> {
         // `str % args` is printf-style formatting, not modulo.
         if a.is_heap() && matches!(self.heap.get(a), HeapObj::Str(_)) {
-            return self.str_percent_format(a, b);
+            return self.str_percent_format(a, b, chunk, slots);
         }
         if a.is_float() || b.is_float() {
             let af = self.to_f64_coerce(a).map_err(|_| cold_type("% requires numeric operands"))?;
@@ -139,7 +139,7 @@ impl<'a> VM<'a> {
     }
 
     /* printf-style `str % args`: translates each `%[flags][width][.prec]conv` into the `{:spec}` mini-language and reuses `format_value`. A tuple spreads; else one value. */
-    fn str_percent_format(&mut self, fmt_val: Val, arg: Val) -> Result<Val, VmErr> {
+    fn str_percent_format(&mut self, fmt_val: Val, arg: Val, chunk: &SSAChunk, slots: &mut [Val]) -> Result<Val, VmErr> {
         let fmt = match self.heap.get(fmt_val) { HeapObj::Str(s) => s.clone(), _ => return Err(cold_type("% requires a string")) };
         let args: alloc::vec::Vec<Val> = match self.heap.try_get(arg) {
             Some(HeapObj::Tuple(t)) => t.clone(),
@@ -180,10 +180,10 @@ impl<'a> VM<'a> {
             let (fval, ty, numeric): (Val, Option<char>, bool) = match conv {
                 's' => { let s = self.display(val); (self.heap.alloc(HeapObj::Str(s))?, None, false) }
                 'r' => { let s = self.repr(val); (self.heap.alloc(HeapObj::Str(s))?, None, false) }
-                'd' | 'i' | 'u' => (val, Some('d'), true),
-                'x' => (val, Some('x'), true),
-                'X' => (val, Some('X'), true),
-                'o' => (val, Some('o'), true),
+                'd' | 'i' | 'u' => (self.coerce_format_int(val, chunk, slots)?, Some('d'), true),
+                'x' => (self.coerce_format_int(val, chunk, slots)?, Some('x'), true),
+                'X' => (self.coerce_format_int(val, chunk, slots)?, Some('X'), true),
+                'o' => (self.coerce_format_int(val, chunk, slots)?, Some('o'), true),
                 'c' => (val, Some('c'), false),
                 'f' | 'F' => (val, Some('f'), true),
                 'e' => (val, Some('e'), true),
@@ -212,6 +212,16 @@ impl<'a> VM<'a> {
         self.heap.alloc(HeapObj::Str(out))
     }
 
+    /* `%d`/`%x` on a user instance defers to its `__int__`, matching CPython. */
+    fn coerce_format_int(&mut self, v: Val, chunk: &SSAChunk, slots: &mut [Val]) -> Result<Val, VmErr> {
+        if v.is_heap() && matches!(self.heap.get(v), HeapObj::Instance(..))
+            && let Some(r) = self.try_call_dunder(v, "__int__", &[], chunk, slots)? {
+            if r.is_int() || (r.is_heap() && matches!(self.heap.get(r), HeapObj::LongInt(_))) { return Ok(r); }
+            return Err(cold_type("__int__ returned non-int"));
+        }
+        Ok(v)
+    }
+
     fn exec_floordiv(&mut self, a: Val, b: Val) -> Result<Val, VmErr> {
         if a.is_float() || b.is_float() {
             let af = self.to_f64_coerce(a).map_err(|_| cold_type("// requires numeric operands"))?;
@@ -234,7 +244,7 @@ impl<'a> VM<'a> {
     }
 
     /* i128 bitwise + Shl/Shr (overflow trap); BitNot unary. Set/Set on |/&/^ means union/intersection/symmetric-diff; other types use the bitwise path. */
-    pub(crate) fn handle_bitwise(&mut self, op: OpCode) -> Result<(), VmErr> {
+    pub(crate) fn handle_bitwise(&mut self, op: OpCode, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         if op == OpCode::BitNot {
             let v = self.pop()?;
             let i = self.as_i128(v).ok_or(cold_type("~ requires an integer"))?;
@@ -244,6 +254,15 @@ impl<'a> VM<'a> {
         }
 
         let (a, b) = self.pop2()?;
+
+        // User instance operands dispatch __or__/__and__/__xor__ (and reflected) first.
+        let roots = self.temp_roots.len();
+        self.temp_roots.push(a);
+        self.temp_roots.push(b);
+        let dunder = self.try_binary_dunder(op, a, b, chunk, slots);
+        self.temp_roots.truncate(roots);
+        if let Some(r) = dunder? { self.push(r); return Ok(()); }
+
         if self.is_set_like(a) && self.is_set_like(b)
             && matches!(op, OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor) {
             return self.set_binop_and_push(a, b, op);

@@ -419,7 +419,7 @@ A failed assertion raises `AssertionError`. Catch it with `except AssertionError
 
 ## del
 
-Removes a binding from the slot. Works on plain names and indexed positions.
+Removes a binding from the slot. Works on plain names, attributes (`del obj.attr`), indexed positions (`del seq[i]`), and parenthesized target groups (`del (a, b)`).
 
 ```python
 x = 42

@@ -34,7 +34,7 @@ struct Spec {
     alt: bool, // '#' alternate form, emits base prefix for b/o/x/X
     zero_pad: bool,
     width: usize,
-    thousands: bool,
+    sep: u8, // 0, b',' or b'_' digit-group separator
     precision: Option<usize>,
     ty: u8, // 0 means default
 }
@@ -77,8 +77,9 @@ fn parse_spec(spec: &str) -> Result<Spec, &'static str> {
         s.width = spec[w_start..i].parse().map_err(|_| "invalid width in format spec")?;
     }
 
-    if i < bytes.len() && bytes[i] == b',' {
-        s.thousands = true;
+    // ',' or '_' digit-group separator; '_' groups hex/oct/bin by four.
+    if i < bytes.len() && matches!(bytes[i], b',' | b'_') {
+        s.sep = bytes[i];
         i += 1;
     }
 
@@ -112,7 +113,7 @@ fn apply(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static str> {
                 if s.precision.is_some() && !is_int_like {
                     return format_float(v, s, b'f', heap);
                 }
-                if s.thousands && is_int_like {
+                if s.sep != 0 && is_int_like {
                     let mut s2 = s.clone();
                     s2.ty = b'd';
                     return format_int(v, &s2, heap);
@@ -173,7 +174,8 @@ fn format_char(v: Val, s: &Spec) -> Result<String, &'static str> {
     let i = v.as_int();
     if !(0..=0x10FFFF).contains(&i) { return Err(C_RANGE_ERR); }
     let ch = char::from_u32(i as u32).ok_or("'c' format spec arg not a valid char")?;
-    Ok(pad_string(s, &ch.to_string()))
+    // 'c' is numeric for alignment: it defaults to right-align like ints.
+    Ok(pad_aligned(s, &ch.to_string(), 0))
 }
 
 fn format_int(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static str> {
@@ -186,7 +188,7 @@ fn format_int(v: Val, s: &Spec, heap: &HeapPool) -> Result<String, &'static str>
         b'X' => (decimal_to_radix(&mag, 16).to_uppercase(), if s.alt { "0X" } else { "" }),
         _ => unreachable!(),
     };
-    let body = if s.thousands && s.ty == b'd' { add_thousands(&digits) } else { digits };
+    let body = if s.sep != 0 { add_grouped(&digits, group_size(s.ty, s.sep), s.sep) } else { digits };
     let sign_ch = sign_char(neg, s.sign);
     let mut left = String::new();
     if let Some(c) = sign_ch { left.push(c); }
@@ -234,7 +236,7 @@ fn format_float(v: Val, s: &Spec, ty: u8, heap: &HeapPool) -> Result<String, &'s
         }
         _ => unreachable!(),
     };
-    let body = if s.thousands { add_thousands_float(&body) } else { body };
+    let body = if s.sep != 0 { add_thousands_float(&body, s.sep) } else { body };
     let sign_ch = sign_char(f.is_sign_negative(), s.sign);
     let mut left = String::new();
     if let Some(c) = sign_ch { left.push(c); }
@@ -298,24 +300,29 @@ fn decimal_to_radix(mag: &str, radix: u32) -> String {
     out.chars().rev().collect()
 }
 
-fn add_thousands(digits: &str) -> String {
-    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+// '_' groups binary/octal/hex every four digits; decimal and ',' every three.
+fn group_size(ty: u8, sep: u8) -> usize {
+    if sep == b'_' && matches!(ty, b'b' | b'o' | b'x' | b'X') { 4 } else { 3 }
+}
+
+fn add_grouped(digits: &str, group: usize, sep: u8) -> String {
+    let mut out = String::with_capacity(digits.len() + digits.len() / group);
     let chars: alloc::vec::Vec<char> = digits.chars().collect();
     for (i, &c) in chars.iter().enumerate() {
-        if i > 0 && (chars.len() - i).is_multiple_of(3) { out.push(','); }
+        if i > 0 && (chars.len() - i).is_multiple_of(group) { out.push(sep as char); }
         out.push(c);
     }
     out
 }
 
-fn add_thousands_float(s: &str) -> String {
+fn add_thousands_float(s: &str, sep: u8) -> String {
     /* Insert separators only in the integer portion (before `.` / `e`). */
     let split = s.find(['.', 'e', 'E']);
     let (int_part, rest) = match split {
         Some(i) => (&s[..i], &s[i..]),
         None => (s, ""),
     };
-    let mut out = add_thousands(int_part);
+    let mut out = add_grouped(int_part, 3, sep);
     out.push_str(rest);
     out
 }
@@ -340,7 +347,8 @@ fn pad_string(s: &Spec, body: &str) -> String {
     let len = body.chars().count();
     if len >= s.width { return body.to_string(); }
     let pad = s.width - len;
-    let align = s.align.unwrap_or(b'<');
+    // Strings can't use '=' alignment; a zero-fill default becomes left-align.
+    let align = match s.align.unwrap_or(b'<') { b'=' => b'<', a => a };
     pad_with(body, pad, align, s.fill, 0)
 }
 

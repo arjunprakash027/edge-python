@@ -560,7 +560,7 @@ impl<'a> VM<'a> {
     fn dispatch_generic(&mut self, opcode: OpCode, operand: u16, chunk: &SSAChunk, slots: &mut [Val], ip: &mut usize, exc_base: usize) -> Result<Option<Val>, VmErr> {
         match opcode {
             OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor
-            | OpCode::BitNot | OpCode::Shl | OpCode::Shr => self.handle_bitwise(opcode)?,
+            | OpCode::BitNot | OpCode::Shl | OpCode::Shr => self.handle_bitwise(opcode, chunk, slots)?,
             OpCode::In | OpCode::NotIn | OpCode::Is | OpCode::IsNot => self.handle_identity(opcode, chunk, slots)?,
 
             OpCode::BuildList | OpCode::BuildTuple | OpCode::BuildDict
@@ -568,6 +568,7 @@ impl<'a> VM<'a> {
 
             OpCode::StoreItem => { self.mark_impure(); self.store_item(chunk, slots)?; }
             OpCode::DelItem => { self.mark_impure(); self.del_item(chunk, slots)?; }
+            OpCode::DelAttr => { self.mark_impure(); self.exec_del_attr(operand, chunk)?; }
             OpCode::UnpackSequence | OpCode::UnpackEx | OpCode::FormatValue => self.handle_container(opcode, operand, chunk, slots)?,
 
             OpCode::ListAppend | OpCode::SetAdd | OpCode::MapAdd => self.handle_comprehension(opcode)?,

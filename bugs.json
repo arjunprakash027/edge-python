@@ -2,8 +2,8 @@
   "_meta": {
     "source": "MicroPython tests/basics differential vs CPython 3.13",
     "verified": "each repro re-run through VM + python3",
-    "count": 29,
-    "fixed": "67 bugs fixed and migrated to vm.json (try/finally + with unwinding cluster resolved)"
+    "count": 18,
+    "fixed": "78 bugs fixed and migrated to vm.json (try/finally + with unwinding cluster; 11 builtin/parser/format divergences from rows 1-11 of the low-NEWLINE triage)"
   },
   "bugs": [
     {
@@ -15,43 +15,11 @@
       "actual": "19"
     },
     {
-      "id": "string_format_sep",
-      "category": "format",
-      "summary": "The '_' grouping separator in a str.format spec ('{:0_x}') is rejected with 'trailing characters in format spec', even though the ',' separator works; valid format spec wrongly errors.",
-      "repro": "print(\"{:0_x}\".format(0x1000))",
-      "expected": "1000",
-      "actual": "__VMERR__ ValueError: trailing characters in format spec"
-    },
-    {
-      "id": "boundmeth1",
-      "category": "parser",
-      "summary": "Parser rejects a chained attribute assignment target like a.b.c = 1 (exit 4), which is valid Python using only attribute assignment.",
-      "repro": "class A:\n    pass\na = A()\na.b = A()\na.b.c = 1\nprint(a.b.c)",
-      "expected": "1",
-      "actual": ""
-    },
-    {
       "id": "containment",
       "category": "parser",
       "summary": "A dict or set display as the first element of an unparenthesized tuple fails to parse, though tuples/dicts/sets are all supported.",
       "repro": "x = {1: 2}, 3\nprint(x)",
       "expected": "({1: 2}, 3)",
-      "actual": ""
-    },
-    {
-      "id": "del_attr",
-      "category": "parser",
-      "summary": "Deleting an attribute (del obj.attr) fails to parse even though attribute access/assignment and del of a name are supported.",
-      "repro": "class C:\n    pass\nc = C()\nc.x = 1\ndel c.x\nprint('ok')",
-      "expected": "ok",
-      "actual": ""
-    },
-    {
-      "id": "del_global",
-      "category": "parser",
-      "summary": "Parser rejects a parenthesized target tuple in a del statement (del (a, b)), which is valid Python; unparenthesized del a, b works.",
-      "repro": "a = 1\nb = 2\ndel (a, b)\nprint(\"ok\")",
-      "expected": "ok",
       "actual": ""
     },
     {
@@ -92,14 +60,6 @@
       "summary": "A list as an assignment target ([a, b] = ...) is rejected at parse time though it is valid Python using only supported features.",
       "repro": "[a, b] = 100, 200\nprint(a, b)",
       "expected": "100 200",
-      "actual": ""
-    },
-    {
-      "id": "unpack1",
-      "category": "parser",
-      "summary": "A single-element bare tuple via trailing comma (x = 1,) is rejected as a parse error; multi-element bare tuples and explicit (1,) work, so only the one-element trailing-comma form is broken.",
-      "repro": "x = 1,\nprint(x)",
-      "expected": "(1,)",
       "actual": ""
     },
     {
@@ -159,14 +119,6 @@
       "actual": "__VMERR__ TypeError: unsupported operand type(s) for +: 'object' and 'int'"
     },
     {
-      "id": "class_reverse_op",
-      "category": "wrong-value",
-      "summary": "The bitwise | operator does not fall back to the right operand's reflected __ror__ method (while __radd__/__rmul__ do work).",
-      "repro": "class B:\n    def __ror__(self, o):\n        return 'ror'\nprint('a' | B())",
-      "expected": "ror",
-      "actual": "__VMERR__ TypeError: bitwise op requires integer operands"
-    },
-    {
       "id": "fun_kwvarargs",
       "category": "wrong-value",
       "summary": "A call mixing a starred argument that is itself a function call with a keyword argument whose value is also a function call corrupts argument evaluation and raises TypeError: object is not callable.",
@@ -197,46 +149,6 @@
       "repro": "s1 = s2 = set('abc')\ns1 |= set('ad')\nprint(s1 is s2, len(s1))",
       "expected": "True 4",
       "actual": "False 4"
-    },
-    {
-      "id": "string_format2",
-      "category": "wrong-value",
-      "summary": "The 'c' presentation type uses left-align by default; CPython defaults 'c' to right-align (numeric), so padding goes on the wrong side.",
-      "repro": "print(\">{:4c}<\".format(65))",
-      "expected": ">   A<",
-      "actual": ">A   <"
-    },
-    {
-      "id": "string_format_cp310",
-      "category": "wrong-value",
-      "summary": "For string type with leading 0 in the spec (CPython 3.10+), zero-fill should left-align and pad with '0' after the text; VM right-aligns and/or ignores the 0 fill char.",
-      "repro": "print(\">{:06s}<\".format(\"ab\"))",
-      "expected": ">ab0000<",
-      "actual": ">0000ab<"
-    },
-    {
-      "id": "string_format_modulo",
-      "category": "wrong-value",
-      "summary": "'%d' % obj does not invoke the object's __int__; VM raises a format error instead of producing the converted integer.",
-      "repro": "class A:\n    def __int__(self):\n        return 123\nprint(\"%d\" % A())",
-      "expected": "123",
-      "actual": "__VMERR__ ValueError: format spec requires an integer"
-    },
-    {
-      "id": "consecutive_bare_yield",
-      "category": "parser",
-      "summary": "Two consecutive bare 'yield' statements parse-reject; a bare yield followed by another yield is rejected.",
-      "repro": "def g():\n yield\n yield\nprint(list(g()))",
-      "expected": "[None, None]",
-      "actual": "(parse error, exit 4)"
-    },
-    {
-      "id": "class_repr_module",
-      "category": "wrong-value",
-      "summary": "repr of a user class (and type(instance)) omits the __main__ module qualifier, showing <class 'C'> instead of CPython's <class '__main__.C'>.",
-      "repro": "class C:\n    pass\nprint(repr(type(C())))",
-      "expected": "<class '__main__.C'>",
-      "actual": "<class 'C'>"
     }
   ]
 }

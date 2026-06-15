@@ -17,7 +17,7 @@ Run the following commands before sending a pull request to ensure code quality:
 - `cargo clippy --all-targets --no-default-features -- -D warnings` Lint the Rust code.
 - For significant changes, execute the [fuzzer](https://edgepython.com/implementation/fuzzing/) to check for new crashes or performance regressions.
 
-*Other packages have their own build and test setup — take a look at the `README.md` in the relevant path.*
+*Other packages have their own build and test setup — see the `README.md` in the relevant path. Code comments must be a single line of fewer than 30 words; if a change is too large, add a short section to the corresponding part of the `./docs` file instead.*
 
 A CI job will be run by the maintainer after the PR has been created.
 

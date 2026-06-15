@@ -107,18 +107,31 @@ impl<'a> VM<'a> {
     pub fn call_delattr(&mut self) -> Result<(), VmErr> {
         let name = self.expect_str_arg("delattr() name must be a string")?;
         let obj = self.pop()?;
+        self.delete_attr_named(obj, &name)?;
+        self.push(Val::none());
+        Ok(())
+    }
+
+    /* `del obj.attr` opcode: pop the object, remove the named attribute in place. */
+    pub fn exec_del_attr(&mut self, op: u16, chunk: &crate::modules::parser::SSAChunk) -> Result<(), VmErr> {
+        let obj = self.pop()?;
+        let name = chunk.names.get(op as usize).ok_or(cold_runtime("DelAttr: bad name index"))?.clone();
+        self.delete_attr_named(obj, &name)
+    }
+
+    /* Shared attribute removal for `delattr()` and `del obj.attr`; AttributeError when absent. */
+    fn delete_attr_named(&mut self, obj: Val, name: &str) -> Result<(), VmErr> {
         if obj.is_heap() && matches!(self.heap.get(obj), HeapObj::Class(..)) {
             if let HeapObj::Class(_, _, members) = self.heap.get(obj) {
-                members.borrow_mut().retain(|(n, _)| *n != name);
+                members.borrow_mut().retain(|(n, _)| n != name);
             }
-            self.push(Val::none());
             return Ok(());
         }
         if !obj.is_heap() || !matches!(self.heap.get(obj), HeapObj::Instance(..)) {
             return Err(cold_type("delattr() target must be an instance or class"));
         }
         // Strings <=128 bytes are interned, so re-alloc'ing yields the same Val key StoreAttr used.
-        let key = self.heap.alloc(HeapObj::Str(name.clone()))?;
+        let key = self.heap.alloc(HeapObj::Str(name.to_string()))?;
         let existed = if let HeapObj::Instance(_, attrs) = self.heap.get(obj) {
             let had = attrs.borrow().entries.iter()
                 .any(|(k, _)| k.is_heap() && matches!(self.heap.get(*k), HeapObj::Str(s) if s.as_str() == name));
@@ -128,9 +141,8 @@ impl<'a> VM<'a> {
         // Deleting a missing attribute raises AttributeError, matching CPython.
         if !existed {
             let ty = self.type_name(obj);
-            return Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str &name, "'")));
+            return Err(VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str name, "'")));
         }
-        self.push(Val::none());
         Ok(())
     }
 

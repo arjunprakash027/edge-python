@@ -26,7 +26,7 @@ pub enum OpCode {
     UnpackEx, LoadEllipsis, Await, MakeCoroutine, StoreItem, Dup2,
     JumpIfFalseOrPop, JumpIfTrueOrPop, Dup, CallMethod, CallMethodArgs, CallAll, CallAny, CallBin,
     CallOct, CallHex, CallDivmod, CallPow, CallRepr, CallReversed, CallCallable, CallId, CallHash,
-    PopIter, DelItem, CallExtern,
+    PopIter, DelItem, DelAttr, CallExtern,
     /* Pushes HeapObj::Extern; operand indexes extern_table. Used by native `import X`. */
     LoadExtern,
     /* Builds HeapObj::Module from stack: name + operand (attr_name, attr_value) pairs. */

@@ -16,6 +16,11 @@ pub(crate) fn binary_dunder_names(op: OpCode) -> Option<(&'static str, &'static 
         OpCode::FloorDiv => ("__floordiv__", "__rfloordiv__"),
         OpCode::Mod => ("__mod__", "__rmod__"),
         OpCode::Pow => ("__pow__", "__rpow__"),
+        OpCode::BitAnd => ("__and__", "__rand__"),
+        OpCode::BitOr => ("__or__", "__ror__"),
+        OpCode::BitXor => ("__xor__", "__rxor__"),
+        OpCode::Shl => ("__lshift__", "__rlshift__"),
+        OpCode::Shr => ("__rshift__", "__rrshift__"),
         _ => return None,
     })
 }

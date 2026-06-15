@@ -270,7 +270,8 @@ impl<'a> VM<'a> {
             HeapObj::Dict(d) => { let id = v.as_heap(); if seen.contains(&id) { return "{...}".into(); } seen.push(id); let mut o = s!(cap: 32; "{"); for (i,(k,val)) in d.borrow().iter().enumerate() { if i>0 { if o.len() > MAX_REPR_LEN { o.push_str(", ..."); break; } o.push_str(", "); } o.push_str(&self.repr_d(k, seen)); o.push_str(": "); o.push_str(&self.repr_d(val, seen)); } o.push('}'); seen.pop(); o },
             HeapObj::BoundMethod(_, id) => s!("<built-in method ", str id.name(), ">"),
             HeapObj::NativeFn(id) => s!("<built-in function ", str id.name(), ">"),
-            HeapObj::Class(name, _, _) => crate::s!("<class '", str name, "'>"  ),
+            // User classes live in `__main__`; CPython qualifies the repr with the module.
+            HeapObj::Class(name, _, _) => crate::s!("<class '__main__.", str name, "'>"),
             HeapObj::Instance(cls, _) => {
                 if cls.is_heap() && let HeapObj::Class(name, _, _) = self.heap.get(*cls) { return crate::s!("<", str name, " instance>"); }
                 "<instance>".into()

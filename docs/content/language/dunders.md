@@ -59,6 +59,18 @@ print((3 + Money(7)).n)
 10
 ```
 
+## Bitwise and shifts
+
+The bitwise and shift operators follow the same forward/reflected protocol.
+
+| Operator | Forward | Reflected |
+|----------|-----------------|------------------|
+| `a \| b` | `__or__` | `__ror__` |
+| `a & b` | `__and__` | `__rand__` |
+| `a ^ b` | `__xor__` | `__rxor__` |
+| `a << b` | `__lshift__` | `__rlshift__` |
+| `a >> b` | `__rshift__` | `__rrshift__` |
+
 ## Comparison
 
 | Operator | Forward | Reflected |
