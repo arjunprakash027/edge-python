@@ -12,6 +12,7 @@ Supported:
 
 - Single and multiple inheritance (C3 MRO) with `super()`.
 - `@property` / `@x.setter`.
+- `@staticmethod`.
 - A curated dunder protocol: operators, indexing, iteration, hashing, context managers, attribute fallback (see [Dunder methods](/language/dunders)).
 
 Out of scope: descriptors, metaclasses, `__slots__`.
@@ -165,6 +166,30 @@ print(t.fahrenheit)
 
 Two-arg form `property(fget, fset)` also works without decorator syntax.
 
+## Static methods
+
+`@staticmethod` makes a method that receives no implicit `self`. It is a plain function that lives in the class namespace, callable as `Class.method(...)` or `instance.method(...)` with identical arguments. Subclasses inherit it and can override it. Use it for helpers that belong to a class conceptually but need no receiver.
+
+```python
+class Geometry:
+  @staticmethod
+  def add(a, b):
+    return a + b
+  @staticmethod
+  def triangle_area(base, height):
+    return base * height / 2
+
+print(Geometry.add(2, 3))
+print(Geometry().triangle_area(10, 4))
+```
+
+```text Output
+5
+20.0
+```
+
+Functional form `staticmethod(func)` also works without decorator syntax. `classmethod` is not supported; reach for the namespace pattern or a free function instead.
+
 ## Operator overloading and protocols
 
 Operators, indexing, iteration, context managers, hashing, `repr` / `str` / `format` all dispatch through dunders: `__add__` for `+`, `__eq__` for `==`, `__getitem__` for `x[i]`, `__iter__` / `__next__` for `for`, `__enter__` / `__exit__` for `with`, etc.
@@ -182,7 +207,7 @@ See [Dunder methods](/language/dunders) for the full matrix.
 ## What is not supported
 
 * Metaclasses, descriptors (`__get__` / `__set__`), `__slots__`, ABCs, `__init_subclass__`.
-* `@staticmethod` / `@classmethod`: use the namespace pattern or free functions.
+* `@classmethod`: use the namespace pattern or free functions (`@staticmethod` is supported).
 * Async dunders; see [Dunders, What's not dispatched](/language/dunders#whats-not-dispatched).
 
 Reuse behaviour through free functions and composition by default. Dispatch is fast and aligns with the multi-paradigm identity. Reach for inheritance and operator overloading when the abstraction genuinely calls for them.

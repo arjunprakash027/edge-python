@@ -138,7 +138,13 @@ impl<'a> VM<'a> {
         // Class attr: `MyClass.method` returns the unbound function (no `self` prepended).
         if obj.is_heap()
             && let HeapObj::Class(cls_name, _, _) = self.heap.get(obj) {
-                if let Some((v, _)) = self.lookup_class_member(obj, bare) { return Ok(AttrLookup::ClassMember(v)); }
+                if let Some((v, _)) = self.lookup_class_member(obj, bare) {
+                    // `staticmethod` accessed on the class itself unwraps to the plain function.
+                    if v.is_heap() && let HeapObj::StaticMethod(func) = self.heap.get(v) {
+                        return Ok(AttrLookup::ClassMember(*func));
+                    }
+                    return Ok(AttrLookup::ClassMember(v));
+                }
                 let cls_name = cls_name.clone();
                 return Err(VmErr::Attribute(s!("type object '", str &cls_name, "' has no attribute '", str bare, "'")));
             }
@@ -157,6 +163,8 @@ impl<'a> VM<'a> {
                         match self.heap.get(mv) {
                             // A Property member triggers getter invocation in `handle_load_attr`.
                             HeapObj::Property(getter, _) => return Ok(AttrLookup::PropertyGet { recv: obj, getter: *getter }),
+                            // `staticmethod` returns the wrapped function unbound, with no `self`.
+                            HeapObj::StaticMethod(func) => return Ok(AttrLookup::ClassMember(*func)),
                             // Functions stay bound to the receiver via the descriptor protocol.
                             HeapObj::Func(..) => return Ok(AttrLookup::InstanceMethod { recv: obj, func: mv, class: defining }),
                             _ => {}
@@ -183,6 +191,7 @@ impl<'a> VM<'a> {
                     if mv.is_heap() {
                         match self.heap.get(mv) {
                             HeapObj::Property(getter, _) => return Ok(AttrLookup::PropertyGet { recv, getter: *getter }),
+                            HeapObj::StaticMethod(func) => return Ok(AttrLookup::ClassMember(*func)),
                             HeapObj::Func(..) => return Ok(AttrLookup::InstanceMethod { recv, func: mv, class: defining }),
                             _ => {}
                         }

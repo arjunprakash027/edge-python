@@ -19,6 +19,17 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
+    // `staticmethod(func)`: wraps a function so the class chain returns it unbound, with no `self`.
+    pub fn call_staticmethod(&mut self, argc: u16) -> Result<(), VmErr> {
+        let args = self.pop_n(argc as usize)?;
+        let [func] = args.as_slice() else {
+            return Err(cold_type("staticmethod() takes exactly one argument"));
+        };
+        let wrapped = self.heap.alloc(HeapObj::StaticMethod(*func))?;
+        self.push(wrapped);
+        Ok(())
+    }
+
     // `super()` zero-arg: reads the running method's `(class, self)` off the top frame and returns a Super proxy.
     pub fn call_super(&mut self) -> Result<(), VmErr> {
         let binding = self.call_stack.last()

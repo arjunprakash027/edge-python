@@ -728,6 +728,7 @@ impl<'a> VM<'a> {
             IntToBytes => Some(3),
             Globals | Locals | Super => Some(0),
             Property => None, // 1 or 2 args, validated in `call_property`.
+            StaticMethod => Some(1),
             Bytes => None, // 0/1/2-arg: bytes() | bytes(n|iter) | bytes(str, "utf-8")
             Slice => None, // 1/2/3-arg
             Gather => None, // variadic
@@ -814,6 +815,7 @@ impl<'a> VM<'a> {
             Locals => self.call_locals(chunk, slots),
             Super => self.call_super(),
             Property => self.call_property(argc),
+            StaticMethod => self.call_staticmethod(argc),
         }
     }
 }

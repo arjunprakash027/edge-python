@@ -3362,5 +3362,20 @@
   {"src": "class A:\n    pass\na = A()\na.b = A()\na.b.n = 1\na.b.n *= 5\nprint(a.b.n)", "output": ["5"]},
   {"src": "class A:\n    pass\na = A()\na.b = A()\na.b.c = A()\na.b.c.val = 7\na.b.c.val -= 2\nprint(a.b.c.val)", "output": ["5"]},
   {"src": "class A:\n    pass\nroot = A()\nroot.child = A()\nroot.child.value = 99\nprint(root.child.value)", "output": ["99"]},
-  {"src": "class A:\n    pass\na = A()\na.b = A()\na.b.c = 0\nfor i in range(3):\n    a.b.c += i\nprint(a.b.c)", "output": ["3"]}
+  {"src": "class A:\n    pass\na = A()\na.b = A()\na.b.c = 0\nfor i in range(3):\n    a.b.c += i\nprint(a.b.c)", "output": ["3"]},
+  {"src": "class C:\n    @staticmethod\n    def f():\n        return 7\nprint(C().f())", "output": ["7"]},
+  {"src": "class C:\n    @staticmethod\n    def f():\n        return 'hi'\nprint(C.f())", "output": ["hi"]},
+  {"src": "class C:\n    @staticmethod\n    def add(a, b):\n        return a + b\nprint(C.add(2, 3))", "output": ["5"]},
+  {"src": "class C:\n    @staticmethod\n    def add(a, b):\n        return a + b\nprint(C().add(10, 20))", "output": ["30"]},
+  {"src": "class C:\n    @staticmethod\n    def f(x):\n        return x * 2\nc = C()\nprint(c.f(5))", "output": ["10"]},
+  {"src": "class Base:\n    @staticmethod\n    def kind():\n        return 'base'\nclass Sub(Base):\n    pass\nprint(Sub.kind())\nprint(Sub().kind())", "output": ["base", "base"]},
+  {"src": "class C:\n    def g(x):\n        return x + 1\n    h = staticmethod(g)\nprint(C.h(4))", "output": ["5"]},
+  {"src": "class C:\n    @staticmethod\n    def f(a):\n        return a\nfn = C().f\nprint(fn(99))", "output": ["99"]},
+  {"src": "class C:\n    @staticmethod\n    def base(x):\n        return x + 1\n    @staticmethod\n    def double(x):\n        return C.base(x) * 2\nprint(C.double(3))", "output": ["8"]},
+  {"src": "class C:\n    def __init__(self):\n        self.v = 10\n    @staticmethod\n    def s(x):\n        return x\n    def m(self):\n        return self.v\nc = C()\nprint(c.s(3), c.m())", "output": ["3 10"]},
+  {"src": "class C:\n    @staticmethod\n    def f(a, b=5):\n        return a + b\nprint(C.f(2))\nprint(C.f(2, 3))", "output": ["7", "5"]},
+  {"src": "class Counter:\n    @staticmethod\n    def make():\n        return []\na = Counter.make()\nb = Counter.make()\na.append(1)\nprint(a, b)", "output": ["[1] []"]},
+  {"src": "class C:\n    @staticmethod\n    def total(*nums):\n        return sum(nums)\nprint(C.total(1, 2, 3, 4))", "output": ["10"]},
+  {"src": "class C:\n    @staticmethod\n    def get_v(obj):\n        return obj.v\nclass D:\n    def __init__(self):\n        self.v = 42\nprint(C.get_v(D()))", "output": ["42"]},
+  {"src": "class Base:\n    @staticmethod\n    def name():\n        return 'base'\nclass Sub(Base):\n    @staticmethod\n    def name():\n        return 'sub'\nprint(Base.name(), Sub.name())", "output": ["base sub"]}
 ]

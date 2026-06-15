@@ -355,6 +355,7 @@ impl<'a> VM<'a> {
             NativeFnId::Globals, NativeFnId::Locals,
             NativeFnId::Super,
             NativeFnId::Property,
+            NativeFnId::StaticMethod,
             NativeFnId::Frame,
         ];
         for &id in builtin_fns {

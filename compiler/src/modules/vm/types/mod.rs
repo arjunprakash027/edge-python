@@ -185,6 +185,8 @@ pub enum HeapObj {
     Property(Val, Val),
     // Intermediate produced by `prop.setter`: callable that takes a function and returns a new `Property` with the setter attached.
     PropertySetter(Val),
+    // `staticmethod(func)`: wraps a function so attribute lookup returns it unbound.
+    StaticMethod(Val),
     // Trailing `Vec<SyncFrame>` stacks suspended sync sub-calls (innermost-last); resume walks inside-out, each return lands on next frame's Call site. `BodyRef` discriminates user-fn coros from the implicit module-body coro. Final `Vec<ExceptionFrame>` carries try/except across yields.
     Coroutine(usize, Vec<Val>, Vec<Val>, BodyRef, Vec<IterFrame>, Vec<SyncFrame>, Vec<ExceptionFrame>),
     /* Produced by `import m`; attr access via LoadAttr, calls fuse through CallMethod. */
@@ -209,6 +211,7 @@ pub enum NativeFnId {
     Globals, Locals,
     Super,
     Property,
+    StaticMethod,
     Frame,
 }
 
@@ -229,6 +232,7 @@ impl NativeFnId {
             "globals", "locals",
             "super",
             "property",
+            "staticmethod",
             "frame",
         ];
         NAMES[self as usize]
@@ -370,6 +374,7 @@ pub(crate) fn for_each_val(obj: &HeapObj, mut f: impl FnMut(Val)) {
         HeapObj::Super(cls, recv) => { f(*cls); f(*recv); }
         HeapObj::Property(g, s) => { f(*g); f(*s); }
         HeapObj::PropertySetter(p) => f(*p),
+        HeapObj::StaticMethod(func) => f(*func),
         HeapObj::Instance(cls, attrs) => {
             f(*cls);
             for (k, v) in attrs.borrow().iter() { f(k); f(v); }
@@ -637,6 +642,7 @@ impl HeapPool {
                 Some(HeapObj::Super(..)) => 28,
                 Some(HeapObj::Property(..)) => 29,
                 Some(HeapObj::PropertySetter(..)) => 30,
+                Some(HeapObj::StaticMethod(..)) => 31,
                 None => 0,
             }
         } else { 0 }
