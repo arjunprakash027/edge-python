@@ -147,6 +147,8 @@ impl<'a> VM<'a> {
         let slots_base = self.live_slots.len();
         // `resume_coroutine` pre-pushes restored exception frames before calling us; honor its override so dispatch's handler search includes them.
         let exc_base = self.pending_exec_exc_base.take().unwrap_or(self.exception_stack.len());
+        // Cleanup reasons belong to this frame's finally bodies; drop leftovers when it returns.
+        let unwind_base = self.unwind_stack.len();
         let key = chunk as *const _;
 
         let mut cache = self.opcode_caches.remove(&key).unwrap_or_else(|| OpcodeCache::new(chunk));
@@ -172,6 +174,7 @@ impl<'a> VM<'a> {
             loop {
                 if ip >= n {
                     self.exception_stack.truncate(exc_base);
+                    self.unwind_stack.truncate(unwind_base);
                     return Ok(Val::none());
                 }
 
@@ -194,6 +197,7 @@ impl<'a> VM<'a> {
                     Ok(Some(v)) => {
                         self.live_slots.truncate(slots_base);
                         self.exception_stack.truncate(exc_base);
+                        self.unwind_stack.truncate(unwind_base);
                         return Ok(v);
                     }
                     Err(e) => {
@@ -223,17 +227,17 @@ impl<'a> VM<'a> {
                                 let msg_val = self.heap.alloc(HeapObj::Str(e.message()))?;
                                 self.heap.alloc(HeapObj::ExcInstance(msg, alloc::vec![msg_val]))?
                             };
+                            // Drop reasons from finally bodies this exception unwinds past.
+                            self.unwind_stack.truncate(frame.unwind_depth);
                             match frame.kind {
                                 BlockKind::Except => {
-                                    // Catching supersedes any unwind a finally left in flight.
-                                    self.pending.unwind = None;
                                     self.push(exc);
                                     ip = frame.handler_ip;
                                 }
-                                // finally/with must run their cleanup, then re-raise via EndFinally.
+                                // finally/with run their cleanup, then re-raise via EndFinally.
                                 BlockKind::Finally => {
                                     self.pending.exc_val = Some(exc);
-                                    self.pending.unwind = Some(Unwind::Reraise(e));
+                                    self.unwind_stack.push(Unwind::Reraise(e));
                                     ip = frame.handler_ip;
                                 }
                             }
@@ -434,7 +438,7 @@ impl<'a> VM<'a> {
             | OpCode::Mod | OpCode::FloorDiv
             | OpCode::Eq | OpCode::Lt | OpCode::NotEq
             | OpCode::Gt | OpCode::LtEq | OpCode::GtEq
-            | OpCode::Div | OpCode::Pow | OpCode::Minus | OpCode::InPlaceAdd => {
+            | OpCode::Div | OpCode::Pow | OpCode::Minus | OpCode::Pos | OpCode::InPlaceAdd => {
                 self.exec_arith_or_compare(ins.opcode, rip, cache, chunk, slots)?;
             }
 
@@ -455,12 +459,11 @@ impl<'a> VM<'a> {
             OpCode::PopTop => { self.pop()?; }
             OpCode::ReturnValue => {
                 let result = if self.stack.is_empty() { Val::none() } else { self.pop()? };
-                // A fresh return overrides any unwind in progress (e.g. return inside a finally).
-                self.pending.unwind = None;
+                // Run any enclosing finally/with cleanup before the value leaves the frame.
                 if self.exception_stack.len() > exc_base
                     && let Some(h) = self.next_cleanup_handler(exc_base)
                 {
-                    self.pending.unwind = Some(Unwind::Return(result));
+                    self.unwind_stack.push(Unwind::Return(result));
                     *ip = h;
                     return Ok(None);
                 }
@@ -598,6 +601,7 @@ impl<'a> VM<'a> {
                     stack_depth: self.stack.len(),
                     iter_depth: self.iter_stack.len(),
                     with_depth: self.with_stack.len(),
+                    unwind_depth: self.unwind_stack.len(),
                 });
             }
             // Cleanup frame run on every exit path; handler is the finally body or WithExit.
@@ -608,6 +612,7 @@ impl<'a> VM<'a> {
                     stack_depth: self.stack.len(),
                     iter_depth: self.iter_stack.len(),
                     with_depth: self.with_stack.len(),
+                    unwind_depth: self.unwind_stack.len(),
                 });
             }
             OpCode::SetupWith => {
@@ -620,12 +625,14 @@ impl<'a> VM<'a> {
                 self.with_stack.push(cm);
                 self.push(bound);
             }
-            // Context-manager cleanup; the pending unwind selects exception vs normal `__exit__` args.
+            // Marks a normal fall-through into a finally body so EndFinally balances its pop.
+            OpCode::BeginFinally => self.unwind_stack.push(Unwind::Normal),
+            // Context-manager cleanup; the top unwind reason selects exception vs normal `__exit__` args.
             OpCode::WithExit => {
                 let _ = operand;
                 let cm = self.with_stack.pop().ok_or(cold_runtime("WithExit without matching SetupWith"))?;
                 let is_instance = cm.is_heap() && matches!(self.heap.get(cm), HeapObj::Instance(..));
-                if matches!(self.pending.unwind, Some(Unwind::Reraise(_))) {
+                if matches!(self.unwind_stack.last(), Some(Unwind::Reraise(_))) {
                     // with body raised: __exit__(type, exc, None); truthy return suppresses the re-raise.
                     let exc = self.pending.exc_val.unwrap_or(Val::none());
                     let exc_name = self.exc_type_name(exc);
@@ -635,7 +642,8 @@ impl<'a> VM<'a> {
                         if let Some(r) = self.try_call_dunder(cm, "__exit__", &[exc_type, exc, n], chunk, slots)?
                             && self.truthy(r)
                         {
-                            self.pending.unwind = None;
+                            // Suppress: turn the re-raise into a normal exit and drop the exc identity.
+                            if let Some(top) = self.unwind_stack.last_mut() { *top = Unwind::Normal; }
                             self.pending.exc_val = None;
                         }
                     }
@@ -645,13 +653,13 @@ impl<'a> VM<'a> {
                     let _ = self.try_call_dunder(cm, "__exit__", &[n, n, n], chunk, slots)?;
                 }
             }
-            // End of a finally body / WithExit: resume whatever exit routed us here.
+            // End of a finally body / WithExit: pop its reason and resume the exit it carried.
             OpCode::EndFinally => {
-                match self.pending.unwind.take() {
-                    None => {}
+                match self.unwind_stack.pop() {
+                    None | Some(Unwind::Normal) => {}
                     Some(Unwind::Return(v)) => {
                         if let Some(h) = self.next_cleanup_handler(exc_base) {
-                            self.pending.unwind = Some(Unwind::Return(v));
+                            self.unwind_stack.push(Unwind::Return(v));
                             *ip = h;
                         } else {
                             return Ok(Some(v));
@@ -659,7 +667,7 @@ impl<'a> VM<'a> {
                     }
                     Some(Unwind::Goto { target, remaining }) => {
                         if remaining > 0 && let Some(h) = self.next_cleanup_handler(exc_base) {
-                            self.pending.unwind = Some(Unwind::Goto { target, remaining: remaining - 1 });
+                            self.unwind_stack.push(Unwind::Goto { target, remaining: remaining - 1 });
                             *ip = h;
                         } else {
                             *ip = target;
@@ -670,10 +678,9 @@ impl<'a> VM<'a> {
             }
             // break/continue across N finally/with blocks; the following Jump completes the transfer.
             OpCode::UnwindFinally => {
-                self.pending.unwind = None;
                 let target = *ip;
                 if operand > 0 && let Some(h) = self.next_cleanup_handler(exc_base) {
-                    self.pending.unwind = Some(Unwind::Goto { target, remaining: operand - 1 });
+                    self.unwind_stack.push(Unwind::Goto { target, remaining: operand - 1 });
                     *ip = h;
                 }
             }
@@ -711,6 +718,8 @@ impl<'a> VM<'a> {
             self.stack.truncate(frame.stack_depth);
             self.iter_stack.truncate(frame.iter_depth);
             self.with_stack.truncate(frame.with_depth);
+            // Discard reasons from finally bodies skipped while seeking this handler.
+            self.unwind_stack.truncate(frame.unwind_depth);
             if frame.kind == BlockKind::Finally {
                 return Some(frame.handler_ip);
             }
@@ -735,7 +744,7 @@ impl<'a> VM<'a> {
     #[inline(never)]
     fn exec_arith_or_compare(&mut self, opcode: OpCode, rip: usize, cache: &mut OpcodeCache, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         // Scalar IC fast-path (Div/Pow/Minus skip, Float-only / overflow-prone).
-        if !matches!(opcode, OpCode::Div | OpCode::Pow | OpCode::Minus)
+        if !matches!(opcode, OpCode::Div | OpCode::Pow | OpCode::Minus | OpCode::Pos)
             && let Some(fast) = cache.get_fast(rip)
         {
             match self.exec_fast(fast)? {
@@ -860,10 +869,7 @@ impl<'a> VM<'a> {
         // Pin caller slots as GC roots so a nested class/function body can't sweep them.
         let snap = self.live_slots.len();
         self.live_slots.extend_from_slice(caller_slots);
-        // Isolate any in-flight unwind so the class body's implicit return can't clear it.
-        let saved_unwind = self.pending.unwind.take();
         let exec_result = self.exec(body, &mut class_slots);
-        self.pending.unwind = saved_unwind;
         self.live_slots.truncate(snap);
         exec_result?;
         let mut methods: Vec<(String, Val)> = Vec::new();

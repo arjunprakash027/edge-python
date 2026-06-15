@@ -609,12 +609,9 @@ impl<'a> VM<'a> {
             cells: Vec::new(),
         });
 
-        // Isolate the caller's in-flight unwind so the callee's return can't clear it.
-        let saved_unwind = self.pending.unwind.take();
         self.observed_impure.push(false);
         let exec_result = self.exec(body, fn_slots);
         let callee_impure = self.observed_impure.pop().unwrap_or(true);
-        self.pending.unwind = saved_unwind;
         self.live_slots.truncate(snap);
         if exec_result.is_ok() {
             self.call_stack.pop();
@@ -721,7 +718,8 @@ impl<'a> VM<'a> {
             | Repr | Reversed | Callable | Id | Hash | Sleep => Some(1),
             // Enumerate (start), Next (default), Iter (sentinel) accept an optional 2nd arg; validated in their handlers.
             Enumerate | Next | Iter => None,
-            Divmod | IsInstance | IsSubclass | HasAttr | Map | Filter | DelAttr => Some(2),
+            Divmod | IsInstance | IsSubclass | HasAttr | Filter | DelAttr => Some(2),
+            Map => None, // fn + one-or-more iterables; validated in call_map.
             SetAttr => Some(3),
             WithTimeout => Some(2),
             Cancel => Some(1),
@@ -796,7 +794,7 @@ impl<'a> VM<'a> {
             Sleep => self.call_sleep(),
             Frame => self.call_frame(),
             Receive => self.call_receive(),
-            Map => self.call_map(chunk, slots),
+            Map => self.call_map(argc, chunk, slots),
             Filter => self.call_filter(chunk, slots),
             Iter => self.call_iter(argc, chunk, slots),
             Bytes => self.call_bytes(argc),

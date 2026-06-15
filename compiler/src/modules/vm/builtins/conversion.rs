@@ -6,6 +6,14 @@ impl<'a> VM<'a> {
 
     pub fn call_str(&mut self, argc: u16, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         if argc == 0 { return self.alloc_and_push_str(alloc::string::String::new()); }
+        if argc >= 2 {
+            // `str(bytes, encoding[, errors])` decodes, mirroring `bytes.decode`.
+            let args = self.pop_n(argc as usize)?;
+            if args[0].is_heap() && matches!(self.heap.get(args[0]), HeapObj::Bytes(_)) {
+                return crate::modules::vm::handlers::builtin_methods::bytes::decode(self, args[0], &args[1..]);
+            }
+            return Err(cold_type("decoding to str: need a bytes-like object"));
+        }
         let o = self.pop()?;
         let s = self.display_op(o, chunk, slots)?;
         self.alloc_and_push_str(s)

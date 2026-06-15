@@ -350,17 +350,19 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.chunk.emit(OpCode::Jump, loop_start);
         self.patch(jf);
 
+        // Pop loop state before the else so its break/continue target the enclosing loop.
+        self.loop_starts.pop();
+        self.loop_kinds.pop();
+        self.loop_cleanup_base.pop();
+        let breaks = self.loop_breaks.pop().unwrap_or_default();
+
         if self.eat_if(TokenType::Else) {
             self.eat(TokenType::Colon);
             self.compile_block();
         }
 
-        self.loop_starts.pop();
-        self.loop_kinds.pop();
-        self.loop_cleanup_base.pop();
-        for pos in self.loop_breaks.pop().unwrap_or_default() {
-            self.patch(pos);
-        }
+        // Loop breaks land past the else clause.
+        for pos in breaks { self.patch(pos); }
 
         self.commit_block();
     }
@@ -424,17 +426,19 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.chunk.emit(OpCode::Jump, loop_start);
         self.patch(fi);
 
+        // Pop loop state before the else so its break/continue target the enclosing loop.
+        self.loop_starts.pop();
+        self.loop_kinds.pop();
+        self.loop_cleanup_base.pop();
+        let breaks = self.loop_breaks.pop().unwrap_or_default();
+
         if !is_async && self.eat_if(TokenType::Else) {
             self.eat(TokenType::Colon);
             self.compile_block();
         }
 
-        self.loop_starts.pop();
-        self.loop_kinds.pop();
-        self.loop_cleanup_base.pop();
-        for pos in self.loop_breaks.pop().unwrap_or_default() {
-            self.patch(pos);
-        }
+        // Loop breaks land past the else clause.
+        for pos in breaks { self.patch(pos); }
 
         self.commit_block();
     }
@@ -527,16 +531,15 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             self.patch(j);
         }
 
-        // Finally body doubles as cleanup handler; non-local exits jump here, frame already popped.
+        // Normal path pops the frame and marks the entry; unwind exits jump straight to the body.
         self.cleanup_count -= 1;
         self.chunk.emit(OpCode::PopExcept, 0);
+        self.chunk.emit(OpCode::BeginFinally, 0);
         let fin_body = self.chunk.instructions.len() as u16;
         self.patch_to(fin_setup, fin_body);
         if self.eat_if(TokenType::Finally) {
             self.eat(TokenType::Colon);
-            self.finally_loop_depth.push(self.loop_starts.len());
             self.compile_block();
-            self.finally_loop_depth.pop();
         }
         self.chunk.emit(OpCode::EndFinally, 0);
 
@@ -566,10 +569,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.eat(TokenType::Colon);
         self.compile_block();
 
-        // Cleanups innermost-first: pop the frame on the normal path, then run `__exit__`.
+        // Cleanups innermost-first: normal path pops the frame and marks the entry, then runs `__exit__`.
         for s in setups.into_iter().rev() {
             self.cleanup_count -= 1;
             self.chunk.emit(OpCode::PopExcept, 0);
+            self.chunk.emit(OpCode::BeginFinally, 0);
             let h = self.chunk.instructions.len() as u16;
             self.patch_to(s, h);
             self.chunk.emit(OpCode::WithExit, operand);

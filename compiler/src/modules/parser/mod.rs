@@ -67,8 +67,6 @@ pub struct Parser<'src, I: Iterator<Item = Token>> {
     pub(super) cleanup_count: usize,
     // `cleanup_count` snapshot at each loop's entry; parallels loop_starts.
     pub(super) loop_cleanup_base: Vec<usize>,
-    /* `loop_starts.len()` at each finally body's entry; lets break/continue detect crossing it. */
-    pub(super) finally_loop_depth: Vec<usize>,
     pub(super) expr_depth: usize,
     pub(super) saw_newline: bool,
     /* True inside f-string brace expr; disables `=` assignment so `f"{x=}"` parses as debug form. */
@@ -161,7 +159,6 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             core::mem::take(&mut self.loop_kinds),
             core::mem::take(&mut self.loop_cleanup_base),
             core::mem::replace(&mut self.cleanup_count, 0),
-            core::mem::take(&mut self.finally_loop_depth),
         );
         // Copy parent externs so nested def bodies can call imported natives; extras don't leak up.
         self.chunk.extern_table = saved_chunk.extern_table.clone();
@@ -175,7 +172,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         self.ssa_versions = saved_ver;
         self.globals_decl = saved_globals;
         (self.loop_starts, self.loop_breaks, self.loop_kinds,
-         self.loop_cleanup_base, self.cleanup_count, self.finally_loop_depth) = saved_loops;
+         self.loop_cleanup_base, self.cleanup_count) = saved_loops;
         body
     }
 }
@@ -501,7 +498,6 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             loop_kinds: Vec::new(),
             cleanup_count: 0,
             loop_cleanup_base: Vec::new(),
-            finally_loop_depth: Vec::new(),
             saw_newline: false,
             in_fstring_expr: false,
             expr_depth: 0,

@@ -48,8 +48,6 @@ pub(crate) struct Pending {
     pub exc_val: Option<Val>,
     /* `(class, self)` for the next user-function call when it's invoked as a method; populated by method-dispatch paths and consumed by `run_body_with_frame`. */
     pub method_binding: Option<(Val, Val)>,
-    /* In-progress non-local exit being routed through finally/with cleanup blocks. */
-    pub unwind: Option<types::Unwind>,
 }
 
 impl Pending {
@@ -66,7 +64,6 @@ impl Pending {
             waiting_for_children: None,
             exc_val: None,
             method_binding: None,
-            unwind: None,
         }
     }
 }
@@ -92,6 +89,8 @@ pub struct VM<'a> {
     // C3 method-resolution order per class, keyed by the class Val's heap bits. Computed once at MakeClass (the class graph is a static DAG); a reused slot is overwritten by its new class, so stale entries are never read (lookup checks HeapObj::Class first). Not a GC root: MRO members stay reachable via the class's own `bases`.
     pub(crate) mro_cache: HashMap<u64, alloc::rc::Rc<Vec<Val>>>,
     pub(crate) exception_stack: Vec<ExceptionFrame>,
+    /* Active finally/with cleanup reasons (innermost last); EndFinally pops one per body. */
+    pub(crate) unwind_stack: Vec<types::Unwind>,
     pub(crate) functions: Vec<&'a (Vec<String>, SSAChunk, u16, u16)>,
     // (chunk_ptr, global fn ids); linear scan over a tiny list avoids HashMap monomorphization.
     pub(crate) fn_index: Vec<(*const SSAChunk, Vec<u32>)>,
@@ -192,6 +191,7 @@ impl<'a> VM<'a> {
             observed_impure: Vec::new(),
             mro_cache: HashMap::default(),
             exception_stack: Vec::new(),
+            unwind_stack: Vec::new(),
             error_byte_pos: None,
             module_table: HashMap::default(),
             fn_module: Vec::new(),

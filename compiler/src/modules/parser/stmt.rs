@@ -163,15 +163,22 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             Some(TokenType::Del) => {
                 self.advance();
                 loop {
-                    let name = self.advance_text();
-                    if self.eat_if(TokenType::Lsqb) {
-                        // del `x[k]` or `x[a:b]`: BuildSlice so DelItem sees HeapObj::Slice.
-                        self.emit_load_ssa(name);
-                        self.parse_subscript();
-                        self.chunk.emit(OpCode::DelItem, 0);
+                    if matches!(self.peek(), Some(TokenType::Name)) {
+                        let name = self.advance_text();
+                        if self.eat_if(TokenType::Lsqb) {
+                            // del `x[k]` or `x[a:b]`: BuildSlice so DelItem sees HeapObj::Slice.
+                            self.emit_load_ssa(name);
+                            self.parse_subscript();
+                            self.chunk.emit(OpCode::DelItem, 0);
+                        } else {
+                            let idx = self.push_ssa_name(&name, self.current_version(&name));
+                            self.chunk.emit(OpCode::Del, idx);
+                        }
                     } else {
-                        let idx = self.push_ssa_name(&name, self.current_version(&name));
-                        self.chunk.emit(OpCode::Del, idx);
+                        // Non-name target (e.g. literal subscript): rewrite the trailing GetItem to DelItem.
+                        self.expr();
+                        if let Some(last) = self.chunk.instructions.last_mut()
+                            && last.opcode == OpCode::GetItem { last.opcode = OpCode::DelItem; }
                     }
                     if !self.eat_if(TokenType::Comma) { break; }
                 }
@@ -288,12 +295,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         }
     }
 
-    /* Runs the finally/with blocks a break/continue crosses, or clears a superseded unwind. */
+    /* Runs the finally/with blocks a break/continue crosses before its jump. */
     fn emit_loop_unwind(&mut self) {
         let base = self.loop_cleanup_base.last().copied().unwrap_or(0);
         let count = self.cleanup_count - base;
-        let crosses = self.finally_loop_depth.last().is_some_and(|&d| self.loop_starts.len() <= d);
-        if count > 0 || crosses {
+        if count > 0 {
             self.chunk.emit(OpCode::UnwindFinally, count as u16);
         }
     }

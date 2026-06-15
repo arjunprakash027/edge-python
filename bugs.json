@@ -2,7 +2,7 @@
   "_meta": {
     "source": "MicroPython tests/basics differential vs CPython 3.13",
     "verified": "each repro re-run through VM + python3",
-    "count": 42,
+    "count": 34,
     "fixed": "67 bugs fixed and migrated to vm.json (try/finally + with unwinding cluster resolved)"
   },
   "bugs": [
@@ -13,14 +13,6 @@
       "repro": "def foo():\n    any((hit := i) == 8 for i in range(20))\n    return hit\nprint(foo())",
       "expected": "8",
       "actual": "19"
-    },
-    {
-      "id": "for_else",
-      "category": "control-flow",
-      "summary": "`continue` inside a for-else clause that targets the enclosing outer loop sends the VM into an infinite loop (budget exceeded) instead of continuing the outer loop.",
-      "repro": "for i in range(2):\n    print(i)\n    for j in range(1):\n        pass\n    else:\n        continue\n    break",
-      "expected": "0\n1",
-      "actual": "0"
     },
     {
       "id": "string_format_sep",
@@ -37,14 +29,6 @@
       "repro": "class A:\n    pass\na = A()\na.b = A()\na.b.c = 1\nprint(a.b.c)",
       "expected": "1",
       "actual": ""
-    },
-    {
-      "id": "bytes_subscr",
-      "category": "parser",
-      "summary": "del of a subscript on a bytes literal raises a bogus NameError naming the literal instead of TypeError.",
-      "repro": "try:\n    del b'123'[1]\nexcept TypeError:\n    print('TypeError')",
-      "expected": "TypeError",
-      "actual": "__VMERR__ NameError: name 'b'123'' is not defined"
     },
     {
       "id": "containment",
@@ -159,14 +143,6 @@
       "actual": "__VMERR__ RuntimeError: stack underflow"
     },
     {
-      "id": "builtin_map",
-      "category": "unsupported-feature",
-      "summary": "map() with multiple iterables is rejected with a TypeError; CPython zips the iterables and calls the function with multiple args.",
-      "repro": "print(list(map(lambda a, b: a + b, [1, 2], [10, 20])))",
-      "expected": "[11, 22]",
-      "actual": "__VMERR__ TypeError: wrong number of arguments to builtin"
-    },
-    {
       "id": "string_format_modulo_int",
       "category": "unsupported-feature",
       "summary": "The '*' dynamic-width specifier in %-formatting (e.g. '%*d') is rejected as an unsupported format character on valid supported input.",
@@ -175,28 +151,12 @@
       "actual": "__VMERR__ ValueError: unsupported format character"
     },
     {
-      "id": "bool1",
-      "category": "wrong-value",
-      "summary": "Unary plus on a bool returns the bool instead of converting to int 1.",
-      "repro": "print(+True)",
-      "expected": "1",
-      "actual": "True"
-    },
-    {
       "id": "builtin_slice",
       "category": "wrong-value",
       "summary": "The builtin name 'slice' is bound to a constructor function rather than the slice type, so 'type(s) is slice' is False; also tuple/multi-dim subscripts like a[1:2,4:5] are parse-rejected.",
       "repro": "class A:\n    def __getitem__(self, idx):\n        return idx\ns = A()[1:2:3]\nprint(type(s) is slice)",
       "expected": "True",
       "actual": "False"
-    },
-    {
-      "id": "bytes",
-      "category": "wrong-value",
-      "summary": "str(bytes, encoding) returns the encoding string itself instead of decoding the bytes.",
-      "repro": "print(str(b\"123\", \"utf-8\"))",
-      "expected": "123",
-      "actual": "utf-8"
     },
     {
       "id": "class2",
@@ -231,14 +191,6 @@
       "actual": "{}"
     },
     {
-      "id": "dict1",
-      "category": "wrong-value",
-      "summary": "KeyError stores the missing key coerced to a string; er.args[0] is '0' (str) instead of 0 (int).",
-      "repro": "try:\n    {}[0]\nexcept KeyError as er:\n    print(er.args, type(er.args[0]))",
-      "expected": "(0,) <class 'int'>",
-      "actual": "('0',) <class 'str'>"
-    },
-    {
       "id": "fun_kwvarargs",
       "category": "wrong-value",
       "summary": "A call mixing a starred argument that is itself a function call with a keyword argument whose value is also a function call corrupts argument evaluation and raises TypeError: object is not callable.",
@@ -269,14 +221,6 @@
       "repro": "l = [1, 2]\nl += range(6, 10)\nprint(l)",
       "expected": "[1, 2, 6, 7, 8, 9]",
       "actual": "__VMERR__ TypeError: unsupported operand type(s) for +: 'list' and 'range'"
-    },
-    {
-      "id": "list_slice_3arg",
-      "category": "wrong-value",
-      "summary": "Negative-step slice with out-of-bounds negative start/stop computes the wrong element range.",
-      "repro": "print([1][0:-10:-1])",
-      "expected": "[1]",
-      "actual": "[]"
     },
     {
       "id": "list_sort",
@@ -333,14 +277,6 @@
       "repro": "def g():\n yield\n yield\nprint(list(g()))",
       "expected": "[None, None]",
       "actual": "(parse error, exit 4)"
-    },
-    {
-      "id": "try_finally_local_break_unwind",
-      "category": "control-flow",
-      "summary": "A local break whose own finally runs, while an enclosing finally is mid-unwind from a return, discards the pending return value (yields None instead of it).",
-      "repro": "def f():\n    try:\n        return 1\n    finally:\n        for i in range(2):\n            try:\n                if i == 0:\n                    break\n            finally:\n                print(\"inner\", i)\n        print(\"after loop\")\nprint(f())",
-      "expected": "inner 0\nafter loop\n1",
-      "actual": "inner 0\nafter loop\nNone"
     }
   ]
 }

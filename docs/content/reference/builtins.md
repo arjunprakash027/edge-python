@@ -208,18 +208,20 @@ inf
 
 ### str
 
-`str(x)`: display form. No arg -> empty string.
+`str(x)`: display form. No arg -> empty string. `str(bytes, encoding)` decodes the bytes.
 
 ```python
 print(str(42))
 print(str([1, 2, 3]))
 print(str(None))
+print(str(b"hi", "utf-8"))
 ```
 
 ```text Output
 42
 [1, 2, 3]
 None
+hi
 ```
 
 ### bool
@@ -416,11 +418,12 @@ a
 
 ### map
 
-`map(fn, iterable)` -> list of `fn(item)`. Eager, full list materialises immediately; pipelines into `sum`, `list`, `max`.
+`map(fn, *iterables)` -> list of `fn(items...)`. With several iterables they are walked in parallel, stopping at the shortest. Eager, full list materialises immediately; pipelines into `sum`, `list`, `max`.
 
 ```python
 print(list(map(lambda x: x * 2, [1, 2, 3])))
 print(sum(map(lambda x: x * x, range(5))))
+print(list(map(lambda a, b: a + b, [1, 2], [10, 20])))
 
 def normalize(s):
     return s.strip().lower()
@@ -431,6 +434,7 @@ print(list(map(normalize, ["  Hi ", "WORLD"])))
 ```text Output
 [2, 4, 6]
 30
+[11, 22]
 ['hi', 'world']
 ```
 

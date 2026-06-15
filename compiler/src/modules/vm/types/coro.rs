@@ -58,16 +58,18 @@ pub struct SyncFrame {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BlockKind { Except, Finally }
 
-/* Pending non-local exit, threaded through finally/with cleanup before it completes. */
+/* One reason a finally/with cleanup body is running; pushed on entry, popped by EndFinally. */
 #[derive(Clone, Debug)]
 pub enum Unwind {
+    // Reached by normal fall-through; EndFinally just continues.
+    Normal,
     Return(Val),
     // break/continue: run `remaining` more cleanups, then resume at `target`.
     Goto { target: usize, remaining: u16 },
     Reraise(VmErr),
 }
 
-/* Saved stack/iter/with depths for unwinding to a try arm's handler. Stored on the active Coroutine so `try`/`except` survives yields. */
+/* Saved stack/iter/with/unwind depths for unwinding to a handler. Stored on the active Coroutine so `try`/`except` survives yields. */
 #[derive(Clone, Debug)]
 pub struct ExceptionFrame {
     pub kind: BlockKind,
@@ -75,6 +77,7 @@ pub struct ExceptionFrame {
     pub stack_depth: usize,
     pub iter_depth: usize,
     pub with_depth: usize,
+    pub unwind_depth: usize,
 }
 
 // Coroutine body: user fn (Fn) or the implicit module-body coro (Module -> self.chunk).

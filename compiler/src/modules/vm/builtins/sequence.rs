@@ -420,15 +420,20 @@ impl<'a> VM<'a> {
     }
 
     /* `map(fn, iter)`, eager; returns a list. Re-enters `exec_call` per item so closures with captures see the caller's chunk/slots. */
-    pub fn call_map(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
-        let iterable = self.pop()?;
-        let fn_val = self.pop()?;
-        let items = self.iter_to_vec_general(iterable)?;
-        let mut out: Vec<Val> = Vec::with_capacity(items.len());
-        for item in items {
+    pub fn call_map(&mut self, argc: u16, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+        if argc < 2 { return Err(cold_type("map() must have at least two arguments")); }
+        let mut args = self.pop_n(argc as usize)?;
+        let fn_val = args.remove(0);
+        // Materialise each iterable; the parallel walk stops at the shortest, like zip.
+        let mut lists: Vec<Vec<Val>> = Vec::with_capacity(args.len());
+        for it in args { lists.push(self.iter_to_vec_general(it)?); }
+        let n = lists.iter().map(|l| l.len()).min().unwrap_or(0);
+        let arity = lists.len() as u16;
+        let mut out: Vec<Val> = Vec::with_capacity(n);
+        for i in 0..n {
             self.push(fn_val);
-            self.push(item);
-            self.exec_call(1, chunk, slots)?;
+            for l in &lists { self.push(l[i]); }
+            self.exec_call(arity, chunk, slots)?;
             out.push(self.pop()?);
         }
         self.alloc_and_push_list(out)

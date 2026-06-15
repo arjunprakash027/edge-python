@@ -20,6 +20,9 @@ impl<'a> VM<'a> {
         if op == OpCode::Minus {
             return self.exec_neg(rip, cache, chunk, slots);
         }
+        if op == OpCode::Pos {
+            return self.exec_pos(rip, cache, chunk, slots);
+        }
 
         let (a, b) = self.pop2()?;
 
@@ -94,6 +97,26 @@ impl<'a> VM<'a> {
             self.int_to_val(i.checked_neg())?
         } else {
             return Err(cold_type("unary - requires a number"));
+        };
+        self.push(result);
+        Ok(())
+    }
+
+    fn exec_pos(&mut self, rip: usize, cache: &mut OpcodeCache, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+        let v = self.pop()?;
+        // instance `__pos__` takes precedence over numeric coercion.
+        if let Some(r) = self.try_call_dunder(v, "__pos__", &[], chunk, slots)? {
+            self.record_dunder_hit(rip, cache, v, "__pos__", 1);
+            self.push(r);
+            return Ok(());
+        }
+        let result = if v.is_float() {
+            v
+        } else if let Some(i) = self.as_i128(v) {
+            // bool drops its tag to int; plain ints round-trip unchanged.
+            self.int_to_val(Some(i))?
+        } else {
+            return Err(cold_type("unary + requires a number"));
         };
         self.push(result);
         Ok(())

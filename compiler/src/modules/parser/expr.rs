@@ -147,9 +147,10 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.chunk.emit(OpCode::Minus, 0);
             }
             Some(TokenType::Plus) => {
-                // Unary plus is identity; parse operand, emit nothing.
+                // Unary plus calls `__pos__` and coerces bool to int.
                 self.advance();
                 self.expr_bp(21);
+                self.chunk.emit(OpCode::Pos, 0);
             }
             Some(TokenType::Tilde) => {
                 self.advance();

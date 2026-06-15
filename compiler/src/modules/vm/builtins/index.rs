@@ -68,6 +68,22 @@ impl<'a> VM<'a> {
                 return Ok(true);
         }
 
+        // Dict miss raises KeyError holding the real key, so `e.args[0]` keeps its type.
+        let dict_hit = if obj.is_heap() {
+            if let HeapObj::Dict(p) = self.heap.get(obj) { Some(p.borrow().get(&idx, &self.heap).copied()) } else { None }
+        } else { None };
+        if let Some(hit) = dict_hit {
+            match hit {
+                Some(v) => { self.push(v); return Ok(false); }
+                None => {
+                    let msg = self.repr(idx);
+                    let exc = self.heap.alloc(HeapObj::ExcInstance(alloc::string::String::from("KeyError"), alloc::vec![idx]))?;
+                    self.pending.exc_val = Some(exc);
+                    return Err(VmErr::Raised(crate::s!("KeyError: ", str &msg)));
+                }
+            }
+        }
+
         let v = self.getitem_val(obj, idx)?;
         self.push(v);
         Ok(false)
@@ -96,11 +112,16 @@ impl<'a> VM<'a> {
             else { def }
         };
 
+        // Negative step bounds at [-1, len-1]; an underflowing index floors at -1, not 0.
+        let clamp_neg = |v: Val, def: i64| -> i64 {
+            if v.is_none() { def }
+            else if v.is_int() { let i = v.as_int(); (if i < 0 { len + i } else { i }).clamp(-1, len - 1) }
+            else { def }
+        };
         let (s, e) = if st > 0 {
             (clamp(start, 0), clamp(stop, len))
         } else {
-            // Negative-step start caps at len-1; clamp's min(len) alone overshoots by one.
-            (clamp(start, len - 1).min(len - 1), clamp(stop, -1))
+            (clamp_neg(start, len - 1), clamp_neg(stop, -1))
         };
 
         let mut indices = Vec::new();

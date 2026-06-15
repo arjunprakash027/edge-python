@@ -283,9 +283,9 @@ impl<'a> VM<'a> {
             HeapObj::Module(name, _) => s!("<module '", str name, "'>"),
             HeapObj::Extern(f) => s!("<extern function ", str &f.name, ">"),
             HeapObj::ExcInstance(name, args) => {
-                // `str(E("x"))` -> "x"; `repr(...)` handled elsewhere.
+                // `str(E("x"))` -> "x"; KeyError is special, stringifying as the key's repr.
                 if args.len() == 1 {
-                    self.display_d(args[0], seen)
+                    if name == "KeyError" { self.repr_d(args[0], seen) } else { self.display_d(args[0], seen) }
                 } else if args.is_empty() {
                     name.clone()
                 } else {

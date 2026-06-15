@@ -18,8 +18,8 @@ pub enum OpCode {
     GetIter, ForIter, GetItem, Mod, Pow, FloorDiv, LoadTrue, LoadFalse, LoadNone, LoadAttr, StoreAttr, 
     BuildSlice, MakeClass, SetupExcept, PopExcept, Raise, BitAnd, BitOr, BitXor,
     BitNot, Shl, Shr, In, NotIn, Is, IsNot, UnpackSequence, BuildTuple, SetupWith, WithExit, Yield,
-    /* Finally/with block stack: setup pushes a cleanup frame, EndFinally resumes the pending exit. */
-    SetupFinally, EndFinally,
+    /* Finally/with block stack: setup pushes a cleanup frame, BeginFinally marks a normal entry, EndFinally resumes the exit. */
+    SetupFinally, BeginFinally, EndFinally,
     /* break/continue across N finally/with blocks before its jump; operand is N. */
     UnwindFinally,
     Del, Assert, Global, Nonlocal, UnpackArgs, ListAppend, SetAdd, MapAdd, BuildSet, RaiseFrom,
@@ -41,6 +41,8 @@ pub enum OpCode {
     MatchSeq,
     /* `name += rhs`: list+list extends in place (so aliases observe it, matching CPython's __iadd__); every other type behaves as Add. */
     InPlaceAdd,
+    /* Unary plus: calls `__pos__`, coerces bool to int, else identity on numbers. */
+    Pos,
 }
 
 // Python builtin name -> (specialised OpCode, `leaves_value_on_stack`).
