@@ -4,7 +4,7 @@ use super::Parser;
 use super::types::builtin;
 use super::types::{OpCode, Value, SSAChunk, Instruction};
 
-use crate::modules::lexer::{Token, TokenType, utf8_char_len};
+use crate::modules::lexer::{Token, TokenType};
 use crate::util::fx::FxHashMap as HashMap;
 
 use alloc::{string::{String, ToString}, vec::Vec};
@@ -233,6 +233,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     pub(super) fn fstring(&mut self, fs_start: usize, fs_end: usize) {
         let mut parts = 0u16;
         let mut got_end = false;
+        // Raw f-strings (`rf"..."`) keep backslashes literal; plain ones decode escapes like a normal string.
+        let is_raw = super::types::has_raw_prefix(&self.source[fs_start..fs_end]);
         if matches!(self.peek(), Some(TokenType::FstringEnd)) {
             self.advance();
             self.emit_const(Value::Str(String::new()));
@@ -244,18 +246,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 let t = self.advance();
                 let raw = self.lexeme(&t);
                 let mut unescaped = String::with_capacity(raw.len());
-                let bytes = raw.as_bytes();
-                let mut i = 0;
-                while i < bytes.len() {
-                    if (bytes[i] == b'{' && bytes.get(i + 1) == Some(&b'{'))
-                        || (bytes[i] == b'}' && bytes.get(i + 1) == Some(&b'}'))
-                    {
-                        unescaped.push(bytes[i] as char);
-                        i += 2;
-                    } else {
-                        let ch_len = if bytes[i] < 0x80 { 1 } else { utf8_char_len(bytes[i]) };
-                        unescaped.push_str(&raw[i..i + ch_len]);
-                        i += ch_len;
+                // Single pass so `{{` is seen in the raw text before any escape can produce a brace.
+                let mut chars = raw.chars().peekable();
+                while let Some(c) = chars.next() {
+                    match c {
+                        '{' if chars.peek() == Some(&'{') => { chars.next(); unescaped.push('{'); }
+                        '}' if chars.peek() == Some(&'}') => { chars.next(); unescaped.push('}'); }
+                        '\\' if !is_raw => super::types::push_escape(&mut unescaped, &mut chars),
+                        _ => unescaped.push(c),
                     }
                 }
                 self.emit_const(Value::Str(unescaped));

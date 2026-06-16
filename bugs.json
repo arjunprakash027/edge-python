@@ -2,8 +2,8 @@
   "_meta": {
     "source": "MicroPython tests/basics differential vs CPython 3.13",
     "verified": "each repro re-run through VM + python3",
-    "count": 18,
-    "fixed": "78 bugs fixed and migrated to vm.json (try/finally + with unwinding cluster; 11 builtin/parser/format divergences from rows 1-11 of the low-NEWLINE triage)"
+    "count": 13,
+    "fixed": "85 bugs fixed and migrated to vm.json (try/finally + with unwinding cluster; 11 builtin/parser/format divergences from rows 1-11 of the low-NEWLINE triage; generator_return, string_format_modulo_int %*d, seq_unpack list targets, class_getattr dunder-on-type, builtin_slice type identity, containment dict/set-led tuple, range sequence-unpack)"
   },
   "bugs": [
     {
@@ -13,14 +13,6 @@
       "repro": "def foo():\n    any((hit := i) == 8 for i in range(20))\n    return hit\nprint(foo())",
       "expected": "8",
       "actual": "19"
-    },
-    {
-      "id": "containment",
-      "category": "parser",
-      "summary": "A dict or set display as the first element of an unparenthesized tuple fails to parse, though tuples/dicts/sets are all supported.",
-      "repro": "x = {1: 2}, 3\nprint(x)",
-      "expected": "({1: 2}, 3)",
-      "actual": ""
     },
     {
       "id": "gen_yield_from",
@@ -52,14 +44,6 @@
       "summary": "Uses only supported features but bare 'yield' (no value) and 'yield from' as an expression value are rejected at parse time.",
       "repro": "def gen():\n    return 1\n    yield\nf = gen()\ndef run():\n    print((yield from f))\ntry:\n    next(run())\nexcept StopIteration:\n    print(\"SI\")",
       "expected": "1\nSI",
-      "actual": ""
-    },
-    {
-      "id": "seq_unpack",
-      "category": "parser",
-      "summary": "A list as an assignment target ([a, b] = ...) is rejected at parse time though it is valid Python using only supported features.",
-      "repro": "[a, b] = 100, 200\nprint(a, b)",
-      "expected": "100 200",
       "actual": ""
     },
     {
@@ -95,44 +79,12 @@
       "actual": "__VMERR__ RuntimeError: stack underflow"
     },
     {
-      "id": "string_format_modulo_int",
-      "category": "unsupported-feature",
-      "summary": "The '*' dynamic-width specifier in %-formatting (e.g. '%*d') is rejected as an unsupported format character on valid supported input.",
-      "repro": "print(\"%*d\" % (5, 10))",
-      "expected": "10",
-      "actual": "__VMERR__ ValueError: unsupported format character"
-    },
-    {
-      "id": "builtin_slice",
-      "category": "wrong-value",
-      "summary": "The builtin name 'slice' is bound to a constructor function rather than the slice type, so 'type(s) is slice' is False; also tuple/multi-dim subscripts like a[1:2,4:5] are parse-rejected.",
-      "repro": "class A:\n    def __getitem__(self, idx):\n        return idx\ns = A()[1:2:3]\nprint(type(s) is slice)",
-      "expected": "True",
-      "actual": "False"
-    },
-    {
-      "id": "class_getattr",
-      "category": "wrong-value",
-      "summary": "An instance attribute named __add__ blocks operator dispatch so c + 1 fails instead of using the class __add__ method (special methods should be looked up on the type).",
-      "repro": "class C:\n    def __init__(self):\n        self.__add__ = lambda: print('member')\n    def __add__(self, x):\n        print('method __add__')\n        return 0\nc = C()\nc + 1",
-      "expected": "method __add__",
-      "actual": "__VMERR__ TypeError: unsupported operand type(s) for +: 'object' and 'int'"
-    },
-    {
       "id": "fun_kwvarargs",
       "category": "wrong-value",
       "summary": "A call mixing a starred argument that is itself a function call with a keyword argument whose value is also a function call corrupts argument evaluation and raises TypeError: object is not callable.",
       "repro": "def f(*a, **k):\n    print(a, k)\ndef g(x):\n    return x\nf(*g([1, 2]), z=g(3))",
       "expected": "(1, 2) {'z': 3}",
       "actual": "__VMERR__ TypeError: object is not callable"
-    },
-    {
-      "id": "generator_return",
-      "category": "wrong-value",
-      "summary": "Exhausting a generator via explicit next() surfaces an uncatchable internal RuntimeError instead of a catchable StopIteration, so user except StopIteration never runs.",
-      "repro": "def gen():\n    yield 1\ng = gen()\nnext(g)\ntry:\n    next(g)\nexcept StopIteration:\n    print(\"ok\")",
-      "expected": "ok",
-      "actual": "__VMERR__ RuntimeError: StopIteration"
     },
     {
       "id": "list_sort",
@@ -149,6 +101,14 @@
       "repro": "s1 = s2 = set('abc')\ns1 |= set('ad')\nprint(s1 is s2, len(s1))",
       "expected": "True 4",
       "actual": "False 4"
+    },
+    {
+      "id": "gen_next_nested_arg",
+      "category": "stack-corruption",
+      "summary": "Calling next(gen) as a nested argument of another call (e.g. out.append(next(it))) corrupts the operand stack: the second such next raises StopIteration prematurely instead of yielding. A sequential a=next(it);b=next(it) or a for-loop over the same generator works. resume_coroutine splices the coroutine stack onto the outer CallMethod's partial frame. Latent pre-existing; surfaced once generator exhaustion became a catchable StopIteration.",
+      "repro": "def g():\n    yield 1\n    yield 2\ndef take(it):\n    out = []\n    out.append(next(it))\n    out.append(next(it))\n    return out\nprint(take(g()))",
+      "expected": "[1, 2]",
+      "actual": "__VMERR__ StopIteration"
     }
   ]
 }

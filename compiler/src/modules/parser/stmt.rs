@@ -5,7 +5,7 @@ use super::types::OpCode;
 
 use crate::modules::lexer::{Token, TokenType};
 
-use alloc::{string::{String, ToString}, vec};
+use alloc::{string::{String, ToString}, vec, vec::Vec};
 
 impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
@@ -268,6 +268,29 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.tokens.next();
                 false
             }
+            Some(TokenType::Lsqb) => {
+                // `[a, b] = rhs`: a list display followed by `=` is a sequence-unpack target.
+                let start = self.chunk.instructions.len();
+                self.expr();
+                if matches!(self.peek(), Some(TokenType::Equal))
+                    && let Some(targets) = self.list_display_targets(start) {
+                    self.advance();
+                    self.chunk.instructions.truncate(start); // drop the display's loads + BuildList
+                    self.expr();
+                    let mut count = 1u16;
+                    while self.eat_if(TokenType::Comma) {
+                        if matches!(self.peek(), Some(TokenType::Newline | TokenType::Endmarker) | None) { break; }
+                        self.expr();
+                        count += 1;
+                    }
+                    if count > 1 { self.chunk.emit(OpCode::BuildTuple, count); }
+                    self.chunk.emit(OpCode::UnpackSequence, targets.len() as u16);
+                    for t in targets { self.store_name(t); }
+                    false
+                } else {
+                    true // plain list display / comprehension statement
+                }
+            }
             _ => {
                 self.expr();
                 // `expr:` at statement level: suggest missing keyword instead of generic error.
@@ -338,6 +361,24 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             self.advance();
         }
         matches!(self.peek(), Some(TokenType::Equal))
+    }
+
+    /* Decodes a just-emitted `[a, b, ...]` display into bare target names; None unless every element is a plain name load. */
+    fn list_display_targets(&self, start: usize) -> Option<Vec<String>> {
+        let (last, loads) = self.chunk.instructions[start..].split_last()?;
+        if last.opcode != OpCode::BuildList { return None; }
+        let n = last.operand as usize;
+        if n == 0 || loads.len() != n { return None; }
+        let mut names = Vec::with_capacity(n);
+        for ld in loads {
+            let raw = self.chunk.names.get(ld.operand as usize)?;
+            match ld.opcode {
+                OpCode::LoadName => names.push(super::types::ssa_strip(raw).to_string()),
+                OpCode::LoadGlobal => names.push(raw.clone()),
+                _ => return None,
+            }
+        }
+        Some(names)
     }
 
     /* Name-led statement: assign, augmented-op, attr, index, call, or tuple unpack. */

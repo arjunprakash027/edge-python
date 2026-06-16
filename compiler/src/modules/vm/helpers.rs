@@ -164,6 +164,8 @@ impl<'a> VM<'a> {
             HeapObj::Tuple(v) => v.clone(),
             HeapObj::Set(v) => v.borrow().iter().cloned().collect(),
             HeapObj::FrozenSet(v) => v.iter().cloned().collect(),
+            // Range materialises to its ints, with the same budget cap as `*` spread.
+            HeapObj::Range(..) => self.iter_to_vec_for_spread(obj)?,
             HeapObj::Str(s) => {
                 let s = s.clone();
                 let out = self.str_to_char_vals(&s)?;

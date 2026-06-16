@@ -86,6 +86,8 @@ impl<'a> VM<'a> {
         let items: Vec<Val> = match self.heap.get(obj) {
             HeapObj::List(v) => v.borrow().clone(),
             HeapObj::Tuple(v) => v.clone(),
+            // Range materialises to its ints, with the same budget cap as `*` spread.
+            HeapObj::Range(..) => self.iter_to_vec_for_spread(obj)?,
             _ => return Err(cold_type("cannot unpack non-iterable")),
         };
         let before = (op >> 8) as usize;

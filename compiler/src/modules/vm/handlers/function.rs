@@ -11,6 +11,7 @@ fn constructor_native(name: &str) -> Option<super::super::types::NativeFnId> {
         "int" => Int, "float" => Float, "str" => Str, "bytes" => Bytes,
         "bool" => Bool, "list" => List, "tuple" => Tuple, "dict" => Dict,
         "set" => Set, "frozenset" => FrozenSet, "range" => Range, "type" => Type,
+        "slice" => Slice,
         _ => return None,
     })
 }

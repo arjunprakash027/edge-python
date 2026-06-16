@@ -3,7 +3,6 @@ Dunder dispatch: probe instance method, invoke with `self` prepended; `NotImplem
 */
 
 use super::*;
-use super::methods::AttrLookup;
 use crate::alloc::string::ToString;
 
 /* Single source of truth for opcode -> (forward, reflected) arithmetic dunder names. */
@@ -43,9 +42,13 @@ impl<'a> VM<'a> {
     pub(crate) fn try_call_dunder(&mut self, recv: Val, name: &str, args: &[Val], chunk: &SSAChunk, slots: &mut [Val]) -> Result<Option<Val>, VmErr> {
         // Built-in types route through their native handlers; dunder dispatch only fires on user instances.
         if !recv.is_heap() { return Ok(None); }
-        if !matches!(self.heap.get(recv), HeapObj::Instance(..)) { return Ok(None); }
+        let HeapObj::Instance(cls_val, _) = self.heap.get(recv) else { return Ok(None); };
+        let cls_val = *cls_val;
 
-        let Some(AttrLookup::InstanceMethod { recv, func, class }) = self.resolve_attr_silent(recv, name)? else { return Ok(None); };
+        // Special methods resolve on the type's MRO, bypassing the instance __dict__, like CPython.
+        let Some((func, class)) = self.lookup_class_member(cls_val, name) else { return Ok(None); };
+        // Only plain functions bind as methods; data attributes never dispatch implicitly.
+        if !(func.is_heap() && matches!(self.heap.get(func), HeapObj::Func(..))) { return Ok(None); }
 
         // Mirror `__init__` dispatch: depth guard before pushing so a recursive blow-up leaves no half-built frame.
         if self.depth >= self.max_calls { return Err(cold_depth()); }

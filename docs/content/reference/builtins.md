@@ -812,7 +812,7 @@ False
 
 ### slice
 
-`slice(stop)`, `slice(start, stop)`, `slice(start, stop, step)`: reusable slice value usable as a sequence index.
+`slice(stop)`, `slice(start, stop)`, `slice(start, stop, step)`: the `slice` type. Builds a reusable slice usable as a sequence index; `type(s) is slice` and `isinstance(s, slice)` hold.
 
 ```python
 xs = [10, 20, 30, 40, 50]

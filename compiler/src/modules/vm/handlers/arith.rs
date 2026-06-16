@@ -163,14 +163,29 @@ impl<'a> VM<'a> {
                 }
                 i += 1;
             }
-            // width / .precision (digits only; `*` not supported)
+            // width: digits, or `*` reads it (with sign) from the next argument.
             let mut width = String::new();
-            while i < chars.len() && chars[i].is_ascii_digit() { width.push(chars[i]); i += 1; }
+            if i < chars.len() && chars[i] == '*' {
+                i += 1;
+                let w = self.star_arg_int(&args, &mut ai)?;
+                if w < 0 { left = true; } // negative `*` width left-aligns, like CPython
+                width = crate::s!(int w.unsigned_abs());
+            } else {
+                while i < chars.len() && chars[i].is_ascii_digit() { width.push(chars[i]); i += 1; }
+            }
             let mut prec = String::new();
             let mut has_prec = false;
             if i < chars.len() && chars[i] == '.' {
-                has_prec = true; i += 1;
-                while i < chars.len() && chars[i].is_ascii_digit() { prec.push(chars[i]); i += 1; }
+                i += 1;
+                if i < chars.len() && chars[i] == '*' {
+                    i += 1;
+                    let p = self.star_arg_int(&args, &mut ai)?;
+                    // Negative `.*` precision is ignored, matching CPython.
+                    if p >= 0 { has_prec = true; prec = crate::s!(int p); }
+                } else {
+                    has_prec = true;
+                    while i < chars.len() && chars[i].is_ascii_digit() { prec.push(chars[i]); i += 1; }
+                }
             }
             if i >= chars.len() { return Err(cold_value("incomplete format")); }
             let conv = chars[i]; i += 1;
@@ -210,6 +225,15 @@ impl<'a> VM<'a> {
             return Err(cold_type("not all arguments converted during string formatting"));
         }
         self.heap.alloc(HeapObj::Str(out))
+    }
+
+    /* Reads a `*` width/precision argument as an i64; non-integers raise TypeError like CPython. */
+    fn star_arg_int(&self, args: &[Val], ai: &mut usize) -> Result<i64, VmErr> {
+        let v = *args.get(*ai).ok_or(cold_type("not enough arguments for format string"))?;
+        *ai += 1;
+        if v.is_bool() { return Ok(v.as_bool() as i64); }
+        if v.is_int() { return Ok(v.as_int()); }
+        Err(cold_type("* wants int"))
     }
 
     /* `%d`/`%x` on a user instance defers to its `__int__`, matching CPython. */

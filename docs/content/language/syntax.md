@@ -43,11 +43,16 @@ print(a, b)
 # Star pattern
 first, *middle, last = [1, 2, 3, 4, 5]
 print(first, middle, last)
+
+# List-form targets unpack the same way
+[x, y] = (10, 20)
+print(x, y)
 ```
 
 ```text Output
 1 2
 1 [2, 3, 4] 5
+10 20
 ```
 
 ### Walrus operator
@@ -172,6 +177,25 @@ answer is 43
 ```
 
 Full format mini-language: `[[fill]align][sign][#][0][width][,|_][.precision][type]`, with `!r` / `!s` / `!a` conversions before the spec. Type chars: `b o c d e E f F g G n s x X %`. The `,` and `_` group digits (every three for decimals/floats; `_` groups `b`/`o`/`x`/`X` every four).
+
+f-string literals process [escape sequences](#escape-sequences) like any string. The `\r` carriage return rewinds the cursor to the line start, so a single line can redraw in place — here a progress bar. `sleep` (from the `time` module) paces the frames, and `flush=True` forces each one out immediately.
+
+```python
+from time import sleep
+
+loader_len: int = 11
+char: dict[str, str] = { "full": "█", "empty": "░" }
+
+for n in range(loader_len + 1):
+    loader: str = char["full"] * n + char["empty"] * (loader_len - n)
+    print(f"\r{loader}", end="", flush=True); sleep(0.07)
+```
+
+```text Output
+███████████
+```
+
+Each `\r` overwrites the previous bar, so the terminal shows one line filling from empty to full; the block above is the final frame.
 
 ## Booleans and None
 

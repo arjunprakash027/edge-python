@@ -223,15 +223,6 @@ impl<'a> VM<'a> {
             .ok_or_else(|| VmErr::Attribute(s!("'", str ty, "' object has no attribute '", str name, "'")))
     }
 
-    // `resolve_attr` that swallows `AttributeError` into `None`; other VmErrs still propagate, dunder probes need a miss to be silent.
-    pub(crate) fn resolve_attr_silent(&self, obj: Val, name: &str) -> Result<Option<AttrLookup>, VmErr> {
-        match self.resolve_attr(obj, name) {
-            Ok(lookup) => Ok(Some(lookup)),
-            Err(VmErr::Attribute(_)) => Ok(None),
-            Err(other) => Err(other),
-        }
-    }
-
     /* instance fallback via `__getattr__(name)`. Called by `LoadAttr` / `CallMethod` after the normal lookup raises `AttributeError`. */
     pub(crate) fn try_getattr_fallback(&mut self, obj: Val, name: &str, chunk: &SSAChunk, slots: &mut [Val]) -> Result<Option<Val>, VmErr> {
         if !obj.is_heap() || !matches!(self.heap.get(obj), HeapObj::Instance(..)) { return Ok(None); }

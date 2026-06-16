@@ -415,7 +415,8 @@ impl<'a> VM<'a> {
             self.push(result);
             Ok(())
         } else {
-            match default { Some(d) => { self.push(d); Ok(()) }, None => Err(VmErr::Runtime("StopIteration")) }
+            // Catchable StopIteration on generator exhaustion, mirroring the empty-list path above.
+            match default { Some(d) => { self.push(d); Ok(()) }, None => Err(VmErr::Raised(s!("StopIteration"))) }
         }
     }
 

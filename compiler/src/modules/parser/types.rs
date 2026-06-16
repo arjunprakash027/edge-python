@@ -408,7 +408,7 @@ impl Diagnostic {
 }
 
 /* Scan only the prefix chars before the opening quote; the body itself may legally contain 'r'/'R'. */
-fn has_raw_prefix(s: &str) -> bool {
+pub(super) fn has_raw_prefix(s: &str) -> bool {
     s.bytes()
         .take_while(|b| !matches!(b, b'"' | b'\''))
         .any(|b| matches!(b, b'r' | b'R'))
@@ -491,48 +491,50 @@ pub(super) fn parse_bytes_literal(s: &str) -> alloc::vec::Vec<u8> {
 fn unescape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' { push_escape(&mut out, &mut chars); } else { out.push(c); }
+    }
+    out
+}
 
+/* Decodes one backslash escape (cursor already past the `\`) into `out`; unknown escapes keep the backslash. */
+pub(super) fn push_escape(out: &mut String, chars: &mut core::iter::Peekable<core::str::Chars>) {
     let take_hex = |chars: &mut core::iter::Peekable<core::str::Chars>, n: usize| -> char {
         let hex: String = chars.by_ref().take(n).collect();
         u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32).unwrap_or('\u{FFFD}')
     };
-
-    while let Some(c) = chars.next() {
-        if c != '\\' { out.push(c); continue; }
-        match chars.next() {
-            Some('n') => out.push('\n'),
-            Some('t') => out.push('\t'),
-            Some('r') => out.push('\r'),
-            Some('a') => out.push('\u{07}'),
-            Some('b') => out.push('\u{08}'),
-            Some('f') => out.push('\u{0C}'),
-            Some('v') => out.push('\u{0B}'),
-            Some('\\') => out.push('\\'),
-            Some('\'') => out.push('\''),
-            Some('"') => out.push('"'),
-            Some('x') => out.push(take_hex(&mut chars, 2)),
-            Some('u') => out.push(take_hex(&mut chars, 4)),
-            Some('U') => out.push(take_hex(&mut chars, 8)),
-            // Octal: up to 3 digits.
-            Some(c @ '0'..='7') => {
-                let mut digits = String::from(c);
-                while digits.len() < 3 && matches!(chars.peek(), Some('0'..='7')) {
-                    digits.push(chars.next().unwrap());
-                }
-                let code = u32::from_str_radix(&digits, 8).unwrap_or(0);
-                out.push(char::from_u32(code).unwrap_or('\u{FFFD}'));
+    match chars.next() {
+        Some('n') => out.push('\n'),
+        Some('t') => out.push('\t'),
+        Some('r') => out.push('\r'),
+        Some('a') => out.push('\u{07}'),
+        Some('b') => out.push('\u{08}'),
+        Some('f') => out.push('\u{0C}'),
+        Some('v') => out.push('\u{0B}'),
+        Some('\\') => out.push('\\'),
+        Some('\'') => out.push('\''),
+        Some('"') => out.push('"'),
+        Some('x') => out.push(take_hex(chars, 2)),
+        Some('u') => out.push(take_hex(chars, 4)),
+        Some('U') => out.push(take_hex(chars, 8)),
+        // Octal: up to 3 digits.
+        Some(c @ '0'..='7') => {
+            let mut digits = String::from(c);
+            while digits.len() < 3 && matches!(chars.peek(), Some('0'..='7')) {
+                digits.push(chars.next().unwrap());
             }
-            Some(c) => { out.push('\\'); out.push(c); }
-            None => out.push('\\'),
+            let code = u32::from_str_radix(&digits, 8).unwrap_or(0);
+            out.push(char::from_u32(code).unwrap_or('\u{FFFD}'));
         }
+        Some(c) => { out.push('\\'); out.push(c); }
+        None => out.push('\\'),
     }
-    out
 }
 
 // Builtin types registered as Type heap objects at VM init.
 pub const BUILTIN_TYPES: &[&str] = &[
     "int", "float", "str", "bytes", "bool", "list",
-    "tuple", "dict", "set", "frozenset", "range", "type", "NoneType",
+    "tuple", "dict", "set", "frozenset", "range", "slice", "type", "NoneType",
     "Exception", "BaseException",
     "ValueError", "TypeError", "NameError", "KeyError",
     "IndexError", "AttributeError", "RuntimeError",

@@ -171,7 +171,7 @@ a   bc
 
 ### Formatting
 
-`str.format(*args)` fills positional fields (`{}` auto-numbered, `{0}` explicit) with the f-string [format mini-language](/language/syntax#f-strings) after `:`. Keyword fields (`"{name}".format(name=...)`) are not supported, use positional indices. The `%` operator does printf-style formatting (`%s %r %d %i %x %X %o %f %e %g %c %%`, with flags / width / `.precision`); a tuple spreads, any other value is a single argument.
+`str.format(*args)` fills positional fields (`{}` auto-numbered, `{0}` explicit) with the f-string [format mini-language](/language/syntax#f-strings) after `:`. Keyword fields (`"{name}".format(name=...)`) are not supported, use positional indices. The `%` operator does printf-style formatting (`%s %r %d %i %x %X %o %f %e %g %c %%`, with flags / width / `.precision`, where `*` reads the width or precision from the next argument); a tuple spreads, any other value is a single argument.
 
 ```python
 print("{} and {}".format("a", "b"))
