@@ -145,7 +145,7 @@ print('\101') # octal escape, 'A'
 ```text Output
 
  line break
-	 tab
+     tab
 A hex
 é unicode
 A

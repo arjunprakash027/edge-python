@@ -19,6 +19,25 @@ function fromB64(b64) {
 const HTML_ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;' }
 const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => HTML_ESC[c])
 
+// Terminal control chars: `\r`/`\b`/`\t`/`\f` move the cursor and `\n` breaks the line.
+function applyTerminalControls(text) {
+    if (!/[\r\b\t\f]/.test(text)) return text
+    const lines = []
+    let line = ''
+    let col = 0
+    const put = (c) => { line = line.slice(0, col) + c + line.slice(col + 1); col += 1 }
+    for (const ch of text) {
+        if (ch === '\n') { lines.push(line); line = ''; col = 0 }
+        else if (ch === '\r') { col = 0 }
+        else if (ch === '\b') { if (col > 0) col -= 1 }
+        else if (ch === '\f') { lines.push(line); line = ''; col = 0 }
+        else if (ch === '\t') { do { put(' ') } while (col % 4) } // tab stop 4, matching the editor
+        else { put(ch) }
+    }
+    lines.push(line)
+    return lines.join('\n')
+}
+
 const PlayIcon = () => (
     <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" fill="none" height="11.5" aria-hidden="true" focusable="false">
         <path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" />
@@ -88,7 +107,7 @@ export function Playground({ code, output }) {
     const onRunClick = () => runCode(editorRef.current?.getCode() ?? defaultCode)
 
     const fmt = (ms) => (ms < 1000 ? `${ms.toFixed(0)}ms` : `${(ms / 1000).toFixed(2)}s`)
-    const liveText = result ? result.text.replace(/\n$/, '') : ''
+    const liveText = result ? applyTerminalControls(result.text).replace(/\n$/, '') : ''
     const differs = result && !result.error && liveText !== defaultText
     const termBody = result ? [liveText, result.error].filter(Boolean).join('\n') : defaultText
     const phaseLabel = { runtime: 'loading runtime…', worker: 'initializing worker…', running: 'running…' }
