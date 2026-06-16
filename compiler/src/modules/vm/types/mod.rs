@@ -197,46 +197,48 @@ pub enum HeapObj {
 
 pub use crate::modules::vm::handlers::methods::BuiltinMethodId;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub enum NativeFnId {
-    Print, Len, Abs, Str, Int, Float, Bool, Type, Chr, Ord,
-    Range, Round, Min, Max, Sum, Sorted, Enumerate, Zip,
-    List, Tuple, Dict, Set, IsInstance, IsSubclass, Input, All, Any,
-    Bin, Oct, Hex, Divmod, Pow, Repr, Reversed, Callable, Id,
-    Hash, Format, GetAttr, HasAttr, SetAttr, DelAttr, Next, Run, Sleep,
-    Receive, Map, Filter, Iter, Bytes, ImportModule, Slice, Vars,
-    Gather, WithTimeout, Cancel,
-    BytesFromHex, IntFromBytes, IntToBytes, FrozenSet,
-    Globals, Locals,
-    Super,
-    Property,
-    StaticMethod,
-    Frame,
+// Single source of truth per builtin: variant => name, arity (`var` = variadic, validated in handler).
+macro_rules! builtins {
+    ( $( $variant:ident => $name:literal, $arity:tt );* $(;)? ) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum NativeFnId { $( $variant ),* }
+
+        impl NativeFnId {
+            // All variants in declaration order; drives global registration.
+            pub const ALL: &'static [NativeFnId] = &[ $( NativeFnId::$variant ),* ];
+            // Python-visible name.
+            pub fn name(self) -> &'static str { match self { $( NativeFnId::$variant => $name ),* } }
+            // Fixed positional arity; None means the handler validates the count.
+            pub fn arity(self) -> Option<u16> { match self { $( NativeFnId::$variant => builtins!(@a $arity) ),* } }
+        }
+    };
+    (@a var) => { None };
+    (@a $n:literal) => { Some($n) };
 }
 
-impl NativeFnId {
-    /* Name table indexed by `self as usize`; order MUST match the enum above. */
-    pub fn name(self) -> &'static str {
-        const NAMES: &[&str] = &[
-            "print", "len", "abs", "str", "int", "float", "bool", "type", "chr", "ord",
-            "range", "round", "min", "max", "sum", "sorted", "enumerate", "zip",
-            "list", "tuple", "dict", "set", "isinstance", "issubclass", "input", "all", "any",
-            "bin", "oct", "hex", "divmod", "pow", "repr", "reversed", "callable", "id",
-            "hash", "format", "getattr", "hasattr", "setattr", "delattr",
-            "next", "run", "sleep",
-            "receive", "map", "filter", "iter", "bytes", "import_module",
-            "slice", "vars",
-            "gather", "with_timeout", "cancel",
-            "bytes_fromhex", "int_from_bytes", "int_to_bytes", "frozenset",
-            "globals", "locals",
-            "super",
-            "property",
-            "staticmethod",
-            "frame",
-        ];
-        NAMES[self as usize]
-    }
+builtins! {
+    Print => "print", var;
+    Len => "len", 1; Abs => "abs", 1; Str => "str", var; Int => "int", var; Float => "float", var;
+    Bool => "bool", var; Type => "type", 1; Chr => "chr", 1; Ord => "ord", 1;
+    Range => "range", var; Round => "round", var; Min => "min", var; Max => "max", var; Sum => "sum", var;
+    Sorted => "sorted", 1; Enumerate => "enumerate", var; Zip => "zip", var;
+    List => "list", var; Tuple => "tuple", var; Dict => "dict", var; Set => "set", var;
+    IsInstance => "isinstance", 2; IsSubclass => "issubclass", 2; Input => "input", 0;
+    All => "all", var; Any => "any", var;
+    Bin => "bin", 1; Oct => "oct", 1; Hex => "hex", 1; Divmod => "divmod", 2; Pow => "pow", var;
+    Repr => "repr", 1; Reversed => "reversed", 1; Callable => "callable", 1; Id => "id", 1; Hash => "hash", 1;
+    Format => "format", var; GetAttr => "getattr", var; HasAttr => "hasattr", 2; SetAttr => "setattr", 3; DelAttr => "delattr", 2;
+    Next => "next", var; Run => "run", var; Sleep => "sleep", 1;
+    Receive => "receive", 0; Map => "map", var; Filter => "filter", 2; Iter => "iter", var;
+    Bytes => "bytes", var; ImportModule => "import_module", 1; Slice => "slice", var; Vars => "vars", 1;
+    Gather => "gather", var; WithTimeout => "with_timeout", 2; Cancel => "cancel", 1;
+    BytesFromHex => "bytes_fromhex", 1; IntFromBytes => "int_from_bytes", 2; IntToBytes => "int_to_bytes", 3; FrozenSet => "frozenset", var;
+    Globals => "globals", 0; Locals => "locals", 0;
+    Super => "super", 0;
+    Property => "property", var;
+    StaticMethod => "staticmethod", 1;
+    Frame => "frame", var;
 }
 
 /* Content-hashed set: equal-by-content values dedup in O(1) regardless of heap identity. */

@@ -333,32 +333,7 @@ impl<'a> VM<'a> {
             vm.globals.insert("NotImplemented_0".to_string(), ni);
         }
         // Builtins as first-class NativeFn values so they can be rebound/passed around.
-        let builtin_fns: &[NativeFnId] = &[
-            NativeFnId::Print, NativeFnId::Len, NativeFnId::Abs, NativeFnId::Str,
-            NativeFnId::Int, NativeFnId::Float, NativeFnId::Bool, NativeFnId::Type,
-            NativeFnId::Chr, NativeFnId::Ord, NativeFnId::Range, NativeFnId::Round,
-            NativeFnId::Min, NativeFnId::Max, NativeFnId::Sum, NativeFnId::Sorted,
-            NativeFnId::Enumerate, NativeFnId::Zip, NativeFnId::List, NativeFnId::Tuple,
-            NativeFnId::Dict, NativeFnId::Set, NativeFnId::IsInstance, NativeFnId::IsSubclass, NativeFnId::Input,
-            NativeFnId::All, NativeFnId::Any, NativeFnId::Bin, NativeFnId::Oct,
-            NativeFnId::Hex, NativeFnId::Divmod, NativeFnId::Pow, NativeFnId::Repr,
-            NativeFnId::Reversed, NativeFnId::Callable, NativeFnId::Id, NativeFnId::Hash,
-            NativeFnId::Format, NativeFnId::GetAttr, NativeFnId::HasAttr,
-            NativeFnId::SetAttr, NativeFnId::DelAttr, NativeFnId::Next,
-            NativeFnId::Run, NativeFnId::Sleep, NativeFnId::Receive,
-            NativeFnId::Map, NativeFnId::Filter, NativeFnId::Iter,
-            NativeFnId::Bytes, NativeFnId::ImportModule,
-            NativeFnId::Slice, NativeFnId::Vars,
-            NativeFnId::Gather, NativeFnId::WithTimeout, NativeFnId::Cancel,
-            NativeFnId::BytesFromHex, NativeFnId::IntFromBytes,
-            NativeFnId::IntToBytes, NativeFnId::FrozenSet,
-            NativeFnId::Globals, NativeFnId::Locals,
-            NativeFnId::Super,
-            NativeFnId::Property,
-            NativeFnId::StaticMethod,
-            NativeFnId::Frame,
-        ];
-        for &id in builtin_fns {
+        for &id in NativeFnId::ALL {
             let name = id.name();
             if BUILTIN_TYPES.contains(&name) { continue; } // type names stay Type objects
             if let Ok(v) = vm.heap.alloc(HeapObj::NativeFn(id)) {

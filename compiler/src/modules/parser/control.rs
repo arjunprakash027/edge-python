@@ -199,7 +199,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         // Length check: exact without star, >= (count-1) with star.
         let len_min = if star_count > 0 { item_count - 1 } else { item_count };
         self.chunk.emit(OpCode::LoadName, subj);
-        self.chunk.emit(OpCode::CallLen, 0);
+        self.chunk.emit(OpCode::CallLen, 1);
         let ci = self.chunk.push_const(super::types::Value::Int(len_min as i64));
         self.chunk.emit(OpCode::LoadConst, ci);
         let cmp = if star_count > 0 { OpCode::GtEq } else { OpCode::Eq };
@@ -245,14 +245,14 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 let cs = self.chunk.push_const(super::types::Value::Int(item_idx));
                 self.chunk.emit(OpCode::LoadConst, cs);
                 self.chunk.emit(OpCode::LoadName, subj);
-                self.chunk.emit(OpCode::CallLen, 0);
+                self.chunk.emit(OpCode::CallLen, 1);
                 let cend = self.chunk.push_const(super::types::Value::Int(suffix));
                 self.chunk.emit(OpCode::LoadConst, cend);
                 self.chunk.emit(OpCode::Sub, 0);
                 self.chunk.emit(OpCode::LoadNone, 0);
                 self.chunk.emit(OpCode::BuildSlice, 3);
                 self.chunk.emit(OpCode::GetItem, 0);
-                self.chunk.emit(OpCode::CallList, 0);
+                self.chunk.emit(OpCode::CallList, 1);
                 self.chunk.emit(OpCode::StoreName, item_subj);
             } else {
                 // Negative index for items after the star.
@@ -485,7 +485,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 self.chunk.emit(OpCode::Dup, 0);
                 self.expr();
                 let isinst_pos = self.last_end as u32;
-                self.chunk.emit(OpCode::CallIsInstance, 0);
+                self.chunk.emit(OpCode::CallIsInstance, 2);
                 self.chunk.record_call_pos(isinst_pos);
                 next_arm_jump = Some(self.emit_jump(OpCode::JumpIfFalse));
 

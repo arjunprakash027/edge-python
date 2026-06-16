@@ -240,7 +240,7 @@ False True
 
 ### list, tuple, set, frozenset, dict
 
-`list`, `tuple`, `set`, `frozenset` accept any iterable: list, tuple, set, frozenset, dict (keys), range, bytes, str, generator, coroutine. Share an `extract_iter` helper, so all constructors are interchangeable.
+`list`, `tuple`, `set`, `frozenset` accept any iterable: list, tuple, set, frozenset, dict (keys), range, bytes, str, generator, coroutine. Share an `extract_iter` helper, so all constructors are interchangeable. With no argument, each builds an empty one.
 
 ```python
 print(list("abc"))

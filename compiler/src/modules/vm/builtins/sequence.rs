@@ -492,7 +492,8 @@ impl<'a> VM<'a> {
     }
 
     // Materialise an iterable to a list, strings -> chars, ranges eager, coroutines drained.
-    pub fn call_list(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+    pub fn call_list(&mut self, argc: u16, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+        if argc == 0 { return self.alloc_and_push_list(Vec::new()); } // `list()` is the empty list.
         let o = self.pop()?;
         // user-defined iterable wins over the built-in dispatch.
         if let Some(items) = self.iter_to_vec_op(o, chunk, slots)? {
@@ -528,7 +529,8 @@ impl<'a> VM<'a> {
         self.alloc_and_push_list(items)
     }
 
-    pub fn call_tuple(&mut self, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+    pub fn call_tuple(&mut self, argc: u16, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+        if argc == 0 { return self.alloc_and_push_tuple(Vec::new()); } // `tuple()` is the empty tuple.
         let o = self.pop()?;
         if let Some(items) = self.iter_to_vec_op(o, chunk, slots)? {
             return self.alloc_and_push_tuple(items);

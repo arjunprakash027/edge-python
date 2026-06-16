@@ -30,9 +30,31 @@ fn native_is_impure(id: super::super::types::NativeFnId) -> bool {
     )
 }
 
+// Fused builtin opcode -> its id (plain-`pos+kw` operand ops); powers the shared arity guard.
+fn fused_native(op: OpCode) -> Option<super::super::types::NativeFnId> {
+    use super::super::types::NativeFnId as F;
+    Some(match op {
+        OpCode::CallLen => F::Len, OpCode::CallAbs => F::Abs, OpCode::CallStr => F::Str, OpCode::CallInt => F::Int,
+        OpCode::CallType => F::Type, OpCode::CallFloat => F::Float, OpCode::CallBool => F::Bool, OpCode::CallRound => F::Round,
+        OpCode::CallSum => F::Sum, OpCode::CallZip => F::Zip, OpCode::CallList => F::List, OpCode::CallTuple => F::Tuple,
+        OpCode::CallSet => F::Set, OpCode::CallInput => F::Input, OpCode::CallIsInstance => F::IsInstance, OpCode::CallChr => F::Chr,
+        OpCode::CallOrd => F::Ord, OpCode::CallAll => F::All, OpCode::CallAny => F::Any, OpCode::CallBin => F::Bin,
+        OpCode::CallOct => F::Oct, OpCode::CallHex => F::Hex, OpCode::CallDivmod => F::Divmod, OpCode::CallPow => F::Pow,
+        OpCode::CallRepr => F::Repr, OpCode::CallReversed => F::Reversed, OpCode::CallCallable => F::Callable,
+        OpCode::CallId => F::Id, OpCode::CallHash => F::Hash,
+        _ => return None,
+    })
+}
+
 impl<'a> VM<'a> {
     /* Dispatch every function-shaped opcode (Call, MakeFunction, builtins). */
     pub(crate) fn handle_function(&mut self, op: OpCode, operand: u16, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+        // Fused builtins skip dispatch_native's arity check; validate fixed-arity ones so a wrong count is a clean TypeError.
+        if let Some(id) = fused_native(op)
+            && let Some(n) = id.arity()
+            && operand != n {
+            return Err(cold_type("wrong number of arguments to builtin"));
+        }
         match op {
             OpCode::Call => self.exec_call(operand, chunk, slots),
             OpCode::MakeFunction | OpCode::MakeCoroutine => self.exec_make_function(op, operand, chunk, slots),
@@ -40,14 +62,14 @@ impl<'a> VM<'a> {
             OpCode::CallAbs => self.call_abs(),
             OpCode::CallStr => self.call_str(operand, chunk, slots),
             OpCode::CallInt => self.call_int(operand, chunk, slots),
-            OpCode::CallFloat => self.call_float(),
+            OpCode::CallFloat => self.call_float(operand),
             OpCode::CallBool => self.call_bool(operand, chunk, slots),
             OpCode::CallType => self.call_type(),
             OpCode::CallChr => self.call_chr(),
             OpCode::CallOrd => self.call_ord(),
             OpCode::CallSorted => self.call_sorted(false),
-            OpCode::CallList => self.call_list(chunk, slots),
-            OpCode::CallTuple => self.call_tuple(chunk, slots),
+            OpCode::CallList => self.call_list(operand, chunk, slots),
+            OpCode::CallTuple => self.call_tuple(operand, chunk, slots),
             OpCode::CallEnumerate => self.call_enumerate(operand),
             OpCode::CallIsInstance => self.call_isinstance(),
             OpCode::CallRange => self.call_range(operand),
@@ -712,33 +734,7 @@ impl<'a> VM<'a> {
         let argc = positional.len() as u16;
 
         // Pre-validate fixed arity to keep the stack clean on error.
-        let expected: Option<u16> = match id {
-            Input | Receive => Some(0),
-            Len | Abs | Str | Int | Float | Bool | Type | Chr | Ord
-            | Sorted | List | Tuple | Bin | Oct | Hex
-            | Repr | Reversed | Callable | Id | Hash | Sleep => Some(1),
-            // Enumerate (start), Next (default), Iter (sentinel) accept an optional 2nd arg; validated in their handlers.
-            Enumerate | Next | Iter => None,
-            Divmod | IsInstance | IsSubclass | HasAttr | Filter | DelAttr => Some(2),
-            Map => None, // fn + one-or-more iterables; validated in call_map.
-            SetAttr => Some(3),
-            WithTimeout => Some(2),
-            Cancel => Some(1),
-            BytesFromHex => Some(1),
-            IntFromBytes => Some(2),
-            IntToBytes => Some(3),
-            Globals | Locals | Super => Some(0),
-            Property => None, // 1 or 2 args, validated in `call_property`.
-            StaticMethod => Some(1),
-            Bytes => None, // 0/1/2-arg: bytes() | bytes(n|iter) | bytes(str, "utf-8")
-            Slice => None, // 1/2/3-arg
-            Gather => None, // variadic
-            FrozenSet => None, // 0/1-arg
-            Vars => Some(1),
-            ImportModule => Some(1),
-            _ => None,
-        };
-        if let Some(n) = expected
+        if let Some(n) = id.arity()
             && argc != n { return Err(cold_type("wrong number of arguments to builtin")); }
 
         for &v in positional { self.push(v); }
@@ -770,15 +766,15 @@ impl<'a> VM<'a> {
             Abs => self.call_abs(),
             Str => self.call_str(argc, chunk, slots),
             Int => self.call_int(argc, chunk, slots),
-            Float => self.call_float(),
+            Float => self.call_float(argc),
             Bool => self.call_bool(argc, chunk, slots),
             Type => self.call_type(),
             Chr => self.call_chr(),
             Ord => self.call_ord(),
             Sorted => self.call_sorted_with_key(sort_key, sort_reverse, chunk, slots),
             Enumerate => self.call_enumerate(argc),
-            List => self.call_list(chunk, slots),
-            Tuple => self.call_tuple(chunk, slots),
+            List => self.call_list(argc, chunk, slots),
+            Tuple => self.call_tuple(argc, chunk, slots),
             Bin => self.call_bin(),
             Oct => self.call_oct(),
             Hex => self.call_hex(),

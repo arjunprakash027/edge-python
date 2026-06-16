@@ -165,7 +165,8 @@ impl<'a> VM<'a> {
     }
 
     /* Converts int or parseable string to floating point. */
-    pub fn call_float(&mut self) -> Result<(), VmErr> {
+    pub fn call_float(&mut self, argc: u16) -> Result<(), VmErr> {
+        if argc == 0 { self.push(Val::float(0.0)); return Ok(()); } // `float()` is 0.0.
         let o = self.pop()?;
         let f = if o.is_float() { o.as_float() }
             else if o.is_bool() { o.as_bool() as i64 as f64 }
