@@ -3,6 +3,7 @@ Pure-text editor on CodeJar. We own keys, auto-pair, selection-wrap, paste/drop,
 */
 
 import { CodeJar } from 'codejar';
+import { escapeHtml } from './shiki';
 
 const MAX_LINES = 999;
 const TAB_SIZE = 4;
@@ -19,8 +20,6 @@ export function createEditor({ ed, defaultCode, onRun, highlight }) {
     const WS = /[ \t]/;
     // `decreaseIndentPattern`, dedent on `:`.
     const DEDENT_RE = /^\s*(?:elif|else|except|finally|case)\b[^:]*:$/;
-    const HTML_ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
-    const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => HTML_ESC[c]);
 
     // pure helpers
 
@@ -359,7 +358,7 @@ export function createEditor({ ed, defaultCode, onRun, highlight }) {
         const trimmed = snippet.replace(/\n+$/, '');
         return {
             plain: '```python\n' + trimmed + '\n```',
-            html: `<pre><code class="language-python">${escapeHtml(trimmed)}</code></pre>`,
+            html: `<pre><code class="language-python">${escapeHtml(trimmed, true)}</code></pre>`,
             collapsed,
         };
     };

@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Pre, Code, Button } from 'nextra/components'
 import { run } from './runtime'
+import { escapeHtml } from './shiki'
 
 function fromB64(b64) {
     if (!b64) return ''
@@ -14,10 +15,6 @@ function fromB64(b64) {
         return ''
     }
 }
-
-// Mirrors shiki.js's not-ready output so the seeded plain text matches CodeJar's first paint byte-for-byte (no flash).
-const HTML_ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;' }
-const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => HTML_ESC[c])
 
 // Terminal control chars: `\r`/`\b`/`\t`/`\f` move the cursor and `\n` breaks the line.
 function applyTerminalControls(text) {

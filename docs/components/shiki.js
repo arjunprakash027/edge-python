@@ -1,7 +1,8 @@
 // Client-side Shiki highlighter (github-light/dark, matches Nextra). createHighlight() returns sync highlight(text) → token-span HTML for CodeJar; re-renders on Shiki ready + .dark toggle.
 
-const HTML_ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;' }
-const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => HTML_ESC[c])
+// Shared HTML-escape (editor/playground import this); `quotes` also encodes `"` for attribute-safe output.
+const HTML_ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }
+export const escapeHtml = (s, quotes = false) => s.replace(quotes ? /[&<>"]/g : /[&<>]/g, (c) => HTML_ESC[c])
 
 let hlPromise = null
 function getHighlighter() {
