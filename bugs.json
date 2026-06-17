@@ -2,8 +2,8 @@
   "_meta": {
     "source": "MicroPython tests/basics differential vs CPython 3.13",
     "verified": "each repro re-run through VM + python3",
-    "count": 13,
-    "fixed": "85 bugs fixed and migrated to vm.json (try/finally + with unwinding cluster; 11 builtin/parser/format divergences from rows 1-11 of the low-NEWLINE triage; generator_return, string_format_modulo_int %*d, seq_unpack list targets, class_getattr dunder-on-type, builtin_slice type identity, containment dict/set-led tuple, range sequence-unpack)"
+    "count": 9,
+    "fixed": "89 bugs fixed and migrated to vm.json (try/finally + with unwinding cluster; 11 builtin/parser/format divergences from rows 1-11 of the low-NEWLINE triage; generator_return, string_format_modulo_int %*d, seq_unpack list targets, class_getattr dunder-on-type, builtin_slice type identity, containment dict/set-led tuple, range sequence-unpack; yield-from-as-expression cluster: gen_yield_from + gen_yield_from_ducktype + gen_yield_from_exc + gen_yield_from_stopped via a parse_atom Yield arm plus a LoadYieldFrom opcode that carries the subiterator return/StopIteration value, 40 regression cases)"
   },
   "bugs": [
     {
@@ -13,38 +13,6 @@
       "repro": "def foo():\n    any((hit := i) == 8 for i in range(20))\n    return hit\nprint(foo())",
       "expected": "8",
       "actual": "19"
-    },
-    {
-      "id": "gen_yield_from",
-      "category": "parser",
-      "summary": "'yield from' used as an expression whose value is consumed (print((yield from gen()))) is rejected at parse time, though yield from as a statement works and uses only supported features.",
-      "repro": "def gen():\n    yield 1\ndef gen2():\n    print((yield from gen()))\nprint(list(gen2()))",
-      "expected": "None\n[1]",
-      "actual": ""
-    },
-    {
-      "id": "gen_yield_from_ducktype",
-      "category": "parser",
-      "summary": "'yield from' used as an expression (ret = yield from MyIter()) is rejected at parse time even though that construct uses only supported features; the parser bug blocks the whole file.",
-      "repro": "class MyIter:\n    def __iter__(self):\n        return self\n    def __next__(self):\n        raise StopIteration(42)\ndef gen4():\n    global ret\n    ret = yield from MyIter()\nret = None\nprint(list(gen4()))\nprint(ret)",
-      "expected": "[]\n42",
-      "actual": ""
-    },
-    {
-      "id": "gen_yield_from_exc",
-      "category": "parser",
-      "summary": "Uses only supported features (yield from, exception propagation) but 'yield from' as an expression value is rejected at parse time.",
-      "repro": "def gen():\n    yield 1\n    raise ValueError\ndef gen2():\n    try:\n        print((yield from gen()))\n    except ValueError:\n        print(\"caught\")\nprint(list(gen2()))",
-      "expected": "caught\n[1]",
-      "actual": ""
-    },
-    {
-      "id": "gen_yield_from_stopped",
-      "category": "parser",
-      "summary": "Uses only supported features but bare 'yield' (no value) and 'yield from' as an expression value are rejected at parse time.",
-      "repro": "def gen():\n    return 1\n    yield\nf = gen()\ndef run():\n    print((yield from f))\ntry:\n    next(run())\nexcept StopIteration:\n    print(\"SI\")",
-      "expected": "1\nSI",
-      "actual": ""
     },
     {
       "id": "del_deref",

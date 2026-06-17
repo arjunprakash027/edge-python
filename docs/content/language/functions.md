@@ -374,7 +374,7 @@ print(list(naturals(5)))
 
 ### yield from
 
-Delegate to another generator.
+Delegate to another generator (or any iterable).
 
 ```python
 def nums():
@@ -386,6 +386,26 @@ print(list(nums()))
 
 ```text Output
 [0, 1, 2, 10, 20]
+```
+
+`yield from` is also an expression: it evaluates to the subgenerator's return value (the value carried by its `return` or `StopIteration`), so a `def` can `return` a result back to its delegating caller.
+
+```python
+def sub():
+  yield 1
+  yield 2
+  return 'done'
+
+def outer():
+  result = yield from sub()
+  print('returned', result)
+
+print(list(outer()))
+```
+
+```text Output
+returned done
+[1, 2]
 ```
 
 <Note>

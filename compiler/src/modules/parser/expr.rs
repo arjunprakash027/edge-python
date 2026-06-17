@@ -226,6 +226,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     }
                 }
             }
+            // `yield` / `yield from` as an expression value (keyword already consumed).
+            TokenType::Yield => self.emit_yield(),
             TokenType::Lambda => self.parse_lambda(),
             // Caret at consumed token; skip if `advance()` already reported the error.
             _ => {

@@ -43,6 +43,8 @@ pub enum OpCode {
     InPlaceAdd,
     /* Unary plus: calls `__pos__`, coerces bool to int, else identity on numbers. */
     Pos,
+    /* Pushes the value `yield from` produces: the exhausted subiterator's return / StopIteration value. */
+    LoadYieldFrom,
 }
 
 // Python builtin name -> (specialised OpCode, `leaves_value_on_stack`).

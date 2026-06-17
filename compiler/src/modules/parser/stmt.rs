@@ -44,26 +44,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             }
             Some(TokenType::Yield) => {
                 self.advance();
-                // Check the line boundary first: `peek`/`eat_if` would consume the Newline.
-                if self.peek_same_line().is_none() {
-                    // Bare `yield` (no value): a line boundary ends the statement.
-                    self.chunk.emit(OpCode::LoadNone, 0);
-                    self.chunk.emit(OpCode::Yield, 0);
-                } else if self.eat_if(TokenType::From) {
-                    // `yield from`: GetIter+ForIter+Yield loop; LoadNone at end (return value not tracked).
-                    self.expr();
-                    self.chunk.emit(OpCode::GetIter, 0);
-                    let loop_start = self.chunk.instructions.len() as u16;
-                    let fi = self.emit_jump(OpCode::ForIter);
-                    self.chunk.emit(OpCode::Yield, 0);
-                    self.chunk.emit(OpCode::PopTop, 0);
-                    self.chunk.emit(OpCode::Jump, loop_start);
-                    self.patch(fi);
-                    self.chunk.emit(OpCode::LoadNone, 0);
-                } else {
-                    self.expr();
-                    self.chunk.emit(OpCode::Yield, 0);
-                }
+                self.emit_yield();
                 true
             }
             Some(TokenType::Async) => {
@@ -649,6 +630,34 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             && self.chunk.instructions[last - n..last].iter().all(|i| i.opcode == OpCode::LoadName) {
             self.chunk.instructions.truncate(last);
             for ins in &mut self.chunk.instructions[last - n..] { ins.opcode = OpCode::Del; }
+        }
+    }
+
+    /* Emit `yield` / `yield from` / bare `yield`, leaving the produced value on the stack so it works in both statement and expression position. Assumes the `yield` keyword was already consumed. */
+    pub(super) fn emit_yield(&mut self) {
+        // No value when a line boundary or a closing token follows (`(yield)`, `f(yield)`).
+        let bare = matches!(
+            self.peek_same_line(),
+            None | Some(TokenType::Rpar | TokenType::Rsqb | TokenType::Rbrace
+                | TokenType::Comma | TokenType::Colon)
+        );
+        if bare {
+            self.chunk.emit(OpCode::LoadNone, 0);
+            self.chunk.emit(OpCode::Yield, 0);
+        } else if self.eat_if(TokenType::From) {
+            // `yield from`: GetIter+ForIter+Yield loop; LoadYieldFrom pushes the subiterator's return value.
+            self.expr();
+            self.chunk.emit(OpCode::GetIter, 0);
+            let loop_start = self.chunk.instructions.len() as u16;
+            let fi = self.emit_jump(OpCode::ForIter);
+            self.chunk.emit(OpCode::Yield, 0);
+            self.chunk.emit(OpCode::PopTop, 0);
+            self.chunk.emit(OpCode::Jump, loop_start);
+            self.patch(fi);
+            self.chunk.emit(OpCode::LoadYieldFrom, 0);
+        } else {
+            self.expr();
+            self.chunk.emit(OpCode::Yield, 0);
         }
     }
 
