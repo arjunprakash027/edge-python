@@ -71,6 +71,7 @@ export async function load({ wasmUrl, integrity = true, loaders: loaderUrls = []
 
     mainThreadManifests = manifests;
 
+    // Plain fetch, no SRI; the browser decodes any Content-Encoding (br/gzip) before compileStreaming.
     const response = await fetch(wasmUrl);
     if (!response.ok) throw new Error(`fetch failed for '${wasmUrl}' (${response.status})`);
     const wrapped = new Response(response.body, { headers: { 'Content-Type': 'application/wasm' } });

@@ -32,13 +32,18 @@ runs:
         path: /tmp/cli/
         merge-multiple: true
 
+    - name: Install brotli
+      shell: bash
+      run: command -v brotli >/dev/null || (sudo apt-get update && sudo apt-get install -y brotli)
+
     - name: Stage site
       shell: bash
       run: |
         mkdir -p _site/runtime _site/std _site/host _site/cli
 
-        # compiler: the wasm module, served at the CDN root (cdn.edgepython.com/compiler.wasm).
-        cp /tmp/compiler/compiler.wasm _site/compiler.wasm
+        # compiler: served at /compiler.wasm as brotli-11; _headers tags the encoding.
+        brotli -q 11 -c /tmp/compiler/compiler.wasm > _site/compiler.wasm
+        printf '/compiler.wasm\n  Content-Type: application/wasm\n  Content-Encoding: br\n  Cache-Control: public, max-age=0, must-revalidate\n' > _site/_headers
 
         # runtime: JS sources; the wasm is loaded from the CDN root, not bundled here.
         cp -r runtime/. _site/runtime/
@@ -56,6 +61,11 @@ runs:
         # cli: release tarballs + the install/uninstall scripts, served under cdn.edgepython.com/cli/.
         cp -r /tmp/cli/. _site/cli/
         cp cli/setup/install.sh cli/setup/uninstall.sh _site/cli/
+
+    - name: Report served size
+      shell: bash
+      run: |
+        echo "compiler.wasm served as brotli-11: $(( $(stat -c%s _site/compiler.wasm) / 1024 )) KB" >> "$GITHUB_STEP_SUMMARY"
 
     - name: Deploy to Cloudflare Pages
       uses: cloudflare/wrangler-action@v4
