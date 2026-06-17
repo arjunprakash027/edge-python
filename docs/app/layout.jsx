@@ -1,21 +1,21 @@
 import { Footer, Layout, Navbar } from 'nextra-theme-docs'
 import { Head } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
-import { IBM_Plex_Sans, IBM_Plex_Mono } from 'next/font/google'
+import { Inter, JetBrains_Mono } from 'next/font/google'
 import 'nextra-theme-docs/style.css'
 import '../globals.css'
 
-// Self-hosted IBM Plex; vars wired in globals.css.
-const ibmSans = IBM_Plex_Sans({
+// Inter for body text, JetBrains Mono for code.
+const sansBody = Inter({
     subsets: ['latin'],
     weight: ['400', '500', '600', '700'],
-    variable: '--font-ibm-sans',
+    variable: '--font-sans-body',
     display: 'swap',
 })
-const ibmMono = IBM_Plex_Mono({
+const monoCode = JetBrains_Mono({
     subsets: ['latin'],
     weight: ['400', '500', '600'],
-    variable: '--font-ibm-mono',
+    variable: '--font-mono-code',
     display: 'swap',
 })
 
@@ -35,7 +35,7 @@ const footer = <Footer>Edge Python</Footer>
 
 export default async function RootLayout({ children }) {
     return (
-        <html lang="en" dir="ltr" className={`${ibmSans.variable} ${ibmMono.variable}`} suppressHydrationWarning>
+        <html lang="en" dir="ltr" className={`${sansBody.variable} ${monoCode.variable}`} suppressHydrationWarning>
             <Head color={{hue: { dark: 204, light: 212 }, saturation: 100, lightness: { dark: 55, light: 45 }}}>
                 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
             </Head>

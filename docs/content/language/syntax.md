@@ -178,24 +178,28 @@ answer is 43
 
 Full format mini-language: `[[fill]align][sign][#][0][width][,|_][.precision][type]`, with `!r` / `!s` / `!a` conversions before the spec. Type chars: `b o c d e E f F g G n s x X %`. The `,` and `_` group digits (every three for decimals/floats; `_` groups `b`/`o`/`x`/`X` every four).
 
-f-string literals process [escape sequences](#escape-sequences) like any string. The `\r` carriage return rewinds the cursor to the line start, so a single line can redraw in place — here a progress bar. `sleep` (from the `time` module) paces the frames, and `flush=True` forces each one out immediately.
+f-string literals process [escape sequences](#escape-sequences) like any string. The `\r` carriage return rewinds the cursor to the line start, so a single line can redraw in place — here a loading indicator. `sleep` (from the `time` module) paces the frames, and `flush=True` forces each one out immediately.
 
 ```python
 from time import sleep
 
 loader_len: int = 11
-char: dict[str, str] = { "full": "█", "empty": "░" }
+char: dict[str, str] = { "full": "·", "empty": "." }
 
 for n in range(loader_len + 1):
-    loader: str = char["full"] * n + char["empty"] * (loader_len - n)
-    print(f"\r{loader}", end="", flush=True); sleep(0.07)
+    if n < loader_len:
+        loader: str = char["empty"] * n + char["full"] + char["empty"] * (loader_len - 1 - n)
+    else:
+        loader = char["empty"] * loader_len
+    print(f"\r{loader}", end="", flush=True)
+    sleep(0.07)
 ```
 
 ```text Output
-███████████
+...........
 ```
 
-Each `\r` overwrites the previous bar, so the terminal shows one line filling from empty to full; the block above is the final frame.
+Each `\r` overwrites the previous frame, so the terminal shows a single dot sweeping across the line; the row above is the final frame.
 
 ## Booleans and None
 

@@ -6,17 +6,17 @@
 /* Class-based dark (replaces `darkMode: 'class'`) so `dark:` follows the docs' <html class="dark"> toggle, not the OS. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* IBM Plex overrides Nextra font vars. */
+/* Inter for text; JetBrains Mono for code. */
 html {
-    --x-font-sans: var(--font-ibm-sans), ui-sans-serif, system-ui, sans-serif;
-    --x-font-mono: var(--font-ibm-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --x-font-sans: var(--font-sans-body), -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    --x-font-mono: var(--font-mono-code), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 /* Editor/Shiki: CodeJar needs explicit mono. */
 .ep-pg .ep-ed,
 .ep-pg .ep-ed code,
 .ep-pg .shiki {
-    font-family: var(--font-ibm-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-family: var(--font-mono-code), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 /* Centers nav links; logo left, icons right. Nextra 4 renamed .nextra-nav-container -> .nextra-navbar (the <header>); links stay in .nextra-scrollbar. */
