@@ -3528,5 +3528,15 @@
   {"src": "def sub():\n    return 10\n    yield\ndef mid():\n    x = yield from sub()\n    return x + 1\ndef g():\n    y = yield from mid()\n    print(y)\nprint(list(g()))", "output": ["11", "[]"]},
   {"src": "def sub():\n    yield 'a'\n    return 'b'\ndef g():\n    r = yield from sub()\n    yield r\nprint(list(g()))", "output": ["['a', 'b']"]},
   {"src": "def gen():\n    return 42\n    yield\ndef run():\n    v = yield from gen()\n    print('v', v)\ntry:\n    next(run())\nexcept StopIteration:\n    print('stop')", "output": ["v 42", "stop"]},
-  {"src": "def sub():\n    yield 1\n    return 2\ndef g():\n    a = yield from sub()\n    b = yield from sub()\n    print(a, b)\nprint(list(g()))", "output": ["2 2", "[1, 1]"]}
+  {"src": "def sub():\n    yield 1\n    return 2\ndef g():\n    a = yield from sub()\n    b = yield from sub()\n    print(a, b)\nprint(list(g()))", "output": ["2 2", "[1, 1]"]},
+  {"src": "print(list(range(9223372036854775805, 9223372036854775807, 5)))", "output": ["[9223372036854775805]"]},
+  {"src": "print(list(range(9223372036854775798, 9223372036854775807, 3)))", "output": ["[9223372036854775798, 9223372036854775801, 9223372036854775804]"]},
+  {"src": "print(sum(range(9223372036854775805, 9223372036854775807)))", "output": ["18446744073709551611"]},
+  {"src": "print(list(range(-9223372036854775808, -9223372036854775806)))", "output": ["[-9223372036854775808, -9223372036854775807]"]},
+  {"src": "print(list(range(-9223372036854775806, -9223372036854775808, -5)))", "output": ["[-9223372036854775806]"]},
+  {"src": "print(list(range(-9223372036854775799, -9223372036854775808, -3)))", "output": ["[-9223372036854775799, -9223372036854775802, -9223372036854775805]"]},
+  {"src": "print(min(range(9223372036854775803, 9223372036854775807)))", "output": ["9223372036854775803"]},
+  {"src": "print(max(range(9223372036854775803, 9223372036854775807)))", "output": ["9223372036854775806"]},
+  {"src": "print(len(range(9223372036854775707, 9223372036854775807)))", "output": ["100"]},
+  {"src": "print(list(range(9223372036854775807, 9223372036854775807)))", "output": ["[]"]}
 ]

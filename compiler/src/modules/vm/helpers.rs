@@ -64,8 +64,9 @@ impl<'a> VM<'a> {
                 if count > self.heap.limit() as u128 { return Err(VmErr::Heap); }
                 let mut out = Vec::new();
                 let mut i = s;
-                if st > 0 { while i < e { out.push(Val::int(i)); i += st; } }
-                else { while i > e { out.push(Val::int(i)); i += st; } }
+                // checked_add: stepping past the i64 edge ends the range, never overflows.
+                if st > 0 { while i < e { out.push(Val::int(i)); match i.checked_add(st) { Some(n) => i = n, None => break } } }
+                else { while i > e { out.push(Val::int(i)); match i.checked_add(st) { Some(n) => i = n, None => break } } }
                 out
             }
             _ => return Err(VmErr::Type("argument after * must be an iterable")),

@@ -121,7 +121,12 @@ impl IterFrame {
             }
             Self::Range { cur, end, step } => {
                 let done = if *step > 0 { *cur >= *end } else { *cur <= *end };
-                if done { None } else { let v = *cur; *cur += *step; Some(Val::int(v)) }
+                if done { None } else {
+                    let v = *cur;
+                    // Clamp past the i64 edge so the next `done` check ends the range, never overflows.
+                    *cur = cur.checked_add(*step).unwrap_or(if *step > 0 { i64::MAX } else { i64::MIN });
+                    Some(Val::int(v))
+                }
             }
         }
     }

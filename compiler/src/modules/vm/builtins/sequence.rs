@@ -27,7 +27,8 @@ impl IterCursor {
                 let (c, e, s) = (*cur, *end, *step);
                 let live = if s > 0 { c < e } else if s < 0 { c > e } else { false };
                 if !live { return Ok(None); }
-                *cur = c + s;
+                // Clamp past the i64 edge so the next call ends the range, never overflows.
+                *cur = c.checked_add(s).unwrap_or(if s > 0 { i64::MAX } else { i64::MIN });
                 Ok(Some(range_int(heap, c)?))
             }
             Self::Vec { items, idx } => {
