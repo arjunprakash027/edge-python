@@ -1264,14 +1264,14 @@
     "src": "yield from x", 
     "constants": [], 
     "names": ["x_0"], 
-    "instructions": [["LoadName",0], ["GetIter",0], ["ForIter",6], ["Yield",0], ["PopTop",0], ["Jump",2], ["LoadNone",0], ["PopTop",0], ["ReturnValue",0]],
+    "instructions": [["LoadName",0], ["GetIter",0], ["ForIter",6], ["Yield",0], ["PopTop",0], ["Jump",2], ["LoadYieldFrom",0], ["PopTop",0], ["ReturnValue",0]],
     "annotations": {}
   },
   {
     "src": "yield from range(3)",
     "constants": ["3"],
     "names": [],
-    "instructions": [["LoadConst",0], ["CallRange",1], ["GetIter",0], ["ForIter",7], ["Yield",0], ["PopTop",0], ["Jump",3], ["LoadNone",0], ["PopTop",0], ["ReturnValue",0]],
+    "instructions": [["LoadConst",0], ["CallRange",1], ["GetIter",0], ["ForIter",7], ["Yield",0], ["PopTop",0], ["Jump",3], ["LoadYieldFrom",0], ["PopTop",0], ["ReturnValue",0]],
     "annotations": {}
   },
   {

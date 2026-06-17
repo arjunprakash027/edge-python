@@ -575,6 +575,7 @@ impl<'a> VM<'a> {
             OpCode::DictUpdate | OpCode::SetUpdate | OpCode::ListExtend => self.handle_spread_merge(opcode)?,
 
             OpCode::Yield => self.handle_yield()?,
+            OpCode::LoadYieldFrom => self.push(self.yield_from_value),
             OpCode::LoadEllipsis => {
                 let v = self.heap.alloc(HeapObj::Ellipsis)?;
                 self.push(v);
@@ -807,6 +808,8 @@ impl<'a> VM<'a> {
                 self.yielded = false;
                 self.push(result);
             } else {
+                // `yield from gen` evaluates to the subgenerator's return value.
+                self.yield_from_value = result;
                 self.iter_stack.pop();
                 *ip = op as usize;
             }
@@ -818,11 +821,22 @@ impl<'a> VM<'a> {
             match self.try_call_dunder(iter, "__next__", &[], chunk, slots) {
                 Ok(Some(item)) => { self.push(item); }
                 Ok(None) => {
+                    self.yield_from_value = Val::none();
                     self.iter_stack.pop();
                     if op as usize > n { return Err(cold_runtime("jump target out of bounds")); }
                     *ip = op as usize;
                 }
                 Err(VmErr::Raised(m)) if m == "StopIteration" || m.starts_with("StopIteration:") => {
+                    // `raise StopIteration(v)` carries `v` as the yield-from value via the lifted instance.
+                    self.yield_from_value = if m.starts_with("StopIteration:") {
+                        match self.pending.exc_val {
+                            Some(e) if e.is_heap() => match self.heap.get(e) {
+                                HeapObj::ExcInstance(_, args) => args.first().copied().unwrap_or(Val::none()),
+                                _ => Val::none(),
+                            },
+                            _ => Val::none(),
+                        }
+                    } else { Val::none() };
                     self.iter_stack.pop();
                     if op as usize > n { return Err(cold_runtime("jump target out of bounds")); }
                     *ip = op as usize;
@@ -834,6 +848,7 @@ impl<'a> VM<'a> {
         match self.iter_stack.last_mut().and_then(|f| f.next_item()) {
             Some(item) => self.push(item),
             None => {
+                self.yield_from_value = Val::none();
                 self.iter_stack.pop();
                 if op as usize > n { return Err(cold_runtime("jump target out of bounds")); }
                 *ip = op as usize;

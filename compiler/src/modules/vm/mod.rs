@@ -130,6 +130,8 @@ pub struct VM<'a> {
     /* Overrides `exec`'s captured `exc_base`. Set by `resume_coroutine` to the level *before* restored exception frames so dispatch's handler search includes them; consumed once at exec entry. */
     pub(crate) pending_exec_exc_base: Option<usize>,
     pub(crate) yielded: bool,
+    /* Return value of the most recently exhausted iterator; read by `LoadYieldFrom` so `x = yield from it` evaluates to the subiterator's StopIteration value. */
+    pub(crate) yield_from_value: Val,
     pub(crate) resume_ip: usize,
     pub output: Vec<String>,
     /* True when the last `output` entry is an unterminated line (print(end="") left it open). */
@@ -183,6 +185,7 @@ impl<'a> VM<'a> {
             pending_sync_frames: Vec::new(),
             pending_exec_exc_base: None,
             yielded: false,
+            yield_from_value: Val::none(),
             resume_ip: 0,
             strict_input: false,
             output: Vec::new(),
