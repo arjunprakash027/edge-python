@@ -11,10 +11,8 @@ impl<'a> VM<'a> {
         let mut sep = String::from(" ");
         let mut end = String::from("\n");
         for pair in kw_flat.chunks_exact(2) {
-            let kname = match self.heap.try_get(pair[0]) {
-                Some(HeapObj::Str(s)) => s.clone(),
-                _ => String::new(),
-            };
+            // Own the name so the heap borrow ends before the &mut self kwarg calls.
+            let kname = String::from(self.kw_name(pair[0]).unwrap_or(""));
             match kname.as_str() {
                 "sep" => sep = self.print_str_kwarg(pair[1], " ", "sep")?,
                 "end" => end = self.print_str_kwarg(pair[1], "\n", "end")?,

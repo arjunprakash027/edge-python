@@ -10,10 +10,7 @@ impl<'a> VM<'a> {
     /* `bytes_fromhex(s)`, hex string -> bytes; tolerates whitespace, errors on odd length / non-hex. */
     pub fn call_bytes_fromhex(&mut self) -> Result<(), VmErr> {
         let v = self.pop()?;
-        let s = match self.heap.try_get(v) {
-            Some(HeapObj::Str(s)) => s.clone(),
-            _ => return Err(cold_type("bytes_fromhex() argument must be a string")),
-        };
+        let s = self.str_of(v, "bytes_fromhex() argument must be a string")?;
         let cleaned: String = s.chars().filter(|c| !c.is_ascii_whitespace()).collect();
         if !cleaned.len().is_multiple_of(2) {
             return Err(cold_value("non-hexadecimal number or odd length"));
@@ -39,10 +36,7 @@ impl<'a> VM<'a> {
             Some(HeapObj::Bytes(b)) => b.clone(),
             _ => return Err(cold_type("int_from_bytes() first arg must be bytes")),
         };
-        let order_s = match self.heap.try_get(order) {
-            Some(HeapObj::Str(s)) => s.clone(),
-            _ => return Err(cold_type("int_from_bytes() byteorder must be 'big' or 'little'")),
-        };
+        let order_s = self.str_of(order, "int_from_bytes() byteorder must be 'big' or 'little'")?;
         if buf.len() > 8 { return Err(cold_overflow()); }
         let big = match order_s.as_str() {
             "big" => true,
@@ -71,10 +65,7 @@ impl<'a> VM<'a> {
         let length = length.as_int() as usize;
         if length > 8 { return Err(cold_value("int_to_bytes() length must be <= 8")); }
         if n_i128 < 0 { return Err(cold_value("int_to_bytes() requires a non-negative int")); }
-        let order_s = match self.heap.try_get(order) {
-            Some(HeapObj::Str(s)) => s.clone(),
-            _ => return Err(cold_type("int_to_bytes() byteorder must be 'big' or 'little'")),
-        };
+        let order_s = self.str_of(order, "int_to_bytes() byteorder must be 'big' or 'little'")?;
         let big = match order_s.as_str() {
             "big" => true,
             "little" => false,

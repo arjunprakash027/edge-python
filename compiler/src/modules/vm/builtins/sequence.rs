@@ -6,7 +6,7 @@ use super::super::VM;
 use super::super::types::*;
 
 /* A range element as a Val, promoting magnitudes beyond the 47-bit inline range to LongInt. */
-fn range_int(heap: &mut HeapPool, i: i64) -> Result<Val, VmErr> {
+pub(crate) fn range_int(heap: &mut HeapPool, i: i64) -> Result<Val, VmErr> {
     if (Val::INT_MIN..=Val::INT_MAX).contains(&i) { Ok(Val::int(i)) }
     else { heap.alloc(HeapObj::LongInt(i as i128)) }
 }
@@ -231,8 +231,8 @@ impl<'a> VM<'a> {
         // `start` is positional (`enumerate(xs, 5)`) or keyword (`enumerate(xs, start=5)`); default 0.
         let mut start = if positional.len() == 2 { positional[1] } else { Val::int(0) };
         for pair in kw_flat.chunks_exact(2) {
-            match self.heap.try_get(pair[0]) {
-                Some(HeapObj::Str(s)) if s == "start" => start = pair[1],
+            match self.kw_name(pair[0]) {
+                Some("start") => start = pair[1],
                 _ => return Err(cold_type("enumerate() got an unexpected keyword argument")),
             }
         }
@@ -267,10 +267,15 @@ impl<'a> VM<'a> {
         self.alloc_and_push_list(pairs)
     }
 
+    // TypeError for a non-iterable operand.
+    fn not_iterable(&self, o: Val) -> VmErr {
+        VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable"))
+    }
+
     /* Build an IterCursor so short-circuit builtins (e.g. `all(range(10**6))`) stop at the first hit instead of pre-materialising. TypeError on non-iterables. */
     pub(in crate::modules::vm) fn iter_cursor(&self, o: Val) -> Result<IterCursor, VmErr> {
         if !o.is_heap() {
-            return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable")));
+            return Err(self.not_iterable(o));
         }
         Ok(match self.heap.get(o) {
             HeapObj::Range(s, e, st) => IterCursor::Range { cur: *s, end: *e, step: *st },
@@ -281,14 +286,14 @@ impl<'a> VM<'a> {
             HeapObj::Set(v) => IterCursor::Vec { items: v.borrow().iter().cloned().collect(), idx: 0 },
             HeapObj::FrozenSet(v) => IterCursor::Vec { items: v.iter().cloned().collect(), idx: 0 },
             HeapObj::Dict(d) => IterCursor::Vec { items: d.borrow().keys().collect(), idx: 0 },
-            _ => return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable"))),
+            _ => return Err(self.not_iterable(o)),
         })
     }
 
     /* Vec<Val> from any iterable (dict yields keys, str yields one-char strs, bytes yields ints). `include_range = false` lets callers reject Range. */
     pub(in crate::modules::vm) fn extract_iter(&mut self, o: Val, include_range: bool) -> Result<Vec<Val>, VmErr> {
         if !o.is_heap() {
-            return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable")));
+            return Err(self.not_iterable(o));
         }
         // Snapshot the variant out so the &self borrow ends before any allocation.
         let snapshot = match self.heap.get(o) {
@@ -319,7 +324,7 @@ impl<'a> VM<'a> {
             HeapObj::Dict(d) => Some(d.borrow().keys().collect()),
             HeapObj::Bytes(b) => Some(b.iter().map(|&x| Val::int(x as i64)).collect()),
             HeapObj::Str(_) => None, // handled below, needs heap allocation
-            _ => return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable"))),
+            _ => return Err(self.not_iterable(o)),
         };
         if let Some(v) = snapshot {
             // Cost scales with element count; charge it so repeated materialisation stays bounded.
@@ -337,7 +342,7 @@ impl<'a> VM<'a> {
     /* Flatten any iterable to a fresh `Vec<Val>`, shared input path for iter/map/filter so all three accept the same set of sources. */
     pub(crate) fn iter_to_vec_general(&mut self, o: Val) -> Result<Vec<Val>, VmErr> {
         if !o.is_heap() {
-            return Err(VmErr::TypeMsg(s!("'", str self.type_name(o), "' object is not iterable")));
+            return Err(self.not_iterable(o));
         }
         if let HeapObj::Str(s) = self.heap.get(o) {
             let s = s.clone();

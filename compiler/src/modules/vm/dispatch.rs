@@ -845,7 +845,12 @@ impl<'a> VM<'a> {
             }
             return Ok(());
         }
-        match self.iter_stack.last_mut().and_then(|f| f.next_item()) {
+        // Split-borrow heap so the Range step can promote to LongInt.
+        let next = match self.iter_stack.last_mut() {
+            Some(f) => f.next_item(&mut self.heap)?,
+            None => None,
+        };
+        match next {
             Some(item) => self.push(item),
             None => {
                 self.yield_from_value = Val::none();

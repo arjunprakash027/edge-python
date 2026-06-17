@@ -146,11 +146,16 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
+    // Returns v's String, or errors with `msg` when it isn't a heap string.
+    pub(crate) fn str_of(&self, v: Val, msg: &'static str) -> Result<String, VmErr> {
+        if v.is_heap() && let HeapObj::Str(s) = self.heap.get(v) { return Ok(s.clone()); }
+        Err(cold_type(msg))
+    }
+
     // Pops TOS and returns its String, or errors with `msg` if it isn't a heap string.
     fn expect_str_arg(&mut self, msg: &'static str) -> Result<String, VmErr> {
         let v = self.pop()?;
-        if v.is_heap() && let HeapObj::Str(s) = self.heap.get(v) { return Ok(s.clone()); }
-        Err(cold_type(msg))
+        self.str_of(v, msg)
     }
 
     /* `vars(obj)`, Instance: copy of `__dict__`; Module: dict from its attrs. No-arg form is unsupported, use `locals()`. */

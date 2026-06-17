@@ -258,9 +258,9 @@ impl<'a> VM<'a> {
         let mut default: Option<Val> = None;
         let mut key: Option<Val> = None;
         for pair in kw_flat.chunks_exact(2) {
-            match self.heap.try_get(pair[0]) {
-                Some(HeapObj::Str(s)) if s == "default" => default = Some(pair[1]),
-                Some(HeapObj::Str(s)) if s == "key" => { if !pair[1].is_none() { key = Some(pair[1]); } }
+            match self.kw_name(pair[0]) {
+                Some("default") => default = Some(pair[1]),
+                Some("key") => { if !pair[1].is_none() { key = Some(pair[1]); } }
                 _ => return Err(cold_type("min()/max() got an unexpected keyword argument")),
             }
         }

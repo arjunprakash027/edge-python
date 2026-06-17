@@ -454,8 +454,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                     if matches!(self.peek(), Some(TokenType::Lpar)) {
                         let call_pos = self.last_end as u32;
                         let (pos, kw) = self.parse_args();
-                        let encoded = ((kw & 0xFF) << 8) | (pos & 0xFF);
-                        self.chunk.emit(OpCode::Call, encoded);
+                        self.chunk.emit(OpCode::Call, super::pack_call(pos, kw));
                         self.chunk.record_call_pos(call_pos);
                     } else if matches!(self.peek(), Some(TokenType::Lsqb)) {
                         self.advance();

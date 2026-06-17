@@ -666,12 +666,6 @@ impl HeapPool {
     }
 }
 
-/* Single-write SSA store after register coalescing. */
-#[inline(always)]
-pub fn p_store_ssa(slots: &mut [Val], slot: usize, v: Val) {
-    slots[slot] = v;
-}
-
 /* Widens int/bool/LongInt to i128 for the slow path; None on non-integer operands. */
 #[inline]
 pub fn as_i128(v: Val, heap: &HeapPool) -> Option<i128> {

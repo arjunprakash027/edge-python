@@ -223,17 +223,6 @@ pub enum PrimitiveBytes {
     Sixteen([u8; 16]),
 }
 
-impl PrimitiveBytes {
-    pub fn as_slice(&self) -> &[u8] {
-        match self {
-            Self::None => &[],
-            Self::Bool(b) => core::slice::from_ref(b),
-            Self::Eight(a) => a.as_slice(),
-            Self::Sixteen(a) => a.as_slice(),
-        }
-    }
-}
-
 // Classifies Val bits; Heap routes the host to HeapPool.
 pub fn classify_decode(val_bits: u64) -> DecodeBits {
     use nan_box::*;

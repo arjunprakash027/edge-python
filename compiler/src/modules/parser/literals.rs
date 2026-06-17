@@ -357,8 +357,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let call_pos = self.last_end as u32;
         if name == "print" {
             let (pos, kw) = self.parse_args();
-            // Same (kw<<8)|pos layout as Call so the VM can split sep/end kwargs from positionals.
-            self.chunk.emit(OpCode::CallPrint, ((kw & 0xFF) << 8) | (pos & 0xFF));
+            // Same packed layout as Call so the VM can split sep/end kwargs from positionals.
+            self.chunk.emit(OpCode::CallPrint, super::pack_call(pos, kw));
             self.chunk.record_call_pos(call_pos);
             return false;
         }
@@ -381,8 +381,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         // dict() needs positional and keyword counts distinct.
         if name == "dict" {
             let (pos, kw) = self.parse_args();
-            let encoded = ((kw & 0xFF) << 8) | (pos & 0xFF);
-            self.chunk.emit(OpCode::CallDict, encoded);
+            self.chunk.emit(OpCode::CallDict, super::pack_call(pos, kw));
             self.chunk.record_call_pos(call_pos);
             return true;
         }
@@ -391,7 +390,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         if name == "min" || name == "max" || name == "enumerate" {
             let op = match name.as_str() { "min" => OpCode::CallMin, "max" => OpCode::CallMax, _ => OpCode::CallEnumerate };
             let (pos, kw) = self.parse_args();
-            self.chunk.emit(op, ((kw & 0xFF) << 8) | (pos & 0xFF));
+            self.chunk.emit(op, super::pack_call(pos, kw));
             self.chunk.record_call_pos(call_pos);
             return true;
         }
@@ -406,8 +405,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
         let i = self.push_ssa_name(&name, self.current_version(&name));
         self.chunk.emit(OpCode::LoadName, i);
         let (pos, kw) = self.parse_args();
-        let encoded = ((kw & 0xFF) << 8) | (pos & 0xFF);
-        self.chunk.emit(OpCode::Call, encoded);
+        self.chunk.emit(OpCode::Call, super::pack_call(pos, kw));
         self.chunk.record_call_pos(call_pos);
         true
     }

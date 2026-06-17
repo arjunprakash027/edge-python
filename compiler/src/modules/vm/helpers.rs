@@ -3,8 +3,17 @@ use alloc::{string::{String, ToString}, vec, vec::Vec};
 
 use super::VM;
 use super::types::*;
+use super::builtins::sequence::range_int;
 
 impl<'a> VM<'a> {
+
+    // Interned keyword name behind a Val, or None when not a string.
+    pub(crate) fn kw_name(&self, k: Val) -> Option<&str> {
+        match self.heap.try_get(k) {
+            Some(HeapObj::Str(s)) => Some(s.as_str()),
+            _ => None,
+        }
+    }
 
     /* Byte offset of the last propagating error, or None on success / before `run()`. */
     pub fn error_pos(&self) -> Option<usize> { self.error_byte_pos.map(|p| p as usize) }
@@ -50,7 +59,7 @@ impl<'a> VM<'a> {
     }
 
     /* Materialise an iterable into Vec<Val> for `*args` positional spread. */
-    pub(crate) fn iter_to_vec_for_spread(&self, v: Val) -> Result<Vec<Val>, VmErr> {
+    pub(crate) fn iter_to_vec_for_spread(&mut self, v: Val) -> Result<Vec<Val>, VmErr> {
         if !v.is_heap() { return Err(VmErr::Type("argument after * must be an iterable")); }
         Ok(match self.heap.get(v) {
             HeapObj::List(rc) => rc.borrow().clone(),
@@ -64,9 +73,9 @@ impl<'a> VM<'a> {
                 if count > self.heap.limit() as u128 { return Err(VmErr::Heap); }
                 let mut out = Vec::new();
                 let mut i = s;
-                // checked_add: stepping past the i64 edge ends the range, never overflows.
-                if st > 0 { while i < e { out.push(Val::int(i)); match i.checked_add(st) { Some(n) => i = n, None => break } } }
-                else { while i > e { out.push(Val::int(i)); match i.checked_add(st) { Some(n) => i = n, None => break } } }
+                // range_int promotes past the 47-bit inline range; checked_add ends at the i64 edge.
+                if st > 0 { while i < e { out.push(range_int(&mut self.heap, i)?); match i.checked_add(st) { Some(n) => i = n, None => break } } }
+                else { while i > e { out.push(range_int(&mut self.heap, i)?); match i.checked_add(st) { Some(n) => i = n, None => break } } }
                 out
             }
             _ => return Err(VmErr::Type("argument after * must be an iterable")),

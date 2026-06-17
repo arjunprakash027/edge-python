@@ -2,18 +2,10 @@
   "_meta": {
     "source": "MicroPython tests/basics differential vs CPython 3.13",
     "verified": "each repro re-run through VM + python3",
-    "count": 10,
-    "fixed": "89 bugs fixed and migrated to vm.json (try/finally + with unwinding cluster; 11 builtin/parser/format divergences from rows 1-11 of the low-NEWLINE triage; generator_return, string_format_modulo_int %*d, seq_unpack list targets, class_getattr dunder-on-type, builtin_slice type identity, containment dict/set-led tuple, range sequence-unpack; yield-from-as-expression cluster: gen_yield_from + gen_yield_from_ducktype + gen_yield_from_exc + gen_yield_from_stopped via a parse_atom Yield arm plus a LoadYieldFrom opcode that carries the subiterator return/StopIteration value, 40 regression cases; range_iter_overflow: AFL sig:06 abort on a range whose step increment crossed the i64 edge, fixed by checked_add in the three range walkers (iter_to_vec_for_spread, IterFrame::next_item, IterCursor::Range::next), 10 regression cases)"
+    "count": 9,
+    "fixed": "91 bugs fixed and migrated to vm.json (try/finally + with unwinding cluster; 11 builtin/parser/format divergences from rows 1-11 of the low-NEWLINE triage; generator_return, string_format_modulo_int %*d, seq_unpack list targets, class_getattr dunder-on-type, builtin_slice type identity, containment dict/set-led tuple, range sequence-unpack; yield-from-as-expression cluster: gen_yield_from + gen_yield_from_ducktype + gen_yield_from_exc + gen_yield_from_stopped via a parse_atom Yield arm plus a LoadYieldFrom opcode that carries the subiterator return/StopIteration value, 40 regression cases; range_iter_overflow: AFL sig:06 abort on a range whose step increment crossed the i64 edge, fixed by checked_add in the three range walkers (iter_to_vec_for_spread, IterFrame::next_item, IterCursor::Range::next), 10 regression cases; range_iter_truncation: for-loop/comprehension (IterFrame::next_item) and spread/unpack (iter_to_vec_for_spread) yielded Val::int past the 47-bit inline range instead of promoting, routed both through range_int (pub(crate)) so values auto-promote to LongInt, 10 regression cases; range_contains: `x in range(...)` always returned False (contains had a catch-all Ok(false) for Range) — replaced with an O(1) bounds+step check over i128 that also matches integral floats like CPython, 10 regression cases)"
   },
   "bugs": [
-    {
-      "id": "range_iter_truncation",
-      "category": "wrong-value",
-      "summary": "Iterating a range over magnitudes beyond the 47-bit inline-int range truncates each yielded value (for-loop, spread/unpack, comprehension, and `in` use Val::int instead of promoting to LongInt). The list()/sum()/min()/max()/reversed() paths are correct via IterCursor's range_int; the overflow-abort sibling is fixed.",
-      "repro": "print([x for x in range(9223372036854775804, 9223372036854775807)])",
-      "expected": "[9223372036854775804, 9223372036854775805, 9223372036854775806]",
-      "actual": "[-4, -3, -2]"
-    },
     {
       "id": "assign_expr",
       "category": "control-flow",

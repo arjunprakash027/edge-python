@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 
 use super::Val;
+use super::HeapPool;
 use super::err::VmErr;
 
 /* Scheduler state per coroutine; stepped round-robin until the target leaves Ready/Sleeping. */
@@ -113,19 +114,20 @@ pub enum IterFrame {
 
 impl IterFrame {
     /* Stateless steps only, built-in Seq/Range. User-defined iterators step in `dispatch.rs` because they need the VM to invoke `__next__`. */
-    pub fn next_item(&mut self) -> Option<Val> {
+    pub fn next_item(&mut self, heap: &mut HeapPool) -> Result<Option<Val>, VmErr> {
         match self {
-            Self::Coroutine(_) | Self::UserDefined(_) => None,
+            Self::Coroutine(_) | Self::UserDefined(_) => Ok(None),
             Self::Seq { items, idx } => {
-                if *idx < items.len() { let v = items[*idx]; *idx += 1; Some(v) } else { None }
+                if *idx < items.len() { let v = items[*idx]; *idx += 1; Ok(Some(v)) } else { Ok(None) }
             }
             Self::Range { cur, end, step } => {
                 let done = if *step > 0 { *cur >= *end } else { *cur <= *end };
-                if done { None } else {
+                if done { Ok(None) } else {
                     let v = *cur;
                     // Clamp past the i64 edge so the next `done` check ends the range, never overflows.
                     *cur = cur.checked_add(*step).unwrap_or(if *step > 0 { i64::MAX } else { i64::MIN });
-                    Some(Val::int(v))
+                    // Promote magnitudes beyond the 47-bit inline range to LongInt.
+                    Ok(Some(crate::modules::vm::builtins::sequence::range_int(heap, v)?))
                 }
             }
         }

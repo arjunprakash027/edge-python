@@ -317,11 +317,11 @@ impl<'a> VM<'a> {
                 let mut sort_reverse = false;
                 for pair in kw_flat.chunks(2) {
                     let (name_v, val_v) = (pair[0], pair[1]);
-                    let is_key = name_v.is_heap() && matches!(self.heap.get(name_v), HeapObj::Str(s) if s == "key");
-                    let is_reverse = name_v.is_heap() && matches!(self.heap.get(name_v), HeapObj::Str(s) if s == "reverse");
-                    if is_key { sort_key = Some(val_v); }
-                    else if is_reverse { sort_reverse = self.truthy(val_v); }
-                    else { return Err(cold_type("list.sort() got unexpected keyword argument")); }
+                    match self.kw_name(name_v) {
+                        Some("key") => sort_key = Some(val_v),
+                        Some("reverse") => sort_reverse = self.truthy(val_v),
+                        _ => return Err(cold_type("list.sort() got unexpected keyword argument")),
+                    }
                 }
                 self.call_list_sort_keyed(recv, sort_key, sort_reverse, chunk, slots)?;
                 return Ok(true);
@@ -718,11 +718,11 @@ impl<'a> VM<'a> {
             let mut leftover: Vec<Val> = Vec::new();
             for chunk_pair in kw.chunks(2) {
                 let (name_v, val_v) = (chunk_pair[0], chunk_pair[1]);
-                let is_key = name_v.is_heap() && matches!(self.heap.get(name_v), HeapObj::Str(s) if s == "key");
-                let is_reverse = name_v.is_heap() && matches!(self.heap.get(name_v), HeapObj::Str(s) if s == "reverse");
-                if is_key { sort_key = Some(val_v); }
-                else if is_reverse { sort_reverse = self.truthy(val_v); }
-                else { leftover.push(name_v); leftover.push(val_v); }
+                match self.kw_name(name_v) {
+                    Some("key") => sort_key = Some(val_v),
+                    Some("reverse") => sort_reverse = self.truthy(val_v),
+                    _ => { leftover.push(name_v); leftover.push(val_v); }
+                }
             }
             leftover_storage = leftover;
             &leftover_storage

@@ -391,8 +391,27 @@ impl<'a> VM<'a> {
                     if item.is_heap() && let HeapObj::Str(sub) = self.heap.get(item) { return Ok(s.contains(sub.as_str())); }
                     return Ok(false);
                 }
+                HeapObj::Range(s, e, st) => {
+                    let (s, e, st) = (*s as i128, *e as i128, *st as i128);
+                    // O(1) range membership: bounds + step; integral floats match too.
+                    let x = match as_i128(item, &self.heap) {
+                        Some(i) => Some(i),
+                        None if item.is_float() => {
+                            let v = item.as_float();
+                            if v.is_finite() && v == libm::trunc(v) { Some(v as i128) } else { None }
+                        }
+                        None => None,
+                    };
+                    return Ok(match x {
+                        Some(x) => {
+                            let in_bounds = if st > 0 { x >= s && x < e } else { x <= s && x > e };
+                            in_bounds && st != 0 && (x - s) % st == 0
+                        }
+                        None => false,
+                    });
+                }
                 // Iterable kinds keep prior non-raising behavior.
-                HeapObj::Range(..) | HeapObj::Bytes(..) | HeapObj::Coroutine(..) => return Ok(false),
+                HeapObj::Bytes(..) | HeapObj::Coroutine(..) => return Ok(false),
                 _ => {}
             }
         }

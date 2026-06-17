@@ -45,6 +45,12 @@ pub(super) const fn match_close_str(open: TokenType) -> &'static str {
     }
 }
 
+// Call operand: high byte keyword count, low byte positional count.
+#[inline]
+pub(super) const fn pack_call(pos: u16, kw: u16) -> u16 {
+    ((kw & 0xFF) << 8) | (pos & 0xFF)
+}
+
 // Shared spec -> compiled-chunk cache; a Vec (linear scan) avoids a hashbrown monomorphization.
 pub(crate) type ModuleCache = alloc::rc::Rc<core::cell::RefCell<Vec<(String, alloc::rc::Rc<SSAChunk>)>>>;
 

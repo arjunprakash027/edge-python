@@ -68,18 +68,15 @@ macro_rules! s {
 }
 
 pub enum E {
-    Parse { ctx: &'static str },
     Custom { msg: alloc::string::String },
 }
 
 impl E {
     pub fn message(&self) -> alloc::string::String {
         match self {
-            Self::Parse { ctx } => s!("parse error: ", str ctx),
             Self::Custom { msg } => msg.clone(),
         }
     }
-    #[inline] pub fn parse(ctx: &'static str) -> Self { Self::Parse { ctx } }
 }
 
 impl From<E> for alloc::string::String { fn from(e: E) -> Self { e.message() } }

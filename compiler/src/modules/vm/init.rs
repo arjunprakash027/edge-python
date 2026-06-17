@@ -68,14 +68,14 @@ impl<'a> VM<'a> {
     /* Inject `val` into the first `WaitingEvent` waiter's saved stack (innermost sync sub-frame wins) and mark it Ready; queues `val` otherwise. Shared by `push_event` and `run_push_event`. */
     pub fn inject_event(&mut self, val: Val) {
         let waiter = self.scheduler.iter().enumerate()
-            .find(|(_, h)| matches!(h.state, crate::modules::vm::types::CoroState::WaitingEvent))
+            .find(|(_, h)| matches!(h.state, CoroState::WaitingEvent))
             .map(|(i, h)| (i, h.coro));
         if let Some((idx, coro)) = waiter {
-            if let crate::modules::vm::types::HeapObj::Coroutine(_, _, saved_stack, _, _, sub_frames, _) = self.heap.get_mut(coro) {
+            if let HeapObj::Coroutine(_, _, saved_stack, _, _, sub_frames, _) = self.heap.get_mut(coro) {
                 let target_stack = if let Some(frame) = sub_frames.last_mut() { &mut frame.stack_delta } else { saved_stack };
                 if let Some(top) = target_stack.last_mut() { *top = val; } else { target_stack.push(val); }
             }
-            self.scheduler[idx].state = crate::modules::vm::types::CoroState::Ready;
+            self.scheduler[idx].state = CoroState::Ready;
         } else {
             self.event_queue.push(val);
         }
@@ -83,7 +83,7 @@ impl<'a> VM<'a> {
 
     /* Inject `val` into the first `WaitingHostCall` waiter and mark it Ready; false if none. Uncorrelated path for hosts/tests that don't track call ids. */
     pub fn inject_host_result(&mut self, val: Val) -> bool {
-        match self.scheduler.iter().position(|h| matches!(h.state, crate::modules::vm::types::CoroState::WaitingHostCall(_))) {
+        match self.scheduler.iter().position(|h| matches!(h.state, CoroState::WaitingHostCall(_))) {
             Some(idx) => { self.deliver_host_result(idx, val); true }
             None => false,
         }
@@ -91,7 +91,7 @@ impl<'a> VM<'a> {
 
     /* Inject `val` into the `WaitingHostCall(id)` waiter and mark it Ready; false if no coro is parked on `id`. Lets the host resolve concurrent calls out of order. */
     pub fn inject_host_result_by_id(&mut self, id: u64, val: Val) -> bool {
-        match self.scheduler.iter().position(|h| matches!(h.state, crate::modules::vm::types::CoroState::WaitingHostCall(w) if w == id)) {
+        match self.scheduler.iter().position(|h| matches!(h.state, CoroState::WaitingHostCall(w) if w == id)) {
             Some(idx) => { self.deliver_host_result(idx, val); true }
             None => false,
         }
@@ -100,28 +100,28 @@ impl<'a> VM<'a> {
     /* Shared tail: write `val` over the parked coro's saved-stack top and mark it Ready. */
     fn deliver_host_result(&mut self, idx: usize, val: Val) {
         let coro = self.scheduler[idx].coro;
-        if let crate::modules::vm::types::HeapObj::Coroutine(_, _, saved_stack, _, _, sub_frames, _) = self.heap.get_mut(coro) {
+        if let HeapObj::Coroutine(_, _, saved_stack, _, _, sub_frames, _) = self.heap.get_mut(coro) {
             let target_stack = if let Some(frame) = sub_frames.last_mut() { &mut frame.stack_delta } else { saved_stack };
             if let Some(top) = target_stack.last_mut() { *top = val; } else { target_stack.push(val); }
         }
-        self.scheduler[idx].state = crate::modules::vm::types::CoroState::Ready;
+        self.scheduler[idx].state = CoroState::Ready;
     }
 
     /* String form of `inject_host_result`: allocates `message` on the heap and injects it. Used by Rust hosts that return text bodies (and test fixtures simulating that path). */
     pub fn push_host_result(&mut self, message: &str) -> Result<bool, VmErr> {
-        let val = self.heap.alloc(crate::modules::vm::types::HeapObj::Str(message.into()))?;
+        let val = self.heap.alloc(HeapObj::Str(message.into()))?;
         Ok(self.inject_host_result(val))
     }
 
     /* String form of `inject_host_result_by_id`. */
     pub fn push_host_result_by_id(&mut self, id: u64, message: &str) -> Result<bool, VmErr> {
-        let val = self.heap.alloc(crate::modules::vm::types::HeapObj::Str(message.into()))?;
+        let val = self.heap.alloc(HeapObj::Str(message.into()))?;
         Ok(self.inject_host_result_by_id(id, val))
     }
 
     /* Raise `e` inside the `WaitingHostCall(id)` coro at its saved try-frame, or mark it Errored if none; false if no coro is parked on `id`. A failed host call wakes only its coro, leaving siblings untouched. */
     pub fn inject_host_error_by_id(&mut self, id: u64, e: VmErr) -> bool {
-        let Some(idx) = self.scheduler.iter().position(|h| matches!(h.state, crate::modules::vm::types::CoroState::WaitingHostCall(w) if w == id)) else { return false; };
+        let Some(idx) = self.scheduler.iter().position(|h| matches!(h.state, CoroState::WaitingHostCall(w) if w == id)) else { return false; };
         let coro = self.scheduler[idx].coro;
         self.scheduler[idx].state = self.raise_into_outer(coro, e);
         true
@@ -134,7 +134,7 @@ impl<'a> VM<'a> {
 
     /* Push a string event onto the event queue; consumed by the next `receive()` call. Mirrors what `run_push_event` does for WASM hosts. */
     pub fn push_event(&mut self, message: &str) -> Result<(), VmErr> {
-        let val = self.heap.alloc(crate::modules::vm::types::HeapObj::Str(message.into()))?;
+        let val = self.heap.alloc(HeapObj::Str(message.into()))?;
         self.inject_event(val);
         Ok(())
     }
@@ -151,36 +151,36 @@ impl<'a> VM<'a> {
             let slots = self.fill_builtins(&self.chunk.names);
             let coro = self.heap.alloc(HeapObj::Coroutine(
                 0, slots, Vec::new(),
-                crate::modules::vm::types::BodyRef::Module,
+                BodyRef::Module,
                 Vec::new(), Vec::new(), Vec::new(),
             ))?;
-            self.scheduler.push(crate::modules::vm::types::CoroutineHandle {
+            self.scheduler.push(CoroutineHandle {
                 coro,
-                state: crate::modules::vm::types::CoroState::Ready,
+                state: CoroState::Ready,
             });
         } else {
             for h in self.scheduler.iter_mut() {
-                if matches!(h.state, crate::modules::vm::types::CoroState::WaitingFrame) {
-                    h.state = crate::modules::vm::types::CoroState::Ready;
+                if matches!(h.state, CoroState::WaitingFrame) {
+                    h.state = CoroState::Ready;
                 }
             }
         }
         self.top_loop()?;
         // Inspect the module body's outcome (BodyRef::Module). Single entry point for both fresh and resume.
         let module_coro = self.scheduler.iter().find(|h| {
-            matches!(self.heap.get(h.coro), HeapObj::Coroutine(_, _, _, crate::modules::vm::types::BodyRef::Module, _, _, _))
+            matches!(self.heap.get(h.coro), HeapObj::Coroutine(_, _, _, BodyRef::Module, _, _, _))
         }).map(|h| (h.coro, h.state.clone()));
         if let Some((_coro, state)) = module_coro {
             // Clear the scheduler only once the module body is terminal, otherwise we're mid-yield and need to keep it for the next resume.
             let terminal = matches!(state,
-                crate::modules::vm::types::CoroState::Done(_)
-                | crate::modules::vm::types::CoroState::Errored(_)
-                | crate::modules::vm::types::CoroState::Cancelled);
+                CoroState::Done(_)
+                | CoroState::Errored(_)
+                | CoroState::Cancelled);
             if terminal { self.scheduler.clear(); }
             return match state {
-                crate::modules::vm::types::CoroState::Done(v) => Ok(v),
-                crate::modules::vm::types::CoroState::Errored(e) => Err(e),
-                crate::modules::vm::types::CoroState::Cancelled => Err(VmErr::Raised("CancelledError".into())),
+                CoroState::Done(v) => Ok(v),
+                CoroState::Errored(e) => Err(e),
+                CoroState::Cancelled => Err(VmErr::Raised("CancelledError".into())),
                 _ => Ok(Val::none()),
             };
         }

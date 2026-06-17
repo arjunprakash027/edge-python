@@ -91,9 +91,6 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
     /* Emits bytecode for one pattern; appends case-fail jumps to `fail_jumps`; reloads subject from subj. */
     pub(super) fn parse_pattern(&mut self, subj: u16, fail_jumps: &mut Vec<usize>) {
         // OR pattern: each alt gets a success-jump landing past all alts.
-        let alt_start = self.chunk.instructions.len();
-        let _ = alt_start; // unused; alts link via `fail_jumps`.
-
         let mut alts: Vec<Vec<usize>> = Vec::new();
         let mut succ_jumps: Vec<usize> = Vec::new();
 
