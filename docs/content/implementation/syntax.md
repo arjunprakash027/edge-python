@@ -23,7 +23,7 @@ Each instruction is a tagged 4-byte record:
 
 ```rust
 pub struct Instruction {
-  pub opcode: OpCode, // 1 byte (with #[repr(u8)] planned)
+  pub opcode: OpCode, // 1 byte (#[repr(u8)])
   pub operand: u16, // 2 bytes
 }
 ```
@@ -54,7 +54,7 @@ Operands and the constant pool, name table, and instruction stream per chunk are
 ```text
 Name                     -> name() (handles assignment, walrus, calls)
 String                   -> emit Str constant; concatenate adjacent String tokens
-Int / Float              -> emit numeric constant; literal beyond 2⁴⁷ is a parse error
+Int / Float              -> emit numeric constant; ints widen i64->i128, beyond ±2¹²⁷ is a parse error
 True/False/None/Ellipsis -> emit dedicated load opcode
 FstringStart             -> fstring()
 Lbrace                   -> brace_literal() (dict, set, comprehension)
@@ -65,7 +65,7 @@ Lambda                   -> parse_lambda()
 
 After an atom, `postfix_tail()` handles trailers (subscript, attribute, call), iterating until none apply. So `fns[0](-3)`, `obj.method()`, `(lambda x: x)(3)`, and `compose(f, g)(x)` all parse uniformly.
 
-`*args` / `**kwargs` are accepted in **call** position only. Starred unpacking inside literals (`[*a, *b]`, `{**d1, **d2}`, `(1, *xs, 2)`) is not supported.
+`*args` / `**kwargs` are accepted in **call** position. Starred unpacking also works in list (`[*a, *b]`), set (`{*s}`), and dict (`{**d1, **d2}`) literals, lowering via `ListExtend` / `SetUpdate` / `DictUpdate`; tuple-literal unpacking (`(1, *xs, 2)`) is not.
 
 ## Operator precedence
 
@@ -88,7 +88,7 @@ Each binary operator declares `(l_bp, r_bp, OpCode)` in `binding_power`. Higher 
 
 `infix_bp` handles comparison chaining (`a < b < c`). When a comparison opcode is followed by another comparison token, the parser:
 
-- stores the middle value in a synthetic `__cmp__N` slot
+- stores the middle value in a synthetic `#cmp_N` slot
 - emits the first comparison
 - short-circuits on false
 - reuses the stored value for the next comparison
@@ -219,7 +219,7 @@ Free variables (non-parameters with no local binding) are looked up in the outer
 
 Parameter slots: `Normal`, `Star` (`*args`), `DoubleStar` (`**kwargs`). Lone `*` separator marks following params as keyword-only. Defaults live in `HeapObj::Func.defaults` and bind to the `=`-marked params in source order, so a default before `*args` and keyword-only defaults both apply correctly. Annotations (`x: T`, `-> T`) parse and drain to `chunk.annotations` (tooling-only).
 
-`compile_body` checks impurity opcodes (`StoreItem`, `StoreAttr`, `CallPrint`, `CallInput`, `Global`, `Nonlocal`, `Import`, `Raise`, `Yield`, `LoadAttr`) to set `body.is_pure`, the flag that gates template memoisation ([Design](/implementation/design#concepts)). This static gate is complemented at runtime by an observed-impurity check that propagates through calls, so a side-effecting builtin reached as a first-class value (e.g. `print` passed to a wrapper) disqualifies the caller too.
+`compile_body` checks impurity opcodes (`StoreItem`, `DelItem`, `StoreAttr`, `DelAttr`, `CallPrint`, `CallInput`, `Global`, `Nonlocal`, `Raise`, `RaiseFrom`, `Yield`, `LoadAttr`) to set `body.is_pure`, the flag that gates template memoisation ([Design](/implementation/design#concepts)). This static gate is complemented at runtime by an observed-impurity check that propagates through calls, so a side-effecting builtin reached as a first-class value (e.g. `print` passed to a wrapper) disqualifies the caller too.
 
 ## Type annotations
 
@@ -257,7 +257,7 @@ FormatValue 0
 LoadConst ", age "
 LoadName age_v
 FormatValue 0
-BuildString 5
+BuildString 4
 ```
 
 `FormatValue`'s 16-bit operand is a small flags field:

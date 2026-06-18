@@ -108,7 +108,7 @@ True
 | `instance.attr` | instance `__dict__` first, then class |
 | `instance.method()` | bound method, `self` prepended |
 
-`setattr` / `delattr` work on instances. They do not modify the class object.
+`setattr` / `delattr` work on instances and on class objects (the latter mutating the class's members).
 
 ## Class decorators
 

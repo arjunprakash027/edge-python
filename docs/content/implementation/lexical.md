@@ -20,7 +20,7 @@ The token set tracks Python 3.13.12 closely. Categories implemented:
 - **Wildcard**: Underscore (`_`) gets its own `Underscore` token. The parser distinguishes wildcard from name use.
 - **Operators**: 1-, 2-, and 3-character operator forms (`+`, `==`, `**=`, `//=`, etc.).
 - **Delimiters**: `( ) [ ] { } : , ; .`.
-- **Literals**: `Name`, `Int`, `Float`, `String`, `Bytes`. There is no `Complex` token. A trailing `j` / `J` is **not** lexed as a complex suffix. `1j` tokenises as `Int(1)` followed by `Name("j")`.
+- **Literals**: `Name`, `Int`, `Float`, `String`, `Bytes`. There is no `Complex` token; a trailing `j` / `J` is **not** lexed as a complex suffix (see Numeric literals).
 - **F-string segments**: `FstringStart`, `FstringMiddle`, `FstringEnd`.
 - **Whitespace and structure**: `Comment`, `Newline`, `Indent`, `Dedent`, `Nl`, `Endmarker`.
 

@@ -64,7 +64,7 @@ A dev server for browser apps. Serves your project directory and reloads the pag
 ```text
 $ edge serve
   http://localhost:5173
-  watching.
+  watching .
 ```
 
 Flags: `--port <n>` (default `5173`), `--open` (open the browser).
@@ -180,7 +180,7 @@ Removes the binary and its `PATH` entry. Asks before removing the bundled `chrom
 `edge` uses, in order:
 
 1. `EDGE_CHROME_PATH` if set.
-2. The bundled `chrome-headless-shell` in `~/.cache/edge`.
-3. A system `chromium` / `chromium-browser` / `google-chrome` / `microsoft-edge` on `PATH`.
+2. A system `google-chrome` / `chromium` / `chrome` on `PATH` (or the `CHROME` env var).
+3. The bundled `chrome-headless-shell` in `~/.cache/edge`.
 
 `install.sh` downloads `chrome-headless-shell` when none is present. Linux arm64 has no build, so install Chrome/Chromium manually and point `EDGE_CHROME_PATH=/path/to/chrome` at it.

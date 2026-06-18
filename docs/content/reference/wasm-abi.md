@@ -17,7 +17,7 @@ New types, methods, and language features reach existing modules with no ABI cha
 
 ## Guest export shape
 
-Every function the script can call is exposed as:
+Every function the script can call is exposed as an `extern "C"` symbol (the `#[plugin_fn]` macro names free functions `__fn_<name>` and the host strips the prefix):
 
 ```rust
 extern "C" fn <name>(argv: *const u32, argc: u32, out: *mut u32) -> i32;
@@ -115,7 +115,7 @@ Stash an error visible after the guest returns `1`. Use it when an error did not
 
 `Op::Iter` materialises the receiver into a List handle:
 
-- set: sorted via `vm.sort_set_items`
+- set: items in hash-table iteration order
 - dict: yields keys
 - str: splits to single-char strings
 
@@ -157,7 +157,7 @@ List and dict construct via `NewList` / `NewDict`. Tuple, set, and frozenset con
 The `wasm-pdk` crate provides the `#[plugin_fn]` proc macro that expands to wire-conformant exports. Authors write normal Rust:
 
 ```rust
-// wasm-pdk/example/src/lib.rs
+// slugify-mod/src/lib.rs
 #![no_std] #![no_main]
 extern crate alloc;
 

@@ -322,7 +322,7 @@ Pre-bound exception classes (with their parent links so `except <Parent>:` match
 2. Call `__enter__`.
 3. Bind the result to `as`.
 
-On exit, `__exit__(exc_type, exc_value, traceback)` runs: `(None, None, None)` on normal completion, live exception info on raise. A truthy return suppresses the exception; a falsy one propagates it. See [`/language/dunders`](/language/dunders).
+On exit, `__exit__` runs; a truthy return suppresses the exception, a falsy one propagates it. See [Dunders](/language/dunders#context-managers) for the `__exit__` signature and exception info.
 
 ```python
 class Resource:

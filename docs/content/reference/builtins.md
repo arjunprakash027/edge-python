@@ -3,7 +3,7 @@ title: "Built-in functions"
 description: "Every built-in function in Edge Python with examples and outputs."
 ---
 
-60 built-in functions, all first-class values: pass as arguments, store in containers, alias.
+66 built-in functions, all first-class values: pass as arguments, store in containers, alias.
 
 ```python
 # All built-ins are real values
@@ -118,7 +118,7 @@ print(sum(x * x for x in range(5)))
 
 ### pow
 
-`pow(base, exp)` or `pow(base, exp, mod)` for modular exp. 3-arg requires int operands and non-negative exp (`pow(a, b, 0)` -> `ZeroDivisionError`; `pow(a, -1, m)` -> `ValueError`). Modulus must be `< 2^63` (larger overflows i128 in `(result * base) % m`), raises `ValueError("pow() modulus too large; must be < 2^63")`.
+`pow(base, exp)` or `pow(base, exp, mod)` for modular exp. 3-arg requires int operands and non-negative exp (`pow(a, b, 0)` -> `ZeroDivisionError`; `pow(a, -1, m)` -> `ValueError`). Modulus must be `<= 2^63` (larger overflows i128 in `(result * base) % m`), raises `ValueError("pow() modulus too large; must be < 2^63")`.
 
 ```python
 print(pow(2, 10))
@@ -254,11 +254,11 @@ print(dict(a=1, b=2))
 ['a', 'b', 'c']
 (0, 1, 2)
 {'b', 'a'}
-frozenset({2, 3, 1})
+frozenset({1, 2, 3})
 {'a': 1, 'b': 2}
 ```
 
-`dict` also accepts a mapping or kwargs; iterable-of-pairs (`dict([('a', 1)])`) is not supported; use a literal or `dict.update`.
+`dict` also accepts a mapping, kwargs, or an iterable of key/value pairs (`dict([('a', 1)])`); each pair element must have length 2.
 
 ### chr, ord
 

@@ -23,7 +23,7 @@ print(V(3) == V(3))
 True
 ```
 
-Dunders are looked up on the class chain. The instance dict is skipped. Subclasses inherit and may override. Operator overloading composes with [inheritance](/language/classes#inheritance-and-super). Monomorphic sites (same class for both operands) promote through the IC after 4 hits, then bypass lookup entirely.
+Dunders are looked up on the class chain. The instance dict is skipped. Subclasses inherit and may override. Operator overloading composes with [inheritance](/language/classes#inheritance-and-super). Monomorphic sites (keyed on the receiver's class) promote through the IC after 4 hits, then bypass lookup entirely.
 
 ## Arithmetic
 
@@ -88,7 +88,7 @@ The bitwise and shift operators follow the same forward/reflected protocol.
 
 `bool(x)` (and any boolean context) consults:
 
-1. `__bool__` if defined -> cast to bool.
+1. `__bool__` if defined (must return `bool`, else `TypeError`).
 2. `__len__` if defined -> `False` when length is 0, else `True`.
 3. Default `True`.
 
@@ -237,7 +237,7 @@ Existing attributes bypass `__getattr__`. Only misses trigger it.
 
 ## Context managers
 
-`with cm() as x:` invokes `__enter__`. Its return binds to `as`. On exit, `__exit__(exc_type, exc_value, traceback)` runs: `(None, None, None)` for normal exit, live exception info on raise. A truthy return suppresses the exception; a falsy one propagates it.
+`with cm() as x:` invokes `__enter__`. Its return binds to `as`. On exit, `__exit__(exc_type, exc_value, traceback)` runs: `(None, None, None)` for normal exit; on a raise, the exception type and value with `traceback` always `None`. A truthy return suppresses the exception; a falsy one propagates it.
 
 ```python
 class Suppress:
@@ -265,7 +265,7 @@ Parsed for compatibility but never invoked on user classes:
 
 - `__init_subclass__`, `__set_name__`, descriptors (`__get__` / `__set__` / `__delete__`)
 - `__new__`, VM constructs the instance; `__init__` runs user logic
-- Augmented-assignment dunders (`__iadd__`, ...), `a += b` desugars to `a = a + b`, so `__add__` covers it. Exception: when `a` is a name bound to a `list`, `+=` extends it in place (alias-visible), matching CPython's `list.__iadd__`
+- Augmented-assignment dunders (`__iadd__`, ...), `a += b` desugars to `a = a + b`, so `__add__` covers it. Exception: list `+=` extends in place (alias-visible); see [Data types](/language/data-types#list)
 - Async dunders (`__aenter__` / `__aexit__` / `__aiter__` / `__anext__`), `async with` / `async for` use the sync paths
 
 For class basics (constructors, inheritance, properties), see [Classes](/language/classes).

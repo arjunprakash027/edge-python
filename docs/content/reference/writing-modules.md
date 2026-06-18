@@ -59,7 +59,7 @@ unsafe extern "C" {
 // And exposes a `dom` module whose operations bridge through it.
 ```
 
-The custom `compiler.wasm` declares `env.host_dom_op` alongside the standard `env.host_print` / `env.host_fetch_bytes` / `env.host_call_native`. The host runtime supplies the implementation.
+The custom `compiler.wasm` declares `env.host_dom_op` alongside the standard `env.host_print` / `env.host_call_native` / `env.host_fetch_bytes` / `env.host_now_ns`. The host runtime supplies the implementation.
 
 ### Why this is not a third module flavor
 
@@ -127,7 +127,7 @@ run(main())
 
 Or skip the manual wiring: the browser runtime's `<edge-python>` element loads these declaratively from a `host` field in `packages.json`. See the [runtime README](https://github.com/dylan-sutton-chavez/edge-python/tree/main/runtime).
 
-Handlers take decoded JS values and return plain JS values. Supported tags: `None`, `bool`, `int` (i64, range-limited by JS Number), `float`, string, bytes. Opaque object references (DOM nodes, files, observers) model as integer IDs into a main-thread registry the handlers own (the `alloc` / `node` pattern above).
+Handlers take decoded JS values and return plain JS values. Supported tags: `None`, `bool`, `int` (i64, range-limited by JS Number), `float`, string (no `bytes`). Opaque object references (DOM nodes, files, observers) model as integer IDs into a main-thread registry the handlers own (the `alloc` / `node` pattern above).
 
 ### Trade-offs vs Path B
 

@@ -53,7 +53,7 @@ The names above (`json`, `utils`, `math`) are illustrative. `json` is an [offici
 ## How resolution works
 
 1. Compiler scans the source for every `from <spec> ...`.
-2. For each spec, asks the host `Resolver` to materialise as `Resolved::Native { bindings, canonical }` or `Resolved::Code { src, canonical }`.
+2. For each spec, asks the host `Resolver` to materialise as `Resolved::Native { bindings, classes, consts, canonical }` or `Resolved::Code { src, canonical }`.
 3. Natives become direct-dispatch entries. Code modules parse to a fresh `SSAChunk`. Both register under the canonical spec, so first-class references and `import_module()` lookups resolve uniformly. See [Syntax, Imports](/implementation/syntax).
 
 Modules are singletons across the compilation unit: same canonical spec -> one `SSAChunk`, top level runs once, one `HeapObj::Module` shared by every importer. Two files importing `./util.py` see the same module. `mod is mod_alias` is true. Module-attr mutations are observed by every consumer. Inside the module's top level, `__name__` is bound to the canonical spec, so `if __name__ == "__main__":` skips when imported.
@@ -104,7 +104,7 @@ my_app/
 └── ...
 ```
 
-- **Bare-name imports** (`from utils import x`) walk up looking for `packages.json`. First one decides. Capped at 32 hops. Over that: `packages.json walk-up exceeded <cap> hops resolving '<name>'`.
+- **Bare-name imports** (`from utils import x`) walk up looking for `packages.json`. The first one declaring the name wins; following its `extends` chain is capped at 32 hops. Over that: `packages.json walk-up exceeded <cap> hops resolving '<name>'`.
 - **Hermetic by default**: if the nearest manifest doesn't declare the alias, compilation fails (`alias '<name>' not declared in '<manifest>'`). No silent fall-through. This prevents a deep transitive dep from borrowing parent aliases.
 - **`extends` opts in to inheritance**: `"extends": ".."` re-runs the search from the extended directory when the alias isn't local. Cycles detected at compile time (`circular extends chain in packages.json`).
 - **Quoted relative paths** (`from "./helpers.py" import f`) resolve against the importing file; transitively-imported `lib/a.py` doing `from "./b.py" import g` finds `lib/b.py`.
@@ -176,9 +176,9 @@ from "https://example.com/utils.py#sha256-deadbeef0123456789abcdef0123456789abcd
 The compiler asks the host for raw bytes (`Resolver::fetch_bytes`), computes SHA-256, and refuses to compile on mismatch. The diagnostic surfaces both digests:
 
 ```text
-error: integrity check failed for 'https://example.com/utils.py'
-  expected sha256-deadbeef0123456789abcdef0123456789abcdef0123456789abcdef01234567
-  got      sha256-feedface9876543210fedcba9876543210fedcba9876543210fedcba98765432
+integrity check failed for 'https://example.com/utils.py'
+ expected sha256-deadbeef0123456789abcdef0123456789abcdef0123456789abcdef01234567
+ got sha256-feedface9876543210fedcba9876543210fedcba9876543210fedcba98765432
 ```
 
 Verification lives in the compiler, not the host: every host inherits it uniformly. Hosts without `fetch_bytes` surface a clean "not supported" error rather than silently bypassing.

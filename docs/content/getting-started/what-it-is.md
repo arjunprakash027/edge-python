@@ -36,7 +36,7 @@ These parse for syntactic compatibility. They raise at runtime, or don't exist:
 - **Async surface**: `async def` creates real coroutines, and the VM runs a cooperative scheduler. No `asyncio` module; the primitives are top-level builtins ([Async](/language/async)).
 - **Metaclasses, descriptor protocol, `__slots__`**: not modeled.
 - **Dynamic code**: no `exec`, no `eval`, no `compile`, no `__import__` (use the `import_module(name)` builtin to look up an already-imported module by alias).
-- **Reflection**: nothing beyond `type`, `id`, `hash`, `repr`, `callable`, `getattr`, `hasattr`, `vars`, `globals`, `locals`, `isinstance`, and `issubclass`. `dir` is absent.
+- **Reflection**: nothing beyond `type`, `id`, `hash`, `repr`, `callable`, `getattr`, `setattr`, `hasattr`, `delattr`, `vars`, `globals`, `locals`, `isinstance`, and `issubclass`. `dir` is absent.
 - **Relative imports**: `from . import x` is not supported; use quoted relative specs or `packages.json` aliases ([Imports](/reference/imports)).
 
 ## Design philosophy

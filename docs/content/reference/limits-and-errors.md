@@ -41,7 +41,7 @@ overflow
 
 ### Caveats
 
-- **`pow(a, b, m)` modular**: modulus must be `< 2^63` (larger overflows i128 in the multiply). Hard cap without arbitrary-precision arithmetic.
+- **`pow(a, b, m)` modular**: modulus must be `<= 2^63` (larger overflows i128 in the multiply). Hard cap without arbitrary-precision arithmetic.
 - **No CPython-style unbounded ints**: by design, edge workloads don't need wider than 128 bits. Crypto-scale math is out of scope.
 
 ### Triggering limits
@@ -129,7 +129,7 @@ Raised as `VmErr`. Most are catchable with `try` / `except`.
 | `Raised("TimeoutError")` | `TimeoutError` | `with_timeout` deadline expired |
 | `Raised("CancelledError")` | `CancelledError` | User-thrown cancellation |
 | `Raised("SystemExit")` | `SystemExit` | `raise SystemExit(code)`; uncaught = clean host exit with that code |
-| `CallDepth` | `RecursionError` | Past `max_calls`, or comparing distinct self-referential containers (same-object `==` short-circuits to `True`) |
+| `CallDepth` | `RecursionError` | Past `max_calls` (deep recursion or call depth) |
 | `Heap` | `MemoryError` | Past heap limit |
 | `Budget` | `RuntimeError` | Past op limit |
 | `Runtime` | `RuntimeError` | Internal invariant or unsupported |
@@ -156,7 +156,7 @@ caught via parent: oops
 caught IndexError as Exception
 ```
 
-User-defined classes don't auto-extend the built-in `BaseException` tree. They support inheritance among themselves: `except UserBase` catches a raised `UserSub` when `UserSub` inherits from `UserBase`. `raise X from Y` raises `X`. The cause is discarded (no `__cause__` / `__context__` chaining).
+User-defined classes don't auto-extend the built-in `BaseException` tree. They support inheritance among themselves: `except UserBase` catches a raised `UserSub` when `UserSub` inherits from `UserBase`. For `raise X from Y` and chaining, see [Control flow](/language/control-flow#raise).
 
 ### Exception arguments
 
