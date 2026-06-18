@@ -116,11 +116,7 @@ pub fn pop(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     vm.push(popped); Ok(())
 }
 
-pub fn sort(vm: &mut VM, recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
-    let mut sorted = list_clone(vm, recv)?;
-    vm.sort_by_lt(&mut sorted)?;
-    list_mut(vm, recv, "sort: receiver is not a list", |list| {
-        *list = sorted; Ok(())
-    })?;
-    vm.push(Val::none()); Ok(())
+// list.sort() is intercepted in try_dispatch_non_func_callable, which has chunk/slots for __lt__.
+pub fn sort(_vm: &mut VM, _recv: Val, _pos: &[Val]) -> Result<(), VmErr> {
+    Err(cold_type("list.sort dispatched without a frame"))
 }

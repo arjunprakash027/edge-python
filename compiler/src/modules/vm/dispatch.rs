@@ -315,6 +315,8 @@ impl<'a> VM<'a> {
                 self.exec_call(encoded, chunk, slots)
             }
             handlers::methods::AttrLookup::BuiltinMethod(id) => {
+                // sort runs user __lt__, so it needs chunk/slots the builtin-method table can't carry.
+                if id.name() == "sort" { return self.exec_sort(obj, &positional, &kw_flat, chunk, slots); }
                 self.exec_bound_method(obj, id, &positional, &kw_flat)
             }
             handlers::methods::AttrLookup::InstanceField(field) => {

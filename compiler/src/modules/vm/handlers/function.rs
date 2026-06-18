@@ -67,7 +67,7 @@ impl<'a> VM<'a> {
             OpCode::CallType => self.call_type(),
             OpCode::CallChr => self.call_chr(),
             OpCode::CallOrd => self.call_ord(),
-            OpCode::CallSorted => self.call_sorted(false),
+            OpCode::CallSorted => self.call_sorted(false, chunk, slots),
             OpCode::CallList => self.call_list(operand, chunk, slots),
             OpCode::CallTuple => self.call_tuple(operand, chunk, slots),
             OpCode::CallEnumerate => self.call_enumerate(operand),
@@ -304,26 +304,30 @@ impl<'a> VM<'a> {
         Ok(Some(heap.alloc(super::super::types::HeapObj::Dict(Rc::new(RefCell::new(dm))))?))
     }
 
+    /* list.sort(): parse key/reverse kwargs and sort in place. Intercepted from both call paths since it needs chunk/slots for __lt__. */
+    pub(crate) fn exec_sort(&mut self, recv: Val, positional: &[Val], kw_flat: &[Val], chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+        if !positional.is_empty() {
+            return Err(cold_type("list.sort() takes no positional arguments"));
+        }
+        let mut sort_key: Option<Val> = None;
+        let mut sort_reverse = false;
+        for pair in kw_flat.chunks(2) {
+            match self.kw_name(pair[0]) {
+                Some("key") => sort_key = Some(pair[1]),
+                Some("reverse") => sort_reverse = self.truthy(pair[1]),
+                _ => return Err(cold_type("list.sort() got unexpected keyword argument")),
+            }
+        }
+        self.call_list_sort_keyed(recv, sort_key, sort_reverse, chunk, slots)
+    }
+
     /* Dispatch non-Func callees. Returns Ok(true) when handled here; Ok(false) means the caller falls through to the Func path. */
     fn try_dispatch_non_func_callable(&mut self, callee: Val, positional: &[Val], kw_flat: &[Val], num_kw: usize, chunk: &SSAChunk, slots: &mut [Val]) -> Result<bool, VmErr> {
         if let HeapObj::BoundMethod(recv, id) = self.heap.get(callee) {
             let recv = *recv;
             let id = *id;
-            if id.name() == "sort" && !kw_flat.is_empty() {
-                if !positional.is_empty() {
-                    return Err(cold_type("list.sort() takes no positional arguments"));
-                }
-                let mut sort_key: Option<Val> = None;
-                let mut sort_reverse = false;
-                for pair in kw_flat.chunks(2) {
-                    let (name_v, val_v) = (pair[0], pair[1]);
-                    match self.kw_name(name_v) {
-                        Some("key") => sort_key = Some(val_v),
-                        Some("reverse") => sort_reverse = self.truthy(val_v),
-                        _ => return Err(cold_type("list.sort() got unexpected keyword argument")),
-                    }
-                }
-                self.call_list_sort_keyed(recv, sort_key, sort_reverse, chunk, slots)?;
+            if id.name() == "sort" {
+                self.exec_sort(recv, positional, kw_flat, chunk, slots)?;
                 return Ok(true);
             }
             self.exec_bound_method(recv, id, positional, kw_flat)?;

@@ -3587,5 +3587,15 @@
   {"src":"def f():\n    x = 1\n    y = 2\n    def g():\n        nonlocal x, y\n        try:\n            print(x)\n        except NameError:\n            print('x gone')\n        print(y)\n    del x\n    g()\nf()","output":["x gone","2"]},
   {"src":"def f():\n    x = 1\n    def g():\n        nonlocal x\n        try:\n            return x\n        except NameError:\n            return 'NE'\n    def h():\n        nonlocal x\n        try:\n            return x\n        except NameError:\n            return 'NE'\n    del x\n    print(g(), h())\nf()","output":["NE NE"]},
   {"src":"def f():\n    x = 1\n    def g():\n        nonlocal x\n        return x\n    del x\n    try:\n        g()\n    except NameError:\n        return 'caught'\nprint(f())","output":["caught"]},
-  {"src":"def f():\n    x = 1\n    def g():\n        return x\n    del x\n    x = 99\n    return g()\nprint(f())","output":["99"]}
+  {"src":"def f():\n    x = 1\n    def g():\n        return x\n    del x\n    x = 99\n    return g()\nprint(f())","output":["99"]},
+  {"src":"class A:\n    def __init__(self, x):\n        self.x = x\n    def __lt__(self, other):\n        return self.x < other.x\n    def __repr__(self):\n        return str(self.x)\nl = [A(3), A(1), A(2)]\nl.sort()\nprint(l)","output":["[1, 2, 3]"]},
+  {"src":"class A:\n    def __init__(self, x):\n        self.x = x\n    def __lt__(self, other):\n        return self.x < other.x\n    def __repr__(self):\n        return str(self.x)\nprint(sorted([A(3), A(1), A(2)]))","output":["[1, 2, 3]"]},
+  {"src":"class A:\n    def __init__(self, x):\n        self.x = x\n    def __lt__(self, other):\n        return self.x < other.x\n    def __repr__(self):\n        return str(self.x)\nl = [A(3), A(1), A(2)]\nl.sort(reverse=True)\nprint(l)","output":["[3, 2, 1]"]},
+  {"src":"class A:\n    def __init__(self, x):\n        self.x = x\n    def __lt__(self, other):\n        return self.x < other.x\n    def __repr__(self):\n        return str(self.x)\nprint(sorted([A(3), A(1), A(2)], reverse=True))","output":["[3, 2, 1]"]},
+  {"src":"l = [3, 1, 2]\nl.sort()\nprint(l)","output":["[1, 2, 3]"]},
+  {"src":"print(sorted(['banana', 'apple', 'cherry']))","output":["['apple', 'banana', 'cherry']"]},
+  {"src":"print(sorted([-3, 1, -2], key=abs))","output":["[1, -2, -3]"]},
+  {"src":"print(sorted(['ccc', 'a', 'bb'], key=len))","output":["['a', 'bb', 'ccc']"]},
+  {"src":"try:\n    sorted([1, 'a'])\nexcept TypeError:\n    print('te')","output":["te"]},
+  {"src":"l = [2, 1]\nr = l.sort()\nprint(r, l)","output":["None [1, 2]"]}
 ]

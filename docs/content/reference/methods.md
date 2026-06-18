@@ -268,7 +268,7 @@ print(ys)
 
 ### Mutating
 
-Return `None`, mutate in place. `extend` accepts any iterable. `sort` accepts `key=fn` and `reverse=True/False`.
+Return `None`, mutate in place. `extend` accepts any iterable. `sort` accepts `key=fn` and `reverse=True/False`, and orders custom objects by their `__lt__`.
 
 ```python
 xs = [1, 2, 3]

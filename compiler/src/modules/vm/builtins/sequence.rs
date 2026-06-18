@@ -4,6 +4,7 @@ use alloc::{vec, vec::Vec};
 
 use super::super::VM;
 use super::super::types::*;
+use crate::modules::parser::{OpCode, SSAChunk};
 
 /* A range element as a Val, promoting magnitudes beyond the 47-bit inline range to LongInt. */
 pub(crate) fn range_int(heap: &mut HeapPool, i: i64) -> Result<Val, VmErr> {
@@ -86,10 +87,10 @@ impl<'a> VM<'a> {
         self.push(Val::int(n)); Ok(())
     }
 
-    pub fn call_sorted(&mut self, reverse: bool) -> Result<(), VmErr> {
+    pub fn call_sorted(&mut self, reverse: bool, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let o = self.pop()?;
         let mut items = self.extract_iter(o, false)?;
-        self.sort_by_lt(&mut items)?;
+        self.sort_by_lt(&mut items, chunk, slots)?;
         if reverse { items.reverse(); }
         self.alloc_and_push_list(items)
     }
@@ -98,7 +99,7 @@ impl<'a> VM<'a> {
     pub fn call_sorted_with_key(&mut self, key: Option<Val>, reverse: bool, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let key = match key {
             Some(k) if !k.is_none() => k,
-            _ => return self.call_sorted(reverse),
+            _ => return self.call_sorted(reverse, chunk, slots),
         };
         let o = self.pop()?;
         let items = self.extract_iter(o, false)?;
@@ -117,7 +118,7 @@ impl<'a> VM<'a> {
             self.sort_by_key(items, k, chunk, slots)?
         } else {
             let mut s = items;
-            self.sort_by_lt(&mut s)?;
+            self.sort_by_lt(&mut s, chunk, slots)?;
             s
         };
         if reverse { result.reverse(); }
@@ -140,12 +141,14 @@ impl<'a> VM<'a> {
             self.exec_call(1, chunk, slots)?;
             keys.push(self.pop()?);
         }
+        let roots_base = self.temp_roots.len();
+        for &v in keys.iter().chain(items.iter()) { self.temp_roots.push(v); }
         let mut sort_err: Option<VmErr> = None;
         let order = Self::stable_sort_indices(items.len(), |a, b| {
             if sort_err.is_some() { return core::cmp::Ordering::Equal; }
-            match self.lt_vals(keys[a], keys[b]) {
+            match self.sort_lt(keys[a], keys[b], chunk, slots) {
                 Ok(true) => core::cmp::Ordering::Less,
-                Ok(false) => match self.lt_vals(keys[b], keys[a]) {
+                Ok(false) => match self.sort_lt(keys[b], keys[a], chunk, slots) {
                     Ok(true) => core::cmp::Ordering::Greater,
                     Ok(false) => core::cmp::Ordering::Equal,
                     Err(e) => { sort_err = Some(e); core::cmp::Ordering::Equal }
@@ -153,19 +156,30 @@ impl<'a> VM<'a> {
                 Err(e) => { sort_err = Some(e); core::cmp::Ordering::Equal }
             }
         });
+        self.temp_roots.truncate(roots_base);
         if let Some(e) = sort_err { return Err(e); }
         Ok(order.into_iter().map(|i| items[i]).collect())
     }
 
-    /* In-place sort via `lt_vals`. Stashes the first error and surfaces it after the sort. */
-    pub(crate) fn sort_by_lt(&self, items: &mut [Val]) -> Result<(), VmErr> {
+    // a < b via __lt__ when either side defines it, else the built-in comparison.
+    pub(crate) fn sort_lt(&mut self, a: Val, b: Val, chunk: &SSAChunk, slots: &mut [Val]) -> Result<bool, VmErr> {
+        if let Some(r) = self.try_compare_dunder(OpCode::Lt, a, b, chunk, slots)? {
+            return Ok(self.truthy(r));
+        }
+        self.lt_vals(a, b)
+    }
+
+    /* In-place sort dispatching `__lt__`; roots items since a comparison can run user code that GCs. */
+    pub(crate) fn sort_by_lt(&mut self, items: &mut [Val], chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let snapshot = items.to_vec();
+        let roots_base = self.temp_roots.len();
+        for &v in &snapshot { self.temp_roots.push(v); }
         let mut sort_err: Option<VmErr> = None;
-        let order = Self::stable_sort_indices(items.len(), |a, b| {
+        let order = Self::stable_sort_indices(snapshot.len(), |a, b| {
             if sort_err.is_some() { return core::cmp::Ordering::Equal; }
-            match self.lt_vals(snapshot[a], snapshot[b]) {
+            match self.sort_lt(snapshot[a], snapshot[b], chunk, slots) {
                 Ok(true) => core::cmp::Ordering::Less,
-                Ok(false) => match self.lt_vals(snapshot[b], snapshot[a]) {
+                Ok(false) => match self.sort_lt(snapshot[b], snapshot[a], chunk, slots) {
                     Ok(true) => core::cmp::Ordering::Greater,
                     Ok(false) => core::cmp::Ordering::Equal,
                     Err(e) => { sort_err = Some(e); core::cmp::Ordering::Equal }
@@ -173,6 +187,7 @@ impl<'a> VM<'a> {
                 Err(e) => { sort_err = Some(e); core::cmp::Ordering::Equal }
             }
         });
+        self.temp_roots.truncate(roots_base);
         if let Some(e) = sort_err { return Err(e); }
         for (dst, &src) in order.iter().enumerate() { items[dst] = snapshot[src]; }
         Ok(())

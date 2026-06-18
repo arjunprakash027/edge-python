@@ -316,7 +316,7 @@ True
 
 ### sorted
 
-New sorted list. Accepts `key=fn` and `reverse=True/False`. Numbers, strings, bytes, and tuples/lists order lexicographically; mixed un-orderable types raise `TypeError`.
+New sorted list. Accepts `key=fn` and `reverse=True/False`. Numbers, strings, bytes, and tuples/lists order lexicographically; objects defining `__lt__` sort by it; mixed un-orderable types raise `TypeError`.
 
 ```python
 print(sorted([3, 1, 4, 1, 5]))
