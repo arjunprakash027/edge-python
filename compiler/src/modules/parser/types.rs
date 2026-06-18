@@ -45,6 +45,8 @@ pub enum OpCode {
     Pos,
     /* Pushes the value `yield from` produces: the exhausted subiterator's return / StopIteration value. */
     LoadYieldFrom,
+    // Augmented set bitwise `|=` `&=` `^=`: mutate the left set in place.
+    InPlaceBitOr, InPlaceBitAnd, InPlaceBitXor,
 }
 
 // Python builtin name -> (specialised OpCode, `leaves_value_on_stack`).

@@ -560,7 +560,8 @@ impl<'a> VM<'a> {
     fn dispatch_generic(&mut self, opcode: OpCode, operand: u16, chunk: &SSAChunk, slots: &mut [Val], ip: &mut usize, exc_base: usize) -> Result<Option<Val>, VmErr> {
         match opcode {
             OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor
-            | OpCode::BitNot | OpCode::Shl | OpCode::Shr => self.handle_bitwise(opcode, chunk, slots)?,
+            | OpCode::BitNot | OpCode::Shl | OpCode::Shr
+            | OpCode::InPlaceBitOr | OpCode::InPlaceBitAnd | OpCode::InPlaceBitXor => self.handle_bitwise(opcode, chunk, slots)?,
             OpCode::In | OpCode::NotIn | OpCode::Is | OpCode::IsNot => self.handle_identity(opcode, chunk, slots)?,
 
             OpCode::BuildList | OpCode::BuildTuple | OpCode::BuildDict

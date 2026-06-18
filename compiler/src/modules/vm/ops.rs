@@ -158,22 +158,38 @@ impl<'a> VM<'a> {
     }
 
     /* Set bitwise ops (|, &, ^) over set/frozenset; result frozen iff `a` is frozen. */
-    pub(crate) fn set_binop_and_push(&mut self, a: Val, b: Val, op: OpCode) -> Result<(), VmErr> {
+    // Union/intersection/symmetric-diff items; content membership lets alloc dedup distinct-handle equals.
+    fn set_binop_items(&self, a: Val, b: Val, op: OpCode) -> Result<Vec<Val>, VmErr> {
         let (sa, sb) = match (self.clone_set_items(a), self.clone_set_items(b)) {
             (Some(x), Some(y)) => (x, y),
             _ => return Err(cold_runtime("set_binop on non-set operands")),
         };
-        // Content membership so distinct-handle equal elements combine correctly; alloc dedups.
-        let items: Vec<Val> = match op {
+        Ok(match op {
             OpCode::BitOr => sa.iter().chain(sb.iter()).copied().collect(),
             OpCode::BitAnd => sa.iter().filter(|&&v| sb.contains(v, &self.heap)).copied().collect(),
             OpCode::BitXor => sa.iter().filter(|&&v| !sb.contains(v, &self.heap))
                 .chain(sb.iter().filter(|&&v| !sa.contains(v, &self.heap))).copied().collect(),
             _ => return Err(cold_runtime("set_binop with non-bitwise opcode")),
-        };
+        })
+    }
+
+    pub(crate) fn set_binop_and_push(&mut self, a: Val, b: Val, op: OpCode) -> Result<(), VmErr> {
+        let items = self.set_binop_items(a, b, op)?;
         let frozen = matches!(self.heap.get(a), HeapObj::FrozenSet(_));
         let v = self.alloc_set_result(items, frozen)?;
         self.push(v); Ok(())
+    }
+
+    // Augmented set bitwise: rewrite the left set in place (identity preserved); frozenset rebinds.
+    pub(crate) fn set_iop_and_push(&mut self, a: Val, b: Val, op: OpCode) -> Result<(), VmErr> {
+        if !matches!(self.heap.get(a), HeapObj::Set(_)) {
+            return self.set_binop_and_push(a, b, op);
+        }
+        let items = self.set_binop_items(a, b, op)?;
+        let mut s = ValSet::with_capacity(items.len());
+        for v in items { s.insert(v, &self.heap); }
+        if let HeapObj::Set(rc) = self.heap.get(a) { *rc.borrow_mut() = s; }
+        self.push(a); Ok(())
     }
 
     /* Set comparisons with subset/superset semantics over set/frozenset. */

@@ -302,7 +302,7 @@ y
 
 ## Set
 
-Unordered, no duplicates, hashable values. Mutators (`add`, `remove`, `discard`, `pop`, `clear`, `update`) and algebraic operators (`|`, `&`, `-`, `^` and named methods). See [Methods](/reference/methods).
+Unordered, no duplicates, hashable values. Mutators (`add`, `remove`, `discard`, `pop`, `clear`, `update`) and algebraic operators (`|`, `&`, `-`, `^` and named methods). See [Methods](/reference/methods). Augmented `|=` `&=` `^=` mutate the set in place (aliases observe it); plain `|` `&` `^` build a new set.
 
 ```python
 s = {1, 2, 2, 3}

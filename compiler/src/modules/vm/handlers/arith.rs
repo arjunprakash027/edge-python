@@ -269,6 +269,14 @@ impl<'a> VM<'a> {
 
     /* i128 bitwise + Shl/Shr (overflow trap); BitNot unary. Set/Set on |/&/^ means union/intersection/symmetric-diff; other types use the bitwise path. */
     pub(crate) fn handle_bitwise(&mut self, op: OpCode, chunk: &SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
+        // Augmented set bitwise reuses the plain path but mutates the left set in place.
+        let inplace = matches!(op, OpCode::InPlaceBitOr | OpCode::InPlaceBitAnd | OpCode::InPlaceBitXor);
+        let op = match op {
+            OpCode::InPlaceBitOr => OpCode::BitOr,
+            OpCode::InPlaceBitAnd => OpCode::BitAnd,
+            OpCode::InPlaceBitXor => OpCode::BitXor,
+            other => other,
+        };
         if op == OpCode::BitNot {
             let v = self.pop()?;
             let i = self.as_i128(v).ok_or(cold_type("~ requires an integer"))?;
@@ -289,7 +297,7 @@ impl<'a> VM<'a> {
 
         if self.is_set_like(a) && self.is_set_like(b)
             && matches!(op, OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor) {
-            return self.set_binop_and_push(a, b, op);
+            return if inplace { self.set_iop_and_push(a, b, op) } else { self.set_binop_and_push(a, b, op) };
         }
         // `dict | dict` (and `|=`) merges, right operand winning.
         if op == OpCode::BitOr && a.is_heap() && b.is_heap()

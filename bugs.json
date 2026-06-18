@@ -2,8 +2,8 @@
   "_meta": {
     "source": "MicroPython tests/basics differential vs CPython 3.13",
     "verified": "each repro re-run through VM + python3",
-    "count": 9,
-    "fixed": "91 bugs fixed and migrated to vm.json (try/finally + with unwinding cluster; 11 builtin/parser/format divergences from rows 1-11 of the low-NEWLINE triage; generator_return, string_format_modulo_int %*d, seq_unpack list targets, class_getattr dunder-on-type, builtin_slice type identity, containment dict/set-led tuple, range sequence-unpack; yield-from-as-expression cluster: gen_yield_from + gen_yield_from_ducktype + gen_yield_from_exc + gen_yield_from_stopped via a parse_atom Yield arm plus a LoadYieldFrom opcode that carries the subiterator return/StopIteration value, 40 regression cases; range_iter_overflow: AFL sig:06 abort on a range whose step increment crossed the i64 edge, fixed by checked_add in the three range walkers (iter_to_vec_for_spread, IterFrame::next_item, IterCursor::Range::next), 10 regression cases; range_iter_truncation: for-loop/comprehension (IterFrame::next_item) and spread/unpack (iter_to_vec_for_spread) yielded Val::int past the 47-bit inline range instead of promoting, routed both through range_int (pub(crate)) so values auto-promote to LongInt, 10 regression cases; range_contains: `x in range(...)` always returned False (contains had a catch-all Ok(false) for Range) — replaced with an O(1) bounds+step check over i128 that also matches integral floats like CPython, 10 regression cases)"
+    "count": 7,
+    "fixed": "93 bugs fixed and migrated to vm.json (try/finally + with unwinding cluster; 11 builtin/parser/format divergences from rows 1-11 of the low-NEWLINE triage; generator_return, string_format_modulo_int %*d, seq_unpack list targets, class_getattr dunder-on-type, builtin_slice type identity, containment dict/set-led tuple, range sequence-unpack; yield-from-as-expression cluster: gen_yield_from + gen_yield_from_ducktype + gen_yield_from_exc + gen_yield_from_stopped via a parse_atom Yield arm plus a LoadYieldFrom opcode that carries the subiterator return/StopIteration value, 40 regression cases; range_iter_overflow: AFL sig:06 abort on a range whose step increment crossed the i64 edge, fixed by checked_add in the three range walkers (iter_to_vec_for_spread, IterFrame::next_item, IterCursor::Range::next), 10 regression cases; range_iter_truncation: for-loop/comprehension (IterFrame::next_item) and spread/unpack (iter_to_vec_for_spread) yielded Val::int past the 47-bit inline range instead of promoting, routed both through range_int (pub(crate)) so values auto-promote to LongInt, 10 regression cases; range_contains: `x in range(...)` always returned False (contains had a catch-all Ok(false) for Range) — replaced with an O(1) bounds+step check over i128 that also matches integral floats like CPython, 10 regression cases; set_binop: augmented set `|=`/`&=`/`^=` rebound to a new set instead of mutating in place — added InPlaceBitOr/And/Xor opcodes (parser maps the augmented ops, handle_bitwise routes to set_iop_and_push) that rewrite the left set in place, frozenset still rebinds, 10 regression cases; del_deref: `del` of a closed-over variable cleared only the local slot, not the shared cell, so closures still read the old value — the Del handler now also unbinds the frame's cell for that slot, 10 regression cases)"
   },
   "bugs": [
     {
@@ -13,14 +13,6 @@
       "repro": "def foo():\n    any((hit := i) == 8 for i in range(20))\n    return hit\nprint(foo())",
       "expected": "8",
       "actual": "19"
-    },
-    {
-      "id": "del_deref",
-      "category": "scoping",
-      "summary": "del of a closed-over (nonlocal) variable does not unbind it; subsequent read returns the old value instead of raising NameError.",
-      "repro": "def f():\n    x = 1\n    def g():\n        nonlocal x\n        try:\n            print(x)\n        except NameError:\n            print(\"NameError\")\n    del x\n    g()\nf()",
-      "expected": "NameError",
-      "actual": "1"
     },
     {
       "id": "gen_yield_from_executing",
@@ -61,14 +53,6 @@
       "repro": "class A:\n    def __init__(self, x):\n        self.x = x\n    def __lt__(self, other):\n        return self.x < other.x\n    def __repr__(self):\n        return str(self.x)\nl = [A(3), A(1), A(2)]\nl.sort()\nprint(l)",
       "expected": "[1, 2, 3]",
       "actual": "__VMERR__ TypeError: '<' not supported between instances of 'object' and 'object'"
-    },
-    {
-      "id": "set_binop",
-      "category": "wrong-value",
-      "summary": "Augmented set assignment (|= etc.) rebinds to a new set instead of mutating in place, so an aliasing identity check is False instead of True.",
-      "repro": "s1 = s2 = set('abc')\ns1 |= set('ad')\nprint(s1 is s2, len(s1))",
-      "expected": "True 4",
-      "actual": "False 4"
     },
     {
       "id": "gen_next_nested_arg",
