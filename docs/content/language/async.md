@@ -148,12 +148,14 @@ async def status(url):
     return "failed"
 
 # The bad URL raises inside its own coroutine; the others still resolve.
-print(gather(status("https://example.com/a"), status("https://nope.invalid/x")))
+print(gather(status("https://api.github.com/zen"), status("https://nope.invalid/x")))
 ```
 
 ```text Output
 ['ok', 'failed']
 ```
+
+> In a browser host, `fetch_text` runs the browser's `fetch()` inside a Web Worker, so it is subject to [CORS](/reference/packages#network): the target must send `Access-Control-Allow-Origin`. `api.github.com` does; many hosts (e.g. `example.com`) don't, and a blocked request raises just like a network failure.
 
 ## with_timeout
 

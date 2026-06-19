@@ -134,6 +134,8 @@ ws_send(sock, "hello")
 
 Handlers: `fetch`, `fetch_text`, `fetch_json`, `abort_request`, `ws_open`, `ws_send`, `ws_close`, `ws_state`, `sse_open`, `sse_close`, `sse_state`. Full API: [`host/network/README.md`](https://github.com/dylan-sutton-chavez/edge-python/tree/main/host/network).
 
+> **Subject to CORS in the browser.** `fetch`, `fetch_text`, and `fetch_json` run the browser's `fetch()` from a Web Worker, so the same-origin policy applies: a cross-origin target must return `Access-Control-Allow-Origin`, or the request is blocked and the call raises (indistinguishable from a network failure). `fetch_text`/`fetch_json` also raise on a non-2xx status. CORS is a browser rule, not an Edge Python one — it doesn't apply on non-browser hosts.
+
 ### `storage`
 
 Persistent client-side storage: `localStorage`, `sessionStorage`, `IndexedDB`. KV handlers are synchronous. IndexedDB handlers suspend like `network`'s `fetch`.
