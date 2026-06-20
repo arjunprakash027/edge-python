@@ -36,6 +36,7 @@ impl<'a> VM<'a> {
         }
         self.exception_stack.extend(restored_exc);
         let saved_yielded = self.yielded;
+        let saved_resume_ip = self.resume_ip; // don't leak into next exec()
         self.yielded = false;
         self.depth += 1;
 
@@ -130,12 +131,14 @@ impl<'a> VM<'a> {
                 *sf = sync_frames;
                 *ef = coro_exc;
             }
+            self.resume_ip = saved_resume_ip; // restore the caller's scratch
             Ok(result)
         } else {
             self.stack.truncate(saved_stack_len);
             self.iter_stack.truncate(saved_iter_len);
             self.exception_stack.truncate(saved_exc_len);
             self.yielded = saved_yielded;
+            self.resume_ip = saved_resume_ip; // restore the caller's scratch
             Ok(result)
         }
     }

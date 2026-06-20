@@ -429,14 +429,14 @@ impl<'a> VM<'a> {
         if !matches!(self.heap.get(o), HeapObj::Coroutine(..)) {
             return Err(cold_type("next() requires an iterator"));
         }
-        self.push(o);
+        self.push(o); // root across resume's GC
         let result = self.resume_coroutine(o)?;
         if self.yielded {
             self.yielded = false;
-            self.push(result);
+            *self.stack.last_mut().unwrap() = result; // leave one result, not two
             Ok(())
         } else {
-            // Catchable StopIteration on generator exhaustion, mirroring the empty-list path above.
+            self.pop()?; // drop the rooted coroutine
             match default { Some(d) => { self.push(d); Ok(()) }, None => Err(VmErr::Raised(s!("StopIteration"))) }
         }
     }

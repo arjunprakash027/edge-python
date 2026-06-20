@@ -3597,5 +3597,15 @@
   {"src":"print(sorted([-3, 1, -2], key=abs))","output":["[1, -2, -3]"]},
   {"src":"print(sorted(['ccc', 'a', 'bb'], key=len))","output":["['a', 'bb', 'ccc']"]},
   {"src":"try:\n    sorted([1, 'a'])\nexcept TypeError:\n    print('te')","output":["te"]},
-  {"src":"l = [2, 1]\nr = l.sort()\nprint(r, l)","output":["None [1, 2]"]}
+  {"src":"l = [2, 1]\nr = l.sort()\nprint(r, l)","output":["None [1, 2]"]},
+  {"src":"def g():\n    yield 1\n    yield 2\ndef take(it):\n    out = []\n    out.append(next(it))\n    out.append(next(it))\n    return out\nprint(take(g()))","output":["[1, 2]"]},
+  {"src":"def g():\n    yield 1\n    yield 2\nit = g()\nprint(next(it), next(it))","output":["1 2"]},
+  {"src":"def g():\n    yield 1\n    yield 2\nit = g()\nprint([next(it), next(it)])","output":["[1, 2]"]},
+  {"src":"def g():\n    yield 1\n    yield 2\nit = g()\nprint(next(it) + next(it))","output":["3"]},
+  {"src":"def g():\n    yield 1\n    yield 2\ndef add(a, b):\n    return a + b\nit = g()\nprint(add(next(it), next(it)))","output":["3"]},
+  {"src":"def g():\n    yield 1\n    yield 2\nit = g()\nprint(max(next(it), next(it)))","output":["2"]},
+  {"src":"def g():\n    yield 1\n    yield 2\nit = g()\nprint(next(it, -1), next(it, -1), next(it, -1))","output":["1 2 -1"]},
+  {"src":"def g():\n    yield 1\n    yield 2\nit = g()\nt = (next(it), next(it))\nprint(t)","output":["(1, 2)"]},
+  {"src":"def g():\n    yield 1\n    yield 2\ndef add(a, b):\n    return a + b\ns = 0\nfor x in g():\n    s = add(s, x)\nprint(s)","output":["3"]},
+  {"src":"def g():\n    yield 1\n    yield 2\nit = g()\nout = []\nout.append(next(it))\nout.append(next(it))\nout.append(next(it, 99))\nprint(out)","output":["[1, 2, 99]"]}
 ]
