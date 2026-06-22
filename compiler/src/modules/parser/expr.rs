@@ -264,7 +264,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 }
             }
             Some(TokenType::Lpar) => {
-                let _ = self.call(name);
+                // A void call (`print(...)`) in value position must still leave a value; materialise its None.
+                if !self.call(name) { self.emit_const(Value::None); }
             }
             _ => self.emit_load_ssa(name),
         }

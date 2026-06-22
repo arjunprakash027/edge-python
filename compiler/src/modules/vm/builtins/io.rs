@@ -5,7 +5,7 @@ use super::super::types::*;
 
 impl<'a> VM<'a> {
 
-    /* `print(*args, sep=' ', end='\n')`: joins args with `sep`, appends `end`; streams exact bytes via `print_hook` or buffers. */
+    /* `print(*args, sep=' ', end='\n')`: joins args with `sep`, appends `end`; streams exact bytes via `print_hook` or buffers. Leaves no value (statement-shaped); value uses get a None pushed by the parser / the generic Call path. */
     pub fn call_print(&mut self, op: u16, chunk: &crate::modules::parser::SSAChunk, slots: &mut [Val]) -> Result<(), VmErr> {
         let (positional, kw_flat, _np, _nk) = self.parse_call_args(op)?;
         let mut sep = String::from(" ");

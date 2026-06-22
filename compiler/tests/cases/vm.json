@@ -3607,5 +3607,11 @@
   {"src":"def g():\n    yield 1\n    yield 2\nit = g()\nprint(next(it, -1), next(it, -1), next(it, -1))","output":["1 2 -1"]},
   {"src":"def g():\n    yield 1\n    yield 2\nit = g()\nt = (next(it), next(it))\nprint(t)","output":["(1, 2)"]},
   {"src":"def g():\n    yield 1\n    yield 2\ndef add(a, b):\n    return a + b\ns = 0\nfor x in g():\n    s = add(s, x)\nprint(s)","output":["3"]},
-  {"src":"def g():\n    yield 1\n    yield 2\nit = g()\nout = []\nout.append(next(it))\nout.append(next(it))\nout.append(next(it, 99))\nprint(out)","output":["[1, 2, 99]"]}
+  {"src":"def g():\n    yield 1\n    yield 2\nit = g()\nout = []\nout.append(next(it))\nout.append(next(it))\nout.append(next(it, 99))\nprint(out)","output":["[1, 2, 99]"]},
+  {"src":"def f():\n yield print(1)\nprint(next(f()))","output":["1", "None"]},
+  {"src":"x = print(1)\nprint(x)","output":["1", "None"]},
+  {"src":"print([print(i) for i in range(2)])","output":["0", "1", "[None, None]"]},
+  {"src":"print('a\\tb'.expandtabs(444444444444))","output":[],"error":"OverflowError"},
+  {"src":"print(abs('a\\tb'.expandtabs(48547758070)))","output":[],"error":"OverflowError"},
+  {"src":"print('a\\tb'.expandtabs(2000000000))","output":[],"error":"MemoryError"}
 ]

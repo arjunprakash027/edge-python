@@ -328,14 +328,29 @@ pub fn rjust(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> { justify
 
 pub fn expandtabs(vm: &mut VM, recv: Val, pos: &[Val]) -> Result<(), VmErr> {
     let s = recv_str(vm, recv)?;
-    let ts = match pos.first() { Some(n) if n.is_int() => n.as_int().max(0) as usize, _ => 8 };
+    // Holds tabsize in a C int; out-of-range is an OverflowError before any expansion.
+    let ts = match pos.first() {
+        Some(n) if n.is_int() => {
+            let raw = n.as_int();
+            if !(i32::MIN as i64..=i32::MAX as i64).contains(&raw) { return Err(cold_overflow()); }
+            raw.max(0) as usize
+        }
+        _ => 8,
+    };
+    let limit = vm.heap.limit();
     let mut out = String::with_capacity(s.len());
     let mut col = 0usize;
     for c in s.chars() {
         match c {
-            '\t' => { let n = if ts == 0 { 0 } else { ts - (col % ts) }; for _ in 0..n { out.push(' '); } col += n; }
+            // A large tabsize can blow the column count past the heap budget; bail before materialising the spaces.
+            '\t' => {
+                let n = if ts == 0 { 0 } else { ts - (col % ts) };
+                if col.saturating_add(n) > limit { return Err(cold_heap()); }
+                for _ in 0..n { out.push(' '); }
+                col += n;
+            }
             '\n' | '\r' => { out.push(c); col = 0; }
-            _ => { out.push(c); col += 1; }
+            _ => { if col >= limit { return Err(cold_heap()); } out.push(c); col += 1; }
         }
     }
     vm.alloc_and_push_str(out)
