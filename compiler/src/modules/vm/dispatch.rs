@@ -163,6 +163,8 @@ impl<'a> VM<'a> {
         let insns_ptr: *const [Instruction] = cache.fused_ref();
         let consts_ptr: *const [Val] = cache.const_vals_ref();
         self.active_const_pools.push(consts_ptr);
+        // Root this frame's slots: a nested resume's GC marks only its own current_slots, so without this an outer frame's mutating locals get swept.
+        self.active_slots.push(slots as *const [Val]);
         let result: Result<Val, VmErr> = (|| {
             // SAFETY: see comment above.
             let insns: &[Instruction] = unsafe { &*insns_ptr };
@@ -252,6 +254,7 @@ impl<'a> VM<'a> {
         })();
 
         self.active_const_pools.pop();
+        self.active_slots.pop();
         self.opcode_caches.insert(key, cache);
         result
     }

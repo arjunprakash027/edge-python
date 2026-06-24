@@ -117,6 +117,8 @@ pub struct VM<'a> {
     pub(crate) chunk_name_versions: HashMap<*const SSAChunk, NameVersionIndex>,
     /* Const-pool ptrs for caches currently checked out by live exec() frames. */
     pub(crate) active_const_pools: Vec<*const [Val]>,
+    /* Slot-slice ptrs for every live exec() frame; GC roots so a frame's mutating locals survive a nested resume. */
+    pub(crate) active_slots: Vec<*const [Val]>,
     /* Cached `ops == usize::MAX` so the hot path skips the budget decrement. */
     pub(crate) sandbox_off: bool,
     pub(crate) with_stack: Vec<Val>,
@@ -224,6 +226,7 @@ impl<'a> VM<'a> {
             opcode_caches: HashMap::default(),
             chunk_name_versions: HashMap::default(),
             active_const_pools: Vec::new(),
+            active_slots: Vec::new(),
             sandbox_off,
         };
         vm.build_function_table(chunk, None, None);

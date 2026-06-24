@@ -51,6 +51,11 @@ impl<'a> VM<'a> {
             let consts: &[Val] = unsafe { &*self.active_const_pools[i] };
             for &v in consts { self.heap.mark(v); }
         }
+        // SAFETY: same invariant; roots every active frame's live (mutating) slots, not just the innermost current_slots.
+        for i in 0..self.active_slots.len() {
+            let frame_slots: &[Val] = unsafe { &*self.active_slots[i] };
+            for &v in frame_slots { self.heap.mark(v); }
+        }
         self.templates.mark_all(&mut self.heap);
         self.heap.sweep();
     }
