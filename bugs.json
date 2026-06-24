@@ -2,8 +2,8 @@
   "_meta": {
     "source": "MicroPython tests/basics differential vs CPython 3.13",
     "verified": "each repro re-run through VM + python3",
-    "count": 5,
-    "fixed": "95 bugs fixed in vm.json: try/finally unwinding, yield-from expressions, range overflow/truncation/contains, in-place set ops, del of closures, lt sorting, nested next() corruption."
+    "count": 4,
+    "fixed": "96 bugs fixed in vm.json: try/finally unwinding, yield-from expressions, range overflow/truncation/contains, in-place set ops, del of closures, lt sorting, nested next() corruption, nested generator/comprehension ForIter relocation."
   },
   "bugs": [
     {
@@ -29,14 +29,6 @@
       "repro": "def f():\n    def g():\n        return x\n    x = 3\n    return g\nprint(f()())",
       "expected": "3",
       "actual": "__VMERR__ NameError: name 'x' is not defined"
-    },
-    {
-      "id": "generator_closure",
-      "category": "stack-underflow",
-      "summary": "A generator expression nested inside another generator expression triggers an internal stack underflow on valid supported syntax.",
-      "repro": "gg = ((x for x in range(2)) for y in range(2))\nfor i in gg:\n    for j in i:\n        print(j)",
-      "expected": "0\n1\n0\n1",
-      "actual": "__VMERR__ RuntimeError: stack underflow"
     },
     {
       "id": "fun_kwvarargs",

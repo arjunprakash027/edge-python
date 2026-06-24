@@ -350,6 +350,7 @@ print(a[::-1]) # reversed
 print([x * x for x in range(5)])
 print([x for x in range(10) if x % 2 == 0])
 print([(i, j) for i in range(2) for j in range(2)])
+print([[x for x in range(y)] for y in range(3)])
 print({x: x * x for x in range(4)})
 print({x % 3 for x in range(10)})
 ```
@@ -358,6 +359,7 @@ print({x % 3 for x in range(10)})
 [0, 1, 4, 9, 16]
 [0, 2, 4, 6, 8]
 [(0, 0), (0, 1), (1, 0), (1, 1)]
+[[], [0], [0, 1]]
 {0: 0, 1: 1, 2: 4, 3: 9}
 {1, 2, 0}
 ```

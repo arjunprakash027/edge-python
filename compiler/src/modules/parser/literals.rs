@@ -209,7 +209,7 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
             for ins in body {
                 let operand = if matches!(ins.opcode, OpCode::LoadName | OpCode::StoreName) {
                     var_map.iter().find(|(k, _)| *k == ins.operand).map(|(_, v)| *v).unwrap_or(ins.operand)
-                } else if matches!(ins.opcode, OpCode::Jump | OpCode::JumpIfFalse | OpCode::JumpIfFalseOrPop | OpCode::JumpIfTrueOrPop) {
+                } else if matches!(ins.opcode, OpCode::Jump | OpCode::JumpIfFalse | OpCode::JumpIfFalseOrPop | OpCode::JumpIfTrueOrPop | OpCode::ForIter) {
                     (ins.operand as i64 + delta) as u16
                 } else {
                     ins.operand
