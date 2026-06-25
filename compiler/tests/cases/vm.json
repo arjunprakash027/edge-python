@@ -3654,5 +3654,15 @@
   {"src":"def f(a, **k):\n    print(a, k)\nf(a=1)","output":["1 {}"]},
   {"src":"def f(x, y, **k):\n    print(x, y, k)\nf(x=1, y=2, z=3)","output":["1 2 {'z': 3}"]},
   {"src":"def f(a, **k):\n    print(a, k)\nf(1, b=2)","output":["1 {'b': 2}"]},
-  {"src":"def f(p, q=0, **k):\n    print(p, q, k)\nf(p=1, r=9)","output":["1 0 {'r': 9}"]}
+  {"src":"def f(p, q=0, **k):\n    print(p, q, k)\nf(p=1, r=9)","output":["1 0 {'r': 9}"]},
+  {"src":"def g():\n    x = yield 1\n    yield x\nit = g()\nprint(next(it))\nprint(next(it))","output":["1", "None"]},
+  {"src":"def g():\n    yield (yield 1)\nit = g()\nprint(next(it))\nprint(next(it))","output":["1", "None"]},
+  {"src":"def g():\n    yield ((yield 1) or \"fallback\")\nit = g()\nprint(next(it))\nprint(next(it))","output":["1", "fallback"]},
+  {"src":"def g():\n    v = yield 1\n    yield v is None\nit = g()\nprint(next(it))\nprint(next(it))","output":["1", "True"]},
+  {"src":"def g():\n    a = yield 1\n    b = yield 2\n    yield (a, b)\nit = g()\nprint(next(it))\nprint(next(it))\nprint(next(it))","output":["1", "2", "(None, None)"]},
+  {"src":"def g():\n    yield str((yield 1))\nit = g()\nprint(next(it))\nprint(next(it))","output":["1", "None"]},
+  {"src":"def g():\n    x = yield 1\n    yield [x, x]\nit = g()\nprint(next(it))\nprint(next(it))","output":["1", "[None, None]"]},
+  {"src":"def g():\n    results = []\n    for i in range(2):\n        got = yield i\n        results.append(got)\n    yield results\nit = g()\nprint(next(it))\nprint(next(it))\nprint(next(it))","output":["0", "1", "[None, None]"]},
+  {"src":"def g():\n    x = yield 1\n    yield {\"v\": x}\nit = g()\nprint(next(it))\nprint(next(it))","output":["1", "{'v': None}"]},
+  {"src":"def g():\n    yield (yield (yield 1))\nit = g()\nprint(next(it))\nprint(next(it))\nprint(next(it))","output":["1", "None", "None"]}
 ]

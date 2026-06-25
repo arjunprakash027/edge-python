@@ -191,8 +191,12 @@ impl<'a> VM<'a> {
                             let sub_call_yield = !self.pending_sync_frames.is_empty();
                             let child_yield = self.pending.waiting_for_children.is_some();
                             let host_yield = self.pending.host_call_request;
-                            let val = if event_yield || sub_call_yield || child_yield || host_yield { Val::none() } else { self.pop().unwrap_or(Val::none()) };
-                            self.resume_ip = if !event_yield && !sub_call_yield && !child_yield && !host_yield && ip < n && matches!(insns.get(ip), Some(ins) if ins.opcode == OpCode::PopTop) { ip + 1 } else { ip };
+                            let regular_yield = !event_yield && !sub_call_yield && !child_yield && !host_yield;
+                            let val = if regular_yield { self.pop().unwrap_or(Val::none()) } else { Val::none() };
+                            let next_is_pop = ip < n && matches!(insns.get(ip), Some(ins) if ins.opcode == OpCode::PopTop);
+                            self.resume_ip = if regular_yield && next_is_pop { ip + 1 } else { ip };
+                            // Value-position yield: leave the sent value (None for next()) for the consumer on resume.
+                            if regular_yield && !next_is_pop { self.push(Val::none()); }
                             self.live_slots.truncate(slots_base);
                             // DON'T truncate exception_stack here, frames pushed in this exec belong to active try/except blocks; the enclosing `resume_coroutine` drains them into the coroutine's saved state so `try` survives the yield.
                             return Ok(val);
