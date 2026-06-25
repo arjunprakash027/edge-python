@@ -47,6 +47,8 @@ pub enum OpCode {
     LoadYieldFrom,
     // Augmented set bitwise `|=` `&=` `^=`: mutate the left set in place.
     InPlaceBitOr, InPlaceBitAnd, InPlaceBitXor,
+    // Push a fresh spread-delta frame.
+    BeginArgs,
 }
 
 // Python builtin name -> (specialised OpCode, `leaves_value_on_stack`).

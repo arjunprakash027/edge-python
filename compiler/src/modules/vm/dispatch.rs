@@ -149,6 +149,8 @@ impl<'a> VM<'a> {
         let exc_base = self.pending_exec_exc_base.take().unwrap_or(self.exception_stack.len());
         // Cleanup reasons belong to this frame's finally bodies; drop leftovers when it returns.
         let unwind_base = self.unwind_stack.len();
+        // Drop spread-delta frames leaked by an aborted arg list on unwind.
+        let delta_base = self.pending.delta_save.len();
         let key = chunk as *const _;
 
         let mut cache = self.opcode_caches.remove(&key).unwrap_or_else(|| OpcodeCache::new(chunk));
@@ -218,6 +220,7 @@ impl<'a> VM<'a> {
                             self.with_stack.truncate(frame.with_depth);
                             self.pending.pos_delta = 0;
                             self.pending.kw_delta = 0;
+                            self.pending.delta_save.truncate(delta_base);
                             self.error_byte_pos = None;
                             // Drop partial traceback so a later error doesn't inherit stale frames.
                             self.call_stack.clear();
@@ -694,13 +697,21 @@ impl<'a> VM<'a> {
                     *ip = h;
                 }
             }
+            OpCode::BeginArgs => {
+                self.pending.delta_save.push((self.pending.pos_delta, self.pending.kw_delta));
+                self.pending.pos_delta = 0;
+                self.pending.kw_delta = 0;
+            }
             OpCode::UnpackArgs => {
                 let val = self.pop()?;
-                match operand {
+                let kw_before = (operand >> 2) as usize;
+                match operand & 0x3 {
                     1 => {
                         let items = self.iter_to_vec_for_spread(val)?;
                         let n = items.len() as i32;
-                        for v in items { self.push(v); }
+                        // Insert below preceding kw pairs so positionals stay contiguous.
+                        let at = self.stack.len() - 2 * kw_before;
+                        for (off, v) in items.into_iter().enumerate() { self.stack.insert(at + off, v); }
                         self.pending.pos_delta += n - 1;
                     }
                     2 => {

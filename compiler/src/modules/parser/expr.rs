@@ -375,7 +375,12 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 Some(TokenType::Lpar) => {
                     // Call after any trailer.
                     let call_pos = self.last_end as u32;
-                    let (pos, kw) = self.parse_args();
+                    let is_method = matches!(self.chunk.instructions.last().map(|i| i.opcode), Some(OpCode::LoadAttr));
+                    self.advance();
+                    // Skip only zero-arg methods so LoadAttr+Call(0) fusion survives.
+                    let empty = matches!(self.peek(), Some(TokenType::Rpar));
+                    if !(is_method && empty) { self.chunk.emit(OpCode::BeginArgs, 0); }
+                    let (pos, kw) = self.parse_args_body();
                     self.chunk.emit(OpCode::Call, super::pack_call(pos, kw));
                     self.chunk.record_call_pos(call_pos);
                 }

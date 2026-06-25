@@ -56,7 +56,15 @@ impl<'a> VM<'a> {
             return Err(cold_type("wrong number of arguments to builtin"));
         }
         match op {
-            OpCode::Call => self.exec_call(operand, chunk, slots),
+            OpCode::Call => {
+                let r = self.exec_call(operand, chunk, slots);
+                // Restore the enclosing call's spread delta.
+                if let Some((p, k)) = self.pending.delta_save.pop() {
+                    self.pending.pos_delta = p;
+                    self.pending.kw_delta = k;
+                }
+                r
+            }
             OpCode::MakeFunction | OpCode::MakeCoroutine => self.exec_make_function(op, operand, chunk, slots),
             OpCode::CallLen => self.call_len(chunk, slots),
             OpCode::CallAbs => self.call_abs(),
@@ -478,7 +486,15 @@ impl<'a> VM<'a> {
             let (kind, slot) = self.param_slots[fi][i];
             match kind {
                 ParamKind::DoubleStar => {
-                    let dm = DictMap::from_pairs(kw_flat.chunks_exact(2).map(|p| (p[0], p[1])).collect(), &self.heap);
+                    // **kwargs gets only keys not bound to a named param.
+                    let params = &self.functions[fi].0;
+                    let pairs: Vec<(Val, Val)> = kw_flat.chunks_exact(2)
+                        .filter(|p| match self.heap.try_get(p[0]) {
+                            Some(HeapObj::Str(s)) => !params.iter().any(|pp| !pp.starts_with('*') && crate::modules::parser::types::param_base_name(pp) == s.as_str()),
+                            _ => true,
+                        })
+                        .map(|p| (p[0], p[1])).collect();
+                    let dm = DictMap::from_pairs(pairs, &self.heap);
                     let dict_val = self.heap.alloc(HeapObj::Dict(Rc::new(RefCell::new(dm))))?;
                     if slot < fn_slots.len() { fn_slots[slot] = dict_val; }
                 }
@@ -509,7 +525,8 @@ impl<'a> VM<'a> {
                     Some(HeapObj::Str(s)) => s.clone(),
                     _ => return Err(cold_runtime("malformed kwarg on stack")),
                 };
-                if params.iter().any(|p| crate::modules::parser::types::param_base_name(p) == key.as_str()) {
+                // Star/double-star params are not keyword targets; a kwarg whose name matches `*a`/`**k` goes to **kwargs.
+                if params.iter().any(|p| !p.starts_with('*') && crate::modules::parser::types::param_base_name(p) == key.as_str()) {
                     let pname = s!(str &key, "_0");
                     if let Some(&s) = body_map.get(pname.as_str()) {
                         fn_slots[s] = pair[1];

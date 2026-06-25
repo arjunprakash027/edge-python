@@ -400,6 +400,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
         let i = self.push_ssa_name(&name, self.current_version(&name));
         self.chunk.emit(OpCode::LoadName, i);
+        // Isolate this call's spread delta from any enclosing call.
+        self.chunk.emit(OpCode::BeginArgs, 0);
         let (pos, kw) = self.parse_args();
         self.chunk.emit(OpCode::Call, super::pack_call(pos, kw));
         self.chunk.record_call_pos(call_pos);
@@ -423,6 +425,11 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
 
     pub(super) fn parse_args(&mut self) -> (u16, u16) {
         self.advance();
+        self.parse_args_body()
+    }
+
+    // Parse args after `(` already consumed.
+    pub(super) fn parse_args_body(&mut self) -> (u16, u16) {
         let mut pos = 0u16;
         let mut kw = 0u16;
         self.comma_list(|t| t == TokenType::Rpar, |s| {
@@ -431,7 +438,8 @@ impl<'src, I: Iterator<Item = Token>> Parser<'src, I> {
                 else { None };
             if let Some(kind) = unpack {
                 s.expr();
-                s.chunk.emit(OpCode::UnpackArgs, kind);
+                // High bits carry preceding kw-pair count so the VM keeps positionals contiguous.
+                s.chunk.emit(OpCode::UnpackArgs, (kw << 2) | kind);
                 pos = pos.saturating_add(1);
             } else if matches!(s.peek(), Some(TokenType::Name)) {
                 let t = s.advance();

@@ -30,6 +30,8 @@ pub(crate) struct Pending {
     /* Star/double-star spread bumps the next Call's argument count. */
     pub pos_delta: i32,
     pub kw_delta: i32,
+    // Saved enclosing spread deltas (BeginArgs).
+    pub delta_save: alloc::vec::Vec<(i32, i32)>,
     /* Current Call's byte offset; consumed by the traceback renderer. */
     pub call_byte_pos: Option<u32>,
     /* Wakeup deadline set by `sleep()` and consumed by the scheduler. */
@@ -55,6 +57,7 @@ impl Pending {
         Self {
             pos_delta: 0,
             kw_delta: 0,
+            delta_save: alloc::vec::Vec::new(),
             call_byte_pos: None,
             sleep_until_ns: None,
             host_frame_request: false,
